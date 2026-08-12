@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    { "collectionGroup": "personalPlants", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "updatedAt", "order": "DESCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "wateringSchedules", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "enabled", "order": "ASCENDING" }, { "fieldPath": "dueDate", "order": "ASCENDING" } ] },
+    { "collectionGroup": "weatherRisks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "detectedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "placements", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "miniHomeId", "order": "ASCENDING" }, { "fieldPath": "zIndex", "order": "ASCENDING" } ] },
+    { "collectionGroup": "ownedItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "applied", "order": "ASCENDING" }, { "fieldPath": "acquiredAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "shareLinks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "revokedAt", "order": "ASCENDING" }, { "fieldPath": "expiresAt", "order": "ASCENDING" } ] },
+    { "collectionGroup": "notificationDeliveries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "scheduledFor", "order": "ASCENDING" } ] },
+    { "collectionGroup": "plantContents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" } ] },
+    { "collectionGroup": "shopItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "category", "order": "ASCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function owns(uid) { return request.auth != null && request.auth.uid == uid; }
+    function safeSegment(value) { return value.matches('^[A-Za-z0-9_-]{1,128}$'); }
+    function safeFileName(value) { return value.matches('^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$') && !value.matches('.*[.][.].*'); }
+    function validImage(uid) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|heif|heic)')
+        && request.resource.metadata.ownerUid == uid;
+    }
+
+    match /identification-originals/{uid}/{requestId}/{fileName} {
+      allow read, delete: if owns(uid);
+      allow create, update: if owns(uid) && safeSegment(requestId) && safeFileName(fileName) && validImage(uid);
+    }
+    match /plant-photos/{uid}/{plantId}/{fileName} {
+      allow read, delete: if owns(uid);
+      allow create, update: if owns(uid) && safeSegment(plantId) && safeFileName(fileName) && validImage(uid);
+    }
+    match /share-images/{uid}/{shareId}/{fileName} {
+      allow read, delete: if owns(uid);
+      allow create, update: if owns(uid) && safeSegment(shareId) && safeFileName(fileName) && validImage(uid);
+    }
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}
