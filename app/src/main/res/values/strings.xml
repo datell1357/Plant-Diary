@@ -1,4 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">플랜테리어</string>
+
+    <string name="tab_home">홈</string>
+    <string name="tab_collection">도감</string>
+    <string name="tab_storage">창고</string>
+    <string name="tab_settings">설정</string>
+    <string name="tab_camera">식물 촬영</string>
+
+    <string name="screen_home">홈</string>
+    <string name="screen_home_description">오늘의 식물 관리와 날씨 안내가 이 화면에 표시됩니다.</string>
+    <string name="screen_collection">도감</string>
+    <string name="screen_collection_description">등록한 식물 목록과 관리 정보가 이 화면에 표시됩니다.</string>
+    <string name="screen_storage">창고</string>
+    <string name="screen_storage_description">보유한 미니홈피 아이템이 이 화면에 표시됩니다.</string>
+    <string name="screen_settings">설정</string>
+    <string name="screen_settings_description">알림과 지역, 계정 설정이 이 화면에 표시됩니다.</string>
+    <string name="screen_camera">식물 촬영</string>
+    <string name="screen_camera_description">사진으로 식물을 식별하는 촬영 화면입니다.</string>
+    <string name="screen_plant_detail">식물 상세</string>
+    <string name="screen_plant_detail_description">선택한 식물의 관리 정보와 물 주기 일정이 이 화면에 표시됩니다.</string>
+    <string name="screen_login">로그인</string>
+    <string name="screen_login_description">로그인하면 등록한 식물을 기기 간에 동기화할 수 있습니다.</string>
+
+    <string name="action_continue">계속하기</string>
 </resources>

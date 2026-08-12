@@ -1,29 +1,51 @@
 package com.planterior.helper
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.rememberNavController
+import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.navigation.PlanteriorNavHost
+import com.planterior.helper.navigation.PlanteriorRoute
+import com.planterior.helper.navigation.PlanteriorRouteResolver
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContent { PlanteriorAppShell() }
+        val target = PlanteriorRouteResolver.resolve(intent.deepLinkUri())
+        setContent { PlanteriorApp(target) }
     }
 }
 
+/**
+ * 앱 셸을 구성한다.
+ *
+ * cold start 딥링크로 하위 화면에 바로 들어와도 뒤로 가기가 상위 화면으로 이어지도록 부모 백스택을 먼저 쌓는다.
+ *
+ * @param target 딥링크에서 해석한 최종 목적지.
+ */
 @Composable
-private fun PlanteriorAppShell() {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Box(contentAlignment = Alignment.Center) { Text(text = "플랜테리어") }
-        }
+internal fun PlanteriorApp(target: PlanteriorRoute) {
+    PlanteriorTheme {
+        val navController = rememberNavController()
+        val backStack = PlanteriorRouteResolver.backStackFor(target)
+        navController.RestoreDeepLinkBackStack(backStack)
+        PlanteriorNavHost(navController = navController, startRoute = backStack.first())
     }
 }
+
+/** 딥링크 백스택의 두 번째 목적지부터 순서대로 쌓는다. 첫 목적지는 [PlanteriorNavHost]의 시작 목적지가 이미 담당한다. */
+@Composable
+private fun NavHostController.RestoreDeepLinkBackStack(backStack: List<PlanteriorRoute>) {
+    androidx.compose.runtime.LaunchedEffect(backStack) {
+        backStack.drop(1).forEach { route -> navigate(route) }
+    }
+}
+
+/** VIEW intent가 들고 온 딥링크 문자열을 꺼낸다. 다른 intent는 딥링크가 아니다. */
+private fun Intent.deepLinkUri(): String? = if (action == Intent.ACTION_VIEW) dataString else null
