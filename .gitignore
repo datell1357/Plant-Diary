@@ -1,3 +1,11 @@
 .DS_Store
 .omo/evidence/
 .omo/senpi-task/
+.gradle/
+.idea/
+**/build/
+local.properties
+*.iml
+captures/
+*.jks
+*.keystore
