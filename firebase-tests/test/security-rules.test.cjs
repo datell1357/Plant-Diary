@@ -1,19 +1,32 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { assertFails, assertSucceeds, initializeTestEnvironment } = require("@firebase/rules-unit-testing");
-const { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } = require("firebase/firestore");
+const { Timestamp, collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } = require("firebase/firestore");
 const { ref, uploadBytes, getBytes } = require("firebase/storage");
 const { before, after, beforeEach, describe, it } = require("mocha");
 
 const projectId = "demo-planterior";
 let env;
 const write = (ownerUid, revision = 1, expectedRevision = 0, idempotencyKey = "op-valid-0001") => ({ ownerUid, revision, expectedRevision, idempotencyKey, updatedAt: "2026-08-12T00:00:00Z" });
+const ts = (value) => Timestamp.fromDate(new Date(value));
 const collectionFixture = (collectionName) => {
-  if (collectionName === "wateringSchedules") return { dueDate: "2026-08-12", reminderTime: "09:00", zoneId: "Asia/Seoul" };
-  if (collectionName === "wateringRecords") return { wateredDate: "2026-08-12" };
-  if (collectionName === "notificationSettings") return { defaultTime: "09:00", zoneId: "Asia/Seoul" };
-  return {};
+  if (collectionName === "personalPlants") return { displayName: "몬스테라", registrationMethod: "MANUAL" };
+  if (collectionName === "wateringSchedules") return { plantId: "plant-a", dueDate: "2026-08-12", reminderTime: "09:00", zoneId: "Asia/Seoul", enabled: true };
+  if (collectionName === "wateringRecords") return { plantId: "plant-a", wateredDate: "2026-08-12", recordedAt: ts("2026-08-12T00:00:00Z") };
+  if (collectionName === "notificationSettings") return { wateringEnabled: true, weatherEnabled: true, defaultTime: "09:00", zoneId: "Asia/Seoul" };
+  if (collectionName === "weatherSnapshots") return { regionCode: "11B10101", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-12T01:00:00Z") };
+  if (collectionName === "weatherRisks") return { plantId: "plant-a", snapshotId: "snapshot-a", type: "DRY", detectedAt: ts("2026-08-12T00:00:00Z"), active: true };
+  if (collectionName === "miniHomes") return { name: "우리 집" };
+  if (collectionName === "placements") return { normalizedX: 0.5, normalizedY: 0.5, zIndex: 1 };
+  if (collectionName === "ownedItems") return { itemId: "item-a", acquiredAt: ts("2026-08-12T00:00:00Z"), applied: false };
+  if (collectionName === "shareLinks") return { miniHomeId: "home-a", sourceRevision: 1, snapshotPath: "share-images/user-a/share-a/share.png", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-09-12T00:00:00Z"), revokedAt: null };
+  if (collectionName === "consents") return { type: "LOCATION", granted: true, recordedAt: ts("2026-08-12T00:00:00Z") };
+  if (collectionName === "deletionRequests") return { status: "RECEIVED", requestedAt: ts("2026-08-12T00:00:00Z"), scheduledFor: ts("2026-08-19T00:00:00Z"), completedAt: null };
+  if (collectionName === "notificationDeliveries") return { status: "PENDING", scheduledFor: ts("2026-08-12T00:00:00Z"), deliveredAt: null, deduplicationKey: "delivery-0001" };
+  if (collectionName === "identificationRequests") return { temporaryOriginalPath: "identification-originals/user-a/request-a/original.webp", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-13T00:00:00Z") };
+  throw new Error(`Missing fixture for ${collectionName}`);
 };
+const serverCollections = new Set(["weatherSnapshots", "weatherRisks", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries"]);
 
 describe("Planterior Firebase ownership contract", () => {
   before(async () => {
@@ -37,7 +50,7 @@ describe("Planterior Firebase ownership contract", () => {
     await assertFails(getDoc(doc(anonymous, "users/user-a")));
     await assertFails(setDoc(doc(owner, "users/user-a/personalPlants/root-spoof"), write("user-b")));
     const target = doc(owner, "users/user-a/personalPlants/plant-a");
-    await assertSucceeds(setDoc(target, { ...write("user-a"), displayName: "몬스테라" }));
+    await assertSucceeds(setDoc(target, { ...write("user-a"), ...collectionFixture("personalPlants") }));
     await assertSucceeds(getDoc(target));
     await assertFails(getDoc(doc(foreign, "users/user-a/personalPlants/plant-a")));
     await assertFails(updateDoc(doc(foreign, "users/user-a/personalPlants/plant-a"), { displayName: "탈취" }));
@@ -51,11 +64,13 @@ describe("Planterior Firebase ownership contract", () => {
       "shareLinks", "consents", "deletionRequests", "notificationDeliveries", "identificationRequests"
     ];
     const owner = env.authenticatedContext("user-a").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
     const foreign = env.authenticatedContext("user-b").firestore();
     const anonymous = env.unauthenticatedContext().firestore();
     for (const collectionName of collections) {
       const path = `users/user-a/${collectionName}/fixture`;
-      await assertSucceeds(setDoc(doc(owner, path), { ...write("user-a"), ...collectionFixture(collectionName) }));
+      const writer = serverCollections.has(collectionName) ? server : owner;
+      await assertSucceeds(setDoc(doc(writer, path), { ...write("user-a"), ...collectionFixture(collectionName) }));
       await assertSucceeds(getDoc(doc(owner, path)));
       await assertFails(getDoc(doc(foreign, path)));
       await assertFails(setDoc(doc(foreign, path), { ...write("user-b"), ...collectionFixture(collectionName) }));
@@ -65,10 +80,12 @@ describe("Planterior Firebase ownership contract", () => {
 
   it("makes idempotency operation documents create-only", async () => {
     const owner = env.authenticatedContext("user-a").firestore();
-    const operation = doc(owner, "users/user-a/operations/op-stable-0001");
-    await assertSucceeds(setDoc(operation, write("user-a", 1, 0, "op-stable-0001")));
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const operation = doc(server, "users/user-a/operations/op-stable-0001");
+    await assertFails(setDoc(doc(owner, "users/user-a/operations/op-owner-forged"), write("user-a", 1, 0, "op-owner-forged")));
+    await assertSucceeds(setDoc(operation, { ...write("user-a", 1, 0, "op-stable-0001"), updatedAt: ts("2026-08-12T00:00:00Z") }));
     await assertFails(setDoc(operation, write("user-a", 1, 0, "op-stable-0001")));
-    await assertFails(setDoc(doc(owner, "users/user-a/operations/path-mismatch"), write("user-a", 1, 0, "other-operation")));
+    await assertFails(setDoc(doc(server, "users/user-a/operations/path-mismatch"), write("user-a", 1, 0, "other-operation")));
   });
 
   it("rejects owner spoofing malformed revisions and unstable operation IDs", async () => {
@@ -82,7 +99,7 @@ describe("Planterior Firebase ownership contract", () => {
     await env.withSecurityRulesDisabled(async (admin) => setDoc(doc(admin.firestore(), "users/user-a/unknownCollection/server-only"), { secret: true }));
     await assertFails(getDoc(doc(owner, "users/user-a/unknownCollection/server-only")));
     await assertFails(setDoc(doc(owner, "users/user-a/personalPlants/bad-instant"), { ...write("user-a"), updatedAt: "not-an-instant" }));
-    await assertSucceeds(setDoc(doc(owner, "users/user-a/personalPlants/plant-a"), write("user-a")));
+    await assertSucceeds(setDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { ...write("user-a"), ...collectionFixture("personalPlants") }));
     await assertFails(updateDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { revision: 3, expectedRevision: 1, idempotencyKey: "op-valid-0002" }));
     await assertSucceeds(updateDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { revision: 2, expectedRevision: 1, idempotencyKey: "op-valid-0002" }));
   });

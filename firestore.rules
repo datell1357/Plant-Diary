@@ -3,47 +3,142 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function owns(uid) { return signedIn() && request.auth.uid == uid; }
-    function contentAdmin() { return signedIn() && request.auth.token.keys().hasAll(['contentAdmin']) && request.auth.token.contentAdmin == true; }
-    function opsAdmin() { return signedIn() && request.auth.token.keys().hasAll(['opsAdmin']) && request.auth.token.opsAdmin == true; }
-    function trustedServer() { return signedIn() && request.auth.token.keys().hasAll(['server']) && request.auth.token.server == true; }
+    function claim(name) { return signedIn() && request.auth.token.keys().hasAll([name]) && request.auth.token[name] == true; }
+    function contentAdmin() { return claim('contentAdmin'); }
+    function opsAdmin() { return claim('opsAdmin'); }
+    function trustedServer() { return claim('server'); }
+    function validOpaqueId(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$'); }
     function validOperationKey(value) { return value is string && value.size() >= 8 && value.size() <= 128 && value.matches('^[A-Za-z0-9_-]+$'); }
-    function validDate(value) { return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+    function leapYear(year) { return year % 400 == 0 || (year % 4 == 0 && year % 100 != 0); }
+    function daysInMonth(year, month) {
+      return month == 2 ? (leapYear(year) ? 29 : 28) : ((month == 4 || month == 6 || month == 9 || month == 11) ? 30 : 31);
+    }
+    function validDate(value) {
+      let parts = value is string ? value.split('-') : [];
+      return value is string
+        && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
+        && int(parts[2]) <= daysInMonth(int(parts[0]), int(parts[1]));
+    }
     function validTime(value) { return value is string && value.matches('^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$'); }
-    function validInstant(value) { return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T.+Z$'); }
-    function allowedUserCollection(collection) {
-      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'identificationRequests'];
+    function validInstant(value) {
+      let parts = value is string ? value.split('T') : [];
+      return value is string && parts.size() == 2 && validDate(parts[0]) && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,9})?Z$');
     }
-    function validCollectionData(collection) {
-      return (collection != 'wateringSchedules' || (validDate(request.resource.data.dueDate) && validTime(request.resource.data.reminderTime) && request.resource.data.zoneId is string))
-        && (collection != 'wateringRecords' || validDate(request.resource.data.wateredDate))
-        && (collection != 'notificationSettings' || (validTime(request.resource.data.defaultTime) && request.resource.data.zoneId is string))
-        && (collection != 'personalPlants' || !request.resource.data.keys().hasAny(['lastWateredDate']) || request.resource.data.lastWateredDate == null || validDate(request.resource.data.lastWateredDate));
+    function metadataFields() { return ['ownerUid', 'revision', 'expectedRevision', 'idempotencyKey', 'updatedAt']; }
+    function validEntityKeys(required, optional) {
+      return request.resource.data.keys().hasAll(metadataFields().concat(required))
+        && request.resource.data.keys().hasOnly(metadataFields().concat(required).concat(optional));
     }
-    function validCreate(uid) {
+    function validUpdatedAt(value) { return value is timestamp || validInstant(value); }
+    function validMetadata(uid) {
       return request.resource.data.ownerUid == uid
         && request.resource.data.revision is int
-        && request.resource.data.revision == 1
         && request.resource.data.expectedRevision is int
-        && request.resource.data.expectedRevision == 0
         && validOperationKey(request.resource.data.idempotencyKey)
-        && validInstant(request.resource.data.updatedAt);
+        && validUpdatedAt(request.resource.data.updatedAt);
     }
+    function validCreate(uid) { return validMetadata(uid) && request.resource.data.revision == 1 && request.resource.data.expectedRevision == 0; }
     function validUpdate(uid) {
-      return resource.data.ownerUid == uid
-        && request.resource.data.ownerUid == uid
-        && request.resource.data.revision is int
-        && request.resource.data.expectedRevision is int
+      return validMetadata(uid)
+        && resource.data.ownerUid == uid
         && request.resource.data.expectedRevision == resource.data.revision
-        && request.resource.data.revision == resource.data.revision + 1
-        && validOperationKey(request.resource.data.idempotencyKey)
-        && validInstant(request.resource.data.updatedAt);
+        && request.resource.data.revision == resource.data.revision + 1;
+    }
+    function approvedCollection(collection) {
+      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'identificationRequests'];
+    }
+    function ownerWritable(collection) {
+      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'miniHomes', 'placements', 'consents', 'identificationRequests'];
+    }
+    function serverWritable(collection) {
+      return collection in ['weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries'];
+    }
+    function validPersonalPlant() {
+      return validEntityKeys(['displayName', 'registrationMethod'], ['contentId', 'representativePhotoPath', 'location', 'note', 'lastWateredDate'])
+        && request.resource.data.displayName is string
+        && request.resource.data.registrationMethod in ['IDENTIFIED', 'IDENTIFICATION_EDITED', 'MANUAL']
+        && (!request.resource.data.keys().hasAny(['lastWateredDate']) || request.resource.data.lastWateredDate == null || validDate(request.resource.data.lastWateredDate));
+    }
+    function validOwnerEntity(collection) {
+      return (collection == 'personalPlants' && validPersonalPlant())
+        || (collection == 'wateringRecords'
+          && validEntityKeys(['plantId', 'wateredDate', 'recordedAt'], [])
+          && validOpaqueId(request.resource.data.plantId) && validDate(request.resource.data.wateredDate) && request.resource.data.recordedAt is timestamp)
+        || (collection == 'wateringSchedules'
+          && validEntityKeys(['plantId', 'dueDate', 'reminderTime', 'zoneId', 'enabled'], [])
+          && validOpaqueId(request.resource.data.plantId) && validDate(request.resource.data.dueDate) && validTime(request.resource.data.reminderTime) && request.resource.data.zoneId is string && request.resource.data.enabled is bool)
+        || (collection == 'notificationSettings'
+          && validEntityKeys(['wateringEnabled', 'weatherEnabled', 'defaultTime', 'zoneId'], [])
+          && request.resource.data.wateringEnabled is bool && request.resource.data.weatherEnabled is bool && validTime(request.resource.data.defaultTime) && request.resource.data.zoneId is string)
+        || (collection == 'miniHomes' && validEntityKeys(['name'], []) && request.resource.data.name is string)
+        || (collection == 'placements'
+          && validEntityKeys(['normalizedX', 'normalizedY', 'zIndex'], ['plantId', 'itemId'])
+          && request.resource.data.normalizedX is number && request.resource.data.normalizedX >= 0 && request.resource.data.normalizedX <= 1
+          && request.resource.data.normalizedY is number && request.resource.data.normalizedY >= 0 && request.resource.data.normalizedY <= 1 && request.resource.data.zIndex is int)
+        || (collection == 'consents'
+          && validEntityKeys(['type', 'granted', 'recordedAt'], [])
+          && request.resource.data.type in ['IDENTIFICATION_PHOTO_PROCESSING', 'LOCATION', 'ANALYTICS']
+          && request.resource.data.granted is bool && request.resource.data.recordedAt is timestamp)
+        || (collection == 'identificationRequests'
+          && validEntityKeys(['temporaryOriginalPath', 'createdAt', 'expiresAt'], [])
+          && request.resource.data.temporaryOriginalPath is string && request.resource.data.createdAt is timestamp
+          && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.resource.data.createdAt);
+    }
+    function validDelivery() {
+      return validEntityKeys(['status', 'scheduledFor', 'deliveredAt', 'deduplicationKey'], ['plantId'])
+        && request.resource.data.status in ['PENDING', 'SENT', 'OPENED', 'FAILED']
+        && request.resource.data.scheduledFor is timestamp
+        && (request.resource.data.deliveredAt == null || request.resource.data.deliveredAt is timestamp)
+        && request.resource.data.deduplicationKey is string
+        && (!(request.resource.data.status in ['SENT', 'OPENED']) || request.resource.data.deliveredAt is timestamp)
+        && (request.resource.data.deliveredAt == null || request.resource.data.deliveredAt >= request.resource.data.scheduledFor);
+    }
+    function validDeletion() {
+      return validEntityKeys(['status', 'requestedAt', 'scheduledFor', 'completedAt'], [])
+        && request.resource.data.status in ['RECEIVED', 'PROCESSING', 'COMPLETED', 'FAILED', 'PARTIALLY_FAILED', 'CANCELLED']
+        && request.resource.data.requestedAt is timestamp && request.resource.data.scheduledFor is timestamp
+        && request.resource.data.scheduledFor >= request.resource.data.requestedAt
+        && (request.resource.data.completedAt == null || request.resource.data.completedAt is timestamp)
+        && (request.resource.data.completedAt == null || request.resource.data.completedAt >= request.resource.data.scheduledFor)
+        && (request.resource.data.status != 'COMPLETED' || request.resource.data.completedAt is timestamp);
+    }
+    function validServerEntity(collection) {
+      return (collection == 'notificationDeliveries' && validDelivery())
+        || (collection == 'weatherSnapshots'
+          && validEntityKeys(['regionCode', 'temperatureCelsius', 'humidityPercent', 'precipitationMillimeters', 'observedAt', 'expiresAt'], [])
+          && request.resource.data.regionCode is string && request.resource.data.temperatureCelsius is number
+          && request.resource.data.humidityPercent is int && request.resource.data.humidityPercent >= 0 && request.resource.data.humidityPercent <= 100
+          && request.resource.data.precipitationMillimeters is number && request.resource.data.precipitationMillimeters >= 0
+          && request.resource.data.observedAt is timestamp && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.resource.data.observedAt)
+        || (collection == 'weatherRisks'
+          && validEntityKeys(['plantId', 'snapshotId', 'type', 'detectedAt', 'active'], ['action'])
+          && validOpaqueId(request.resource.data.plantId) && validOpaqueId(request.resource.data.snapshotId)
+          && request.resource.data.type in ['HIGH_TEMPERATURE', 'LOW_TEMPERATURE', 'DRY', 'OVERWATERED']
+          && request.resource.data.detectedAt is timestamp && request.resource.data.active is bool)
+        || (collection == 'deletionRequests' && validDeletion())
+        || (collection == 'ownedItems'
+          && validEntityKeys(['itemId', 'acquiredAt', 'applied'], [])
+          && validOpaqueId(request.resource.data.itemId) && request.resource.data.acquiredAt is timestamp && request.resource.data.applied is bool)
+        || (collection == 'shareLinks'
+          && validEntityKeys(['miniHomeId', 'sourceRevision', 'snapshotPath', 'createdAt', 'expiresAt', 'revokedAt'], [])
+          && validOpaqueId(request.resource.data.miniHomeId) && request.resource.data.sourceRevision is int && request.resource.data.sourceRevision >= 1
+          && request.resource.data.snapshotPath is string && request.resource.data.createdAt is timestamp && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.resource.data.createdAt
+          && (request.resource.data.revokedAt == null || (request.resource.data.revokedAt is timestamp && request.resource.data.revokedAt >= request.resource.data.createdAt)));
     }
     function validPublishedContent() {
       return request.resource.data.publicationState in ['DRAFT', 'PUBLIC', 'PRIVATE']
-        && request.resource.data.revision is int
-        && request.resource.data.revision >= 1;
+        && request.resource.data.revision is int && request.resource.data.revision >= 1;
     }
     function publicDocument() { return resource.data.publicationState == 'PUBLIC'; }
+    function validPublicShare() {
+      return request.resource.data.keys().hasOnly(['publicationState', 'sourceRevision', 'snapshotPath', 'expiresAt', 'revokedAt'])
+        && request.resource.data.keys().hasAll(['publicationState', 'sourceRevision', 'snapshotPath', 'expiresAt', 'revokedAt'])
+        && request.resource.data.publicationState == 'PUBLIC'
+        && request.resource.data.sourceRevision is int && request.resource.data.sourceRevision >= 1
+        && request.resource.data.snapshotPath is string && request.resource.data.expiresAt is timestamp
+        && (request.resource.data.revokedAt == null || request.resource.data.revokedAt is timestamp);
+    }
 
     match /users/{uid} {
       allow read: if owns(uid);
@@ -51,20 +146,24 @@ service cloud.firestore {
       allow update: if owns(uid) && validUpdate(uid);
       allow delete: if owns(uid) && resource.data.ownerUid == uid;
     }
-
     match /users/{uid}/operations/{operationId} {
       allow read: if owns(uid);
-      allow create: if owns(uid) && operationId == request.resource.data.idempotencyKey && validCreate(uid);
+      allow create: if trustedServer()
+        && operationId == request.resource.data.idempotencyKey
+        && request.resource.data.keys().hasOnly(metadataFields().concat(['documentPath']))
+        && (!request.resource.data.keys().hasAny(['documentPath']) || request.resource.data.documentPath is string)
+        && validCreate(uid);
       allow update, delete: if false;
     }
-
     match /users/{uid}/{collection}/{documentId} {
-      allow read: if allowedUserCollection(collection) && owns(uid);
-      allow create: if allowedUserCollection(collection) && owns(uid) && validCreate(uid) && validCollectionData(collection);
-      allow update: if allowedUserCollection(collection) && owns(uid) && validUpdate(uid) && validCollectionData(collection);
-      allow delete: if allowedUserCollection(collection) && owns(uid) && resource.data.ownerUid == uid;
+      allow read: if approvedCollection(collection) && owns(uid);
+      allow create: if ownerWritable(collection) && owns(uid) && validCreate(uid) && validOwnerEntity(collection);
+      allow update: if ownerWritable(collection) && owns(uid) && validUpdate(uid) && validOwnerEntity(collection);
+      allow create: if serverWritable(collection) && trustedServer() && validCreate(uid) && validServerEntity(collection);
+      allow update: if serverWritable(collection) && trustedServer() && validUpdate(uid) && validServerEntity(collection);
+      allow delete: if ownerWritable(collection) && owns(uid) && resource.data.ownerUid == uid;
+      allow delete: if serverWritable(collection) && trustedServer() && resource.data.ownerUid == uid;
     }
-
     match /plantContents/{documentId} {
       allow read: if contentAdmin() || publicDocument();
       allow create, update: if contentAdmin() && validPublishedContent();
@@ -82,14 +181,14 @@ service cloud.firestore {
     }
     match /publicShares/{documentId} {
       allow read: if publicDocument() && resource.data.revokedAt == null && request.time < resource.data.expiresAt;
-      allow write: if trustedServer();
+      allow create, update: if trustedServer() && validPublicShare();
+      allow delete: if trustedServer();
     }
     match /auditLogs/{documentId} {
       allow read: if opsAdmin();
       allow create: if trustedServer();
       allow update, delete: if false;
     }
-
     match /{document=**} { allow read, write: if false; }
   }
 }

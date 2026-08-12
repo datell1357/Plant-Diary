@@ -1,6 +1,7 @@
 package com.planterior.helper.core.data
 
 import com.planterior.helper.core.model.WateringScheduleId
+import java.time.Instant
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -24,5 +25,20 @@ class FirebaseMappersTest {
         val domain = dto.toDomain(WateringScheduleId("schedule-a"))
         assertEquals(LocalDate.of(2026, 8, 12), domain.dueDate)
         assertEquals("Asia/Seoul", domain.zoneId.id)
+    }
+
+    @Test
+    fun `public share serializes typed Instant as Firestore Timestamp`() {
+        val expiresAt = Instant.parse("2099-01-01T00:00:00Z")
+        val dto =
+            PublicShareSnapshotDto(
+                publicationState = "PUBLIC",
+                sourceRevision = 4,
+                snapshotPath = "share-images/account-a/share-a/share.png",
+                expiresAt = FirestoreTimestampAdapter.fromInstant(expiresAt),
+                revokedAt = null,
+            )
+
+        assertEquals(expiresAt, FirestoreTimestampAdapter.toInstant(dto.expiresAt))
     }
 }

@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
             OperationOutboxEntity::class,
             LastSyncEntity::class,
         ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
@@ -50,6 +50,26 @@ val MIGRATION_1_2 =
             )
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS last_sync (`accountId` TEXT NOT NULL, `domain` TEXT NOT NULL, `syncedAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `errorCode` TEXT, PRIMARY KEY(`accountId`, `domain`))"
+            )
+        }
+    }
+
+val MIGRATION_2_3 =
+    object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "DROP INDEX IF EXISTS index_operation_outbox_accountId_state_createdAtEpochMillis"
+            )
+            db.execSQL("ALTER TABLE operation_outbox RENAME TO operation_outbox_v2")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS operation_outbox (`operationId` TEXT NOT NULL, `accountId` TEXT NOT NULL, `aggregateType` TEXT NOT NULL, `aggregateId` TEXT NOT NULL, `mutationType` TEXT NOT NULL, `expectedRevision` INTEGER NOT NULL, `draftPayload` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, `actualRevision` INTEGER, `lastErrorCode` TEXT, PRIMARY KEY(`accountId`, `operationId`))"
+            )
+            db.execSQL(
+                "INSERT INTO operation_outbox SELECT operationId, accountId, aggregateType, aggregateId, mutationType, expectedRevision, draftPayload, createdAtEpochMillis, state, actualRevision, lastErrorCode FROM operation_outbox_v2"
+            )
+            db.execSQL("DROP TABLE operation_outbox_v2")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_operation_outbox_accountId_state_createdAtEpochMillis ON operation_outbox (`accountId`, `state`, `createdAtEpochMillis`)"
             )
         }
     }

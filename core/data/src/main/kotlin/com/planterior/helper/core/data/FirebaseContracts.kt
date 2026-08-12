@@ -1,8 +1,10 @@
 package com.planterior.helper.core.data
 
+import com.google.firebase.Timestamp
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.Revision
+import java.time.Instant
 
 object FirestoreContract {
     const val USERS = "users"
@@ -286,9 +288,16 @@ data class PublicShareSnapshotDto(
     val publicationState: String,
     val sourceRevision: Long,
     val snapshotPath: String,
-    val expiresAt: String,
-    val revokedAt: String?,
+    val expiresAt: Timestamp,
+    val revokedAt: Timestamp?,
 )
+
+object FirestoreTimestampAdapter {
+    fun fromInstant(value: Instant): Timestamp = Timestamp(value.epochSecond, value.nano)
+
+    fun toInstant(value: Timestamp): Instant =
+        Instant.ofEpochSecond(value.seconds, value.nanoseconds.toLong())
+}
 
 data class ContentAuditDto(
     val contentId: String,

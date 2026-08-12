@@ -66,6 +66,38 @@ class PlanteriorDatabaseTest {
     }
 
     @Test
+    fun `same operation id persists independently for two accounts`() = runTest {
+        val dao = database.syncDao()
+        dao.enqueue(
+            OperationOutboxEntity(
+                "shared-operation",
+                "account-a",
+                "plant",
+                "p-a",
+                "UPDATE",
+                0,
+                "draft-a",
+                1,
+            )
+        )
+        dao.enqueue(
+            OperationOutboxEntity(
+                "shared-operation",
+                "account-b",
+                "plant",
+                "p-b",
+                "UPDATE",
+                0,
+                "draft-b",
+                2,
+            )
+        )
+
+        assertEquals("draft-a", dao.pending("account-a").single().draftPayload)
+        assertEquals("draft-b", dao.pending("account-b").single().draftPayload)
+    }
+
+    @Test
     fun `last sync and LocalDate schedule round trip exactly`() = runTest {
         val cache = database.cacheDao()
         val sync = database.syncDao()
@@ -125,7 +157,7 @@ class PlanteriorDatabaseTest {
         }
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, "migration.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .allowMainThreadQueries()
                 .build()
         assertEquals(
@@ -134,5 +166,80 @@ class PlanteriorDatabaseTest {
         )
         migrated.close()
         assertTrue(file.delete())
+    }
+
+    @Test
+    fun `migration two to three partitions outbox identity by account`() = runTest {
+        database.close()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "migration-2-3.db"
+        context.deleteDatabase(name)
+        val configuration =
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(
+                    object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(2) {
+                        override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                            db.execSQL(
+                                "CREATE TABLE cached_plants (`accountId` TEXT NOT NULL, `plantId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `representativePhotoPath` TEXT, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `plantId`))"
+                            )
+                            db.execSQL(
+                                "CREATE INDEX index_cached_plants_accountId ON cached_plants (`accountId`)"
+                            )
+                            db.execSQL(
+                                "CREATE TABLE cached_watering_schedules (`accountId` TEXT NOT NULL, `scheduleId` TEXT NOT NULL, `plantId` TEXT NOT NULL, `dueDate` TEXT NOT NULL, `reminderTime` TEXT NOT NULL, `zoneId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `scheduleId`))"
+                            )
+                            db.execSQL(
+                                "CREATE INDEX index_cached_watering_schedules_accountId_plantId ON cached_watering_schedules (`accountId`, `plantId`)"
+                            )
+                            db.execSQL(
+                                "CREATE TABLE operation_outbox (`operationId` TEXT NOT NULL, `accountId` TEXT NOT NULL, `aggregateType` TEXT NOT NULL, `aggregateId` TEXT NOT NULL, `mutationType` TEXT NOT NULL, `expectedRevision` INTEGER NOT NULL, `draftPayload` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, `actualRevision` INTEGER, `lastErrorCode` TEXT, PRIMARY KEY(`operationId`))"
+                            )
+                            db.execSQL(
+                                "CREATE INDEX index_operation_outbox_accountId_state_createdAtEpochMillis ON operation_outbox (`accountId`, `state`, `createdAtEpochMillis`)"
+                            )
+                            db.execSQL(
+                                "CREATE TABLE last_sync (`accountId` TEXT NOT NULL, `domain` TEXT NOT NULL, `syncedAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `errorCode` TEXT, PRIMARY KEY(`accountId`, `domain`))"
+                            )
+                            db.execSQL(
+                                "INSERT INTO operation_outbox VALUES ('shared-operation', 'account-a', 'plant', 'p-a', 'UPDATE', 0, 'draft-a', 1, 'PENDING', NULL, NULL)"
+                            )
+                        }
+
+                        override fun onUpgrade(
+                            db: androidx.sqlite.db.SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int,
+                        ) = Unit
+                    }
+                )
+                .build()
+        FrameworkSQLiteOpenHelperFactory().create(configuration).also {
+            it.writableDatabase.close()
+            it.close()
+        }
+        val migrated =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
+                .addMigrations(MIGRATION_2_3)
+                .allowMainThreadQueries()
+                .build()
+        migrated
+            .syncDao()
+            .enqueue(
+                OperationOutboxEntity(
+                    "shared-operation",
+                    "account-b",
+                    "plant",
+                    "p-b",
+                    "UPDATE",
+                    0,
+                    "draft-b",
+                    2,
+                )
+            )
+        assertEquals("draft-a", migrated.syncDao().pending("account-a").single().draftPayload)
+        assertEquals("draft-b", migrated.syncDao().pending("account-b").single().draftPayload)
+        migrated.close()
+        assertTrue(context.deleteDatabase(name))
     }
 }

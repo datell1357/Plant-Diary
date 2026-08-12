@@ -39,10 +39,11 @@ data class CachedWateringScheduleEntity(
 
 @Entity(
     tableName = "operation_outbox",
+    primaryKeys = ["accountId", "operationId"],
     indices = [Index(value = ["accountId", "state", "createdAtEpochMillis"])],
 )
 data class OperationOutboxEntity(
-    @androidx.room.PrimaryKey val operationId: String,
+    val operationId: String,
     val accountId: String,
     val aggregateType: String,
     val aggregateId: String,
