@@ -2,10 +2,13 @@ package com.planterior.helper.core.designsystem.component
 
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEqualTo
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -111,6 +114,72 @@ class PlanteriorBottomBarTest {
 
         assertEquals(1, cameraClicks)
         assertEquals(emptyList<Int>(), tabClicks)
+    }
+
+    @Test
+    fun `camera circle is a true 52dp circle and is not clipped into an ellipse`() {
+        composeRule.setContent {
+            PlanteriorTheme {
+                PlanteriorBottomBar(
+                    tabs = tabs,
+                    selectedIndex = 0,
+                    onTabSelected = {},
+                    cameraContentDescription = "식물 촬영",
+                    onCameraClick = {},
+                )
+            }
+        }
+
+        // Figma `camera-circle`: width 52px, height 52px, border-radius 26px.
+        // 56dp로 되돌리거나 탭 바 높이에 가로막혀 세로로 잘리면 두 단언 중 하나가 실패한다.
+        val bounds = composeRule.onNodeWithContentDescription("식물 촬영").getUnclippedBoundsInRoot()
+        (bounds.right - bounds.left).assertIsEqualTo(52.dp, "카메라 원 지름(가로)")
+        (bounds.bottom - bounds.top).assertIsEqualTo(52.dp, "카메라 원 지름(세로)")
+    }
+
+    @Test
+    fun `camera circle overhangs the tab bar top edge by the Figma offset`() {
+        composeRule.setContent {
+            PlanteriorTheme {
+                PlanteriorBottomBar(
+                    tabs = tabs,
+                    selectedIndex = 0,
+                    onTabSelected = {},
+                    cameraContentDescription = "식물 촬영",
+                    onCameraClick = {},
+                )
+            }
+        }
+
+        val barTop = composeRule.onNodeWithTag(TabBarTestTag).getUnclippedBoundsInRoot().top
+        val cameraTop =
+            composeRule.onNodeWithContentDescription("식물 촬영").getUnclippedBoundsInRoot().top
+
+        // Figma: wrapper margin-top 8 + circle top -14 = 경계선 위로 6dp 돌출.
+        // 돌출이 없으면(cameraTop >= barTop) 이 단언이 실패한다.
+        (barTop - cameraTop).assertIsEqualTo(6.dp, "카메라 원 돌출 높이")
+    }
+
+    @Test
+    fun `camera circle stays horizontally centered on the bar`() {
+        composeRule.setContent {
+            PlanteriorTheme {
+                PlanteriorBottomBar(
+                    tabs = tabs,
+                    selectedIndex = 0,
+                    onTabSelected = {},
+                    cameraContentDescription = "식물 촬영",
+                    onCameraClick = {},
+                )
+            }
+        }
+
+        val bar = composeRule.onNodeWithTag(TabBarTestTag).getUnclippedBoundsInRoot()
+        val camera = composeRule.onNodeWithContentDescription("식물 촬영").getUnclippedBoundsInRoot()
+
+        val barCenterX = bar.left + (bar.right - bar.left) / 2
+        val cameraCenterX = camera.left + (camera.right - camera.left) / 2
+        cameraCenterX.assertIsEqualTo(barCenterX, "카메라 원 가로 중심")
     }
 
     @Test
