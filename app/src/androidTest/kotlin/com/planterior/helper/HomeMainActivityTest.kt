@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -164,6 +165,8 @@ class HomeMainActivityTest {
                 matches = {
                     it.activity !== previousActivity &&
                         it.generation == System.identityHashCode(it.activity) &&
+                        it.composeRoot.view.rootView === it.activity.window.decorView &&
+                        it.composeRoot.view.isAttachedToWindow &&
                         expectedState(it.state)
                 },
                 subscribe = { receiver ->
@@ -187,6 +190,8 @@ class HomeMainActivityTest {
 
                 assertNotSame(previousActivity, restored.activity)
                 assertSame(restored.activity, composeRule.activity)
+                assertSame(restored.activity.window.decorView, restored.composeRoot.view.rootView)
+                assertTrue(restored.composeRoot.view.isAttachedToWindow)
                 assertTrue(expectedState(restored.state))
             }
         composeRule.waitForIdle()
@@ -203,11 +208,17 @@ class HomeMainActivityTest {
         receiver: (LifecycleReadyEvent) -> Unit,
     ): ExactEventRegistration {
         lateinit var callbacks: Application.ActivityLifecycleCallbacks
+        val previousComposeRootCallback = ViewRootForTest.onViewCreatedCallback
+        val composeRootAttachListeners =
+            IdentityHashMap<ViewRootForTest, android.view.View.OnAttachStateChangeListener>()
+        lateinit var composeRootCallback: (ViewRootForTest) -> Unit
         return LeasedExactEventRegistration(
             receiver = receiver,
             register = { dispatch ->
                 val readinessLock = Any()
                 val restoredStates = IdentityHashMap<MainActivity, HomeUiState>()
+                val composeRoots =
+                    java.util.Collections.newSetFromMap(IdentityHashMap<ViewRootForTest, Boolean>())
                 val resumedActivities =
                     java.util.Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
                 val emittedActivities =
@@ -217,8 +228,13 @@ class HomeMainActivityTest {
                     val event =
                         synchronized(readinessLock) {
                             val state = restoredStates[activity]
+                            val composeRoot = composeRoots.singleOrNull {
+                                it.view.rootView === activity.window.decorView &&
+                                    it.view.isAttachedToWindow
+                            }
                             if (
                                 state == null ||
+                                    composeRoot == null ||
                                     activity !in resumedActivities ||
                                     !emittedActivities.add(activity)
                             ) {
@@ -227,6 +243,7 @@ class HomeMainActivityTest {
                                 LifecycleReadyEvent(
                                     activity,
                                     state,
+                                    composeRoot,
                                     System.identityHashCode(activity),
                                 )
                             }
@@ -234,6 +251,29 @@ class HomeMainActivityTest {
                     event?.let(dispatch)
                 }
 
+                composeRootCallback = { composeRoot ->
+                    // ComposeRootRegistry는 callback identity로 활성 상태를 확인하므로 원래 callback을
+                    // 복원한 뒤 전달해야 새 root가 테스트 registry에도 등록된다.
+                    ViewRootForTest.onViewCreatedCallback = previousComposeRootCallback
+                    previousComposeRootCallback?.invoke(composeRoot)
+                    val attachListener =
+                        object : android.view.View.OnAttachStateChangeListener {
+                            override fun onViewAttachedToWindow(view: android.view.View) {
+                                synchronized(readinessLock) { restoredStates.keys.toList() }
+                                    .forEach(::dispatchIfReady)
+                            }
+
+                            override fun onViewDetachedFromWindow(view: android.view.View) = Unit
+                        }
+                    synchronized(readinessLock) {
+                        composeRoots += composeRoot
+                        composeRootAttachListeners[composeRoot] = attachListener
+                    }
+                    composeRoot.view.addOnAttachStateChangeListener(attachListener)
+                    synchronized(readinessLock) { restoredStates.keys.toList() }
+                        .forEach(::dispatchIfReady)
+                }
+                ViewRootForTest.onViewCreatedCallback = composeRootCallback
                 callbacks =
                     object : Application.ActivityLifecycleCallbacks {
                         override fun onActivityCreated(
@@ -274,7 +314,15 @@ class HomeMainActivityTest {
                     }
                 application.registerActivityLifecycleCallbacks(callbacks)
             },
-            unregister = { application.unregisterActivityLifecycleCallbacks(callbacks) },
+            unregister = {
+                application.unregisterActivityLifecycleCallbacks(callbacks)
+                if (ViewRootForTest.onViewCreatedCallback === composeRootCallback) {
+                    ViewRootForTest.onViewCreatedCallback = previousComposeRootCallback
+                }
+                composeRootAttachListeners.forEach { (root, listener) ->
+                    root.view.removeOnAttachStateChangeListener(listener)
+                }
+            },
         )
     }
 
@@ -610,6 +658,7 @@ class HomeMainActivityTest {
     private data class LifecycleReadyEvent(
         val activity: MainActivity,
         val state: HomeUiState,
+        val composeRoot: ViewRootForTest,
         val generation: Int,
     )
 
