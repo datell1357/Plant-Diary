@@ -241,6 +241,18 @@ class ExactEventSubscriptionTest {
 
     @Test
     fun oppositeObservedCallbackOrdersWithSameTypedEventHashDifferently() {
+        val detachContinuationFirst =
+            captureTimeoutDrainInterleaving(detachContinuationFirst = true)
+        val callbackContinuationFirst =
+            captureTimeoutDrainInterleaving(detachContinuationFirst = false)
+        assertEquals(detachContinuationFirst.normalized, callbackContinuationFirst.normalized)
+        assertEquals(detachContinuationFirst.hash, callbackContinuationFirst.hash)
+
+        val timeoutBeforeDrain = reconstructedTimeoutAndDrainOrder(drainBeforeTimeout = false)
+        val drainBeforeTimeout = reconstructedTimeoutAndDrainOrder(drainBeforeTimeout = true)
+        assertFalse(timeoutBeforeDrain.normalized == drainBeforeTimeout.normalized)
+        assertFalse(timeoutBeforeDrain.hash == drainBeforeTimeout.hash)
+
         val api29 = reconstructedTerminalWakeupTrace(awaitContinuationFirst = false)
         val api37 = reconstructedTerminalWakeupTrace(awaitContinuationFirst = true)
         assertEquals(api29.normalized, api37.normalized)
@@ -1164,6 +1176,92 @@ class ExactEventSubscriptionTest {
     private enum class RouteCategory {
         HOME,
         DETAILS,
+    }
+
+    private fun captureTimeoutDrainInterleaving(
+        detachContinuationFirst: Boolean
+    ): ExactEventBehaviorSnapshot = captureBehavior {
+        val callbackAcquired = CountDownLatch(1)
+        val detachStarted = CountDownLatch(1)
+        val allowCallback = CountDownLatch(1)
+        val allowDetach = CountDownLatch(1)
+        val sourceUnregistered = CountDownLatch(1)
+        val fixture =
+            fixture<String>(
+                matches = { it == "home" },
+                leaseObserver =
+                    LeaseHooks(
+                        onAcquired = {
+                            callbackAcquired.countDown()
+                            check(allowCallback.await(BOUND, TimeUnit.SECONDS))
+                        },
+                        onDetachStarted = {
+                            detachStarted.countDown()
+                            if (!detachContinuationFirst) {
+                                check(allowDetach.await(BOUND, TimeUnit.SECONDS))
+                            }
+                        },
+                        onUnregistered = sourceUnregistered::countDown,
+                    ),
+            )
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            fixture.subscription.arm()
+            val emitFuture = executor.submit { fixture.source.emit("settings") }
+            check(callbackAcquired.await(BOUND, TimeUnit.SECONDS))
+            val result =
+                executor.submit<String> {
+                    fixture.subscription.await(0, TimeUnit.NANOSECONDS, "home")
+                }
+            check(detachStarted.await(BOUND, TimeUnit.SECONDS))
+            if (detachContinuationFirst) {
+                check(sourceUnregistered.await(BOUND, TimeUnit.SECONDS))
+                allowCallback.countDown()
+                emitFuture.get(BOUND, TimeUnit.SECONDS)
+            } else {
+                allowCallback.countDown()
+                emitFuture.get(BOUND, TimeUnit.SECONDS)
+                allowDetach.countDown()
+            }
+            assertFutureFailure(result, ExactEventFailure.TIMEOUT)
+            assertClean(fixture)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun reconstructedTimeoutAndDrainOrder(
+        drainBeforeTimeout: Boolean
+    ): ExactEventBehaviorSnapshot {
+        val recorder = BehaviorRecorder()
+        val registration = recorder.newHandle(BehaviorComponent.REGISTRATION)
+        val subscription = recorder.newHandle(BehaviorComponent.SUBSCRIPTION)
+        val timeout = {
+            recorder.observe(
+                subscription,
+                BehaviorTransition.AWAIT_RESOLVED,
+                BehaviorPayload.Facts(
+                    phase = BehaviorPhase.ARMED,
+                    reason = BehaviorReason.TIMEOUT,
+                    signalled = BehaviorFlag.FALSE,
+                ),
+            )
+        }
+        val drain = {
+            recorder.observe(
+                registration,
+                BehaviorTransition.DRAIN_COMPLETED,
+                BehaviorPayload.Facts(listenerCount = 0, inFlight = 0),
+            )
+        }
+        if (drainBeforeTimeout) {
+            drain()
+            timeout()
+        } else {
+            timeout()
+            drain()
+        }
+        return recorder.snapshot()
     }
 
     private fun reconstructedTerminalWakeupTrace(

@@ -125,6 +125,8 @@ internal enum class BehaviorCausalBranch {
     NONE,
     AWAIT_CONTINUATION,
     CLOSE_CONTINUATION,
+    DRAIN_CALLBACK_CONTINUATION,
+    DRAIN_DETACH_CONTINUATION,
 }
 
 internal enum class ExactEventValueCategory {
@@ -186,6 +188,7 @@ internal class BehaviorRecorder {
     private val creatorThread = Thread.currentThread()
     private val componentCounters = mutableMapOf<BehaviorComponent, Int>()
     private val events = mutableListOf<BehaviorEvent>()
+    private val causalBranch = ThreadLocal.withInitial { BehaviorCausalBranch.NONE }
     private var nextSequence = 0
 
     fun newHandle(component: BehaviorComponent): BehaviorHandle =
@@ -202,6 +205,7 @@ internal class BehaviorRecorder {
     ) {
         synchronized(lock) {
             val sequence = nextSequence++
+            val activeBranch = checkNotNull(causalBranch.get())
             events +=
                 BehaviorEvent(
                     sequence = sequence,
@@ -214,9 +218,28 @@ internal class BehaviorRecorder {
                     component = handle.component,
                     instance = handle.instance,
                     transition = transition,
-                    payload = payload,
+                    payload =
+                        if (
+                            payload.causalBranch == BehaviorCausalBranch.NONE &&
+                                activeBranch != BehaviorCausalBranch.NONE
+                        ) {
+                            payload.copy(causalBranch = activeBranch)
+                        } else {
+                            payload
+                        },
                 )
         }
+    }
+
+    fun enterCausalBranch(branch: BehaviorCausalBranch) {
+        check(branch != BehaviorCausalBranch.NONE) { "NONE branch에는 진입할 수 없다" }
+        check(causalBranch.get() == BehaviorCausalBranch.NONE) { "causal branch가 중첩되었다" }
+        causalBranch.set(branch)
+    }
+
+    fun leaveCausalBranch(branch: BehaviorCausalBranch) {
+        check(causalBranch.get() == branch) { "다른 causal branch를 종료할 수 없다" }
+        causalBranch.set(BehaviorCausalBranch.NONE)
     }
 
     fun snapshot(): ExactEventBehaviorSnapshot {
@@ -361,6 +384,14 @@ private fun BehaviorHandle?.observe(
     if (this != null) recorder.observe(this, transition, payload)
 }
 
+private fun BehaviorHandle?.enterCausalBranch(branch: BehaviorCausalBranch) {
+    if (this != null && branch != BehaviorCausalBranch.NONE) recorder.enterCausalBranch(branch)
+}
+
+private fun BehaviorHandle?.leaveCausalBranch(branch: BehaviorCausalBranch) {
+    if (this != null && branch != BehaviorCausalBranch.NONE) recorder.leaveCausalBranch(branch)
+}
+
 private fun Boolean.behaviorFlag(): BehaviorFlag =
     if (this) BehaviorFlag.TRUE else BehaviorFlag.FALSE
 
@@ -452,8 +483,20 @@ internal class LeasedExactEventRegistration<T>(
             }
         if (lease == null) return@callback
 
+        var causalBranch = BehaviorCausalBranch.NONE
+        var branchEntered = false
         try {
             observer.acquired()
+            causalBranch =
+                synchronized(lock) {
+                    if (detachStarted) {
+                        BehaviorCausalBranch.DRAIN_CALLBACK_CONTINUATION
+                    } else {
+                        BehaviorCausalBranch.NONE
+                    }
+                }
+            behavior.enterCausalBranch(causalBranch)
+            branchEntered = causalBranch != BehaviorCausalBranch.NONE
             behavior.observe(
                 BehaviorTransition.CALLBACK_DISPATCH,
                 BehaviorPayload.Facts(generation = lease.generation),
@@ -485,6 +528,7 @@ internal class LeasedExactEventRegistration<T>(
                     )
                     takeDrainCompletionLocked()
                 }
+            if (branchEntered) behavior.leaveCausalBranch(causalBranch)
             completion?.invoke()
         }
     }
@@ -551,6 +595,8 @@ internal class LeasedExactEventRegistration<T>(
         val ownsSourceDetach: Boolean
         val alreadyCompleted: Boolean
         val completedFailure: Throwable?
+        val inFlightAtDetach: Int
+        val drainForked: Boolean
         synchronized(lock) {
             alreadyCompleted = detachCompleted
             completedFailure = detachFailure
@@ -564,6 +610,8 @@ internal class LeasedExactEventRegistration<T>(
                     detachStarted = true
                 }
             }
+            inFlightAtDetach = inFlight
+            drainForked = ownsSourceDetach && inFlightAtDetach > 0
         }
 
         behavior.observe(
@@ -572,7 +620,7 @@ internal class LeasedExactEventRegistration<T>(
                 ownsDetach = ownsSourceDetach.behaviorFlag(),
                 alreadyCompleted = alreadyCompleted.behaviorFlag(),
                 listenerCount = if (synchronized(lock) { accepting }) 1 else 0,
-                inFlight = activeLeaseCount,
+                inFlight = inFlightAtDetach,
             ),
         )
         if (alreadyCompleted) {
@@ -596,7 +644,7 @@ internal class LeasedExactEventRegistration<T>(
 
         behavior.observe(
             BehaviorTransition.SOURCE_UNREGISTER_BEGIN,
-            BehaviorPayload.Facts(listenerCount = 1, inFlight = activeLeaseCount),
+            BehaviorPayload.Facts(listenerCount = 1, inFlight = inFlightAtDetach),
         )
         observer.detachStarted()
         val removalFailure = runCatching { unregister(sourceCallback) }.exceptionOrNull()
@@ -614,7 +662,13 @@ internal class LeasedExactEventRegistration<T>(
                         BehaviorFailureCategory.UNREGISTER
                     },
                 listenerCount = 0,
-                inFlight = activeLeaseCount,
+                inFlight = inFlightAtDetach,
+                causalBranch =
+                    if (drainForked) {
+                        BehaviorCausalBranch.DRAIN_DETACH_CONTINUATION
+                    } else {
+                        BehaviorCausalBranch.NONE
+                    },
             ),
         )
         observer.unregistered()
