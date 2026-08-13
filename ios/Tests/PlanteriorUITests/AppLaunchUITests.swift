@@ -101,6 +101,35 @@ final class AppLaunchUITests: XCTestCase {
         )
     }
 
+    func testIdentificationRequiresCandidateConfirmationBeforeRegistration() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_PHOTO_FIXTURE"] = "valid"
+        app.launch()
+
+        XCTAssertTrue(app.buttons["tab.camera"].waitForExistence(timeout: 5))
+        app.buttons["tab.camera"].tap()
+        XCTAssertTrue(app.images["photo.review"].waitForExistence(timeout: 5))
+        app.buttons["photo.acknowledge"].tap()
+        XCTAssertTrue(app.alerts["사진 처리 안내"].waitForExistence(timeout: 5))
+        app.alerts["사진 처리 안내"].buttons["동의하고 계속"].tap()
+        XCTAssertTrue(app.staticTexts["사진 분석 결과"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["identification.confirm"].isEnabled)
+        app.buttons["identification.candidate.0"].tap()
+        XCTAssertTrue(app.buttons["identification.confirm"].isEnabled)
+        app.buttons["identification.confirm"].tap()
+        XCTAssertTrue(app.navigationBars["식물 등록"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["registration.submit"].isEnabled)
+        app.textFields["registration.name"].tap()
+        app.textFields["registration.name"].typeText("몬스테라")
+        XCTAssertTrue(app.buttons["registration.submit"].isEnabled)
+        app.buttons["registration.submit"].tap()
+        XCTAssertTrue(app.staticTexts["registration.saved"].waitForExistence(timeout: 5))
+        app.navigationBars["식물 등록"].buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertEqual(app.staticTexts.matching(identifier: "collection.plant-row").count, 1)
+    }
+
     func testLoginSheetPresentsAndCancelsWithoutPrivateRows() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"

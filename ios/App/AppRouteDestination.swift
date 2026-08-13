@@ -5,6 +5,17 @@ struct AppRouteDestination: View {
     let route: AppRoute
 
     var body: some View {
+        switch route {
+        case .identificationDraft:
+            IdentificationFlowView()
+        case .manualRegistration:
+            PlantRegistrationView()
+        default:
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
         VStack(spacing: 12) {
             Image(systemName: imageName)
                 .font(.system(size: 44))

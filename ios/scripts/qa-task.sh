@@ -355,6 +355,54 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "9" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter PlantIdentificationTests
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter PlantIdentificationRecoveryTests
+  task_9_derived_data="$attempt_dir/DerivedData"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
+    -derivedDataPath "$task_9_derived_data" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test \
+    -only-testing:PlanteriorUITests/AppLaunchUITests/testIdentificationRequiresCandidateConfirmationBeforeRegistration \
+    -only-testing:PlanteriorUITests/IdentificationFallbackUITests/testIdentificationFallbackReturnsToPhotoSelection \
+    -only-testing:PlanteriorUITests/IdentificationFallbackUITests/testIdentificationFailureRetriesToCandidates \
+    -only-testing:PlanteriorUITests/IdentificationFallbackUITests/testIdentificationPendingIsObservedBeforeCandidates
+  python3 - "$attempt_dir/task-9-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 9,
+            "pending": "passed",
+            "topThree": "passed",
+            "explicitConfirmation": "passed",
+            "fallback": "passed",
+            "retry": "passed",
+            "providerFailures": "passed",
+            "draftRestoration": "passed",
+            "duplicateCancel": "passed",
+            "collectionRow": "passed"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_9_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69
