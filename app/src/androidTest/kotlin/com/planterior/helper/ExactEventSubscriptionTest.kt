@@ -241,6 +241,12 @@ class ExactEventSubscriptionTest {
 
     @Test
     fun oppositeObservedCallbackOrdersWithSameTypedEventHashDifferently() {
+        val callbackReleaseFirst = captureAwaitFirstEventInterleaving(callbackReleaseFirst = true)
+        val awaitContinuationFirst =
+            captureAwaitFirstEventInterleaving(callbackReleaseFirst = false)
+        assertEquals(callbackReleaseFirst.normalized, awaitContinuationFirst.normalized)
+        assertEquals(callbackReleaseFirst.hash, awaitContinuationFirst.hash)
+
         val detachContinuationFirst =
             captureTimeoutDrainInterleaving(detachContinuationFirst = true)
         val callbackContinuationFirst =
@@ -1176,6 +1182,59 @@ class ExactEventSubscriptionTest {
     private enum class RouteCategory {
         HOME,
         DETAILS,
+    }
+
+    private fun captureAwaitFirstEventInterleaving(
+        callbackReleaseFirst: Boolean
+    ): ExactEventBehaviorSnapshot = captureBehavior {
+        val awaitClaimed = CountDownLatch(1)
+        val callbackReleasing = CountDownLatch(1)
+        val allowCallbackRelease = CountDownLatch(1)
+        val allowAwaitClose = CountDownLatch(1)
+        val detachStarted = CountDownLatch(1)
+        val fixture =
+            fixture<String>(
+                matches = { it == "home" },
+                leaseObserver =
+                    LeaseHooks(
+                        onReleasing = {
+                            callbackReleasing.countDown()
+                            if (!callbackReleaseFirst) {
+                                check(allowCallbackRelease.await(BOUND, TimeUnit.SECONDS))
+                            }
+                        },
+                        onDetachStarted = detachStarted::countDown,
+                    ),
+                stateObserver =
+                    StateHooks(
+                        onAwaitClaimed = awaitClaimed::countDown,
+                        onCloseSelected = { reason ->
+                            if (callbackReleaseFirst && reason == "SUCCESS") {
+                                check(allowAwaitClose.await(BOUND, TimeUnit.SECONDS))
+                            }
+                        },
+                    ),
+            )
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            fixture.subscription.arm()
+            val result = executor.submitAwait(fixture.subscription)
+            check(awaitClaimed.await(BOUND, TimeUnit.SECONDS))
+            val emitFuture = executor.submit { fixture.source.emit("home") }
+            check(callbackReleasing.await(BOUND, TimeUnit.SECONDS))
+            if (callbackReleaseFirst) {
+                emitFuture.get(BOUND, TimeUnit.SECONDS)
+                allowAwaitClose.countDown()
+            } else {
+                check(detachStarted.await(BOUND, TimeUnit.SECONDS))
+                allowCallbackRelease.countDown()
+                emitFuture.get(BOUND, TimeUnit.SECONDS)
+            }
+            assertEquals("home", result.get(BOUND, TimeUnit.SECONDS))
+            assertClean(fixture)
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     private fun captureTimeoutDrainInterleaving(

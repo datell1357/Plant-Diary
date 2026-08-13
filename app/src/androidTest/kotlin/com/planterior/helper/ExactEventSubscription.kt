@@ -120,9 +120,11 @@ internal enum class BehaviorDeadline {
     BOUNDED,
 }
 
-/** 같은 terminal 신호에서 깨어나 서로 happens-before 관계가 없는 continuation이다. */
+/** 같은 event 또는 terminal 신호에서 시작해 서로 happens-before 관계가 없는 continuation이다. */
 internal enum class BehaviorCausalBranch {
     NONE,
+    EVENT_CALLBACK_CONTINUATION,
+    EVENT_AWAIT_CONTINUATION,
     AWAIT_CONTINUATION,
     CLOSE_CONTINUATION,
     DRAIN_CALLBACK_CONTINUATION,
@@ -189,6 +191,10 @@ internal class BehaviorRecorder {
     private val componentCounters = mutableMapOf<BehaviorComponent, Int>()
     private val events = mutableListOf<BehaviorEvent>()
     private val causalBranch = ThreadLocal.withInitial { BehaviorCausalBranch.NONE }
+    private val callbackListenerCounts = ThreadLocal.withInitial { ArrayDeque<Int>() }
+    private val callbackInFlightCounts = ThreadLocal.withInitial { ArrayDeque<Int>() }
+    private var eventForkListenerCount = -1
+    private var eventForkInFlight = -1
     private var nextSequence = 0
 
     fun newHandle(component: BehaviorComponent): BehaviorHandle =
@@ -206,6 +212,32 @@ internal class BehaviorRecorder {
         synchronized(lock) {
             val sequence = nextSequence++
             val activeBranch = checkNotNull(causalBranch.get())
+            val observedBranch =
+                if (payload.causalBranch == BehaviorCausalBranch.NONE) {
+                    activeBranch
+                } else {
+                    payload.causalBranch
+                }
+            var observedPayload =
+                if (payload.causalBranch == observedBranch) {
+                    payload
+                } else {
+                    payload.copy(causalBranch = observedBranch)
+                }
+            if (
+                observedBranch == BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION &&
+                    observedPayload.inFlight >= 0
+            ) {
+                check(eventForkInFlight >= 0) { "event fork의 in-flight가 기록되지 않았다" }
+                observedPayload = observedPayload.copy(inFlight = eventForkInFlight)
+            }
+            if (
+                observedBranch == BehaviorCausalBranch.EVENT_CALLBACK_CONTINUATION &&
+                    observedPayload.listenerCount >= 0
+            ) {
+                check(eventForkListenerCount >= 0) { "event fork의 listener가 기록되지 않았다" }
+                observedPayload = observedPayload.copy(listenerCount = eventForkListenerCount)
+            }
             events +=
                 BehaviorEvent(
                     sequence = sequence,
@@ -218,15 +250,7 @@ internal class BehaviorRecorder {
                     component = handle.component,
                     instance = handle.instance,
                     transition = transition,
-                    payload =
-                        if (
-                            payload.causalBranch == BehaviorCausalBranch.NONE &&
-                                activeBranch != BehaviorCausalBranch.NONE
-                        ) {
-                            payload.copy(causalBranch = activeBranch)
-                        } else {
-                            payload
-                        },
+                    payload = observedPayload,
                 )
         }
     }
@@ -240,6 +264,49 @@ internal class BehaviorRecorder {
     fun leaveCausalBranch(branch: BehaviorCausalBranch) {
         check(causalBranch.get() == branch) { "다른 causal branch를 종료할 수 없다" }
         causalBranch.set(BehaviorCausalBranch.NONE)
+    }
+
+    fun currentCausalBranch(): BehaviorCausalBranch = checkNotNull(causalBranch.get())
+
+    fun enterCallbackContext(listenerCount: Int, inFlight: Int) {
+        check(listenerCount >= 0 && inFlight > 0) { "callback context fact가 유효하지 않다" }
+        checkNotNull(callbackListenerCounts.get()).addLast(listenerCount)
+        checkNotNull(callbackInFlightCounts.get()).addLast(inFlight)
+    }
+
+    fun leaveCallbackContext() {
+        val listenerCounts = checkNotNull(callbackListenerCounts.get())
+        val inFlightCounts = checkNotNull(callbackInFlightCounts.get())
+        check(listenerCounts.isNotEmpty() && inFlightCounts.isNotEmpty()) {
+            "callback context가 시작되지 않았다"
+        }
+        listenerCounts.removeLast()
+        inFlightCounts.removeLast()
+    }
+
+    fun enterFirstEventCallbackBranch(): Boolean =
+        synchronized(lock) {
+            if (causalBranch.get() != BehaviorCausalBranch.NONE) return@synchronized false
+            check(eventForkInFlight == -1 && eventForkListenerCount == -1) {
+                "first-event fork가 중복되었다"
+            }
+            eventForkListenerCount = checkNotNull(callbackListenerCounts.get()).last()
+            eventForkInFlight = checkNotNull(callbackInFlightCounts.get()).last()
+            check(eventForkListenerCount >= 0 && eventForkInFlight > 0) {
+                "callback context 없이 first-event fork를 시작할 수 없다"
+            }
+            causalBranch.set(BehaviorCausalBranch.EVENT_CALLBACK_CONTINUATION)
+            true
+        }
+
+    fun enterFirstEventAwaitBranch() {
+        synchronized(lock) {
+            check(eventForkListenerCount >= 0 && eventForkInFlight > 0) {
+                "first-event fork가 기록되지 않았다"
+            }
+            check(causalBranch.get() == BehaviorCausalBranch.NONE) { "causal branch가 중첩되었다" }
+            causalBranch.set(BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION)
+        }
     }
 
     fun snapshot(): ExactEventBehaviorSnapshot {
@@ -392,6 +459,28 @@ private fun BehaviorHandle?.leaveCausalBranch(branch: BehaviorCausalBranch) {
     if (this != null && branch != BehaviorCausalBranch.NONE) recorder.leaveCausalBranch(branch)
 }
 
+private fun BehaviorHandle?.leaveCausalBranchIf(branch: BehaviorCausalBranch) {
+    if (this != null && recorder.currentCausalBranch() == branch) recorder.leaveCausalBranch(branch)
+}
+
+private fun BehaviorHandle?.currentCausalBranch(): BehaviorCausalBranch =
+    this?.recorder?.currentCausalBranch() ?: BehaviorCausalBranch.NONE
+
+private fun BehaviorHandle?.enterCallbackContext(listenerCount: Int, inFlight: Int) {
+    if (this != null) recorder.enterCallbackContext(listenerCount, inFlight)
+}
+
+private fun BehaviorHandle?.leaveCallbackContext() {
+    if (this != null) recorder.leaveCallbackContext()
+}
+
+private fun BehaviorHandle?.enterFirstEventCallbackBranch(): Boolean =
+    this?.recorder?.enterFirstEventCallbackBranch() ?: false
+
+private fun BehaviorHandle?.enterFirstEventAwaitBranch() {
+    if (this != null) recorder.enterFirstEventAwaitBranch()
+}
+
 private fun Boolean.behaviorFlag(): BehaviorFlag =
     if (this) BehaviorFlag.TRUE else BehaviorFlag.FALSE
 
@@ -485,6 +574,7 @@ internal class LeasedExactEventRegistration<T>(
 
         var causalBranch = BehaviorCausalBranch.NONE
         var branchEntered = false
+        var callbackContextEntered = false
         try {
             observer.acquired()
             causalBranch =
@@ -497,6 +587,8 @@ internal class LeasedExactEventRegistration<T>(
                 }
             behavior.enterCausalBranch(causalBranch)
             branchEntered = causalBranch != BehaviorCausalBranch.NONE
+            behavior.enterCallbackContext(listenerCount = 1, inFlight = lease.inFlight)
+            callbackContextEntered = true
             behavior.observe(
                 BehaviorTransition.CALLBACK_DISPATCH,
                 BehaviorPayload.Facts(generation = lease.generation),
@@ -529,6 +621,8 @@ internal class LeasedExactEventRegistration<T>(
                     takeDrainCompletionLocked()
                 }
             if (branchEntered) behavior.leaveCausalBranch(causalBranch)
+            behavior.leaveCausalBranchIf(BehaviorCausalBranch.EVENT_CALLBACK_CONTINUATION)
+            if (callbackContextEntered) behavior.leaveCallbackContext()
             completion?.invoke()
         }
     }
@@ -664,10 +758,12 @@ internal class LeasedExactEventRegistration<T>(
                 listenerCount = 0,
                 inFlight = inFlightAtDetach,
                 causalBranch =
-                    if (drainForked) {
-                        BehaviorCausalBranch.DRAIN_DETACH_CONTINUATION
-                    } else {
-                        BehaviorCausalBranch.NONE
+                    when {
+                        behavior.currentCausalBranch() ==
+                            BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION ->
+                            BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION
+                        drainForked -> BehaviorCausalBranch.DRAIN_DETACH_CONTINUATION
+                        else -> BehaviorCausalBranch.NONE
                     },
             ),
         )
@@ -678,6 +774,9 @@ internal class LeasedExactEventRegistration<T>(
                 detachFailure = removalFailure
                 takeDrainCompletionLocked()
             }
+        if (completion != null) {
+            behavior.leaveCausalBranchIf(BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION)
+        }
         completion?.invoke()
         return callerOwnsLease
     }
@@ -759,6 +858,7 @@ internal class ExactEventSubscription<T>(
     private var accepted: T? = null
     private var matchingEventCount = 0
     private var awaitClaimed = false
+    private var firstEventForked = false
     private var sourceFailure: Throwable? = null
     private var registration: ExactEventRegistration? = null
 
@@ -833,6 +933,9 @@ internal class ExactEventSubscription<T>(
                         signalled && matchingEventCount > 0 -> CloseReason.SUCCESS
                         else -> CloseReason.TIMEOUT
                     }
+                if (selected == CloseReason.SUCCESS && firstEventForked) {
+                    behavior.enterFirstEventAwaitBranch()
+                }
                 behavior.observe(
                     BehaviorTransition.AWAIT_RESOLVED,
                     BehaviorPayload.Facts(
@@ -935,6 +1038,9 @@ internal class ExactEventSubscription<T>(
                 ),
             )
             if (observation.acceptedGeneration && observation.matchingCount == 1) {
+                if (awaitClaimed) {
+                    firstEventForked = behavior.enterFirstEventCallbackBranch()
+                }
                 eventOrCancellation.countDown()
             }
         }
@@ -1041,6 +1147,7 @@ internal class ExactEventSubscription<T>(
             }
         }
 
+        behavior.leaveCausalBranchIf(BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION)
         if (permitReentrantReturn && callerOwnsLease) {
             behavior.observe(
                 BehaviorTransition.REENTRANT_CLOSE_RETURNED,
