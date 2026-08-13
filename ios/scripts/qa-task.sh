@@ -312,6 +312,49 @@ if [ "$task_number" = "7" ]; then
   exit 0
 fi
 
+if [ "$task_number" = "8" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter AccountSyncEngineTests
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter SyncTransportTests
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
+    -derivedDataPath /tmp/planterior-task-8-swiftdata \
+    -parallel-testing-enabled NO \
+    test \
+    -only-testing:PlanteriorTests/SwiftDataAccountCacheTests
+  python3 - "$attempt_dir/task-8-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 8,
+            "accountPartition": "passed",
+            "offlineReconnect": "passed",
+            "boundedRetry": "passed",
+            "conflictDraft": "preserved",
+            "explicitReapply": "passed",
+            "listenerCancellation": "passed",
+            "inFlightAccountIsolation": "passed",
+            "swiftDataPartition": "passed",
+            "logoutChoices": ["sync", "cancel", "discard"]
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_8_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

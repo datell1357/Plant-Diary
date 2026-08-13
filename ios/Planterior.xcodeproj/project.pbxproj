@@ -9,7 +9,8 @@
 /* Begin PBXBuildFile section */
 		20F30EB48D16EB0D8ED2ABAC /* PlanteriorData in Frameworks */ = {isa = PBXBuildFile; productRef = 6468B88AC5EFFEB10259D801 /* PlanteriorData */; };
 		4D91F40481B50A5D7FCF3C77 /* PlanteriorDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 314328254F85385F20B29003 /* PlanteriorDomain */; };
-		8365ED32867B8F08A764806F /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 56A154ABA47564E206F50B2A /* GoogleSignIn */; };
+		8365ED32867B8F08A764806F /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = F9357D784EBEA979282525C7 /* FirebaseFunctions */; };
+		A1429333B522BF6C4E168BB0 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 56A154ABA47564E206F50B2A /* GoogleSignIn */; };
 		A21165099D52C9B58D535A75 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = E390AD4E37980B3BCB1485BE /* FirebaseAuth */; };
 		B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */; };
 		DCD6D88B6542CFE43BD0E863 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D20CF2752AE65A93E5872F1A /* FirebaseFirestore */; };
@@ -99,7 +100,8 @@
 				B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */,
 				A21165099D52C9B58D535A75 /* FirebaseAuth in Frameworks */,
 				DCD6D88B6542CFE43BD0E863 /* FirebaseFirestore in Frameworks */,
-				8365ED32867B8F08A764806F /* GoogleSignIn in Frameworks */,
+				8365ED32867B8F08A764806F /* FirebaseFunctions in Frameworks */,
+				A1429333B522BF6C4E168BB0 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -172,6 +174,7 @@
 				00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */,
 				E390AD4E37980B3BCB1485BE /* FirebaseAuth */,
 				D20CF2752AE65A93E5872F1A /* FirebaseFirestore */,
+				F9357D784EBEA979282525C7 /* FirebaseFunctions */,
 				56A154ABA47564E206F50B2A /* GoogleSignIn */,
 			);
 			productName = Planterior;
@@ -681,6 +684,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAuth;
+		};
+		F9357D784EBEA979282525C7 /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

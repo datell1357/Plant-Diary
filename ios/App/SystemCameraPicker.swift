@@ -99,7 +99,7 @@ final class CameraCaptureViewController: UIViewController {
     }
 }
 
-extension CameraCaptureViewController: @preconcurrency AVCapturePhotoCaptureDelegate {
+extension CameraCaptureViewController: AVCapturePhotoCaptureDelegate {
     nonisolated func photoOutput(
         _ output: AVCapturePhotoOutput,
         didFinishProcessingPhoto photo: AVCapturePhoto,

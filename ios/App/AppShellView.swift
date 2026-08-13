@@ -23,16 +23,33 @@ struct AppShellView: View {
                 .frame(minHeight: PlanteriorControl.minimumTarget)
                 .accessibilityIdentifier("auth.open")
             } else if navigation.selectedTab == .settings {
+                syncStatus
                 Button("로그아웃") {
-                    Task {
-                        await auth.signOut()
-                    }
+                    auth.pendingLogout = true
                 }
                 .frame(minHeight: PlanteriorControl.minimumTarget)
                 .accessibilityIdentifier("auth.logout")
             }
         }
         .background(PlanteriorPalette.canvas.color)
+        .confirmationDialog(
+            "동기화되지 않은 변경을 어떻게 처리할까요?",
+            isPresented: Binding(
+                get: { auth.pendingLogout },
+                set: { auth.pendingLogout = $0 }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("동기화 후 로그아웃") {
+                Task { await auth.completeSignOut(action: .sync) }
+            }
+            Button("변경 버리고 로그아웃", role: .destructive) {
+                Task { await auth.completeSignOut(action: .discard) }
+            }
+            Button("취소", role: .cancel) {
+                auth.pendingLogout = false
+            }
+        }
         .transaction {
             $0.animation = effectiveReduceMotion
                 ? nil
@@ -88,6 +105,18 @@ struct AppShellView: View {
             }
             navigation.completeAuthentication(targetAvailability: .available)
         }
+    }
+
+    private var syncStatus: some View {
+        let snapshot = auth.syncSnapshot
+        return Text(
+            snapshot.conflicts.isEmpty
+                ? snapshot.queued.isEmpty
+                ? "서버와 동기화됨"
+                : "동기화 대기 \(snapshot.queued.count)건"
+                : "충돌 \(snapshot.conflicts.count)건"
+        )
+        .accessibilityIdentifier("sync.status")
     }
 
     private var effectiveReduceMotion: Bool {

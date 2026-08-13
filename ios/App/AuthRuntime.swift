@@ -1,5 +1,5 @@
 import AuthenticationServices
-import CryptoKit
+import Combine
 import FirebaseAuth
 import FirebaseCore
 import FirebaseFirestore
@@ -15,14 +15,24 @@ final class AuthRuntime: NSObject, ObservableObject {
     @Published private(set) var accountID: AccountID?
     @Published private(set) var cacheSignal: AccountCacheSignal?
     @Published private(set) var errorMessage: String?
+    @Published var pendingLogout = false
+    var syncSnapshot: AccountSyncSnapshot {
+        sync.snapshot
+    }
+
     private var nonce: String?
     private let sessions: SessionMetadataController
+    private let sync = AppSyncRuntime()
+    private var syncObservation: AnyCancellable?
 
     override init() {
         sessions = SessionMetadataController(
             store: KeychainSessionMetadataStore(service: "com.planterior.helper.auth")
         )
         super.init()
+        syncObservation = sync.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     func restore() async {
@@ -43,6 +53,7 @@ final class AuthRuntime: NSObject, ObservableObject {
             }
             accountID = parsedID
             cacheSignal = transition.cacheSignal
+            try await sync.mount(accountID: user.uid)
             isSignedIn = true
         } catch {
             try? Auth.auth().signOut()
@@ -125,10 +136,16 @@ final class AuthRuntime: NSObject, ObservableObject {
         }
     }
 
-    func signOut() async {
-        guard FirebaseConfiguration.isAvailable else {
+    func completeSignOut(action: LogoutPendingAction) async {
+        pendingLogout = false
+        guard await sync.logout(action: action) == .loggedOut else {
+            errorMessage = "동기화하지 못한 변경이 있어 로그아웃하지 않았어요."
             return
         }
+        await signOutAfterSync()
+    }
+
+    private func signOutAfterSync() async {
         do {
             try Auth.auth().signOut()
             cacheSignal = try await sessions.logout()
@@ -166,32 +183,8 @@ final class AuthRuntime: NSObject, ObservableObject {
         )
         accountID = parsedID
         cacheSignal = transition.cacheSignal
+        try await sync.mount(accountID: result.user.uid)
         isSignedIn = true
         errorMessage = nil
-    }
-
-    private static func randomNonce(length: Int = 32) -> String {
-        let alphabet = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-        var result = ""
-        while result.count < length {
-            var random: UInt8 = 0
-            guard SecRandomCopyBytes(kSecRandomDefault, 1, &random) == errSecSuccess else {
-                continue
-            }
-            if Int(random) < alphabet.count {
-                result.append(alphabet[Int(random)])
-            }
-        }
-        return result
-    }
-
-    private static func sha256(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-enum FirebaseConfiguration {
-    static var isAvailable: Bool {
-        Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil
     }
 }

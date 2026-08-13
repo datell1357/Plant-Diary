@@ -1,0 +1,15 @@
+{
+  "task": 8,
+  "name": "Account-partitioned cache and sync engine",
+  "covers": [
+    "account A/B store separation",
+    "offline queued writes",
+    "bounded transient retries",
+    "permanent failure without retry",
+    "revision conflict draft preservation",
+    "listener cancellation on account switch",
+    "server freshness",
+    "logout sync, cancel, and discard"
+  ],
+  "evidence": "task-8-ios-app-implementation.json"
+}
