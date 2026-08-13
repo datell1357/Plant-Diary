@@ -22,7 +22,7 @@ struct AppShellView: View {
                 .font(.title.bold())
             Text("나의 식물 생활을 시작해 보세요")
                 .foregroundStyle(.secondary)
-            Text(PlanteriorDomainModule.name)
+            Text(AccountID(rawValue: "app-shell").rawValue)
                 .font(.caption2)
                 .hidden()
                 .accessibilityHidden(true)

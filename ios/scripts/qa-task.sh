@@ -62,6 +62,17 @@ if [ "$task_number" = "2" ]; then
   exit 0
 fi
 
+if [ "$task_number" = "3" ]; then
+  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  if grep -R -n -E '^import (Firebase|SwiftData|SwiftUI|UIKit)' \
+    "$repo_root/ios/Packages/PlanteriorCore/Sources/PlanteriorDomain"; then
+    printf 'IOS_DOMAIN_DEPENDENCY_VIOLATION\n' >&2
+    exit 72
+  fi
+  printf 'IOS_TASK_3_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

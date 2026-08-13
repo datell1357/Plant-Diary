@@ -1,5 +1,5 @@
 import PlanteriorDomain
 
 public enum PlanteriorDataModule {
-    public static let domainName = PlanteriorDomainModule.name
+    public static let legacyAccountID = AccountID(rawValue: "legacy")
 }

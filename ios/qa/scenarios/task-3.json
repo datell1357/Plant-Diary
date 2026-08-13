@@ -1,0 +1,20 @@
+{
+  "task": 3,
+  "name": "Deterministic domain state contracts",
+  "happyPath": {
+    "command": "./ios/scripts/qa-task.sh 3 --attempt-dir \"$ATTEMPT_DIR\"",
+    "expectedExit": 0,
+    "expectedMarker": "IOS_TASK_3_QA_OK"
+  },
+  "coveredBoundaries": [
+    "opaque ID length and path safety",
+    "revision overflow",
+    "Gregorian leap dates",
+    "local time boundaries",
+    "RFC3339 instants",
+    "IANA time zones",
+    "unknown wire enums",
+    "draft-preserving mutation transitions",
+    "injected fixed clock"
+  ]
+}
