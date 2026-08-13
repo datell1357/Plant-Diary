@@ -41,9 +41,8 @@ import com.planterior.helper.navigation.PlanteriorRoute
 import com.planterior.helper.navigation.toPlanteriorRoute
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.concurrent.CountDownLatch
+import java.util.IdentityHashMap
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -152,69 +151,126 @@ class HomeMainActivityTest {
 
     private fun signedIn() = setDebugHomeSession(context, SESSION_SIGNED_IN, account, "민지")
 
-    /** Activity 재생성과 홈 상태 구독을 트리거 전에 걸고 새 인스턴스의 실제 복원 상태를 기다린다. */
+    /** Activity 재생성과 lifecycle/state 구독을 트리거 전에 걸고 새 세대의 exact ready 이벤트를 기다린다. */
     private fun relaunch(expectedState: (HomeUiState) -> Boolean) {
         val application = context as Application
         val previousActivity = composeRule.activity
-        val resumedActivity = AtomicReference<MainActivity?>()
-        val restoredState = AtomicReference<HomeUiState?>()
-        val resumedSignal = CountDownLatch(1)
-        val stateSignal = CountDownLatch(1)
-        val callbacks =
-            object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) =
-                    Unit
+        ExactEventSubscription<LifecycleReadyEvent>(
+                matches = {
+                    it.activity !== previousActivity &&
+                        it.generation == System.identityHashCode(it.activity) &&
+                        expectedState(it.state)
+                },
+                subscribe = { receiver ->
+                    subscribeToLifecycleReady(
+                        application,
+                        previousActivity,
+                        expectedState,
+                        receiver,
+                    )
+                },
+            )
+            .use { subscription ->
+                subscription.arm()
+                composeRule.activityRule.scenario.recreate()
+                val restored =
+                    subscription.await(
+                        EVENT_TIMEOUT_SECONDS,
+                        TimeUnit.SECONDS,
+                        "새 MainActivity lifecycle/state",
+                    )
 
-                override fun onActivityPostCreated(
-                    activity: Activity,
-                    savedInstanceState: Bundle?,
-                ) {
-                    if (activity !is MainActivity || activity === previousActivity) return
-                    activity.lifecycleScope.launch {
-                        restoredState.set(activity.homeViewModel.state.first(expectedState))
-                        stateSignal.countDown()
-                    }
-                }
-
-                override fun onActivityResumed(activity: Activity) {
-                    if (activity is MainActivity && activity !== previousActivity) {
-                        resumedActivity.set(activity)
-                        resumedSignal.countDown()
-                    }
-                }
-
-                override fun onActivityStarted(activity: Activity) = Unit
-
-                override fun onActivityPaused(activity: Activity) = Unit
-
-                override fun onActivityStopped(activity: Activity) = Unit
-
-                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) =
-                    Unit
-
-                override fun onActivityDestroyed(activity: Activity) = Unit
+                assertNotSame(previousActivity, restored.activity)
+                assertSame(restored.activity, composeRule.activity)
+                assertTrue(expectedState(restored.state))
             }
-
-        application.registerActivityLifecycleCallbacks(callbacks)
-        try {
-            composeRule.activityRule.scenario.recreate()
-            assertTrue(
-                "새 MainActivity가 RESUMED 상태가 되어야 한다",
-                resumedSignal.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
-            )
-            assertTrue(
-                "새 MainActivity의 홈 상태가 복원되어야 한다",
-                stateSignal.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
-            )
-        } finally {
-            application.unregisterActivityLifecycleCallbacks(callbacks)
-        }
-
-        val restoredActivity = checkNotNull(resumedActivity.get())
-        assertNotSame(previousActivity, restoredActivity)
-        assertSame(restoredActivity, composeRule.activity)
-        assertTrue(expectedState(checkNotNull(restoredState.get())))
         composeRule.waitForIdle()
+    }
+
+    /**
+     * Lifecycle와 state 비동기 경계를 하나의 lease-aware callback으로 합친다. 이전 Activity 세대는 받지 않으며, unregister
+     * 전에 캡처된 callback은 [LeasedExactEventRegistration]이 모두 drain한다.
+     */
+    private fun subscribeToLifecycleReady(
+        application: Application,
+        previousActivity: MainActivity,
+        expectedState: (HomeUiState) -> Boolean,
+        receiver: (LifecycleReadyEvent) -> Unit,
+    ): ExactEventRegistration {
+        lateinit var callbacks: Application.ActivityLifecycleCallbacks
+        return LeasedExactEventRegistration(
+            receiver = receiver,
+            register = { dispatch ->
+                val readinessLock = Any()
+                val restoredStates = IdentityHashMap<MainActivity, HomeUiState>()
+                val resumedActivities =
+                    java.util.Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+                val emittedActivities =
+                    java.util.Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+
+                fun dispatchIfReady(activity: MainActivity) {
+                    val event =
+                        synchronized(readinessLock) {
+                            val state = restoredStates[activity]
+                            if (
+                                state == null ||
+                                    activity !in resumedActivities ||
+                                    !emittedActivities.add(activity)
+                            ) {
+                                null
+                            } else {
+                                LifecycleReadyEvent(
+                                    activity,
+                                    state,
+                                    System.identityHashCode(activity),
+                                )
+                            }
+                        }
+                    event?.let(dispatch)
+                }
+
+                callbacks =
+                    object : Application.ActivityLifecycleCallbacks {
+                        override fun onActivityCreated(
+                            activity: Activity,
+                            savedInstanceState: Bundle?,
+                        ) = Unit
+
+                        override fun onActivityPostCreated(
+                            activity: Activity,
+                            savedInstanceState: Bundle?,
+                        ) {
+                            if (activity !is MainActivity || activity === previousActivity) return
+                            activity.lifecycleScope.launch {
+                                val state = activity.homeViewModel.state.first(expectedState)
+                                synchronized(readinessLock) { restoredStates[activity] = state }
+                                dispatchIfReady(activity)
+                            }
+                        }
+
+                        override fun onActivityResumed(activity: Activity) {
+                            if (activity !is MainActivity || activity === previousActivity) return
+                            synchronized(readinessLock) { resumedActivities += activity }
+                            dispatchIfReady(activity)
+                        }
+
+                        override fun onActivityStarted(activity: Activity) = Unit
+
+                        override fun onActivityPaused(activity: Activity) = Unit
+
+                        override fun onActivityStopped(activity: Activity) = Unit
+
+                        override fun onActivitySaveInstanceState(
+                            activity: Activity,
+                            outState: Bundle,
+                        ) = Unit
+
+                        override fun onActivityDestroyed(activity: Activity) = Unit
+                    }
+                application.registerActivityLifecycleCallbacks(callbacks)
+            },
+            unregister = { application.unregisterActivityLifecycleCallbacks(callbacks) },
+        )
     }
 
     @Test
@@ -465,16 +521,22 @@ class HomeMainActivityTest {
         controller: NavController,
         receiver: (RouteEvent) -> Unit,
     ): ExactEventRegistration {
-        // NavController는 destination callback과 listener 제거를 모두 main thread에서 직렬 실행한다.
-        // 같은 main queue의 제거가 반환되면 먼저 캡처된 callback도 모두 반환되었고 이후 callback은 불가능하다.
-        val listener = NavController.OnDestinationChangedListener { current, _, _ ->
-            val entry = current.currentBackStackEntry
-            receiver(RouteEvent(entry.toPlanteriorRoute(), entry))
-        }
-        composeRule.runOnIdle { controller.addOnDestinationChangedListener(listener) }
-        return ExactEventRegistration {
-            composeRule.runOnIdle { controller.removeOnDestinationChangedListener(listener) }
-        }
+        lateinit var listener: NavController.OnDestinationChangedListener
+        return LeasedExactEventRegistration(
+            receiver = receiver,
+            register = { dispatch ->
+                listener = NavController.OnDestinationChangedListener { current, _, _ ->
+                    val entry = current.currentBackStackEntry
+                    dispatch(RouteEvent(entry.toPlanteriorRoute(), entry))
+                }
+                // add의 현재 목적지 replay도 callback lease를 얻지만 arm 전이라 stale 값으로 무시된다.
+                composeRule.runOnIdle { controller.addOnDestinationChangedListener(listener) }
+            },
+            unregister = {
+                // Nav callback과 remove는 main queue에서 직렬화되고, 공통 adapter가 callback lease까지 drain한다.
+                composeRule.runOnIdle { controller.removeOnDestinationChangedListener(listener) }
+            },
+        )
     }
 
     /** 탭 복귀는 스크롤 위치도 복원하므로 인사말을 화면 안으로 옮긴 뒤 단언한다. */
@@ -485,6 +547,12 @@ class HomeMainActivityTest {
     private data class RouteEvent(
         val route: PlanteriorRoute?,
         val entry: NavBackStackEntry?,
+    )
+
+    private data class LifecycleReadyEvent(
+        val activity: MainActivity,
+        val state: HomeUiState,
+        val generation: Int,
     )
 
     private companion object {
