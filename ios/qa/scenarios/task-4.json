@@ -1,0 +1,25 @@
+{
+  "task": 4,
+  "name": "Figma design system and typed app navigation",
+  "happyPath": {
+    "command": "./ios/scripts/qa-task.sh 4 --attempt-dir \"$ATTEMPT_DIR\"",
+    "expectedExit": 0,
+    "expectedMarker": "IOS_TASK_4_QA_OK",
+    "screenshots": [
+      "task-4-ios-app-implementation.png",
+      "task-4-ios-app-implementation-390x844.png",
+      "task-4-ios-app-implementation-ax5.png"
+    ]
+  },
+  "coveredBoundaries": [
+    "independent Home, Collection, Storage, and Settings stacks",
+    "central camera presentation and dismissal",
+    "pending authentication route resume",
+    "invalid target fallback",
+    "deleted target fallback without metadata",
+    "44pt semantic controls",
+    "52pt camera action",
+    "Dynamic Type token contract",
+    "Reduce Motion token contract"
+  ]
+}

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PlanteriorCore",
-    platforms: [.iOS(.v17)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "PlanteriorDomain", targets: ["PlanteriorDomain"]),
         .library(name: "PlanteriorData", targets: ["PlanteriorData"]),
@@ -15,6 +15,7 @@ let package = Package(
         .target(name: "PlanteriorData", dependencies: ["PlanteriorDomain"]),
         .target(name: "PlanteriorDesignSystem"),
         .target(name: "PlanteriorTestingSupport", dependencies: ["PlanteriorDomain"]),
-        .testTarget(name: "PlanteriorDomainTests", dependencies: ["PlanteriorDomain"])
+        .testTarget(name: "PlanteriorDomainTests", dependencies: ["PlanteriorDomain"]),
+        .testTarget(name: "PlanteriorDesignSystemTests", dependencies: ["PlanteriorDesignSystem"])
     ]
 )

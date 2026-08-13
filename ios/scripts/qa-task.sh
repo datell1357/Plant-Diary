@@ -73,6 +73,78 @@ if [ "$task_number" = "3" ]; then
   exit 0
 fi
 
+if [ "$task_number" = "4" ]; then
+  simulator_name=${IOS_QA_SIMULATOR_NAME:-iPhone 17}
+  derived_data=/tmp/planterior-task-4-qa
+  result_bundle="$attempt_dir/task-4-ios-app-implementation.xcresult"
+  attachment_dir="$attempt_dir/task-4-attachments"
+  ax5_result_bundle="$attempt_dir/task-4-ios-app-implementation-ax5.xcresult"
+  ax5_attachment_dir="$attempt_dir/task-4-attachments-ax5"
+  rm -rf \
+    "$result_bundle" \
+    "$attachment_dir" \
+    "$ax5_result_bundle" \
+    "$ax5_attachment_dir"
+  xcrun simctl boot "$simulator_name" 2>/dev/null || true
+  xcrun simctl bootstatus "$simulator_name" -b
+  xcrun simctl ui "$simulator_name" appearance light
+  xcrun simctl ui "$simulator_name" content_size medium
+  xcodebuild \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=$simulator_name,OS=26.5" \
+    -derivedDataPath "$derived_data" \
+    -resultBundlePath "$result_bundle" \
+    test
+  xcrun xcresulttool export attachments \
+    --path "$result_bundle" \
+    --output-path "$attachment_dir"
+  screenshot=$(find "$attachment_dir" -type f -name '*.png' | head -n 1)
+  test -n "$screenshot"
+  cp "$screenshot" "$attempt_dir/task-4-ios-app-implementation.png"
+  compact_result_bundle="$attempt_dir/task-4-ios-app-implementation-390x844.xcresult"
+  compact_attachment_dir="$attempt_dir/task-4-attachments-390x844"
+  rm -rf "$compact_result_bundle" "$compact_attachment_dir"
+  xcodebuild \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=iPhone 17e,OS=26.5" \
+    -derivedDataPath "$derived_data" \
+    -resultBundlePath "$compact_result_bundle" \
+    test \
+    -only-testing:PlanteriorUITests/AppLaunchUITests/testCaptureRenderedShell
+  xcrun xcresulttool export attachments \
+    --path "$compact_result_bundle" \
+    --output-path "$compact_attachment_dir"
+  compact_screenshot=$(find "$compact_attachment_dir" -type f -name '*.png' | head -n 1)
+  test -n "$compact_screenshot"
+  cp "$compact_screenshot" \
+    "$attempt_dir/task-4-ios-app-implementation-390x844.png"
+  xcrun simctl ui "$simulator_name" \
+    content_size accessibility-extra-extra-extra-large
+  xcodebuild \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=$simulator_name,OS=26.5" \
+    -derivedDataPath "$derived_data" \
+    -resultBundlePath "$ax5_result_bundle" \
+    test-without-building \
+    -only-testing:PlanteriorUITests/AppLaunchUITests/testCaptureRenderedShell
+  xcrun xcresulttool export attachments \
+    --path "$ax5_result_bundle" \
+    --output-path "$ax5_attachment_dir"
+  ax5_screenshot=$(find "$ax5_attachment_dir" -type f -name '*.png' | head -n 1)
+  test -n "$ax5_screenshot"
+  cp "$ax5_screenshot" "$attempt_dir/task-4-ios-app-implementation-ax5.png"
+  xcrun simctl ui "$simulator_name" content_size medium
+  test -s "$attempt_dir/task-4-ios-app-implementation.png"
+  test -s "$attempt_dir/task-4-ios-app-implementation-390x844.png"
+  test -s "$attempt_dir/task-4-ios-app-implementation-ax5.png"
+  printf 'IOS_TASK_4_QA_OK simulator=%s variants=light,390x844,ax5\n' \
+    "$simulator_name"
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69
