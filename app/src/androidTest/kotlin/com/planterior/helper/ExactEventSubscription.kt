@@ -10,41 +10,171 @@ internal data class ExactEventBehaviorSnapshot(
     val hash: String,
 )
 
-/** 한 번에 하나의 instrumentation scenario를 기록한다. Scenario에는 append API를 노출하지 않는다. */
+/** 한 번에 하나의 instrumentation 실행을 기록하며 외부에는 append API를 노출하지 않는다. */
 internal object ExactEventBehaviorTrace {
     fun start(): Capture = startBehaviorCapture()
 
-    internal class Capture private constructor(private val token: Any) {
-        fun finish(): ExactEventBehaviorSnapshot = finishBehaviorCapture(token)
+    internal class Capture private constructor(private val recorder: BehaviorRecorder) {
+        fun finish(): ExactEventBehaviorSnapshot = finishBehaviorCapture(recorder)
 
         internal companion object {
-            fun create(token: Any) = Capture(token)
+            fun create(recorder: BehaviorRecorder) = Capture(recorder)
         }
     }
 }
 
-private enum class BehaviorComponent {
+internal enum class BehaviorComponent {
     REGISTRATION,
     SUBSCRIPTION,
 }
 
-private data class BehaviorHandle(
+internal enum class BehaviorThreadRole {
+    CREATOR,
+    WORKER,
+}
+
+internal enum class BehaviorTransition {
+    CALLBACK_REJECTED,
+    LEASE_ACQUIRED,
+    CALLBACK_DISPATCH,
+    CALLBACK_FAILED,
+    LEASE_RELEASED,
+    SOURCE_REGISTER_BEGIN,
+    SOURCE_REGISTERED,
+    SOURCE_REGISTER_FAILED,
+    SOURCE_REGISTER_FAILURE_CLEANUP,
+    DETACH_INVOKED,
+    DETACH_LINEARIZED,
+    DRAIN_OBSERVED_CLOSED,
+    SOURCE_UNREGISTER_BEGIN,
+    SOURCE_UNREGISTERED,
+    SOURCE_UNREGISTER_FAILED,
+    DRAIN_COMPLETED,
+    SUBSCRIBE_BEGIN,
+    SUBSCRIBED,
+    SUBSCRIBE_FAILED,
+    ARMED,
+    AWAIT_INVOKED,
+    AWAIT_CLAIMED,
+    AWAIT_RESOLVED,
+    AWAIT_RETURNED,
+    AWAIT_THROWN,
+    EVENT_RECEIVED,
+    MATCH_FAILED,
+    EVENT_CLASSIFIED,
+    SOURCE_FAILURE_RECORDED,
+    CLOSE_OBSERVATION_INVOKED,
+    CLOSE_LINEARIZED,
+    CLOSED_OUTCOME_OBSERVED,
+    REENTRANT_CLOSE_RETURNED,
+    TERMINAL_WAIT_RESOLVED,
+    TERMINAL_WAIT_FAILED,
+    TERMINALIZED,
+    CLOSE_INVOKED,
+    CLOSE_RETURNED,
+}
+
+internal enum class BehaviorPhase {
+    NONE,
+    REGISTERED,
+    ARMED,
+    CLOSING,
+    CLOSED,
+}
+
+internal enum class BehaviorReason {
+    NONE,
+    SUCCESS,
+    TIMEOUT,
+    CANCELLED,
+    SOURCE,
+}
+
+internal enum class BehaviorOutcome {
+    NONE,
+    SUCCESS,
+    TIMEOUT,
+    CANCELLED,
+    DUPLICATE,
+    SOURCE,
+}
+
+internal enum class BehaviorFailureCategory {
+    NONE,
+    REGISTRATION,
+    REGISTRATION_CLEANUP,
+    CALLBACK,
+    MATCH,
+    UNREGISTER,
+    DETACH,
+}
+
+internal enum class BehaviorFlag {
+    UNSET,
+    FALSE,
+    TRUE,
+}
+
+internal enum class BehaviorDeadline {
+    NONE,
+    BOUNDED,
+}
+
+internal enum class ExactEventValueCategory {
+    GENERIC,
+    ROUTE_HOME,
+    ROUTE_DETAILS,
+    ROUTE_SETTINGS,
+    GENERATION_CURRENT,
+    GENERATION_STALE,
+}
+
+/** Hash 입력은 이 닫힌 typed schema뿐이며 자유 형식 문자열이나 generic 값 슬롯이 없다. */
+internal sealed interface BehaviorPayload {
+    data class Facts(
+        val phase: BehaviorPhase = BehaviorPhase.NONE,
+        val fromPhase: BehaviorPhase = BehaviorPhase.NONE,
+        val toPhase: BehaviorPhase = BehaviorPhase.NONE,
+        val reason: BehaviorReason = BehaviorReason.NONE,
+        val outcome: BehaviorOutcome = BehaviorOutcome.NONE,
+        val failure: BehaviorFailureCategory = BehaviorFailureCategory.NONE,
+        val listenerCount: Int = -1,
+        val inFlight: Int = -1,
+        val generation: Int = -1,
+        val matchingCount: Int = -1,
+        val callerOwnsLease: BehaviorFlag = BehaviorFlag.UNSET,
+        val ownsDetach: BehaviorFlag = BehaviorFlag.UNSET,
+        val alreadyCompleted: BehaviorFlag = BehaviorFlag.UNSET,
+        val signalled: BehaviorFlag = BehaviorFlag.UNSET,
+        val matched: BehaviorFlag = BehaviorFlag.UNSET,
+        val accepted: BehaviorFlag = BehaviorFlag.UNSET,
+        val recorded: BehaviorFlag = BehaviorFlag.UNSET,
+        val permitReentrantReturn: BehaviorFlag = BehaviorFlag.UNSET,
+        val drained: BehaviorFlag = BehaviorFlag.UNSET,
+        val deadline: BehaviorDeadline = BehaviorDeadline.NONE,
+        val valueCategory: ExactEventValueCategory = ExactEventValueCategory.GENERIC,
+    ) : BehaviorPayload
+}
+
+internal data class BehaviorEvent(
+    val sequence: Int,
+    val threadRole: BehaviorThreadRole,
+    val component: BehaviorComponent,
+    val instance: Int,
+    val transition: BehaviorTransition,
+    val payload: BehaviorPayload.Facts,
+)
+
+internal data class BehaviorHandle(
     val recorder: BehaviorRecorder,
     val component: BehaviorComponent,
     val instance: Int,
 )
 
-private data class BehaviorEvent(
-    val sequence: Int,
-    val creatorThread: Boolean,
-    val component: BehaviorComponent,
-    val instance: Int,
-    val transition: String,
-    val facts: String,
-)
+private class BehaviorRecorderLock
 
-private class BehaviorRecorder {
-    private val lock = Any()
+internal class BehaviorRecorder {
+    private val lock = BehaviorRecorderLock()
     private val creatorThread = Thread.currentThread()
     private val componentCounters = mutableMapOf<BehaviorComponent, Int>()
     private val events = mutableListOf<BehaviorEvent>()
@@ -57,51 +187,84 @@ private class BehaviorRecorder {
             BehaviorHandle(this, component, instance)
         }
 
-    fun observe(handle: BehaviorHandle, transition: String, facts: String) {
+    fun observe(
+        handle: BehaviorHandle,
+        transition: BehaviorTransition,
+        payload: BehaviorPayload.Facts,
+    ) {
         synchronized(lock) {
+            val sequence = nextSequence++
             events +=
                 BehaviorEvent(
-                    sequence = nextSequence++,
-                    creatorThread = Thread.currentThread() === creatorThread,
+                    sequence = sequence,
+                    threadRole =
+                        if (Thread.currentThread() === creatorThread) {
+                            BehaviorThreadRole.CREATOR
+                        } else {
+                            BehaviorThreadRole.WORKER
+                        },
                     component = handle.component,
                     instance = handle.instance,
                     transition = transition,
-                    facts = facts,
+                    payload = payload,
                 )
         }
     }
 
     fun snapshot(): ExactEventBehaviorSnapshot {
         val captured = synchronized(lock) { events.toList() }
-        captured.forEachIndexed { index, event ->
-            check(event.sequence == index) { "behavior trace sequence가 단조 증가하지 않았다" }
+        val normalized = buildString {
+            captured.forEachIndexed { index, event ->
+                check(event.sequence == index) { "behavior trace sequence가 단조 증가하지 않았다" }
+                if (index > 0) append(';')
+                append("seq=").append(event.sequence)
+                append("|hb=")
+                if (index == 0) append("ROOT") else append(index - 1)
+                append("->").append(index)
+                append("|thread=").append(event.threadRole.name)
+                append("|component=")
+                    .append(event.component.name)
+                    .append('#')
+                    .append(event.instance)
+                append("|transition=").append(event.transition.name)
+                appendTypedPayload(event.payload)
+            }
         }
-        val normalized =
-            captured
-                .map { event ->
-                    listOf(
-                            "thread=${if (event.creatorThread) "creator" else "worker"}",
-                            "component=${event.component}#${event.instance}",
-                            "transition=${event.transition}",
-                            "facts=${event.facts}",
-                        )
-                        .joinToString("|")
-                }
-                .sorted()
-                .groupingBy { it }
-                .eachCount()
-                .entries
-                .sortedBy { it.key }
-                .joinToString(";") { (transition, count) -> "$transition|count=$count" }
         val hash =
             MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray()).joinToString("") {
                 "%02x".format(it)
             }
         return ExactEventBehaviorSnapshot(normalized, hash)
     }
+
+    private fun StringBuilder.appendTypedPayload(payload: BehaviorPayload.Facts) {
+        append("|phase=").append(payload.phase.name)
+        append("|from=").append(payload.fromPhase.name)
+        append("|to=").append(payload.toPhase.name)
+        append("|reason=").append(payload.reason.name)
+        append("|outcome=").append(payload.outcome.name)
+        append("|failure=").append(payload.failure.name)
+        append("|listeners=").append(payload.listenerCount)
+        append("|inFlight=").append(payload.inFlight)
+        append("|generation=").append(payload.generation)
+        append("|matching=").append(payload.matchingCount)
+        append("|callerLease=").append(payload.callerOwnsLease.name)
+        append("|ownsDetach=").append(payload.ownsDetach.name)
+        append("|alreadyCompleted=").append(payload.alreadyCompleted.name)
+        append("|signalled=").append(payload.signalled.name)
+        append("|matched=").append(payload.matched.name)
+        append("|accepted=").append(payload.accepted.name)
+        append("|recorded=").append(payload.recorded.name)
+        append("|reentrant=").append(payload.permitReentrantReturn.name)
+        append("|drained=").append(payload.drained.name)
+        append("|deadline=").append(payload.deadline.name)
+        append("|valueCategory=").append(payload.valueCategory.name)
+    }
 }
 
-private val behaviorCaptureLock = Any()
+private class BehaviorCaptureLock
+
+private val behaviorCaptureLock = BehaviorCaptureLock()
 private var activeBehaviorRecorder: BehaviorRecorder? = null
 
 private fun startBehaviorCapture(): ExactEventBehaviorTrace.Capture =
@@ -112,9 +275,8 @@ private fun startBehaviorCapture(): ExactEventBehaviorTrace.Capture =
         ExactEventBehaviorTrace.Capture.create(recorder)
     }
 
-private fun finishBehaviorCapture(token: Any): ExactEventBehaviorSnapshot =
+private fun finishBehaviorCapture(recorder: BehaviorRecorder): ExactEventBehaviorSnapshot =
     synchronized(behaviorCaptureLock) {
-        val recorder = token as BehaviorRecorder
         check(activeBehaviorRecorder === recorder) { "다른 behavior capture를 종료할 수 없다" }
         activeBehaviorRecorder = null
         recorder.snapshot()
@@ -123,22 +285,15 @@ private fun finishBehaviorCapture(token: Any): ExactEventBehaviorSnapshot =
 private fun newBehaviorHandle(component: BehaviorComponent): BehaviorHandle? =
     synchronized(behaviorCaptureLock) { activeBehaviorRecorder?.newHandle(component) }
 
-private fun BehaviorHandle?.observe(transition: String, vararg facts: Pair<String, Any?>) {
-    if (this == null) return
-    val normalizedFacts =
-        facts.joinToString(",") { (key, value) -> "$key=${canonicalBehaviorValue(value)}" }
-    recorder.observe(this, transition, normalizedFacts)
+private fun BehaviorHandle?.observe(
+    transition: BehaviorTransition,
+    payload: BehaviorPayload.Facts = BehaviorPayload.Facts(),
+) {
+    if (this != null) recorder.observe(this, transition, payload)
 }
 
-private fun canonicalBehaviorValue(value: Any?): String =
-    when (value) {
-        null -> "null"
-        is String -> "string:${value.replace("|", "_").replace(";", "_")}"
-        is Enum<*> -> "enum:${value.javaClass.simpleName}:${value.name}"
-        is Throwable -> "throwable:${value.javaClass.simpleName}"
-        else ->
-            "${value.javaClass.simpleName}:${value.toString().replace("|", "_").replace(";", "_")}"
-    }
+private fun Boolean.behaviorFlag(): BehaviorFlag =
+    if (this) BehaviorFlag.TRUE else BehaviorFlag.FALSE
 
 /**
  * Source adapter와 구독 사이의 유일한 registration 계약이다.
@@ -162,6 +317,8 @@ internal interface ExactEventLeaseObserver {
     fun detachStarted() = Unit
 
     fun releasing() = Unit
+
+    fun unregistered() = Unit
 
     fun drained() = Unit
 
@@ -203,88 +360,104 @@ internal class LeasedExactEventRegistration<T>(
         val lease =
             synchronized(lock) {
                 if (!accepting) {
+                    behavior.observe(
+                        BehaviorTransition.CALLBACK_REJECTED,
+                        BehaviorPayload.Facts(listenerCount = 0, inFlight = inFlight),
+                    )
                     null
                 } else {
                     inFlight += 1
                     callbackGeneration += 1
                     callbackDepth.set((callbackDepth.get() ?: 0) + 1)
-                    AcquiredLease(callbackGeneration, inFlight)
+                    AcquiredLease(callbackGeneration, inFlight).also { acquired ->
+                        behavior.observe(
+                            BehaviorTransition.LEASE_ACQUIRED,
+                            BehaviorPayload.Facts(
+                                generation = acquired.generation,
+                                listenerCount = 1,
+                                inFlight = acquired.inFlight,
+                            ),
+                        )
+                    }
                 }
             }
-        if (lease == null) {
-            behavior.observe(
-                "CALLBACK_REJECTED",
-                "value" to value,
-                "listenerCount" to 0,
-                "inFlight" to activeLeaseCount,
-            )
-            return@callback
-        }
+        if (lease == null) return@callback
 
-        behavior.observe(
-            "LEASE_ACQUIRED",
-            "generation" to lease.generation,
-            "value" to value,
-            "listenerCount" to 1,
-            "inFlight" to lease.inFlight,
-        )
         try {
             observer.acquired()
             behavior.observe(
-                "CALLBACK_DISPATCH",
-                "generation" to lease.generation,
-                "value" to value,
+                BehaviorTransition.CALLBACK_DISPATCH,
+                BehaviorPayload.Facts(generation = lease.generation),
             )
             receiver(value)
         } catch (failure: Throwable) {
             behavior.observe(
-                "CALLBACK_FAILED",
-                "generation" to lease.generation,
-                "failure" to failure,
+                BehaviorTransition.CALLBACK_FAILED,
+                BehaviorPayload.Facts(
+                    generation = lease.generation,
+                    failure = BehaviorFailureCategory.CALLBACK,
+                ),
             )
             throw failure
         } finally {
             observer.releasing()
-            val release =
+            val completion =
                 synchronized(lock) {
                     callbackDepth.set((callbackDepth.get() ?: 0) - 1)
                     inFlight -= 1
                     check(inFlight >= 0) { "callback lease가 중복 반환되었다" }
-                    Triple(inFlight, accepting, takeDrainCompletionLocked())
+                    behavior.observe(
+                        BehaviorTransition.LEASE_RELEASED,
+                        BehaviorPayload.Facts(
+                            generation = lease.generation,
+                            listenerCount = if (accepting) 1 else 0,
+                            inFlight = inFlight,
+                        ),
+                    )
+                    takeDrainCompletionLocked()
                 }
-            behavior.observe(
-                "LEASE_RELEASED",
-                "generation" to lease.generation,
-                "listenerCount" to if (release.second) 1 else 0,
-                "inFlight" to release.first,
-            )
-            release.third?.invoke()
+            completion?.invoke()
         }
     }
 
     init {
-        behavior.observe("SOURCE_REGISTER_BEGIN", "listenerCount" to 0, "inFlight" to 0)
+        behavior.observe(
+            BehaviorTransition.SOURCE_REGISTER_BEGIN,
+            BehaviorPayload.Facts(listenerCount = 0, inFlight = 0),
+        )
         try {
             register(sourceCallback)
-            behavior.observe("SOURCE_REGISTERED", "listenerCount" to 1, "inFlight" to 0)
+            behavior.observe(
+                BehaviorTransition.SOURCE_REGISTERED,
+                BehaviorPayload.Facts(listenerCount = 1, inFlight = 0),
+            )
         } catch (registrationFailure: Throwable) {
             synchronized(lock) {
                 accepting = false
                 detachStarted = true
             }
             behavior.observe(
-                "SOURCE_REGISTER_FAILED",
-                "failure" to registrationFailure,
-                "listenerCount" to 0,
-                "inFlight" to 0,
+                BehaviorTransition.SOURCE_REGISTER_FAILED,
+                BehaviorPayload.Facts(
+                    failure = BehaviorFailureCategory.REGISTRATION,
+                    listenerCount = 0,
+                    inFlight = 0,
+                ),
             )
             val cleanupFailure = runCatching { unregister(sourceCallback) }.exceptionOrNull()
             cleanupFailure?.let(registrationFailure::addSuppressed)
             behavior.observe(
-                "SOURCE_REGISTER_FAILURE_CLEANUP",
-                "failure" to cleanupFailure,
-                "listenerCount" to 0,
-                "inFlight" to 0,
+                BehaviorTransition.SOURCE_REGISTER_FAILURE_CLEANUP,
+                BehaviorPayload.Facts(
+                    failure =
+                        if (cleanupFailure == null) {
+                            BehaviorFailureCategory.NONE
+                        } else {
+                            BehaviorFailureCategory.REGISTRATION_CLEANUP
+                        },
+                    listenerCount = 0,
+                    inFlight = 0,
+                ),
             )
             throw registrationFailure
         }
@@ -299,10 +472,12 @@ internal class LeasedExactEventRegistration<T>(
     override fun detachAndDrain(onDrained: (Throwable?) -> Unit): Boolean {
         val callerOwnsLease = (callbackDepth.get() ?: 0) > 0
         behavior.observe(
-            "DETACH_INVOKED",
-            "callerOwnsLease" to callerOwnsLease,
-            "listenerCount" to if (synchronized(lock) { accepting }) 1 else 0,
-            "inFlight" to activeLeaseCount,
+            BehaviorTransition.DETACH_INVOKED,
+            BehaviorPayload.Facts(
+                callerOwnsLease = callerOwnsLease.behaviorFlag(),
+                listenerCount = if (synchronized(lock) { accepting }) 1 else 0,
+                inFlight = activeLeaseCount,
+            ),
         )
         val ownsSourceDetach: Boolean
         val alreadyCompleted: Boolean
@@ -323,18 +498,27 @@ internal class LeasedExactEventRegistration<T>(
         }
 
         behavior.observe(
-            "DETACH_LINEARIZED",
-            "ownsDetach" to ownsSourceDetach,
-            "alreadyCompleted" to alreadyCompleted,
-            "listenerCount" to if (synchronized(lock) { accepting }) 1 else 0,
-            "inFlight" to activeLeaseCount,
+            BehaviorTransition.DETACH_LINEARIZED,
+            BehaviorPayload.Facts(
+                ownsDetach = ownsSourceDetach.behaviorFlag(),
+                alreadyCompleted = alreadyCompleted.behaviorFlag(),
+                listenerCount = if (synchronized(lock) { accepting }) 1 else 0,
+                inFlight = activeLeaseCount,
+            ),
         )
         if (alreadyCompleted) {
             behavior.observe(
-                "DRAIN_OBSERVED_CLOSED",
-                "failure" to completedFailure,
-                "listenerCount" to 0,
-                "inFlight" to activeLeaseCount,
+                BehaviorTransition.DRAIN_OBSERVED_CLOSED,
+                BehaviorPayload.Facts(
+                    failure =
+                        if (completedFailure == null) {
+                            BehaviorFailureCategory.NONE
+                        } else {
+                            BehaviorFailureCategory.UNREGISTER
+                        },
+                    listenerCount = 0,
+                    inFlight = activeLeaseCount,
+                ),
             )
             onDrained(completedFailure)
             return callerOwnsLease
@@ -342,18 +526,29 @@ internal class LeasedExactEventRegistration<T>(
         if (!ownsSourceDetach) return callerOwnsLease
 
         behavior.observe(
-            "SOURCE_UNREGISTER_BEGIN",
-            "listenerCount" to 1,
-            "inFlight" to activeLeaseCount,
+            BehaviorTransition.SOURCE_UNREGISTER_BEGIN,
+            BehaviorPayload.Facts(listenerCount = 1, inFlight = activeLeaseCount),
         )
         observer.detachStarted()
         val removalFailure = runCatching { unregister(sourceCallback) }.exceptionOrNull()
         behavior.observe(
-            if (removalFailure == null) "SOURCE_UNREGISTERED" else "SOURCE_UNREGISTER_FAILED",
-            "failure" to removalFailure,
-            "listenerCount" to 0,
-            "inFlight" to activeLeaseCount,
+            if (removalFailure == null) {
+                BehaviorTransition.SOURCE_UNREGISTERED
+            } else {
+                BehaviorTransition.SOURCE_UNREGISTER_FAILED
+            },
+            BehaviorPayload.Facts(
+                failure =
+                    if (removalFailure == null) {
+                        BehaviorFailureCategory.NONE
+                    } else {
+                        BehaviorFailureCategory.UNREGISTER
+                    },
+                listenerCount = 0,
+                inFlight = activeLeaseCount,
+            ),
         )
+        observer.unregistered()
         val completion =
             synchronized(lock) {
                 sourceDetached = true
@@ -372,10 +567,17 @@ internal class LeasedExactEventRegistration<T>(
         drainCallbacks.clear()
         return {
             behavior.observe(
-                "DRAIN_COMPLETED",
-                "failure" to failure,
-                "listenerCount" to 0,
-                "inFlight" to 0,
+                BehaviorTransition.DRAIN_COMPLETED,
+                BehaviorPayload.Facts(
+                    failure =
+                        if (failure == null) {
+                            BehaviorFailureCategory.NONE
+                        } else {
+                            BehaviorFailureCategory.UNREGISTER
+                        },
+                    listenerCount = 0,
+                    inFlight = 0,
+                ),
             )
             observer.drained()
             callbacks.forEach { it(failure) }
@@ -420,6 +622,7 @@ internal class ExactEventException(
  */
 internal class ExactEventSubscription<T>(
     private val matches: (T) -> Boolean,
+    private val classify: (T) -> ExactEventValueCategory = { ExactEventValueCategory.GENERIC },
     subscribe: ((T) -> Unit) -> ExactEventRegistration,
     private val stateObserver: ExactEventStateObserver = ExactEventStateObserver.NONE,
 ) : AutoCloseable {
@@ -437,50 +640,69 @@ internal class ExactEventSubscription<T>(
     private var registration: ExactEventRegistration? = null
 
     init {
-        behavior.observe("SUBSCRIBE_BEGIN", "phase" to phase)
+        behavior.observe(
+            BehaviorTransition.SUBSCRIBE_BEGIN,
+            BehaviorPayload.Facts(phase = phase.behaviorPhase()),
+        )
         try {
             registration = subscribe(::onEvent)
-            behavior.observe("SUBSCRIBED", "phase" to phase, "sourceFailure" to null)
+            behavior.observe(
+                BehaviorTransition.SUBSCRIBED,
+                BehaviorPayload.Facts(phase = phase.behaviorPhase()),
+            )
         } catch (failure: Throwable) {
             sourceFailure = failure
             eventOrCancellation.countDown()
-            behavior.observe("SUBSCRIBE_FAILED", "phase" to phase, "sourceFailure" to failure)
+            behavior.observe(
+                BehaviorTransition.SUBSCRIBE_FAILED,
+                BehaviorPayload.Facts(
+                    phase = phase.behaviorPhase(),
+                    failure = BehaviorFailureCategory.REGISTRATION,
+                ),
+            )
         }
     }
 
     /** 구독 등록 중 전달되는 초기값과 트리거 이후 이벤트를 구분한다. */
     fun arm() {
-        val transition =
-            synchronized(lock) {
-                check(phase == Phase.REGISTERED) { "이벤트 구독은 한 번만 시작할 수 있다" }
-                val previous = phase
-                phase = Phase.ARMED
-                previous to phase
-            }
-        behavior.observe("ARMED", "from" to transition.first, "to" to transition.second)
+        synchronized(lock) {
+            check(phase == Phase.REGISTERED) { "이벤트 구독은 한 번만 시작할 수 있다" }
+            val previous = phase
+            phase = Phase.ARMED
+            behavior.observe(
+                BehaviorTransition.ARMED,
+                BehaviorPayload.Facts(
+                    fromPhase = previous.behaviorPhase(),
+                    toPhase = phase.behaviorPhase(),
+                ),
+            )
+        }
     }
 
     /** 정확한 이벤트 하나와 listener detach/drain terminal을 제한 시간 안에 기다린다. */
     fun await(timeout: Long, unit: TimeUnit, description: String): T {
         behavior.observe(
-            "AWAIT_INVOKED",
-            "phase" to synchronized(lock) { phase },
-            "timeoutNanos" to unit.toNanos(timeout),
+            BehaviorTransition.AWAIT_INVOKED,
+            BehaviorPayload.Facts(
+                phase = synchronized(lock) { phase }.behaviorPhase(),
+                deadline = BehaviorDeadline.BOUNDED,
+            ),
         )
-        val claimedPhase =
-            synchronized(lock) {
-                check(phase != Phase.REGISTERED) { "이벤트 구독을 먼저 시작해야 한다" }
-                check(!awaitClaimed) { "이벤트 구독 결과는 한 번만 기다릴 수 있다" }
-                awaitClaimed = true
-                phase
-            }
-        behavior.observe("AWAIT_CLAIMED", "phase" to claimedPhase)
+        synchronized(lock) {
+            check(phase != Phase.REGISTERED) { "이벤트 구독을 먼저 시작해야 한다" }
+            check(!awaitClaimed) { "이벤트 구독 결과는 한 번만 기다릴 수 있다" }
+            awaitClaimed = true
+            behavior.observe(
+                BehaviorTransition.AWAIT_CLAIMED,
+                BehaviorPayload.Facts(phase = phase.behaviorPhase()),
+            )
+        }
         stateObserver.awaitClaimed()
 
         val signalled = eventOrCancellation.await(timeout, unit)
-        val reasonAndCount =
+        val reason =
             synchronized(lock) {
-                val reason =
+                val selected =
                     when {
                         sourceFailure != null -> CloseReason.SOURCE
                         closeReason == CloseReason.CANCELLED || phase == Phase.CLOSED ->
@@ -488,16 +710,17 @@ internal class ExactEventSubscription<T>(
                         signalled && matchingEventCount > 0 -> CloseReason.SUCCESS
                         else -> CloseReason.TIMEOUT
                     }
-                Triple(reason, matchingEventCount, phase)
+                behavior.observe(
+                    BehaviorTransition.AWAIT_RESOLVED,
+                    BehaviorPayload.Facts(
+                        signalled = signalled.behaviorFlag(),
+                        reason = selected.behaviorReason(),
+                        matchingCount = matchingEventCount,
+                        phase = phase.behaviorPhase(),
+                    ),
+                )
+                selected
             }
-        val reason = reasonAndCount.first
-        behavior.observe(
-            "AWAIT_RESOLVED",
-            "signalled" to signalled,
-            "reason" to reason,
-            "matchingCount" to reasonAndCount.second,
-            "phase" to reasonAndCount.third,
-        )
         stateObserver.closeSelected(reason.name)
         val terminal =
             checkNotNull(
@@ -511,17 +734,23 @@ internal class ExactEventSubscription<T>(
         return when (terminal) {
             is Outcome.Success -> {
                 behavior.observe(
-                    "AWAIT_RETURNED",
-                    "outcome" to "SUCCESS",
-                    "value" to terminal.value,
+                    BehaviorTransition.AWAIT_RETURNED,
+                    BehaviorPayload.Facts(outcome = BehaviorOutcome.SUCCESS),
                 )
                 terminal.value
             }
             is Outcome.Failure -> {
                 behavior.observe(
-                    "AWAIT_THROWN",
-                    "outcome" to terminal.failure,
-                    "failure" to terminal.cause,
+                    BehaviorTransition.AWAIT_THROWN,
+                    BehaviorPayload.Facts(
+                        outcome = terminal.failure.behaviorOutcome(),
+                        failure =
+                            if (terminal.cause == null) {
+                                BehaviorFailureCategory.NONE
+                            } else {
+                                BehaviorFailureCategory.DETACH
+                            },
+                    ),
                 )
                 throw ExactEventException(terminal.failure, terminal.cause).also {
                     it.addSuppressed(IllegalStateException(description))
@@ -534,40 +763,53 @@ internal class ExactEventSubscription<T>(
     fun hasAcceptedEvent(): Boolean = synchronized(lock) { accepted != null }
 
     private fun onEvent(value: T) {
-        behavior.observe(
-            "EVENT_RECEIVED",
-            "value" to value,
-            "phase" to synchronized(lock) { phase },
-        )
+        val valueCategory = classify(value)
+        synchronized(lock) {
+            behavior.observe(
+                BehaviorTransition.EVENT_RECEIVED,
+                BehaviorPayload.Facts(
+                    phase = phase.behaviorPhase(),
+                    valueCategory = valueCategory,
+                ),
+            )
+        }
         val matched =
             try {
                 matches(value)
             } catch (failure: Throwable) {
-                behavior.observe("MATCH_FAILED", "value" to value, "failure" to failure)
+                behavior.observe(
+                    BehaviorTransition.MATCH_FAILED,
+                    BehaviorPayload.Facts(
+                        failure = BehaviorFailureCategory.MATCH,
+                        valueCategory = valueCategory,
+                    ),
+                )
                 recordSourceFailure(failure)
                 return
             }
-        val observation =
-            synchronized(lock) {
+        synchronized(lock) {
+            val observation =
                 if (!matched || (phase != Phase.ARMED && phase != Phase.CLOSING)) {
                     EventObservation(matched, false, matchingEventCount, phase)
                 } else {
                     matchingEventCount += 1
-                    if (matchingEventCount == 1) {
-                        accepted = value
-                        eventOrCancellation.countDown()
-                    }
+                    if (matchingEventCount == 1) accepted = value
                     EventObservation(true, true, matchingEventCount, phase)
                 }
+            behavior.observe(
+                BehaviorTransition.EVENT_CLASSIFIED,
+                BehaviorPayload.Facts(
+                    matched = observation.matched.behaviorFlag(),
+                    accepted = observation.acceptedGeneration.behaviorFlag(),
+                    matchingCount = observation.matchingCount,
+                    phase = observation.phase.behaviorPhase(),
+                    valueCategory = valueCategory,
+                ),
+            )
+            if (observation.acceptedGeneration && observation.matchingCount == 1) {
+                eventOrCancellation.countDown()
             }
-        behavior.observe(
-            "EVENT_CLASSIFIED",
-            "value" to value,
-            "matched" to observation.matched,
-            "acceptedGeneration" to observation.acceptedGeneration,
-            "matchingCount" to observation.matchingCount,
-            "phase" to observation.phase,
-        )
+        }
     }
 
     private data class EventObservation(
@@ -578,22 +820,19 @@ internal class ExactEventSubscription<T>(
     )
 
     private fun recordSourceFailure(failure: Throwable) {
-        val recorded =
-            synchronized(lock) {
-                if (phase == Phase.CLOSED) {
-                    false
-                } else {
-                    sourceFailure = sourceFailure ?: failure
-                    eventOrCancellation.countDown()
-                    true
-                }
-            }
-        behavior.observe(
-            "SOURCE_FAILURE_RECORDED",
-            "recorded" to recorded,
-            "failure" to failure,
-            "phase" to synchronized(lock) { phase },
-        )
+        synchronized(lock) {
+            val recorded = phase != Phase.CLOSED
+            if (recorded) sourceFailure = sourceFailure ?: failure
+            behavior.observe(
+                BehaviorTransition.SOURCE_FAILURE_RECORDED,
+                BehaviorPayload.Facts(
+                    recorded = recorded.behaviorFlag(),
+                    failure = BehaviorFailureCategory.MATCH,
+                    phase = phase.behaviorPhase(),
+                ),
+            )
+            if (recorded) eventOrCancellation.countDown()
+        }
     }
 
     private fun closeObservation(
@@ -602,15 +841,17 @@ internal class ExactEventSubscription<T>(
         unit: TimeUnit,
         permitReentrantReturn: Boolean,
     ): Outcome<T>? {
-        behavior.observe(
-            "CLOSE_OBSERVATION_INVOKED",
-            "reason" to requestedReason,
-            "phase" to synchronized(lock) { phase },
-            "permitReentrantReturn" to permitReentrantReturn,
-        )
         var immediateOutcome: Outcome<T>? = null
         val transition =
             synchronized(lock) {
+                behavior.observe(
+                    BehaviorTransition.CLOSE_OBSERVATION_INVOKED,
+                    BehaviorPayload.Facts(
+                        reason = requestedReason.behaviorReason(),
+                        phase = phase.behaviorPhase(),
+                        permitReentrantReturn = permitReentrantReturn.behaviorFlag(),
+                    ),
+                )
                 val previous = phase
                 val ownsDetach =
                     when (phase) {
@@ -621,7 +862,6 @@ internal class ExactEventSubscription<T>(
                         Phase.CLOSING -> {
                             if (requestedReason == CloseReason.CANCELLED) {
                                 closeReason = CloseReason.CANCELLED
-                                eventOrCancellation.countDown()
                             }
                             false
                         }
@@ -629,25 +869,30 @@ internal class ExactEventSubscription<T>(
                         Phase.ARMED -> {
                             phase = Phase.CLOSING
                             closeReason = requestedReason
-                            if (requestedReason == CloseReason.CANCELLED) {
-                                eventOrCancellation.countDown()
-                            }
                             true
                         }
                     }
+                behavior.observe(
+                    BehaviorTransition.CLOSE_LINEARIZED,
+                    BehaviorPayload.Facts(
+                        reason = requestedReason.behaviorReason(),
+                        fromPhase = previous.behaviorPhase(),
+                        toPhase = phase.behaviorPhase(),
+                        ownsDetach = ownsDetach.behaviorFlag(),
+                        matchingCount = matchingEventCount,
+                    ),
+                )
+                if (requestedReason == CloseReason.CANCELLED && previous != Phase.CLOSED) {
+                    eventOrCancellation.countDown()
+                }
                 Triple(previous, phase, ownsDetach)
             }
         val ownsDetach = transition.third
-        behavior.observe(
-            "CLOSE_LINEARIZED",
-            "reason" to requestedReason,
-            "from" to transition.first,
-            "to" to transition.second,
-            "ownsDetach" to ownsDetach,
-            "matchingCount" to synchronized(lock) { matchingEventCount },
-        )
         immediateOutcome?.let {
-            behavior.observe("CLOSED_OUTCOME_OBSERVED", "outcome" to outcomeLabel(it))
+            behavior.observe(
+                BehaviorTransition.CLOSED_OUTCOME_OBSERVED,
+                BehaviorPayload.Facts(outcome = it.behaviorOutcome()),
+            )
             return it
         }
 
@@ -668,17 +913,25 @@ internal class ExactEventSubscription<T>(
         }
 
         if (permitReentrantReturn && callerOwnsLease) {
-            behavior.observe("REENTRANT_CLOSE_RETURNED", "callerOwnsLease" to true)
+            behavior.observe(
+                BehaviorTransition.REENTRANT_CLOSE_RETURNED,
+                BehaviorPayload.Facts(callerOwnsLease = BehaviorFlag.TRUE),
+            )
             return null
         }
         val drained = closed.await(timeout, unit)
         behavior.observe(
-            "TERMINAL_WAIT_RESOLVED",
-            "drained" to drained,
-            "phase" to synchronized(lock) { phase },
+            BehaviorTransition.TERMINAL_WAIT_RESOLVED,
+            BehaviorPayload.Facts(
+                drained = drained.behaviorFlag(),
+                phase = synchronized(lock) { phase }.behaviorPhase(),
+            ),
         )
         if (!drained) {
-            behavior.observe("TERMINAL_WAIT_FAILED", "outcome" to ExactEventFailure.SOURCE)
+            behavior.observe(
+                BehaviorTransition.TERMINAL_WAIT_FAILED,
+                BehaviorPayload.Facts(outcome = BehaviorOutcome.SOURCE),
+            )
             throw ExactEventException(
                 ExactEventFailure.SOURCE,
                 IllegalStateException("listener detach/drain이 제한 시간 안에 끝나지 않았다"),
@@ -705,20 +958,50 @@ internal class ExactEventSubscription<T>(
                         else -> Outcome.Failure(ExactEventFailure.SOURCE)
                     }
                 phase = Phase.CLOSED
+                val terminal = checkNotNull(outcome)
+                behavior.observe(
+                    BehaviorTransition.TERMINALIZED,
+                    BehaviorPayload.Facts(
+                        outcome = terminal.behaviorOutcome(),
+                        matchingCount = matchingEventCount,
+                        phase = phase.behaviorPhase(),
+                    ),
+                )
                 closed.countDown()
-                when (val terminal = checkNotNull(outcome)) {
-                    is Outcome.Success -> "SUCCESS"
-                    is Outcome.Failure -> terminal.failure.name
-                }
+                outcomeLabel(terminal)
             }
-        behavior.observe(
-            "TERMINALIZED",
-            "outcome" to terminalLabel,
-            "matchingCount" to synchronized(lock) { matchingEventCount },
-            "phase" to synchronized(lock) { phase },
-        )
         stateObserver.terminal(terminalLabel)
     }
+
+    private fun Phase.behaviorPhase(): BehaviorPhase =
+        when (this) {
+            Phase.REGISTERED -> BehaviorPhase.REGISTERED
+            Phase.ARMED -> BehaviorPhase.ARMED
+            Phase.CLOSING -> BehaviorPhase.CLOSING
+            Phase.CLOSED -> BehaviorPhase.CLOSED
+        }
+
+    private fun CloseReason.behaviorReason(): BehaviorReason =
+        when (this) {
+            CloseReason.SUCCESS -> BehaviorReason.SUCCESS
+            CloseReason.TIMEOUT -> BehaviorReason.TIMEOUT
+            CloseReason.CANCELLED -> BehaviorReason.CANCELLED
+            CloseReason.SOURCE -> BehaviorReason.SOURCE
+        }
+
+    private fun ExactEventFailure.behaviorOutcome(): BehaviorOutcome =
+        when (this) {
+            ExactEventFailure.TIMEOUT -> BehaviorOutcome.TIMEOUT
+            ExactEventFailure.CANCELLED -> BehaviorOutcome.CANCELLED
+            ExactEventFailure.DUPLICATE -> BehaviorOutcome.DUPLICATE
+            ExactEventFailure.SOURCE -> BehaviorOutcome.SOURCE
+        }
+
+    private fun Outcome<T>.behaviorOutcome(): BehaviorOutcome =
+        when (this) {
+            is Outcome.Success -> BehaviorOutcome.SUCCESS
+            is Outcome.Failure -> failure.behaviorOutcome()
+        }
 
     private fun outcomeLabel(value: Outcome<T>): String =
         when (value) {
@@ -728,7 +1011,10 @@ internal class ExactEventSubscription<T>(
 
     /** Callback 재진입 close는 자신을 기다리지 않고 lease의 finally가 terminal을 완성한다. */
     override fun close() {
-        behavior.observe("CLOSE_INVOKED", "phase" to synchronized(lock) { phase })
+        behavior.observe(
+            BehaviorTransition.CLOSE_INVOKED,
+            BehaviorPayload.Facts(phase = synchronized(lock) { phase }.behaviorPhase()),
+        )
         val terminal =
             closeObservation(
                 CloseReason.CANCELLED,
@@ -737,9 +1023,11 @@ internal class ExactEventSubscription<T>(
                 true,
             )
         behavior.observe(
-            "CLOSE_RETURNED",
-            "outcome" to terminal?.let(::outcomeLabel),
-            "phase" to synchronized(lock) { phase },
+            BehaviorTransition.CLOSE_RETURNED,
+            BehaviorPayload.Facts(
+                outcome = terminal?.behaviorOutcome() ?: BehaviorOutcome.NONE,
+                phase = synchronized(lock) { phase }.behaviorPhase(),
+            ),
         )
         if (terminal is Outcome.Failure && terminal.failure == ExactEventFailure.SOURCE) {
             throw ExactEventException(terminal.failure, terminal.cause)

@@ -102,6 +102,7 @@ class ExactEventSubscriptionTest {
         private val onAcquired: () -> Unit = {},
         private val onDetachStarted: () -> Unit = {},
         private val onReleasing: () -> Unit = {},
+        private val onUnregistered: () -> Unit = {},
         private val onDrained: () -> Unit = {},
     ) : ExactEventLeaseObserver {
         override fun acquired() = onAcquired()
@@ -109,6 +110,8 @@ class ExactEventSubscriptionTest {
         override fun detachStarted() = onDetachStarted()
 
         override fun releasing() = onReleasing()
+
+        override fun unregistered() = onUnregistered()
 
         override fun drained() = onDrained()
     }
@@ -138,6 +141,7 @@ class ExactEventSubscriptionTest {
     private fun <T> fixture(
         source: EventSource<T> = EventSource(),
         matches: (T) -> Boolean,
+        classify: (T) -> ExactEventValueCategory = { ExactEventValueCategory.GENERIC },
         leaseObserver: ExactEventLeaseObserver = ExactEventLeaseObserver.NONE,
         stateObserver: ExactEventStateObserver = ExactEventStateObserver.NONE,
     ): Fixture<T> {
@@ -145,6 +149,7 @@ class ExactEventSubscriptionTest {
         val subscription =
             ExactEventSubscription(
                 matches = matches,
+                classify = classify,
                 subscribe = { receiver ->
                     LeasedExactEventRegistration(
                             receiver,
@@ -184,11 +189,14 @@ class ExactEventSubscriptionTest {
 
         assertEquals(original.normalized, clone.normalized)
         assertEquals(original.hash, clone.hash)
-        assertThrows(IllegalStateException::class.java) {
-            requireUniqueBehaviorTraces(
-                listOf(originalMetadata.name to original, clonedMetadata.name to clone)
-            )
-        }
+        val collision =
+            assertThrows(IllegalStateException::class.java) {
+                requireUniqueBehaviorTraces(
+                    listOf(originalMetadata.name to original, clonedMetadata.name to clone)
+                )
+            }
+        assertTrue(collision.message, collision.message!!.contains("original"))
+        assertTrue(collision.message, collision.message!!.contains("renamed"))
     }
 
     @Test
@@ -223,6 +231,65 @@ class ExactEventSubscriptionTest {
 
         assertEquals(original.normalized, mutated.normalized)
         assertEquals(original.hash, mutated.hash)
+        val collision =
+            assertThrows(IllegalStateException::class.java) {
+                requireUniqueBehaviorTraces(listOf("runner-a" to original, "runner-b" to mutated))
+            }
+        assertTrue(collision.message, collision.message!!.contains("runner-a"))
+        assertTrue(collision.message, collision.message!!.contains("runner-b"))
+    }
+
+    @Test
+    fun oppositeObservedCallbackOrdersWithSameTypedEventHashDifferently() {
+        val event = OpaqueEvent("ignored")
+        val firstThenSecond = captureSharedCallbackOrder(event, reverse = false)
+        val secondThenFirst = captureSharedCallbackOrder(event, reverse = true)
+
+        assertFalse(firstThenSecond.normalized == secondThenFirst.normalized)
+        assertFalse(firstThenSecond.hash == secondThenFirst.hash)
+
+        fun orderErasingMutation(snapshot: ExactEventBehaviorSnapshot): List<String> =
+            snapshot.normalized
+                .split(';')
+                .map { token ->
+                    token.substringAfter("|thread=")
+                }
+                .sorted()
+
+        assertEquals(orderErasingMutation(firstThenSecond), orderErasingMutation(secondThenFirst))
+    }
+
+    @Test
+    fun identicalObservedOrderIsStableAndOpaqueLabelsCannotEnterHash() {
+        val baseline = captureSharedCallbackOrder(OpaqueEvent("first-label"), reverse = false)
+        val sameOrder =
+            captureSharedCallbackOrder(OpaqueEvent("second-unique-label"), reverse = false)
+        val throwingLabel =
+            captureSharedCallbackOrder(
+                OpaqueEvent("never-render") { throw AssertionError("toString must not run") },
+                reverse = false,
+            )
+
+        assertEquals(baseline.normalized, sameOrder.normalized)
+        assertEquals(baseline.hash, sameOrder.hash)
+        assertEquals(baseline.normalized, throwingLabel.normalized)
+        assertEquals(baseline.hash, throwingLabel.hash)
+    }
+
+    @Test
+    fun errorMessagesDoNotAffectCategoryButBehaviorFactsDo() {
+        val firstError = captureMatchFailure("first secret message")
+        val secondError = captureMatchFailure("different unique message")
+        val success = captureExactlyOnceBehavior()
+        val duplicate = captureDuplicateBehavior()
+        val home = captureRouteBehavior(RouteCategory.HOME)
+        val detailsThenHome = captureRouteBehavior(RouteCategory.DETAILS)
+
+        assertEquals(firstError.normalized, secondError.normalized)
+        assertEquals(firstError.hash, secondError.hash)
+        assertFalse(success.hash == duplicate.hash)
+        assertFalse(success.hash == firstError.hash)
+        assertFalse(home.hash == detailsThenHome.hash)
     }
 
     @Test
@@ -237,23 +304,55 @@ class ExactEventSubscriptionTest {
     }
 
     @Test
-    fun behaviorRecorderApiAcceptsNoScenarioMetadataOrAppendTokens() {
-        val exposed =
+    fun behaviorRecorderApiAcceptsOnlyClosedTypedRuntimePayloads() {
+        val captureApi =
             (ExactEventBehaviorTrace::class.java.declaredMethods.toList() +
                     ExactEventBehaviorTrace.Capture::class.java.declaredMethods.toList())
                 .filterNot { it.isSynthetic }
         assertFalse(
-            exposed.any { it.name.contains("record", true) || it.name.contains("append", true) }
+            captureApi.any { it.name.contains("record", true) || it.name.contains("append", true) }
+        )
+        assertTrue(captureApi.all { it.parameterTypes.isEmpty() })
+
+        val observe = BehaviorRecorder::class.java.declaredMethods.single { it.name == "observe" }
+        assertEquals(
+            listOf(
+                BehaviorHandle::class.java,
+                BehaviorTransition::class.java,
+                BehaviorPayload.Facts::class.java,
+            ),
+            observe.parameterTypes.toList(),
+        )
+        val forbiddenInputTypes = setOf(String::class.java, Any::class.java)
+        assertTrue(observe.parameterTypes.none(forbiddenInputTypes::contains))
+
+        val payloadFields =
+            BehaviorPayload.Facts::class.java.declaredFields.filterNot {
+                it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers)
+            }
+        assertTrue(payloadFields.isNotEmpty())
+        assertTrue(
+            payloadFields.all { field ->
+                field.type.isPrimitive || field.type.isEnum
+            }
+        )
+        assertTrue(
+            BehaviorEvent::class
+                .java
+                .declaredFields
+                .filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
+                .none { field ->
+                    field.type in forbiddenInputTypes || field.type == String::class.java
+                }
         )
         assertFalse(
-            exposed.any { method ->
-                method.parameterTypes.any {
-                    it == String::class.java ||
-                        Map::class.java.isAssignableFrom(it) ||
-                        Collection::class.java.isAssignableFrom(it) ||
-                        it.simpleName.contains("Schedule")
+            (BehaviorTransition.entries.map { it.name } +
+                    BehaviorPayload.Facts::class.java.declaredFields.map { it.name })
+                .any { token ->
+                    listOf("scenario", "expected", "label", "tag", "partialOrder", "message").any {
+                        token.contains(it, ignoreCase = true)
+                    }
                 }
-            }
         )
     }
 
@@ -467,6 +566,16 @@ class ExactEventSubscriptionTest {
                     stateObserver =
                         StateHooks(
                             onAwaitClaimed = { scheduler.step("cancel-await-claimed") },
+                            onCloseLinearized = { reason, ownsDetach ->
+                                if (reason == "CANCELLED") {
+                                    if (ownsDetach) {
+                                        scheduler.step("cancel-owner-linearized")
+                                        scheduler.await("cancel-await-linearized")
+                                    } else {
+                                        scheduler.step("cancel-await-linearized")
+                                    }
+                                }
+                            },
                             onTerminal = { scheduler.step("cancel-terminal") },
                         ),
                 )
@@ -850,17 +959,17 @@ class ExactEventSubscriptionTest {
                     source,
                     matches = { it == "first" },
                     leaseObserver =
-                        LeaseHooks(
-                            onDetachStarted = {
-                                scheduler.step("first-cancel-detach")
-                                scheduler.await("await-cancel-linearized")
-                            }
-                        ),
+                        LeaseHooks(onDetachStarted = { scheduler.step("first-cancel-detach") }),
                     stateObserver =
                         StateHooks(
                             onAwaitClaimed = { scheduler.step("first-await-claimed") },
                             onCloseLinearized = { _, ownsDetach ->
-                                if (!ownsDetach) scheduler.step("await-cancel-linearized")
+                                if (ownsDetach) {
+                                    scheduler.step("owner-cancel-linearized")
+                                    scheduler.await("await-cancel-linearized")
+                                } else {
+                                    scheduler.step("await-cancel-linearized")
+                                }
                             },
                         ),
                 )
@@ -900,6 +1009,13 @@ class ExactEventSubscriptionTest {
                 fixture(
                     source,
                     matches = { it.kind == "ready" && it.generation == 2 },
+                    classify = { event ->
+                        if (event.generation == 2) {
+                            ExactEventValueCategory.GENERATION_CURRENT
+                        } else {
+                            ExactEventValueCategory.GENERATION_STALE
+                        }
+                    },
                     leaseObserver =
                         LeaseHooks(
                             onAcquired = {
@@ -909,6 +1025,7 @@ class ExactEventSubscriptionTest {
                                 }
                             },
                             onDetachStarted = { scheduler.step("lifecycle-detach") },
+                            onUnregistered = { scheduler.step("lifecycle-unregistered") },
                         ),
                 )
             val executor = Executors.newFixedThreadPool(2)
@@ -924,6 +1041,7 @@ class ExactEventSubscriptionTest {
                         fixture.subscription.await(BOUND, TimeUnit.SECONDS, "generation 2")
                     }
                 scheduler.await("lifecycle-detach")
+                scheduler.await("lifecycle-unregistered")
                 scheduler.step("old-release")
                 oldFuture.get(BOUND, TimeUnit.SECONDS)
                 assertEquals(2, result.get(BOUND, TimeUnit.SECONDS).generation)
@@ -938,7 +1056,10 @@ class ExactEventSubscriptionTest {
     fun navigationSchedulesRejectWrongStaleAndDuplicateRoutesAndAcceptBack() {
         runSchedule("nav-wrong-route") { scheduler ->
             val fixture =
-                fixture<RouteEvent>(matches = { it.route == "home" && it.generation == 2 })
+                fixture<RouteEvent>(
+                    matches = { it.route == "home" && it.generation == 2 },
+                    classify = ::routeValueCategory,
+                )
             fixture.subscription.arm()
             scheduler.step("wrong")
             fixture.source.emit(RouteEvent("settings", 2))
@@ -959,6 +1080,7 @@ class ExactEventSubscriptionTest {
             val subscription =
                 ExactEventSubscription(
                     matches = { it.route == "home" && it.generation == 2 },
+                    classify = ::routeValueCategory,
                     subscribe = { receiver ->
                         LeasedExactEventRegistration(
                                 receiver,
@@ -978,7 +1100,11 @@ class ExactEventSubscriptionTest {
         }
 
         runSchedule("nav-duplicate-route") { scheduler ->
-            val fixture = fixture<RouteEvent>(matches = { it.route == "details" })
+            val fixture =
+                fixture<RouteEvent>(
+                    matches = { it.route == "details" },
+                    classify = ::routeValueCategory,
+                )
             fixture.subscription.arm()
             scheduler.step("first-details")
             fixture.source.emit(RouteEvent("details", 2))
@@ -991,7 +1117,11 @@ class ExactEventSubscriptionTest {
         }
 
         runSchedule("nav-back-to-home") { scheduler ->
-            val fixture = fixture<RouteEvent>(matches = { it.route == "home" })
+            val fixture =
+                fixture<RouteEvent>(
+                    matches = { it.route == "home" },
+                    classify = ::routeValueCategory,
+                )
             fixture.subscription.arm()
             scheduler.step("details")
             fixture.source.emit(RouteEvent("details", 2))
@@ -1005,6 +1135,94 @@ class ExactEventSubscriptionTest {
     private data class GenerationEvent(val kind: String, val generation: Int)
 
     private data class RouteEvent(val route: String, val generation: Int)
+
+    private fun routeValueCategory(event: RouteEvent): ExactEventValueCategory =
+        when (event.route) {
+            "home" -> ExactEventValueCategory.ROUTE_HOME
+            "details" -> ExactEventValueCategory.ROUTE_DETAILS
+            "settings" -> ExactEventValueCategory.ROUTE_SETTINGS
+            else -> ExactEventValueCategory.GENERIC
+        }
+
+    private class OpaqueEvent(
+        private val label: String,
+        private val render: () -> String = { label },
+    ) {
+        override fun toString(): String = render()
+    }
+
+    private enum class RouteCategory {
+        HOME,
+        DETAILS,
+    }
+
+    private fun captureSharedCallbackOrder(
+        event: OpaqueEvent,
+        reverse: Boolean,
+    ): ExactEventBehaviorSnapshot = captureBehavior {
+        val source = EventSource<OpaqueEvent>()
+        val first = fixture(source, matches = { true })
+        val second = fixture(source, matches = { true })
+        first.subscription.arm()
+        second.subscription.arm()
+        val firstDispatch = source.capture(event, listenerIndex = 0)
+        val secondDispatch = source.capture(event, listenerIndex = 1)
+        if (reverse) {
+            secondDispatch.invoke()
+            firstDispatch.invoke()
+        } else {
+            firstDispatch.invoke()
+            secondDispatch.invoke()
+        }
+        assertTrue(first.subscription.await(BOUND, TimeUnit.SECONDS, "opaque") === event)
+        assertTrue(second.subscription.await(BOUND, TimeUnit.SECONDS, "opaque") === event)
+        assertClean(first)
+        assertClean(second)
+    }
+
+    private fun captureMatchFailure(message: String): ExactEventBehaviorSnapshot = captureBehavior {
+        val fixture = fixture<OpaqueEvent>(matches = { throw SourceProblem(message) })
+        fixture.subscription.arm()
+        fixture.source.emit(OpaqueEvent("ignored"))
+        assertFailure(ExactEventFailure.SOURCE) {
+            fixture.subscription.await(BOUND, TimeUnit.SECONDS, "opaque")
+        }
+        assertClean(fixture)
+    }
+
+    private fun captureDuplicateBehavior(): ExactEventBehaviorSnapshot = captureBehavior {
+        val fixture = fixture<OpaqueEvent>(matches = { true })
+        val event = OpaqueEvent("ignored")
+        fixture.subscription.arm()
+        fixture.source.emit(event)
+        fixture.source.emit(event)
+        assertFailure(ExactEventFailure.DUPLICATE) {
+            fixture.subscription.await(BOUND, TimeUnit.SECONDS, "opaque")
+        }
+        assertClean(fixture)
+    }
+
+    private fun captureRouteBehavior(route: RouteCategory): ExactEventBehaviorSnapshot =
+        captureBehavior {
+            val fixture =
+                fixture<RouteCategory>(
+                    matches = { it == RouteCategory.HOME },
+                    classify = { value ->
+                        when (value) {
+                            RouteCategory.HOME -> ExactEventValueCategory.ROUTE_HOME
+                            RouteCategory.DETAILS -> ExactEventValueCategory.ROUTE_DETAILS
+                        }
+                    },
+                )
+            fixture.subscription.arm()
+            if (route == RouteCategory.DETAILS) fixture.source.emit(RouteCategory.DETAILS)
+            fixture.source.emit(RouteCategory.HOME)
+            assertEquals(
+                RouteCategory.HOME,
+                fixture.subscription.await(BOUND, TimeUnit.SECONDS, "route"),
+            )
+            assertClean(fixture)
+        }
 
     private fun captureExactlyOnceBehavior(): ExactEventBehaviorSnapshot = captureBehavior {
         val fixture = fixture<String>(matches = { it == "home" })
@@ -1174,10 +1392,12 @@ class ExactEventSubscriptionTest {
                 ),
                 Schedule(
                     "emit-acquired-then-cancellation",
-                    "po:await<acquire<cancel-detach<release<cancel-terminal",
+                    "po:await<acquire<cancel-owner<await-cancel<detach<release<terminal",
                     listOf(
                         "cancel-await-claimed",
                         "cancel-event-acquired",
+                        "cancel-owner-linearized",
+                        "cancel-await-linearized",
                         "cancel-detach-started",
                         "cancel-event-release",
                         "cancel-terminal",
@@ -1275,20 +1495,27 @@ class ExactEventSubscriptionTest {
                 ),
                 Schedule(
                     "two-subscribers-cancel-and-independent-events",
-                    "po:await-first<cancel-first<detach<await-cancel<wrong-second<right-second",
+                    "po:await-first<cancel-first<owner-cancel<await-cancel<detach<wrong<right",
                     listOf(
                         "first-await-claimed",
                         "cancel-first",
-                        "first-cancel-detach",
+                        "owner-cancel-linearized",
                         "await-cancel-linearized",
+                        "first-cancel-detach",
                         "wrong-for-second",
                         "second-event",
                     ),
                 ),
                 Schedule(
                     "lifecycle-old-captured-new-generation-stale-release",
-                    "po:old-acquire<new-ready<detach<old-release",
-                    listOf("old-acquired", "new-ready", "lifecycle-detach", "old-release"),
+                    "po:old-acquire<new-ready<detach<unregistered<old-release",
+                    listOf(
+                        "old-acquired",
+                        "new-ready",
+                        "lifecycle-detach",
+                        "lifecycle-unregistered",
+                        "old-release",
+                    ),
                 ),
                 Schedule(
                     "nav-wrong-route",
