@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "gate": "ios-release-prerequisites",
-  "status": "blocked",
+  "status": "deferred-to-todo-20",
   "requiredCommand": "./ios/scripts/preflight-release-assets.sh --require-device --require-signing --require-firebase --require-asc",
   "expectedSuccessExit": 0,
   "observedExit": 65,
@@ -26,5 +26,6 @@
     "signed-app-store-archive",
     "testflight-install"
   ],
-  "resumeWhen": "The required command exits 0 without exposing secret values."
+  "approvedScope": "Todos 2-19 may use simulators and protocol fakes.",
+  "resumeWhen": "Todo 20 and final release gates resume when the required command exits 0 without exposing secret values."
 }

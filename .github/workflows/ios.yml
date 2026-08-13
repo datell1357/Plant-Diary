@@ -1,0 +1,29 @@
+name: iOS
+
+on:
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".swiftformat"
+      - ".swiftlint.yml"
+      - ".github/workflows/ios.yml"
+  push:
+    branches:
+      - main
+      - "feat/**"
+    paths:
+      - "ios/**"
+      - ".swiftformat"
+      - ".swiftlint.yml"
+      - ".github/workflows/ios.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen@2.46.0 swiftformat@0.62.1 swiftlint@0.65.0
+      - run: ./ios/scripts/verify.sh

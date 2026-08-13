@@ -1,6 +1,8 @@
 # iOS Gate 0 prerequisites
 
-Implementation remains blocked until the following command exits `0`:
+By owner approval on 2026-08-13, simulator- and fake-backed implementation
+Todos 2-19 may proceed while these assets are unavailable. Todo 20 and the final
+release gates remain blocked until the following command exits `0`:
 
 ```sh
 ./ios/scripts/preflight-release-assets.sh \
@@ -38,7 +40,8 @@ iOS app.
 4. Store Firebase plists and private keys outside Git.
 5. Export only paths and non-secret identifiers in the execution environment.
 6. Run the preflight command above from the `feat-ios-app` worktree.
-7. Resume `$start-work`; do not mark Todo 1 complete unless preflight exits `0`.
+7. Resume `$start-work` for Todo 20 and final release verification only after
+   preflight exits `0`.
 
 Do not commit plist contents, private keys, certificates, profiles, access tokens,
 or API credentials. Simulator push, mock authentication, and unsigned archives do

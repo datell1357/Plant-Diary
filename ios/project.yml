@@ -1,0 +1,78 @@
+name: Planterior
+options:
+  bundleIdPrefix: com.planterior
+  projectFormat: xcode16_0
+  defaultSourceDirectoryType: syncedFolder
+  minimumXcodeGenVersion: 2.46.0
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "26.0"
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    GENERATE_INFOPLIST_FILE: "YES"
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0"
+packages:
+  PlanteriorCore:
+    path: Packages/PlanteriorCore
+configFiles:
+  Debug: Config/Development.xcconfig
+  Release: Config/Release.xcconfig
+fileGroups:
+  - Config
+targets:
+  Planterior:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.planterior.helper
+        PRODUCT_NAME: Planterior
+        INFOPLIST_KEY_CFBundleDisplayName: 초보 식집사
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - package: PlanteriorCore
+        products:
+          - PlanteriorDomain
+          - PlanteriorData
+          - PlanteriorDesignSystem
+    scheme:
+      gatherCoverageData: true
+      coverageTargets:
+        - Planterior
+      testTargets:
+        - PlanteriorTests
+        - PlanteriorUITests
+  PlanteriorTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/PlanteriorTests
+    dependencies:
+      - target: Planterior
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.planterior.helper.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+  PlanteriorUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/PlanteriorUITests
+    dependencies:
+      - target: Planterior
+      - package: PlanteriorCore
+        product: PlanteriorTestingSupport
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.planterior.helper.uitests
+        GENERATE_INFOPLIST_FILE: "YES"

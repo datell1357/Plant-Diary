@@ -1,0 +1,620 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		20F30EB48D16EB0D8ED2ABAC /* PlanteriorData in Frameworks */ = {isa = PBXBuildFile; productRef = 6468B88AC5EFFEB10259D801 /* PlanteriorData */; };
+		4D91F40481B50A5D7FCF3C77 /* PlanteriorDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 314328254F85385F20B29003 /* PlanteriorDomain */; };
+		B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */; };
+		E54C1B662E5B6CA1C8B241CF /* PlanteriorTestingSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 5E4D6CC182B82BF32E77523D /* PlanteriorTestingSupport */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1B90CCE423FF7F042E08B3BD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 46D678FFD21783CD11AE5D97 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1D1EA4DA792C0DA3BF1D799D;
+			remoteInfo = Planterior;
+		};
+		7F23580FA21EAA4E8610A5BD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 46D678FFD21783CD11AE5D97 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1D1EA4DA792C0DA3BF1D799D;
+			remoteInfo = Planterior;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1042639519F329D948698806 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		1CEDBA63D9DC556371407FFA /* PlanteriorTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlanteriorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Development.xcconfig; sourceTree = "<group>"; };
+		253250BEBBEBB1181FDC9335 /* Planterior.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Planterior.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2689D6191D8484F44416B57 /* PlanteriorCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PlanteriorCore; path = Packages/PlanteriorCore; sourceTree = SOURCE_ROOT; };
+		EF193AF60ED3E04D994EFD57 /* PlanteriorUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlanteriorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0996C63EFD1BC71F5335C2DC /* Config */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		A167C7BAF36ADA4BA4E6D6D8 /* Tests/PlanteriorUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Tests/PlanteriorUITests;
+			sourceTree = "<group>";
+		};
+		AC08AAEAC4B847CB21B1E4DF /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		F9FDBC37A02C5BB10CC6DFCA /* Tests/PlanteriorTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Tests/PlanteriorTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2E173D58EC350CF03F239FE9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E54C1B662E5B6CA1C8B241CF /* PlanteriorTestingSupport in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C38A1274F51F51472CA0B7E5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4D91F40481B50A5D7FCF3C77 /* PlanteriorDomain in Frameworks */,
+				20F30EB48D16EB0D8ED2ABAC /* PlanteriorData in Frameworks */,
+				B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		199A16929663D18FAF299A1D = {
+			isa = PBXGroup;
+			children = (
+				AC08AAEAC4B847CB21B1E4DF /* App */,
+				0996C63EFD1BC71F5335C2DC /* Config */,
+				319F1832E96D2FCC5B7C4B85 /* Config */,
+				7799E9E668D289BC8812914E /* Packages */,
+				F9FDBC37A02C5BB10CC6DFCA /* Tests/PlanteriorTests */,
+				A167C7BAF36ADA4BA4E6D6D8 /* Tests/PlanteriorUITests */,
+				2B8F6DE383DD280BF15A0974 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		2B8F6DE383DD280BF15A0974 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				253250BEBBEBB1181FDC9335 /* Planterior.app */,
+				1CEDBA63D9DC556371407FFA /* PlanteriorTests.xctest */,
+				EF193AF60ED3E04D994EFD57 /* PlanteriorUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		319F1832E96D2FCC5B7C4B85 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */,
+				1042639519F329D948698806 /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		7799E9E668D289BC8812914E /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				A2689D6191D8484F44416B57 /* PlanteriorCore */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1D1EA4DA792C0DA3BF1D799D /* Planterior */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 24D7DD261592E4F4408C757F /* Build configuration list for PBXNativeTarget "Planterior" */;
+			buildPhases = (
+				0D6E95A36089E415AFF1F829 /* Sources */,
+				CB9F3B19DA3FB22E0ED4BEED /* Resources */,
+				C38A1274F51F51472CA0B7E5 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AC08AAEAC4B847CB21B1E4DF /* App */,
+			);
+			name = Planterior;
+			packageProductDependencies = (
+				314328254F85385F20B29003 /* PlanteriorDomain */,
+				6468B88AC5EFFEB10259D801 /* PlanteriorData */,
+				00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */,
+			);
+			productName = Planterior;
+			productReference = 253250BEBBEBB1181FDC9335 /* Planterior.app */;
+			productType = "com.apple.product-type.application";
+		};
+		80FE03513C5BB8B98E3D7EBC /* PlanteriorUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 852131FAC2190CC7E72E80F6 /* Build configuration list for PBXNativeTarget "PlanteriorUITests" */;
+			buildPhases = (
+				4FD47926BD70DBC456580547 /* Sources */,
+				734D96B9CBC82DF47A507591 /* Resources */,
+				2E173D58EC350CF03F239FE9 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D1AE9472FB1AEB878A3FC6CC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A167C7BAF36ADA4BA4E6D6D8 /* Tests/PlanteriorUITests */,
+			);
+			name = PlanteriorUITests;
+			packageProductDependencies = (
+				5E4D6CC182B82BF32E77523D /* PlanteriorTestingSupport */,
+			);
+			productName = PlanteriorUITests;
+			productReference = EF193AF60ED3E04D994EFD57 /* PlanteriorUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		DE68DCE5445DAA37D2E3C8F6 /* PlanteriorTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 29D4C3185693686A611428AC /* Build configuration list for PBXNativeTarget "PlanteriorTests" */;
+			buildPhases = (
+				8B9CE715977BA57BEB9DF891 /* Sources */,
+				A6CD0D8EDCAB13B7092ED39C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CB2A9BD13257A2721BE386B6 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				F9FDBC37A02C5BB10CC6DFCA /* Tests/PlanteriorTests */,
+			);
+			name = PlanteriorTests;
+			packageProductDependencies = (
+			);
+			productName = PlanteriorTests;
+			productReference = 1CEDBA63D9DC556371407FFA /* PlanteriorTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		46D678FFD21783CD11AE5D97 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					80FE03513C5BB8B98E3D7EBC = {
+						TestTargetID = 1D1EA4DA792C0DA3BF1D799D;
+					};
+				};
+			};
+			buildConfigurationList = 93569511D66C5D9127DC1D06 /* Build configuration list for PBXProject "Planterior" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 199A16929663D18FAF299A1D;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C1F875EF3004186F87721998 /* XCLocalSwiftPackageReference "Packages/PlanteriorCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2B8F6DE383DD280BF15A0974 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1D1EA4DA792C0DA3BF1D799D /* Planterior */,
+				DE68DCE5445DAA37D2E3C8F6 /* PlanteriorTests */,
+				80FE03513C5BB8B98E3D7EBC /* PlanteriorUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		734D96B9CBC82DF47A507591 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A6CD0D8EDCAB13B7092ED39C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB9F3B19DA3FB22E0ED4BEED /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0D6E95A36089E415AFF1F829 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4FD47926BD70DBC456580547 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B9CE715977BA57BEB9DF891 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CB2A9BD13257A2721BE386B6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1D1EA4DA792C0DA3BF1D799D /* Planterior */;
+			targetProxy = 1B90CCE423FF7F042E08B3BD /* PBXContainerItemProxy */;
+		};
+		D1AE9472FB1AEB878A3FC6CC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1D1EA4DA792C0DA3BF1D799D /* Planterior */;
+			targetProxy = 7F23580FA21EAA4E8610A5BD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		62B5C49351BB6DBAF60CAA90 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.planterior.helper.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Planterior;
+			};
+			name = Debug;
+		};
+		D43D98690EA7ED32E200167E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.planterior.helper.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Planterior.app/Planterior";
+			};
+			name = Debug;
+		};
+		D8519854042F599626914C00 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_CFBundleDisplayName = "초보 식집사";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.planterior.helper;
+				PRODUCT_NAME = Planterior;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		DAA491865C974634083BD3CD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.planterior.helper.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Planterior.app/Planterior";
+			};
+			name = Release;
+		};
+		E5724470442C692E65D683D3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1042639519F329D948698806 /* Release.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		EF3F411F1AE711D943551508 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F9BD2B84BA7CFB12F9AA0DEC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_CFBundleDisplayName = "초보 식집사";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.planterior.helper;
+				PRODUCT_NAME = Planterior;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		FF6773EEF9F051F320C8EF79 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.planterior.helper.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Planterior;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		24D7DD261592E4F4408C757F /* Build configuration list for PBXNativeTarget "Planterior" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D8519854042F599626914C00 /* Debug */,
+				F9BD2B84BA7CFB12F9AA0DEC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		29D4C3185693686A611428AC /* Build configuration list for PBXNativeTarget "PlanteriorTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D43D98690EA7ED32E200167E /* Debug */,
+				DAA491865C974634083BD3CD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		852131FAC2190CC7E72E80F6 /* Build configuration list for PBXNativeTarget "PlanteriorUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				62B5C49351BB6DBAF60CAA90 /* Debug */,
+				FF6773EEF9F051F320C8EF79 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		93569511D66C5D9127DC1D06 /* Build configuration list for PBXProject "Planterior" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EF3F411F1AE711D943551508 /* Debug */,
+				E5724470442C692E65D683D3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C1F875EF3004186F87721998 /* XCLocalSwiftPackageReference "Packages/PlanteriorCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/PlanteriorCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlanteriorDesignSystem;
+		};
+		314328254F85385F20B29003 /* PlanteriorDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlanteriorDomain;
+		};
+		5E4D6CC182B82BF32E77523D /* PlanteriorTestingSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlanteriorTestingSupport;
+		};
+		6468B88AC5EFFEB10259D801 /* PlanteriorData */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlanteriorData;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 46D678FFD21783CD11AE5D97 /* Project object */;
+}

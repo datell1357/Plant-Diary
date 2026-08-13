@@ -29,23 +29,43 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-if [ "$task_number" != "1" ]; then
-  printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
-  exit 69
-fi
-
 if [ -z "$attempt_dir" ]; then
   printf 'IOS_QA_USAGE_ERROR missing_attempt_dir\n' >&2
   exit 64
 fi
 
 mkdir -p "$attempt_dir"
-evidence="$attempt_dir/task-1-ios-app-implementation.log"
+evidence="$attempt_dir/task-$task_number-ios-app-implementation.log"
 exec >"$evidence" 2>&1
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 android_root=/Users/yeoreum/Documents/Planterior_Helper-worktrees/feat-android-app
+
+if [ "$task_number" = "2" ]; then
+  development_config="$repo_root/ios/Config/Development.xcconfig"
+  release_config="$repo_root/ios/Config/Release.xcconfig"
+  if [ "${QA_MISSING_CONFIG:-0}" = "1" ]; then
+    development_config="$repo_root/ios/Config/Missing.xcconfig"
+  fi
+  if [ ! -f "$development_config" ]; then
+    printf 'IOS_CONFIGURATION_MISSING config=%s\n' "$development_config" >&2
+    exit 70
+  fi
+  if [ ! -f "$release_config" ]; then
+    printf 'IOS_CONFIGURATION_MISSING config=%s\n' "$release_config" >&2
+    exit 70
+  fi
+  export QA_ATTEMPT_DIR="$attempt_dir"
+  "$script_dir/verify.sh"
+  printf 'IOS_TASK_2_QA_OK\n'
+  exit 0
+fi
+
+if [ "$task_number" != "1" ]; then
+  printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
+  exit 69
+fi
 
 if [ "${PATH_OWNERSHIP_PROBE:-}" = "android" ]; then
   "$script_dir/check-path-ownership.sh" app/build.gradle.kts

@@ -1,0 +1,3 @@
+FIREBASE_PLIST_PATH = /secure/path/to/production/GoogleService-Info.plist
+PLANT_ID_PROXY_BASE_URL = https://example.invalid
+OPEN_WEATHER_PROXY_BASE_URL = https://example.invalid

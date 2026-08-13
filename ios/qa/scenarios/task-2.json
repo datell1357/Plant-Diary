@@ -1,0 +1,18 @@
+{
+  "task": 2,
+  "name": "Xcode project and quality gates",
+  "happyPath": {
+    "command": "./ios/scripts/qa-task.sh 2 --attempt-dir \"$ATTEMPT_DIR\"",
+    "expectedExit": 0,
+    "expectedMarker": "IOS_TASK_2_QA_OK"
+  },
+  "failurePaths": [
+    {
+      "environment": {
+        "QA_MISSING_CONFIG": "1"
+      },
+      "expectedExit": 70,
+      "expectedMarker": "IOS_CONFIGURATION_MISSING"
+    }
+  ]
+}
