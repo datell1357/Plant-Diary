@@ -1,37 +1,29 @@
+import FirebaseCore
 import Foundation
+import GoogleSignIn
 import PlanteriorDesignSystem
 import SwiftUI
 
 @main
 struct PlanteriorApp: App {
+    @StateObject private var auth = AuthRuntime()
+
+    init() {
+        if FirebaseConfiguration.isAvailable {
+            FirebaseApp.configure()
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             AppShellView()
-        }
-    }
-}
-
-enum AppTab: String, CaseIterable, Hashable, Sendable {
-    case home
-    case collection
-    case storage
-    case settings
-
-    var title: String {
-        switch self {
-        case .home: "홈"
-        case .collection: "도감"
-        case .storage: "창고"
-        case .settings: "설정"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .home: "house"
-        case .collection: "leaf"
-        case .storage: "shippingbox"
-        case .settings: "gearshape"
+                .environmentObject(auth)
+                .task {
+                    await auth.restore()
+                }
+                .onOpenURL {
+                    _ = GIDSignIn.sharedInstance.handle($0)
+                }
         }
     }
 }

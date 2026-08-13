@@ -1,0 +1,38 @@
+{
+  "task": 6,
+  "name": "Native Apple and Google social authentication",
+  "protocolFake": {
+    "command": "swift test --package-path ios/Packages/PlanteriorCore --filter AuthSessionTests",
+    "covers": [
+      "Apple new account",
+      "Google existing account",
+      "nonce mismatch",
+      "cancel",
+      "provider error",
+      "cold session restore",
+      "logout",
+      "account cache isolation",
+      "sanitized pending route resume"
+    ]
+  },
+  "realAccount": {
+    "requires": [
+      "IOS_PHYSICAL_UDID",
+      "IOS_CODESIGN_IDENTITY",
+      "IOS_PROVISIONING_PROFILE",
+      "IOS_FIREBASE_PLIST_DEV",
+      "IOS_FIREBASE_PLIST_PROD",
+      "IOS_TASK_6_REAL_ACCOUNT_CONFIRMED",
+      "IOS_TASK_6_REAL_ACCOUNT_EVIDENCE"
+    ],
+    "checklist": [
+      "Apple new account creates a profile",
+      "Google existing account restores its session",
+      "cold relaunch restores the same account",
+      "logout unmounts private account state",
+      "switching accounts exposes no previous-account rows",
+      "pending plant route resumes after authentication"
+    ],
+    "evidence": "task-6-ios-app-implementation.log"
+  }
+}

@@ -4,6 +4,7 @@ import XCTest
 final class AppLaunchUITests: XCTestCase {
     func testCaptureRenderedShell() {
         let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
@@ -15,6 +16,7 @@ final class AppLaunchUITests: XCTestCase {
 
     func testAppShellPreservesTabStacksAndPresentsCameraAction() {
         let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
@@ -22,35 +24,39 @@ final class AppLaunchUITests: XCTestCase {
         let homeDetail = app.buttons["home.open-detail"]
         XCTAssertTrue(homeDetail.waitForExistence(timeout: 5))
         homeDetail.tap()
-        XCTAssertTrue(app.otherElements["home.detail"].exists)
+        XCTAssertTrue(app.otherElements["home.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.buttons["collection.open-detail"].waitForExistence(timeout: 5))
         app.buttons["collection.open-detail"].tap()
-        XCTAssertTrue(app.otherElements["collection.detail"].exists)
+        XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.home"].tap()
-        XCTAssertTrue(app.otherElements["home.detail"].exists)
+        XCTAssertTrue(app.otherElements["home.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.storage"].tap()
+        XCTAssertTrue(app.buttons["storage.open-detail"].waitForExistence(timeout: 5))
         app.buttons["storage.open-detail"].tap()
-        XCTAssertTrue(app.otherElements["storage.detail"].exists)
+        XCTAssertTrue(app.otherElements["storage.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.settings"].tap()
+        XCTAssertTrue(app.buttons["settings.open-detail"].waitForExistence(timeout: 5))
         app.buttons["settings.open-detail"].tap()
-        XCTAssertTrue(app.otherElements["settings.detail"].exists)
+        XCTAssertTrue(app.otherElements["settings.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.collection"].tap()
-        XCTAssertTrue(app.otherElements["collection.detail"].exists)
+        XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.camera"].tap()
         XCTAssertTrue(app.otherElements["camera.sheet"].waitForExistence(timeout: 5))
         app.buttons["camera.dismiss"].tap()
-        XCTAssertFalse(app.otherElements["camera.sheet"].exists)
-        XCTAssertTrue(app.otherElements["collection.detail"].exists)
+        XCTAssertTrue(app.otherElements["camera.sheet"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
     }
 
     func testEveryPrimaryNavigationControlIsReachable() {
         let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
 
         for identifier in [
@@ -69,6 +75,7 @@ final class AppLaunchUITests: XCTestCase {
     func testHostileAndDeletedURLsFallBackWithoutMetadata() {
         let hostileApp = XCUIApplication()
         hostileApp.launchEnvironment["QA_DEEP_LINK"] = "https://evil.test/plant/private-plant"
+        hostileApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         hostileApp.launch()
         XCTAssertTrue(hostileApp.otherElements["route.unavailable"].waitForExistence(timeout: 5))
         XCTAssertFalse(hostileApp.staticTexts["private-plant"].exists)
@@ -77,6 +84,8 @@ final class AppLaunchUITests: XCTestCase {
         let deletedApp = XCUIApplication()
         deletedApp.launchEnvironment["QA_DEEP_LINK"] = "planterior://plant/deleted-plant"
         deletedApp.launchEnvironment["QA_TARGET_DELETED"] = "1"
+        deletedApp.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        deletedApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         deletedApp.launch()
         XCTAssertTrue(deletedApp.otherElements["route.unavailable"].waitForExistence(timeout: 5))
         XCTAssertFalse(deletedApp.staticTexts["deleted-plant"].exists)
@@ -85,9 +94,38 @@ final class AppLaunchUITests: XCTestCase {
     func testReduceMotionLaunchContract() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(
             app.otherElements["app.shell.reduce-motion"].waitForExistence(timeout: 5)
         )
+    }
+
+    func testLoginSheetPresentsAndCancelsWithoutPrivateRows() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["auth.open"].waitForExistence(timeout: 5))
+        app.buttons["auth.open"].tap()
+        XCTAssertTrue(app.buttons["auth.apple"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["auth.google"].exists)
+        app.buttons["auth.cancel"].tap()
+        XCTAssertFalse(app.buttons["auth.apple"].exists)
+        XCTAssertFalse(app.staticTexts["private-account-row"].exists)
+    }
+
+    func testFirstRunOnboardingCompletesOnce() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_RESET_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertTrue(app.otherElements["onboarding.screen"].waitForExistence(timeout: 5))
+        app.buttons["onboarding.complete"].tap()
+        XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
+        app.terminate()
+        app.launchEnvironment.removeValue(forKey: "QA_RESET_ONBOARDING")
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launch()
+        XCTAssertFalse(app.otherElements["onboarding.screen"].exists)
+        XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
     }
 }

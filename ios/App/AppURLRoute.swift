@@ -13,7 +13,8 @@ enum AppURLRoute {
               url.pathComponents.count == 2,
               components.percentEncodedPath.first == "/",
               !components.percentEncodedPath.dropFirst().contains("/"),
-              !url.lastPathComponent.isEmpty
+              !url.lastPathComponent.isEmpty,
+              PlantRouteTarget(rawValue: url.lastPathComponent) != nil
         else {
             return .invalid
         }

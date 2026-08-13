@@ -3,7 +3,10 @@ import SwiftUI
 
 struct AppShellView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var auth: AuthRuntime
     @State private var navigation = AppNavigationState()
+    @State private var showsLogin = false
+    @State private var showsOnboarding = OnboardingState.shouldPresent
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,6 +16,21 @@ struct AppShellView: View {
                 selectTab: { navigation.select($0) },
                 presentCamera: { navigation.presentCamera() }
             )
+            if !auth.isSignedIn {
+                Button("로그인하고 동기화하기") {
+                    showsLogin = true
+                }
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .accessibilityIdentifier("auth.open")
+            } else if navigation.selectedTab == .settings {
+                Button("로그아웃") {
+                    Task {
+                        await auth.signOut()
+                    }
+                }
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .accessibilityIdentifier("auth.logout")
+            }
         }
         .background(PlanteriorPalette.canvas.color)
         .transaction {
@@ -23,11 +41,15 @@ struct AppShellView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(effectiveReduceMotion ? "app.shell.reduce-motion" : "app.shell")
         .onOpenURL {
+            guard $0.scheme == "planterior" else {
+                return
+            }
             navigation.handle(
                 AppURLRoute.parse($0),
-                authentication: .signedIn,
+                authentication: authenticationState,
                 targetAvailability: .available
             )
+            showsLogin = navigation.pendingAuthenticationRoute != nil
         }
         .task {
             handleQARouteIfPresent()
@@ -42,10 +64,35 @@ struct AppShellView: View {
                 navigation.dismissCamera()
             }
         }
+        .sheet(isPresented: $showsLogin) {
+            LoginSheet(auth: auth)
+        }
+        .fullScreenCover(isPresented: $showsOnboarding) {
+            OnboardingView {
+                OnboardingState.complete()
+                showsOnboarding = false
+            }
+        }
+        .onChange(of: auth.isSignedIn) { _, isSignedIn in
+            guard isSignedIn else {
+                navigation = AppNavigationState()
+                return
+            }
+            navigation.completeAuthentication(targetAvailability: .available)
+        }
     }
 
     private var effectiveReduceMotion: Bool {
         reduceMotion || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
+    }
+
+    private var authenticationState: AppAuthenticationState {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
+                return .signedIn
+            }
+        #endif
+        return auth.isSignedIn ? .signedIn : .signedOut
     }
 
     private func handleQARouteIfPresent() {
@@ -60,9 +107,10 @@ struct AppShellView: View {
                 : .available
         navigation.handle(
             AppURLRoute.parse(url),
-            authentication: .signedIn,
+            authentication: authenticationState,
             targetAvailability: availability
         )
+        showsLogin = navigation.pendingAuthenticationRoute != nil
     }
 
     @ViewBuilder
@@ -84,30 +132,6 @@ struct AppShellView: View {
                 AppRouteDestination(route: route)
             }
         }
-    }
-}
-
-private struct AppTabRootView: View {
-    let tab: AppTab
-    let openDetail: () -> Void
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: tab.systemImage + ".fill")
-                .font(.system(size: 52))
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .accessibilityHidden(true)
-            Text(tab.title)
-                .font(PlanteriorTypography.screenTitle)
-            PlanteriorPrimaryButton("상세 보기", action: openDetail)
-                .frame(maxWidth: 240)
-                .accessibilityLabel("\(tab.title) 상세 보기")
-                .accessibilityIdentifier("\(tab.rawValue).open-detail")
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(PlanteriorPalette.canvas.color)
-        .navigationTitle(tab.title)
     }
 }
 
@@ -165,28 +189,5 @@ private struct AppTabBar: View {
         .frame(maxWidth: .infinity, minHeight: PlanteriorControl.cameraDiameter)
         .accessibilityLabel("식물 사진 촬영")
         .accessibilityIdentifier("tab.camera")
-    }
-}
-
-private struct CameraActionView: View {
-    let dismiss: () -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "camera.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .accessibilityHidden(true)
-            Text("식물 사진 촬영")
-                .font(PlanteriorTypography.screenTitle)
-            PlanteriorPrimaryButton("닫기", action: dismiss)
-                .frame(maxWidth: 240)
-                .accessibilityLabel("카메라 닫기")
-                .accessibilityIdentifier("camera.dismiss")
-        }
-        .padding(24)
-        .presentationDetents([.medium])
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camera.sheet")
     }
 }

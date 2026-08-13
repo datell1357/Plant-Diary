@@ -20,6 +20,12 @@ settings:
 packages:
   PlanteriorCore:
     path: Packages/PlanteriorCore
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    from: 12.0.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS.git
+    from: 9.0.0
 configFiles:
   Debug: Config/Development.xcconfig
   Release: Config/Release.xcconfig
@@ -37,6 +43,7 @@ targets:
         PRODUCT_NAME: Planterior
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/Planterior.entitlements
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - package: PlanteriorCore
@@ -44,6 +51,22 @@ targets:
           - PlanteriorDomain
           - PlanteriorData
           - PlanteriorDesignSystem
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    preBuildScripts:
+      - name: Provision Firebase configuration
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ -n "$PLAN_FIREBASE_PLIST_PATH" ]; then
+            test -f "$PLAN_FIREBASE_PLIST_PATH"
+            mkdir -p "$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH"
+            cp "$PLAN_FIREBASE_PLIST_PATH" \
+              "$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/GoogleService-Info.plist"
+          fi
     scheme:
       gatherCoverageData: true
       coverageTargets:

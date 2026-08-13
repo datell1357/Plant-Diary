@@ -1,3 +1,5 @@
-FIREBASE_PLIST_PATH = /secure/path/to/development/GoogleService-Info.plist
+PLAN_FIREBASE_PLIST_PATH = /secure/path/to/development/GoogleService-Info.plist
+GOOGLE_CLIENT_ID = example.apps.googleusercontent.com
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.example
 PLANT_ID_PROXY_BASE_URL = https://example.invalid
 OPEN_WEATHER_PROXY_BASE_URL = https://example.invalid

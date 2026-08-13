@@ -9,10 +9,7 @@
 /* Begin PBXBuildFile section */
 		20F30EB48D16EB0D8ED2ABAC /* PlanteriorData in Frameworks */ = {isa = PBXBuildFile; productRef = 6468B88AC5EFFEB10259D801 /* PlanteriorData */; };
 		4D91F40481B50A5D7FCF3C77 /* PlanteriorDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 314328254F85385F20B29003 /* PlanteriorDomain */; };
-		8365ED32867B8F08A764806F /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 56A154ABA47564E206F50B2A /* GoogleSignIn */; };
-		A21165099D52C9B58D535A75 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = E390AD4E37980B3BCB1485BE /* FirebaseAuth */; };
 		B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */; };
-		DCD6D88B6542CFE43BD0E863 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D20CF2752AE65A93E5872F1A /* FirebaseFirestore */; };
 		E54C1B662E5B6CA1C8B241CF /* PlanteriorTestingSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 5E4D6CC182B82BF32E77523D /* PlanteriorTestingSupport */; };
 /* End PBXBuildFile section */
 
@@ -38,7 +35,7 @@
 		1CEDBA63D9DC556371407FFA /* PlanteriorTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlanteriorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Development.xcconfig; sourceTree = "<group>"; };
 		253250BEBBEBB1181FDC9335 /* Planterior.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Planterior.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2689D6191D8484F44416B57 /* PlanteriorCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PlanteriorCore; path = Packages/PlanteriorCore; sourceTree = SOURCE_ROOT; };
+		A2689D6191D8484F44416B57 /* PlanteriorCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PlanteriorCore; path = ../Packages/PlanteriorCore; sourceTree = SOURCE_ROOT; };
 		EF193AF60ED3E04D994EFD57 /* PlanteriorUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlanteriorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -97,9 +94,6 @@
 				4D91F40481B50A5D7FCF3C77 /* PlanteriorDomain in Frameworks */,
 				20F30EB48D16EB0D8ED2ABAC /* PlanteriorData in Frameworks */,
 				B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */,
-				A21165099D52C9B58D535A75 /* FirebaseAuth in Frameworks */,
-				DCD6D88B6542CFE43BD0E863 /* FirebaseFirestore in Frameworks */,
-				8365ED32867B8F08A764806F /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,7 +129,8 @@
 				2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */,
 				1042639519F329D948698806 /* Release.xcconfig */,
 			);
-			path = Config;
+			name = Config;
+			path = ../Config;
 			sourceTree = "<group>";
 		};
 		7799E9E668D289BC8812914E /* Packages */ = {
@@ -143,7 +138,8 @@
 			children = (
 				A2689D6191D8484F44416B57 /* PlanteriorCore */,
 			);
-			path = Packages;
+			name = Packages;
+			path = ../Packages;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -153,7 +149,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 24D7DD261592E4F4408C757F /* Build configuration list for PBXNativeTarget "Planterior" */;
 			buildPhases = (
-				55BBE3A261F70F2CEFAFD9EA /* Provision Firebase configuration */,
 				0D6E95A36089E415AFF1F829 /* Sources */,
 				CB9F3B19DA3FB22E0ED4BEED /* Resources */,
 				C38A1274F51F51472CA0B7E5 /* Frameworks */,
@@ -170,9 +165,6 @@
 				314328254F85385F20B29003 /* PlanteriorDomain */,
 				6468B88AC5EFFEB10259D801 /* PlanteriorData */,
 				00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */,
-				E390AD4E37980B3BCB1485BE /* FirebaseAuth */,
-				D20CF2752AE65A93E5872F1A /* FirebaseFirestore */,
-				56A154ABA47564E206F50B2A /* GoogleSignIn */,
 			);
 			productName = Planterior;
 			productReference = 253250BEBBEBB1181FDC9335 /* Planterior.app */;
@@ -248,8 +240,6 @@
 			mainGroup = 199A16929663D18FAF299A1D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
-				66507D6AD0C80F9D80D90F36 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				C1F875EF3004186F87721998 /* XCLocalSwiftPackageReference "Packages/PlanteriorCore" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -287,28 +277,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		55BBE3A261F70F2CEFAFD9EA /* Provision Firebase configuration */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Provision Firebase configuration";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "if [ -n \"$PLAN_FIREBASE_PLIST_PATH\" ]; then\n  test -f \"$PLAN_FIREBASE_PLIST_PATH\"\n  mkdir -p \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH\"\n  cp \"$PLAN_FIREBASE_PLIST_PATH\" \\\n    \"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/GoogleService-Info.plist\"\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0D6E95A36089E415AFF1F829 /* Sources */ = {
@@ -386,10 +354,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Config/Planterior.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "초보 식집사";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -551,10 +519,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Config/Planterior.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Config/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "초보 식집사";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -631,25 +599,6 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		66507D6AD0C80F9D80D90F36 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 9.0.0;
-			};
-		};
-		6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
 		00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -659,11 +608,6 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = PlanteriorDomain;
 		};
-		56A154ABA47564E206F50B2A /* GoogleSignIn */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 66507D6AD0C80F9D80D90F36 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
-			productName = GoogleSignIn;
-		};
 		5E4D6CC182B82BF32E77523D /* PlanteriorTestingSupport */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PlanteriorTestingSupport;
@@ -671,16 +615,6 @@
 		6468B88AC5EFFEB10259D801 /* PlanteriorData */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PlanteriorData;
-		};
-		D20CF2752AE65A93E5872F1A /* FirebaseFirestore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseFirestore;
-		};
-		E390AD4E37980B3BCB1485BE /* FirebaseAuth */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAuth;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

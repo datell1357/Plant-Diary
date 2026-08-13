@@ -1,0 +1,13 @@
+{
+  "required": [
+    "GOOGLE_APP_ID",
+    "GCM_SENDER_ID",
+    "API_KEY",
+    "PROJECT_ID",
+    "BUNDLE_ID",
+    "CLIENT_ID",
+    "REVERSED_CLIENT_ID"
+  ],
+  "bundleID": "com.planterior.helper",
+  "trackedCredentials": false
+}

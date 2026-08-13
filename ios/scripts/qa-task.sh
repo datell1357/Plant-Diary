@@ -237,6 +237,44 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "6" ]; then
+  development_plist=${IOS_FIREBASE_PLIST_DEV:-}
+  if [ -n "$development_plist" ]; then
+    export PLAN_FIREBASE_PLIST_PATH="$development_plist"
+  fi
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  xcodebuild \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
+    -derivedDataPath /tmp/planterior-task-6-qa \
+    -parallel-testing-enabled NO \
+    test
+  if [ "${IOS_QA_PROTOCOL_ONLY:-0}" = "1" ]; then
+    printf 'IOS_TASK_6_PROTOCOL_QA_OK real_account=not_run\n'
+    exit 0
+  fi
+  IOS_PHYSICAL_UDID=${device:-${IOS_PHYSICAL_UDID:-}}
+  export IOS_PHYSICAL_UDID
+  "$script_dir/preflight-release-assets.sh" \
+    --require-device \
+    --require-signing \
+    --require-firebase
+  if [ "${IOS_TASK_6_REAL_ACCOUNT_CONFIRMED:-0}" != "1" ]; then
+    printf 'IOS_TASK_6_REAL_ACCOUNT_QA_REQUIRED device=%s\n' "$IOS_PHYSICAL_UDID"
+    exit 65
+  fi
+  if [ -z "${IOS_TASK_6_REAL_ACCOUNT_EVIDENCE:-}" ] ||
+     [ ! -f "$IOS_TASK_6_REAL_ACCOUNT_EVIDENCE" ]; then
+    printf 'IOS_TASK_6_REAL_ACCOUNT_EVIDENCE_MISSING\n' >&2
+    exit 65
+  fi
+  cp "$IOS_TASK_6_REAL_ACCOUNT_EVIDENCE" \
+    "$attempt_dir/task-6-real-account-evidence.txt"
+  printf 'IOS_TASK_6_QA_OK device=%s\n' "$IOS_PHYSICAL_UDID"
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69
