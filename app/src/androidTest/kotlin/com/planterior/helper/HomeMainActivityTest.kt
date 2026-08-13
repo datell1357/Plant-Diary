@@ -379,11 +379,11 @@ class HomeMainActivityTest {
         relaunch { it is HomeUiState.Content }
 
         composeRule.onNodeWithTag(HomeTestTags.CARE_SECTION).performScrollTo().assertIsDisplayed()
+        // 같은 scroll offset에서 세 카드 좌표를 읽어야 서로 비교할 수 있다.
         val order =
             listOf("plant-today", "plant-overdue", "plant-upcoming").map { id ->
                 composeRule
                     .onNodeWithTag("${HomeTestTags.CARE_ITEM}:$id")
-                    .performScrollTo()
                     .fetchSemanticsNode()
                     .positionInRoot
                     .y
