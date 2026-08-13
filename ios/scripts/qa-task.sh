@@ -140,6 +140,9 @@ if [ "$task_number" = "4" ]; then
   test -s "$attempt_dir/task-4-ios-app-implementation.png"
   test -s "$attempt_dir/task-4-ios-app-implementation-390x844.png"
   test -s "$attempt_dir/task-4-ios-app-implementation-ax5.png"
+  xcrun simctl launch "$simulator_name" com.planterior.helper
+  xcrun simctl openurl "$simulator_name" \
+    "planterior://plant/deleted-plant"
   printf 'IOS_TASK_4_QA_OK simulator=%s variants=light,390x844,ax5\n' \
     "$simulator_name"
   exit 0

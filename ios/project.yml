@@ -35,9 +35,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.planterior.helper
         PRODUCT_NAME: Planterior
-        INFOPLIST_KEY_CFBundleDisplayName: 초보 식집사
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Config/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - package: PlanteriorCore
