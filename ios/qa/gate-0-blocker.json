@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "gate": "ios-release-prerequisites",
+  "status": "blocked",
+  "requiredCommand": "./ios/scripts/preflight-release-assets.sh --require-device --require-signing --require-firebase --require-asc",
+  "expectedSuccessExit": 0,
+  "observedExit": 65,
+  "missingAssets": [
+    "IOS_PHYSICAL_UDID",
+    "IOS_CODESIGN_IDENTITY",
+    "IOS_PROVISIONING_PROFILE",
+    "IOS_FIREBASE_PLIST_DEV",
+    "IOS_FIREBASE_PLIST_PROD",
+    "APP_STORE_CONNECT_API_KEY_PATH",
+    "APNS_KEY_PATH",
+    "APP_STORE_CONNECT_ISSUER_ID",
+    "APP_STORE_CONNECT_KEY_ID",
+    "APP_STORE_CONNECT_APP_ID",
+    "APPLE_TEAM_ID",
+    "APNS_KEY_ID"
+  ],
+  "nonSubstitutable": [
+    "physical-device-camera",
+    "real-apns-delivery",
+    "real-apple-and-google-sign-in",
+    "signed-app-store-archive",
+    "testflight-install"
+  ],
+  "resumeWhen": "The required command exits 0 without exposing secret values."
+}
