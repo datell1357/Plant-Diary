@@ -26,6 +26,7 @@ class PlanteriorDesignTokenTest {
         assertEquals(Color(0xFFD97706), PlanteriorPalette.Warning)
         assertEquals(Color(0xFFFEF3C7), PlanteriorPalette.WarningContainer)
         assertEquals(Color(0xFFFDE68A), PlanteriorPalette.WarningBorder)
+        assertEquals(Color(0xFF92400E), PlanteriorPalette.OnWarningContainer)
     }
 
     @Test
@@ -39,6 +40,11 @@ class PlanteriorDesignTokenTest {
         assertEquals(PlanteriorPalette.TextSecondary, PlanteriorColorScheme.onSurfaceVariant)
         assertEquals(PlanteriorPalette.Border, PlanteriorColorScheme.outline)
         assertEquals(PlanteriorPalette.Warning, PlanteriorColorScheme.error)
+        assertEquals(PlanteriorPalette.WarningContainer, PlanteriorColorScheme.errorContainer)
+        assertEquals(
+            PlanteriorPalette.OnWarningContainer,
+            PlanteriorColorScheme.onErrorContainer,
+        )
     }
 
     @Test

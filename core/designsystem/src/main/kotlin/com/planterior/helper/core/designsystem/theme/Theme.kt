@@ -30,7 +30,7 @@ internal val PlanteriorColorScheme =
         error = PlanteriorPalette.Warning,
         onError = PlanteriorPalette.OnPrimary,
         errorContainer = PlanteriorPalette.WarningContainer,
-        onErrorContainer = PlanteriorPalette.Warning,
+        onErrorContainer = PlanteriorPalette.OnWarningContainer,
     )
 
 /**

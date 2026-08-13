@@ -42,6 +42,14 @@ internal object PlanteriorPalette {
     /** 경고 배경. */
     val WarningContainer = Color(0xFFFEF3C7)
 
+    /**
+     * 경고 배경 위에 올라가는 본문 전경색.
+     *
+     * [Warning]은 아이콘·강조용 accent라 [WarningContainer] 위에서 2.861:1밖에 되지 않아 WCAG 2.1 SC 1.4.3의 본문 최소치
+     * 4.5:1을 만족하지 못한다. 같은 amber 계열의 한 단계 짙은 색을 써서 경고 의미를 유지한 채 6.367:1을 확보한다.
+     */
+    val OnWarningContainer = Color(0xFF92400E)
+
     /** 경고 테두리. */
     val WarningBorder = Color(0xFFFDE68A)
 }
