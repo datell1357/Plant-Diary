@@ -1,0 +1,10 @@
+{
+  "collection": "personalPlants",
+  "documentID": "plant-a",
+  "expectedRevision": 0,
+  "idempotencyKey": "operation-0001",
+  "payload": {
+    "displayName": "몬스테라",
+    "registrationMethod": "MANUAL"
+  }
+}

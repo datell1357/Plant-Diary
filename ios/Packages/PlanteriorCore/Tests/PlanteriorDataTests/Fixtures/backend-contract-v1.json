@@ -8,6 +8,33 @@
     {"path":"storage.rules","sha256":"bc8608904da0e171c4e90e5f791c3608e797e08177c89c5eed3c4c806cdf2d35"},
     {"path":"functions/src/contracts.ts","sha256":"331506c0ce569a616807a24a5840ce602f1be2848ec1d3e8c1e52427ae3e88c1"}
   ],
+  "firestorePaths": {
+    "ownerWritable": ["personalPlants","wateringRecords","wateringSchedules","notificationSettings","miniHomes","placements","consents","identificationRequests"],
+    "serverOnly": ["notificationDeliveries","weatherSnapshots","weatherRisks","deletionRequests","ownedItems","shareLinks"],
+    "managedContent": ["plantContents","riskContents","shopItems"],
+    "public": ["publicShares"],
+    "operations": "users/{uid}/operations/{operationId}"
+  },
+  "storagePrefixes": ["identification-originals","plant-photos","share-images"],
+  "closedEnums": {
+    "publication": ["DRAFT","PUBLIC","PRIVATE"],
+    "registration": ["IDENTIFIED","IDENTIFICATION_EDITED","MANUAL"],
+    "weatherRisk": ["HIGH_TEMPERATURE","LOW_TEMPERATURE","DRY","OVERWATERED"],
+    "itemCategory": ["BACKGROUND","FURNITURE","DECORATION"],
+    "deletionStatus": ["RECEIVED","PROCESSING","COMPLETED","FAILED","PARTIALLY_FAILED","CANCELLED"],
+    "deliveryStatus": ["PENDING","SENT","OPENED","FAILED"],
+    "consentType": ["IDENTIFICATION_PHOTO_PROCESSING","LOCATION","ANALYTICS"],
+    "mutationResult": ["applied","duplicate","conflict"]
+  },
+  "revisionContract": {
+    "createExpectedRevision": 0,
+    "createRevision": 1,
+    "updateRequiresStoredRevision": true,
+    "updateIncrement": 1,
+    "duplicateReturnsOriginalRevision": true,
+    "conflictWritesReceipt": false,
+    "receiptNamespace": "per-user"
+  },
   "validOwnerMutations": [
     {
       "collection":"personalPlants",

@@ -175,8 +175,36 @@ for pinned in manifest["pinnedFiles"]:
     if hashlib.sha256(content).hexdigest() != pinned["sha256"]:
         raise SystemExit("IOS_BACKEND_CONTRACT_UNAVAILABLE digest-mismatch")
 PY
+  producer_fixture="$repo_root/ios/qa/fixtures/task-5-owner-mutation.json"
+  manifest_fixture=/tmp/planterior-task-5-manifest-fixture.json
+  python3 - "$contract" "$manifest_fixture" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    fixture = json.load(source)["validOwnerMutations"][0]
+with open(sys.argv[2], "w", encoding="utf-8") as target:
+    json.dump(fixture, target, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+PY
+  python3 - "$producer_fixture" /tmp/planterior-task-5-producer-fixture.json <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    fixture = json.load(source)
+with open(sys.argv[2], "w", encoding="utf-8") as target:
+    json.dump(fixture, target, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+PY
+  cmp /tmp/planterior-task-5-producer-fixture.json "$manifest_fixture"
+  pinned_tree=/tmp/planterior-firebase-contract-8f362c4
+  rm -rf "$pinned_tree"
+  mkdir -p "$pinned_tree"
+  git -C "$android_root" archive "$pinned_commit" |
+    tar -x -C "$pinned_tree"
+  ln -s "$android_root/firebase-tests/node_modules" \
+    "$pinned_tree/firebase-tests/node_modules"
   (
-    cd "$android_root"
+    cd "$pinned_tree"
     firebase emulators:exec \
       --only firestore,storage \
       --project demo-planterior \

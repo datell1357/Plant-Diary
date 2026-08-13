@@ -14,6 +14,10 @@ struct BackendContractTests {
         #expect(manifest.pinnedFiles == expectedPinnedFiles)
         #expect(Set(manifest.unavailableIntegrations.map(\.id)) == expectedUnavailableIntegrations)
         #expect(Set(manifest.unavailablePolicies.map(\.id)) == expectedUnavailablePolicies)
+        #expect(
+            Dictionary(uniqueKeysWithValues: manifest.unavailablePolicies.map { ($0.id, $0.value) })
+                == expectedUnavailablePolicyValues
+        )
         #expect(throws: BackendContractError.integrationUnavailable) {
             try manifest.requireLiveIntegration("plantIdentification.submit")
         }
@@ -98,6 +102,15 @@ struct BackendContractTests {
         [
             "identificationOriginalRetention", "weatherStaleAfter",
             "publicShareLifetime", "accountDeletionGrace"
+        ]
+    }
+
+    private var expectedUnavailablePolicyValues: [String: String?] {
+        [
+            "identificationOriginalRetention": "PT24H",
+            "weatherStaleAfter": "PT3H",
+            "publicShareLifetime": "P30D",
+            "accountDeletionGrace": "P7D"
         ]
     }
 

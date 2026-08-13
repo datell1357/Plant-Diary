@@ -45,25 +45,26 @@ public struct ForbiddenFixture: Codable, Equatable, Sendable {
     public let value: String
 
     public func validateRejected() throws {
-        let rejected: Bool = switch reason {
+        let validate: () throws -> Void = switch reason {
         case "foreign-owner":
-            value.hasPrefix("users/other/")
+            { try BackendContractValidator.validateOwnerPath(value, ownerUID: "me") }
         case "server-only-write":
-            value.contains("/weatherSnapshots/")
+            { try BackendContractValidator.validateClientWritablePath(value) }
         case "unsafe-storage-name":
-            value.first?.isLetter != true && value.first?.isNumber != true
+            { try BackendContractValidator.validateStorageFilename(value) }
         case "placement-target-xor":
-            value == "plantId+itemId"
+            { try BackendContractValidator.validatePlacementTargets(value) }
         case "unknown-enum":
-            !["IDENTIFIED", "IDENTIFICATION_EDITED", "MANUAL"].contains(
-                value.replacingOccurrences(of: "registrationMethod=", with: "")
-            )
+            { try BackendContractValidator.validateRegistrationMethod(value) }
         default:
-            false
+            { throw BackendContractError.invalidFixture }
         }
-        guard rejected else {
-            throw BackendContractError.invalidFixture
+        do {
+            try validate()
+        } catch BackendContractError.invalidFixture {
+            return
         }
+        throw BackendContractError.invalidFixture
     }
 }
 
