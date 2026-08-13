@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "active_work_id": "ios-app-implementation",
+  "works": {
+    "ios-app-implementation": {
+      "work_id": "ios-app-implementation",
+      "active_plan": "/Users/yeoreum/Documents/Planterior_Helper/.omo/plans/ios-app-implementation.md",
+      "plan_name": "ios-app-implementation",
+      "session_ids": [
+        "senpi:019ff9aa-4b33-7556-93e3-3c89f4f64c3a"
+      ],
+      "status": "active",
+      "worktree_path": "/Users/yeoreum/Documents/Planterior_Helper-worktrees/feat-ios-app"
+    }
+  }
+}

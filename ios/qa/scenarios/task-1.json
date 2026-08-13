@@ -1,0 +1,25 @@
+{
+  "task": 1,
+  "name": "iOS worktree and release prerequisite isolation",
+  "happyPath": {
+    "command": "./ios/scripts/qa-task.sh 1 --attempt-dir \"$ATTEMPT_DIR\" --device \"$IOS_PHYSICAL_UDID\"",
+    "expectedExit": 0,
+    "expectedMarker": "IOS_TASK_1_QA_OK"
+  },
+  "failurePaths": [
+    {
+      "environment": {
+        "PATH_OWNERSHIP_PROBE": "android"
+      },
+      "expectedExit": 66,
+      "expectedMarker": "IOS_OWNERSHIP_VIOLATION"
+    },
+    {
+      "environment": {
+        "QA_HIDE_SIGNING": "1"
+      },
+      "expectedExit": 65,
+      "expectedMarker": "IOS_RELEASE_PREREQUISITE_MISSING"
+    }
+  ]
+}
