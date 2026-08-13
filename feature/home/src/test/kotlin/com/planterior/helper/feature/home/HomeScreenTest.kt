@@ -1,5 +1,12 @@
 package com.planterior.helper.feature.home
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -15,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -76,6 +84,114 @@ class HomeScreenTest {
             weather = weather,
             sync = sync,
         )
+
+    /**
+     * 복원 중 홈이 빈 화면이 아니라 눈에 보이는 진행 표시를 그리는지 확인한다.
+     *
+     * 문구가 아니라 기계가 읽는 의미(진행 표시 태그·불확정 progress·polite live region)를 단언한다. 문구를 바꾼다고 깨지지 않고, 표시가 사라지면
+     * 반드시 깨진다.
+     */
+    @Test
+    fun `restoring home shows an indeterminate progress indicator with status semantics`() {
+        show(HomeUiState.Loading)
+
+        val loading = composeRule.onNodeWithTag(HomeTestTags.LOADING, useUnmergedTree = true)
+        loading.assertIsDisplayed()
+        loading.assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.ProgressBarRangeInfo,
+                ProgressBarRangeInfo.Indeterminate,
+            )
+        )
+
+        val status = composeRule.onNodeWithTag(HomeTestTags.LOADING_STATUS, useUnmergedTree = true)
+        status.assertIsDisplayed()
+        status.assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.LiveRegion,
+                LiveRegionMode.Polite,
+            )
+        )
+        assertNotNull(
+            "복원 중 상태를 스크린 리더가 읽을 문구가 있어야 한다",
+            status.fetchSemanticsNode().config.getOrNull(SemanticsProperties.Text)?.firstOrNull(),
+        )
+    }
+
+    /** 복원 중에도 실제 데이터가 있는 것처럼 보이는 카드·CTA를 그리면 안 된다. */
+    @Test
+    fun `restoring home never renders care cards sign in or fake content`() {
+        show(HomeUiState.Loading)
+
+        listOf(
+                HomeTestTags.CARE_SECTION,
+                HomeTestTags.SIGN_IN,
+                HomeTestTags.EMPTY,
+                HomeTestTags.ERROR,
+                HomeTestTags.MINI_HOME,
+                HomeTestTags.IDENTIFY_CTA,
+            )
+            .forEach { tag ->
+                assertEquals(
+                    "복원 중에는 $tag 를 그리면 안 된다",
+                    0,
+                    composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().size,
+                )
+            }
+    }
+
+    /** 복원이 끝나면 진행 표시가 남지 않아야 한다. 남으면 스크린 리더가 계속 로딩 중이라고 읽는다. */
+    @Test
+    fun `finishing restoration removes every loading semantic from the tree`() {
+        val state = mutableStateOf<HomeUiState>(HomeUiState.Loading)
+        composeRule.setContent {
+            com.planterior.helper.core.designsystem.theme.PlanteriorTheme {
+                HomeScreen(
+                    state = state.value,
+                    onSignIn = {},
+                    onNotifications = {},
+                    onIdentify = {},
+                    onOpenMiniHome = {},
+                    onOpenCollection = {},
+                    onOpenPlant = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(
+            1,
+            composeRule
+                .onAllNodesWithTag(HomeTestTags.LOADING, useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .size,
+        )
+
+        state.value = HomeUiState.LoggedOut
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(HomeTestTags.SIGN_IN).assertIsDisplayed()
+        listOf(HomeTestTags.LOADING, HomeTestTags.LOADING_STATUS).forEach { tag ->
+            assertEquals(
+                "복원이 끝나면 $tag 가 남아 있으면 안 된다",
+                0,
+                composeRule
+                    .onAllNodesWithTag(tag, useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                    .size,
+            )
+        }
+        assertEquals(
+            "복원이 끝나면 진행 중 semantics 가 하나도 없어야 한다",
+            0,
+            composeRule
+                .onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+                    useUnmergedTree = true,
+                )
+                .fetchSemanticsNodes()
+                .size,
+        )
+    }
 
     @Test
     fun `logged out home offers sign in and never renders plant care`() {

@@ -4,6 +4,11 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -298,6 +303,59 @@ class HomeMainActivityTest {
             0,
             composeRule.onAllNodesWithTag(HomeTestTags.SIGN_IN).fetchSemanticsNodes().size,
         )
+    }
+
+    /**
+     * 복원 중에도 사용자와 스크린 리더가 진행 상황을 알 수 있어야 한다.
+     *
+     * 빈 화면은 멈춘 앱과 구분되지 않는다. 제품 `MainActivity` 경로 그대로 불확정 progress와 상태 문구가 실제로 보이는지 확인한다.
+     */
+    @Test
+    fun restoringSessionShowsVisibleAccessibleProgress() {
+        setDebugHomeSession(context, SESSION_RESTORING)
+        relaunch { it is HomeUiState.Loading }
+
+        composeRule
+            .onNodeWithTag(HomeTestTags.LOADING, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
+                )
+            )
+        composeRule
+            .onNodeWithTag(HomeTestTags.LOADING_STATUS, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.LiveRegion,
+                    LiveRegionMode.Polite,
+                )
+            )
+    }
+
+    /** 복원이 끝나 로그아웃으로 확정되면 로딩 의미가 하나도 남지 않아야 한다. */
+    @Test
+    fun finishingRestorationClearsLoadingSemanticsOnTheProductScreen() {
+        setDebugHomeSession(context, SESSION_RESTORING)
+        relaunch { it is HomeUiState.Loading }
+        composeRule.onNodeWithTag(HomeTestTags.LOADING, useUnmergedTree = true).assertIsDisplayed()
+
+        setDebugHomeSession(context, SESSION_LOGGED_OUT)
+        relaunch { it is HomeUiState.LoggedOut }
+
+        composeRule.onNodeWithTag(HomeTestTags.SIGN_IN).assertIsDisplayed()
+        listOf(HomeTestTags.LOADING, HomeTestTags.LOADING_STATUS).forEach { tag ->
+            assertEquals(
+                "복원이 끝나면 $tag 가 남아 있으면 안 된다",
+                0,
+                composeRule
+                    .onAllNodesWithTag(tag, useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                    .size,
+            )
+        }
     }
 
     @Test

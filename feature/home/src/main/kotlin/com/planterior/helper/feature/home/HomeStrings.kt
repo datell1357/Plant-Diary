@@ -24,6 +24,9 @@ class HomeStrings(private val zoneId: ZoneId) {
     /** Figma `로그인하고 시작하기`. */
     val signIn: String = "로그인하고 시작하기"
 
+    /** 저장된 세션을 복원하는 동안 보여 주는 상태 문구이다. 로그인 여부를 아직 모르므로 결과를 단정하지 않는다. */
+    val restoringSession: String = "홈을 불러오고 있어요"
+
     /** 상단 종 버튼의 접근성 설명. 아이콘만 있어 이름이 없으면 스크린 리더가 읽을 수 없다. */
     val notifications: String = "알림"
 

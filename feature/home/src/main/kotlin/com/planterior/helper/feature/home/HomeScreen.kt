@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -31,10 +33,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -61,11 +65,23 @@ private val NotificationIconSize = 20.dp
 /** 접근성 최소 터치 대상. */
 private val MinimumTouchTarget = 48.dp
 
+/** 복원 중 진행 인디케이터 지름. Figma가 로딩 모양을 따로 정하지 않아 Material 기본값을 그대로 쓴다. */
+private val LoadingIndicatorSize = 40.dp
+
+/**
+ * 복원 중 표시 영역의 높이이다.
+ *
+ * Figma 홈의 상단 영역부터 미니홈피 미리보기까지를 덮는 높이로 잡아, 복원이 끝나 실제 콘텐츠가 들어와도 화면이 크게 튀지 않게 한다.
+ */
+private val LoadingSurfaceHeight = 320.dp
+
 /** Figma `main-content`의 미니홈피 미리보기 비율(370x306). */
 private const val PreviewAspectRatio = 370f / 306f
 
 /** 화면 요소를 계층 덤프와 UI 테스트에서 찾기 위한 태그이다. */
 object HomeTestTags {
+    const val LOADING: String = "home:loading"
+    const val LOADING_STATUS: String = "home:loading-status"
     const val GREETING: String = "home:greeting"
     const val SIGN_IN: String = "home:sign-in"
     const val NOTIFICATION: String = "home:notification"
@@ -126,7 +142,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.large),
         ) {
             when (state) {
-                HomeUiState.Loading -> Unit
+                HomeUiState.Loading -> LoadingHome(strings)
                 HomeUiState.LoggedOut ->
                     LoggedOutHome(strings, onSignIn, onNotifications, onIdentify)
                 is HomeUiState.Empty ->
@@ -144,6 +160,40 @@ fun HomeScreen(
                 is HomeUiState.Error -> ErrorHome(state, strings, onNotifications)
             }
         }
+    }
+}
+
+/**
+ * 세션을 복원하는 동안 보여주는 진행 표시이다.
+ *
+ * 빈 화면을 그리면 사용자는 앱이 멈췄다고 생각하고 스크린 리더는 읽을 것이 아예 없다. 그래서 진행 인디케이터와 상태 문구를 함께 둔다. 진짜 식물이나 가짜 카드를 그리지
+ * 않고, 복원이 끝나면 이 영역 전체가 사라져 로딩 의미가 남지 않는다.
+ *
+ * 상태 문구는 polite live region이라 복원이 시작되면 초점을 빼앗지 않고 한 번만 안내된다.
+ */
+@Composable
+private fun LoadingHome(strings: HomeStrings) {
+    Column(
+        modifier = Modifier.fillMaxWidth().height(LoadingSurfaceHeight),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(LoadingIndicatorSize).testTag(HomeTestTags.LOADING),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Text(
+            text = strings.restoringSession,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier =
+                Modifier.fillMaxWidth()
+                    .padding(top = PlanteriorTheme.spacing.large)
+                    .testTag(HomeTestTags.LOADING_STATUS)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+        )
     }
 }
 
