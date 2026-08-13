@@ -9,13 +9,14 @@ public enum DomainValidationError: Error, Equatable, Sendable {
     case invalidLocalTime
     case invalidInstant
     case invalidTimeZone
+    case unknownEnum(type: String, value: String)
 }
 
-public struct OpaqueID<Tag>: RawRepresentable, Codable, Hashable, Sendable {
+public struct OpaqueID<Tag>: Codable, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+    private init(validated value: String) {
+        rawValue = value
     }
 
     public static func parse(_ value: String) throws -> Self {
@@ -25,7 +26,17 @@ public struct OpaqueID<Tag>: RawRepresentable, Codable, Hashable, Sendable {
         ) != nil else {
             throw DomainValidationError.invalidOpaqueID
         }
-        return Self(rawValue: value)
+        return Self(validated: value)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = try Self.parse(value)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
@@ -61,11 +72,11 @@ public typealias DeletionRequestID = OpaqueID<DeletionRequestTag>
 public typealias NotificationDeliveryID = OpaqueID<NotificationDeliveryTag>
 public typealias IdentificationRequestID = OpaqueID<IdentificationRequestTag>
 
-public struct OperationID: RawRepresentable, Codable, Hashable, Sendable {
+public struct OperationID: Codable, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+    private init(validated value: String) {
+        rawValue = value
     }
 
     public static func parse(_ value: String) throws -> Self {
@@ -75,21 +86,49 @@ public struct OperationID: RawRepresentable, Codable, Hashable, Sendable {
         ) != nil else {
             throw DomainValidationError.invalidOperationID
         }
-        return Self(rawValue: value)
+        return Self(validated: value)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = try Self.parse(value)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
-public struct Revision: RawRepresentable, Codable, Hashable, Sendable {
+public struct Revision: Codable, Hashable, Sendable {
+    public static let maximumWireValue: UInt64 = 9_007_199_254_740_991
     public let rawValue: UInt64
 
-    public init(rawValue: UInt64) {
-        self.rawValue = rawValue
+    private init(validated value: UInt64) {
+        rawValue = value
+    }
+
+    public static func parse(_ value: UInt64) throws -> Revision {
+        guard value <= maximumWireValue else {
+            throw DomainValidationError.revisionOverflow
+        }
+        return Revision(validated: value)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(UInt64.self)
+        self = try Self.parse(value)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     public func next() throws -> Revision {
-        guard rawValue < UInt64.max else {
+        guard rawValue < Self.maximumWireValue else {
             throw DomainValidationError.revisionOverflow
         }
-        return Revision(rawValue: rawValue + 1)
+        return Revision(validated: rawValue + 1)
     }
 }

@@ -1,5 +1,7 @@
 import PlanteriorDomain
 
 public enum PlanteriorTestingSupportModule {
-    public static let fixedAccountID = AccountID(rawValue: "fixture-account")
+    public static func fixedAccountID() throws -> AccountID {
+        try AccountID.parse("fixture-account")
+    }
 }

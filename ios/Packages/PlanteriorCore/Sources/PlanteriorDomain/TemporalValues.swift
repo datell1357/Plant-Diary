@@ -1,30 +1,46 @@
 import Foundation
 
-public struct CalendarDate: RawRepresentable, Codable, Hashable, Sendable {
-    public let rawValue: String
+public protocol ValidatedStringValue: Codable {
+    var rawValue: String { get }
+    static func parse(_ value: String) throws -> Self
+}
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+public extension ValidatedStringValue {
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = try Self.parse(value)
     }
 
-    public static func parse(
-        _ value: String,
-        calendar: Calendar = Calendar(identifier: .gregorian)
-    ) throws -> CalendarDate {
-        let pattern = #"^\d{4}-\d{2}-\d{2}$"#
-        guard value.range(of: pattern, options: .regularExpression) != nil else {
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public struct CalendarDate: ValidatedStringValue, Hashable, Sendable {
+    public let rawValue: String
+
+    private init(validated value: String) {
+        rawValue = value
+    }
+
+    public static func parse(_ value: String) throws -> CalendarDate {
+        guard value.range(
+            of: #"^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$"#,
+            options: .regularExpression
+        ) != nil else {
             throw DomainValidationError.invalidCalendarDate
         }
         let parts = value.split(separator: "-").compactMap { Int($0) }
-        guard parts.count == 3 else {
-            throw DomainValidationError.invalidCalendarDate
-        }
-        var components = DateComponents()
-        components.calendar = calendar
-        components.timeZone = TimeZone(secondsFromGMT: 0)
-        components.year = parts[0]
-        components.month = parts[1]
-        components.day = parts[2]
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: parts[0],
+            month: parts[1],
+            day: parts[2]
+        )
         guard let date = calendar.date(from: components) else {
             throw DomainValidationError.invalidCalendarDate
         }
@@ -32,59 +48,61 @@ public struct CalendarDate: RawRepresentable, Codable, Hashable, Sendable {
         guard resolved.year == parts[0], resolved.month == parts[1], resolved.day == parts[2] else {
             throw DomainValidationError.invalidCalendarDate
         }
-        return CalendarDate(rawValue: value)
+        return CalendarDate(validated: value)
     }
 }
 
-public struct LocalTime: RawRepresentable, Codable, Hashable, Sendable {
+public struct LocalTime: ValidatedStringValue, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+    private init(validated value: String) {
+        rawValue = value
     }
 
     public static func parse(_ value: String) throws -> LocalTime {
-        guard value.range(
-            of: #"^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$"#,
-            options: .regularExpression
-        ) != nil else {
+        let pattern = #"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$"#
+        guard value.range(of: pattern, options: .regularExpression) != nil else {
             throw DomainValidationError.invalidLocalTime
         }
-        return LocalTime(rawValue: value)
+        return LocalTime(validated: value.count == 5 ? "\(value):00" : value)
     }
 }
 
-public struct Instant: RawRepresentable, Codable, Hashable, Sendable {
+public struct Instant: ValidatedStringValue, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+    private init(validated value: String) {
+        rawValue = value
     }
 
     public static func parse(_ value: String) throws -> Instant {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: value) ??
-            ISO8601DateFormatter().date(from: value)
-        guard date != nil else {
+        let date = #"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"#
+        let time = #"(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?"#
+        let pattern = "^\(date)T\(time)Z$"
+        guard value.range(of: pattern, options: .regularExpression) != nil else {
             throw DomainValidationError.invalidInstant
         }
-        return Instant(rawValue: value)
+        let datePart = String(value.prefix(10))
+        _ = try CalendarDate.parse(datePart)
+        return Instant(validated: value)
     }
 }
 
-public struct TimeZoneID: RawRepresentable, Codable, Hashable, Sendable {
+public struct TimeZoneID: ValidatedStringValue, Hashable, Sendable {
     public let rawValue: String
 
-    public init(rawValue: String) {
-        self.rawValue = rawValue
+    private init(validated value: String) {
+        rawValue = value
     }
 
     public static func parse(_ value: String) throws -> TimeZoneID {
-        guard TimeZone(identifier: value) != nil else {
+        guard value == "UTC" || (
+            value.contains("/") &&
+                TimeZone.knownTimeZoneIdentifiers.contains(value)
+        ) else {
             throw DomainValidationError.invalidTimeZone
         }
-        return TimeZoneID(rawValue: value)
+        return TimeZoneID(validated: value)
     }
 }
 

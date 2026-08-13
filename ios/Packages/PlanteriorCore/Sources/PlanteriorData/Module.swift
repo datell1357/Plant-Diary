@@ -1,5 +1,7 @@
 import PlanteriorDomain
 
 public enum PlanteriorDataModule {
-    public static let legacyAccountID = AccountID(rawValue: "legacy")
+    public static func legacyAccountID() throws -> AccountID {
+        try AccountID.parse("legacy")
+    }
 }
