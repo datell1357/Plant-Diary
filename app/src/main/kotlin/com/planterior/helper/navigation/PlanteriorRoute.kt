@@ -42,8 +42,14 @@ sealed interface PlanteriorRoute {
     /** 앱 설정. 하단 탭 `설정`. */
     @Serializable data object Settings : TopLevel
 
-    /** 식물 촬영 화면. 하단 탭 가운데 카메라 액션이 연다. */
+    /** 식물 촬영 화면. 하단 탭 가운데 카메라 액션과 홈의 식별 CTA가 연다. */
     @Serializable data object Camera : Authenticated
+
+    /** 미니홈피. 홈의 미리보기 카드가 연다. 하단 탭이 아니므로 탭 목록에 넣지 않는다. */
+    @Serializable data object MiniHome : Authenticated
+
+    /** 알림 목록. 홈 상단 종 버튼이 연다. */
+    @Serializable data object Notifications : Authenticated
 
     /**
      * 식물 상세.

@@ -23,6 +23,18 @@ class PlanteriorRouteResolverTest {
     }
 
     @Test
+    fun `home entry point deep links resolve to their own destinations`() {
+        assertEquals(
+            PlanteriorRoute.MiniHome,
+            PlanteriorRouteResolver.resolve("planterior://minihome"),
+        )
+        assertEquals(
+            PlanteriorRoute.Notifications,
+            PlanteriorRouteResolver.resolve("planterior://notifications"),
+        )
+    }
+
+    @Test
     fun `plant detail deep link keeps the opaque identifier`() {
         assertEquals(
             PlanteriorRoute.PlantDetail("plant-abc_123"),
@@ -116,6 +128,8 @@ class PlanteriorRouteResolverTest {
                 PlanteriorRoute.Storage,
                 PlanteriorRoute.Settings,
                 PlanteriorRoute.Camera,
+                PlanteriorRoute.MiniHome,
+                PlanteriorRoute.Notifications,
                 PlanteriorRoute.PlantDetail("abc"),
             )
         routes.forEach { route ->

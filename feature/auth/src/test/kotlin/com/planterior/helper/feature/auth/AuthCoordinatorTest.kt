@@ -144,6 +144,97 @@ class AuthCoordinatorTest {
     }
 
     @Test
+    fun `a stalled synchronization does not hold back the restored session`() = runTest {
+        val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
+        val gate = CompletableDeferred<Unit>()
+        val lastKnown =
+            SyncSummary(setOf(SyncDomain.PLANTS), mapOf(SyncDomain.MINI_HOME to "offline"))
+        val coordinator =
+            coordinator(
+                identity = identity,
+                synchronizer = StallingSynchronizer(gate, lastKnown),
+            )
+
+        val restoring = async { coordinator.restore() }
+        // 동기화가 끝나기 전이지만 이미 로그인 상태여야 홈이 캐시된 내용을 보여줄 수 있다.
+        testScheduler.advanceUntilIdle()
+
+        val duringSync = coordinator.state.value
+        assertTrue("동기화 중에도 로그인 상태여야 한다: $duringSync", duringSync is AuthUiState.Authenticated)
+        assertEquals(lastKnown, (duringSync as AuthUiState.Authenticated).sync)
+
+        gate.complete(Unit)
+        restoring.await()
+        assertTrue(coordinator.state.value is AuthUiState.Authenticated)
+    }
+
+    @Test
+    fun `a stalled profile write does not hold back the restored session`() = runTest {
+        val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
+        val gate = CompletableDeferred<Unit>()
+        val coordinator = coordinator(identity = identity, profile = StallingProfileStore(gate))
+
+        val restoring = async { coordinator.restore() }
+        testScheduler.advanceUntilIdle()
+
+        // 서버 프로필 쓰기가 멈춰도 로컬 캐시를 보여줄 수 있어야 한다.
+        assertTrue(
+            "프로필 쓰기 지연이 세션을 막으면 안 된다: ${coordinator.state.value}",
+            coordinator.state.value is AuthUiState.Authenticated,
+        )
+
+        gate.complete(Unit)
+        restoring.await()
+    }
+
+    @Test
+    fun `a failing profile write or synchronization keeps the session and reports last sync`() =
+        runTest {
+            val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
+            val lastKnown =
+                SyncSummary(setOf(SyncDomain.PLANTS), mapOf(SyncDomain.MINI_HOME to "offline"))
+            val coordinator =
+                coordinator(
+                    identity = identity,
+                    profile = { error("server unavailable") },
+                    synchronizer = FailingSynchronizer(lastKnown),
+                )
+
+            coordinator.restore()
+
+            val state = coordinator.state.value
+            assertTrue("서버 실패가 세션을 지우면 안 된다: $state", state is AuthUiState.Authenticated)
+            assertEquals(lastKnown, (state as AuthUiState.Authenticated).sync)
+        }
+
+    @Test
+    fun `cancelling the sign in scope after success keeps the established session`() = runTest {
+        val google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("google-token"))
+        val identity =
+            FakeIdentity(mapOf("google-token" to account("account-a", AuthProvider.GOOGLE)))
+        val gate = CompletableDeferred<Unit>()
+        val coordinator =
+            coordinator(
+                google,
+                identity = identity,
+                synchronizer = StallingSynchronizer(gate, SyncSummary.EMPTY),
+            )
+
+        // 로그인 성공 직후 화면이 전환되면 호출측 scope가 취소된다. 이때 세션을 잃으면 안 된다.
+        val signingIn = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+        testScheduler.advanceUntilIdle()
+        assertTrue(coordinator.state.value is AuthUiState.Authenticated)
+
+        signingIn.cancel()
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(
+            "취소된 후에도 로그인 상태여야 한다: ${coordinator.state.value}",
+            coordinator.state.value is AuthUiState.Authenticated,
+        )
+    }
+
+    @Test
     fun `logout and A to B to A clear visible cache while preserving scoped drafts`() = runTest {
         val identity =
             FakeIdentity(
@@ -242,7 +333,7 @@ class AuthCoordinatorTest {
         google: AuthProviderAdapter = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Cancelled),
         apple: AuthProviderAdapter = FakeProvider(AuthProvider.APPLE, ProviderOutcome.Cancelled),
         identity: FakeIdentity = FakeIdentity(emptyMap()),
-        profile: RecordingProfileStore = RecordingProfileStore(),
+        profile: AccountProfileStore = RecordingProfileStore(),
         cache: RecordingAccountCache = RecordingAccountCache(),
         synchronizer: AccountSynchronizer = FakeSynchronizer(SyncSummary.EMPTY),
     ) =
@@ -360,5 +451,33 @@ class AuthCoordinatorTest {
 
     private class FakeSynchronizer(private val result: SyncSummary) : AccountSynchronizer {
         override suspend fun sync(accountUid: String) = result
+    }
+
+    /** 동기화 자체가 실패하는 서버를 흑낸다. */
+    private class FailingSynchronizer(private val lastKnown: SyncSummary) : AccountSynchronizer {
+        override suspend fun sync(accountUid: String): SyncSummary = error("sync unavailable")
+
+        override suspend fun lastKnown(accountUid: String): SyncSummary = lastKnown
+    }
+
+    /** 응답하지 않는 서버 프로필 쓰기를 흑낸다. */
+    private class StallingProfileStore(private val gate: CompletableDeferred<Unit>) :
+        AccountProfileStore {
+        override suspend fun upsert(account: AuthAccount) {
+            gate.await()
+        }
+    }
+
+    /** 서버가 응답하지 않는 동기화를 흑낸다. 고정 sleep 없이 gate로만 진행을 제어한다. */
+    private class StallingSynchronizer(
+        private val gate: CompletableDeferred<Unit>,
+        private val lastKnown: SyncSummary,
+    ) : AccountSynchronizer {
+        override suspend fun sync(accountUid: String): SyncSummary {
+            gate.await()
+            return lastKnown
+        }
+
+        override suspend fun lastKnown(accountUid: String): SyncSummary = lastKnown
     }
 }

@@ -20,6 +20,8 @@ class PlanteriorRouteContractTest {
             PlanteriorRoute.Storage,
             PlanteriorRoute.Settings,
             PlanteriorRoute.Camera,
+            PlanteriorRoute.MiniHome,
+            PlanteriorRoute.Notifications,
             PlanteriorRoute.PlantDetail("plant-1"),
             PlanteriorRoute.Login(returnRoute = "planterior://collection"),
         )
@@ -70,6 +72,15 @@ class PlanteriorRouteContractTest {
         val camera: PlanteriorRoute = PlanteriorRoute.Camera
         assertTrue(camera is PlanteriorRoute.Authenticated)
         assertTrue(camera !is PlanteriorRoute.TopLevel)
+    }
+
+    @Test
+    fun `home entry points are authenticated destinations outside the tab bar`() {
+        listOf<PlanteriorRoute>(PlanteriorRoute.MiniHome, PlanteriorRoute.Notifications).forEach {
+            route ->
+            assertTrue("$route must be authenticated", route is PlanteriorRoute.Authenticated)
+            assertTrue("$route must not be a bottom tab", route !is PlanteriorRoute.TopLevel)
+        }
     }
 
     @Test

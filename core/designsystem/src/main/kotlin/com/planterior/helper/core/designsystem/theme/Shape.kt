@@ -14,7 +14,14 @@ object PlanteriorRadius {
     /** 8dp. 작은 배지와 칩. */
     val Small: Dp = 8.dp
 
-    /** 16dp. 카드와 버튼. */
+    /**
+     * 12dp. `home-screen`의 관리 카드와 미니홈피 미리보기 모서리.
+     *
+     * Figma 캡처에서 카드 좌상단이 완전한 좌측 정렬에 도달하기까지의 세로 이동이 12dp였다.
+     */
+    val Card: Dp = 12.dp
+
+    /** 16dp. 경고 배너와 버튼. */
     val Medium: Dp = 16.dp
 
     /** 48dp. `home-screen` 프레임 모서리. */

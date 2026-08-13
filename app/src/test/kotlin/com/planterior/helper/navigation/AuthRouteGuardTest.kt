@@ -17,6 +17,34 @@ class AuthRouteGuardTest {
     }
 
     @Test
+    fun `home is reachable before login so the logged out home can be shown`() {
+        // Figma `home-screen-logged-out`은 로그인 전에도 보여줘야 하는 화면이다.
+        assertEquals(PlanteriorRoute.Home, AuthRouteGuard.destination(PlanteriorRoute.Home, false))
+        assertEquals(PlanteriorRoute.Home, AuthRouteGuard.destination(PlanteriorRoute.Home, true))
+    }
+
+    @Test
+    fun `every destination other than home still requires a session`() {
+        listOf(
+                PlanteriorRoute.Collection,
+                PlanteriorRoute.Storage,
+                PlanteriorRoute.Settings,
+                PlanteriorRoute.Camera,
+                PlanteriorRoute.MiniHome,
+                PlanteriorRoute.Notifications,
+                PlanteriorRoute.PlantDetail("plant-1"),
+            )
+            .forEach { route ->
+                val guarded = AuthRouteGuard.destination(route, false)
+                assertEquals(
+                    "$route must be held behind login",
+                    PlanteriorRoute.Login(AuthRouteGuard.externalRoute(route)),
+                    guarded,
+                )
+            }
+    }
+
+    @Test
     fun `external hostile return route is never preserved`() {
         assertEquals(
             PlanteriorRoute.Home,

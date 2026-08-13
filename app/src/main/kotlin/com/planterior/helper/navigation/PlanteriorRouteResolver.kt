@@ -29,6 +29,8 @@ object PlanteriorRouteResolver {
             "storage" -> PlanteriorRoute.Storage
             "settings" -> PlanteriorRoute.Settings
             "camera" -> PlanteriorRoute.Camera
+            "minihome" -> PlanteriorRoute.MiniHome
+            "notifications" -> PlanteriorRoute.Notifications
             else -> PlanteriorRoute.Home
         }
     }

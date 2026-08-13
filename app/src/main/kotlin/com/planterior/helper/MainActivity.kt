@@ -11,11 +11,13 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.planterior.helper.auth.AuthRuntime
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.navigation.AuthRouteGuard
 import com.planterior.helper.navigation.PlanteriorNavHost
 import com.planterior.helper.navigation.PlanteriorRoute
 import com.planterior.helper.navigation.PlanteriorRouteResolver
 import java.net.URI
+import java.time.Clock
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -59,10 +61,16 @@ internal fun PlanteriorApp(target: PlanteriorRoute, authRuntime: AuthRuntime? = 
         val navController = rememberNavController()
         val backStack = PlanteriorRouteResolver.backStackFor(target)
         navController.RestoreDeepLinkBackStack(backStack)
+        val homeViewModel = authRuntime?.let { runtime ->
+            androidx.compose.runtime.remember(runtime) {
+                HomeViewModel(runtime.homeRepository, Clock.systemDefaultZone())
+            }
+        }
         PlanteriorNavHost(
             navController = navController,
             startRoute = backStack.first(),
             authCoordinator = authRuntime?.coordinator,
+            homeViewModel = homeViewModel,
         )
     }
 }

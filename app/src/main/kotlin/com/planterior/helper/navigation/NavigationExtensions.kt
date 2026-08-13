@@ -34,6 +34,8 @@ internal fun NavBackStackEntry?.toPlanteriorRoute(): PlanteriorRoute? {
         PlanteriorRoute.Storage::class.qualifiedName -> PlanteriorRoute.Storage
         PlanteriorRoute.Settings::class.qualifiedName -> PlanteriorRoute.Settings
         PlanteriorRoute.Camera::class.qualifiedName -> PlanteriorRoute.Camera
+        PlanteriorRoute.MiniHome::class.qualifiedName -> PlanteriorRoute.MiniHome
+        PlanteriorRoute.Notifications::class.qualifiedName -> PlanteriorRoute.Notifications
         PlanteriorRoute.PlantDetail::class.qualifiedName ->
             entry.toRoute<PlanteriorRoute.PlantDetail>()
         PlanteriorRoute.Login::class.qualifiedName -> entry.toRoute<PlanteriorRoute.Login>()

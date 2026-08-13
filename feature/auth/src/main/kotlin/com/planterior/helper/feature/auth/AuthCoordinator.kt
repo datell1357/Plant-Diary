@@ -30,14 +30,7 @@ class AuthCoordinator(
         val adapter = providers.getValue(provider)
         activeRequest = requestId to adapter
         mutableState.value = AuthUiState.SigningIn(provider)
-        val outcome =
-            try {
-                adapter.acquire(requestId)
-            } catch (error: AuthGatewayException) {
-                ProviderOutcome.Failed(error.failure)
-            } catch (_: Exception) {
-                ProviderOutcome.Failed(AuthFailure.Unknown)
-            }
+        val outcome = acquire(adapter, requestId)
         if (requestId != generation) return
         activeRequest = null
         when (outcome) {
@@ -54,6 +47,10 @@ class AuthCoordinator(
                 } catch (error: AuthGatewayException) {
                     if (requestId == generation)
                         mutableState.value = AuthUiState.SignedOut(error.failure)
+                } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                    // 로그인 성공 직후 화면이 전환되면 호출측 scope가 취소된다. 이미 세운 세션을 되돌리지 않고
+                    // 취소만 그대로 전파해 구조적 동시성을 지킨다.
+                    throw cancellation
                 } catch (_: Exception) {
                     if (requestId == generation)
                         mutableState.value = AuthUiState.SignedOut(AuthFailure.Unknown)
@@ -149,6 +146,8 @@ class AuthCoordinator(
             adapter.acquire(requestId)
         } catch (error: AuthGatewayException) {
             ProviderOutcome.Failed(error.failure)
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
         } catch (_: Exception) {
             ProviderOutcome.Failed(AuthFailure.Unknown)
         }
@@ -173,8 +172,37 @@ class AuthCoordinator(
     ) {
         cache.clearVisible(previousUid)
         cache.activate(account.uid)
-        profiles.upsert(account)
-        val sync = synchronizer.sync(account.uid)
-        mutableState.value = AuthUiState.Authenticated(account, sync, returnRoute)
+        // 서버 왕복보다 먼저 세션을 공개한다. 그래야 프로필 쓰기나 동기화가 느리거나 실패해도 홈이 캐시된 식물 관리를
+        // 그대로 보여주고 마지막 동기화 시각을 함께 알릴 수 있다.
+        mutableState.value =
+            AuthUiState.Authenticated(account, lastKnownOrEmpty(account.uid), returnRoute)
+        // 프로필 쓰기와 동기화는 서버 왕복이라 따로 실패할 수 있다. 실패해도 이미 복원한 세션을 되돌리지 않고
+        // 마지막으로 알고 있는 동기화 상태를 그대로 유지한다.
+        ignoringServerFailure { profiles.upsert(account) }
+        val sync = ignoringServerFailure { synchronizer.sync(account.uid) }
+        mutableState.value =
+            AuthUiState.Authenticated(
+                account,
+                sync ?: lastKnownOrEmpty(account.uid),
+                returnRoute,
+            )
     }
+
+    /** 마지막으로 알고 있는 동기화 요약을 읽는다. 이것까지 실패하면 빈 요약으로 두고 세션은 지킨다. */
+    private suspend fun lastKnownOrEmpty(accountUid: String): SyncSummary =
+        ignoringServerFailure { synchronizer.lastKnown(accountUid) } ?: SyncSummary.EMPTY
+
+    /**
+     * 서버 왕복 실패를 삼키되 취소는 그대로 전파한다.
+     *
+     * 취소까지 삼키면 화면을 떠난 뒤에도 작업이 계속 돌아 구조적 동시성이 깨진다.
+     */
+    private suspend fun <T> ignoringServerFailure(block: suspend () -> T): T? =
+        try {
+            block()
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
 }

@@ -4,9 +4,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -20,6 +23,9 @@ import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
 import com.planterior.helper.feature.auth.AuthScreen
 import com.planterior.helper.feature.auth.AuthUiState
+import com.planterior.helper.feature.home.HomeScreen
+import com.planterior.helper.feature.home.HomeUiState
+import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.ui.PlaceholderScreen
 import kotlinx.coroutines.launch
 
@@ -41,6 +47,7 @@ internal val BottomTabRoutes: List<PlanteriorRoute.TopLevel> =
  *
  * @param navController 화면 전환을 담당하는 컨트롤러.
  * @param startRoute 시작 목적지. 딥링크 cold start에서는 해석된 route가 들어온다.
+ * @param homeViewModel 홈 대시보드 상태. 주입하지 않으면 로그인 전 홈으로 그린다.
  */
 @Composable
 fun PlanteriorNavHost(
@@ -48,6 +55,7 @@ fun PlanteriorNavHost(
     startRoute: PlanteriorRoute,
     modifier: Modifier = Modifier,
     authCoordinator: AuthCoordinator? = null,
+    homeViewModel: HomeViewModel? = null,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
@@ -123,10 +131,26 @@ fun PlanteriorNavHost(
                 )
             }
         }
-        composable<PlanteriorRoute.Home> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_home),
-                description = stringResource(R.string.screen_home_description),
+        composable<PlanteriorRoute.Home> { entry ->
+            val homeState by
+                homeViewModel?.state?.collectAsState()
+                    ?: remember { mutableStateOf(HomeUiState.LoggedOut) }
+            // 홈은 로그인 화면 아래에 살아 있다가 다시 앞으로 나온다. 그런 복귀에서는 재구성이 일어나지 않을 수 있으므로
+            // 목적지가 다시 RESUMED 상태가 될 때마다 읽어 새 세션을 놓치지 않는다.
+            LifecycleResumeEffect(entry, homeViewModel) {
+                homeViewModel?.refresh()
+                onPauseOrDispose {}
+            }
+            HomeScreen(
+                state = homeState,
+                onSignIn = { navController.navigate(PlanteriorRoute.Login()) },
+                onNotifications = { navController.navigate(PlanteriorRoute.Notifications) },
+                onIdentify = { navController.navigate(PlanteriorRoute.Camera) },
+                onOpenMiniHome = { navController.navigate(PlanteriorRoute.MiniHome) },
+                onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
+                onOpenPlant = { plantId ->
+                    navController.navigate(PlanteriorRoute.PlantDetail(plantId))
+                },
                 bottomBar = bottomBar,
             )
         }
@@ -176,6 +200,18 @@ fun PlanteriorNavHost(
             PlaceholderScreen(
                 title = stringResource(R.string.screen_camera),
                 description = stringResource(R.string.screen_camera_description),
+            )
+        }
+        composable<PlanteriorRoute.MiniHome> {
+            PlaceholderScreen(
+                title = stringResource(R.string.screen_mini_home),
+                description = stringResource(R.string.screen_mini_home_description),
+            )
+        }
+        composable<PlanteriorRoute.Notifications> {
+            PlaceholderScreen(
+                title = stringResource(R.string.screen_notifications),
+                description = stringResource(R.string.screen_notifications_description),
             )
         }
         composable<PlanteriorRoute.PlantDetail> {

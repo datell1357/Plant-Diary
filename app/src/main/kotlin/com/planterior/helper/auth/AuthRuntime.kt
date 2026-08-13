@@ -38,6 +38,14 @@ import com.planterior.helper.feature.auth.SyncSummary
 import com.planterior.helper.feature.auth.debugAccountSyncRemote
 import com.planterior.helper.feature.auth.debugAuthProvider
 import com.planterior.helper.feature.auth.prepareDebugAuth
+import com.planterior.helper.feature.home.HomeMiniHomePreview
+import com.planterior.helper.feature.home.HomePlantCare
+import com.planterior.helper.feature.home.HomeRepository
+import com.planterior.helper.feature.home.HomeSession
+import com.planterior.helper.feature.home.HomeSyncStatus
+import com.planterior.helper.feature.home.HomeWeather
+import com.planterior.helper.home.CachedHomeRepository
+import com.planterior.helper.home.debugHomeWeatherSource
 import java.net.URI
 
 class AuthRuntime
@@ -45,6 +53,8 @@ private constructor(
     val coordinator: AuthCoordinator,
     private val apple: AppleWebAuthProvider?,
     val hasSession: Boolean,
+    /** 홈 대시보드가 읽는 저장소. 인증 상태와 같은 수명을 가진다. */
+    val homeRepository: HomeRepository,
 ) {
     suspend fun handleAppleCallback(uri: URI): Boolean = apple?.handleCallback(uri) ?: false
 
@@ -87,7 +97,7 @@ private constructor(
                     ActivityWebAuthorizationLauncher(activity),
                 )
             val identity = FirebaseIdentityAdapter(auth)
-            return AuthRuntime(
+            val coordinator =
                 AuthCoordinator(
                     mapOf(
                         AuthProvider.GOOGLE to
@@ -110,9 +120,16 @@ private constructor(
                         ),
                         database,
                     ),
-                ),
+                )
+            return AuthRuntime(
+                coordinator,
                 apple,
                 identity.current() != null,
+                CachedHomeRepository(
+                    database,
+                    coordinator.state,
+                    debugHomeWeatherSource(activity),
+                ),
             )
         }
 
@@ -168,9 +185,32 @@ private constructor(
                     },
                     AccountSynchronizer { SyncSummary.EMPTY },
                 )
-            return AuthRuntime(coordinator, null, false)
+            return AuthRuntime(
+                coordinator,
+                null,
+                false,
+                // 구성이 없으면 로그인할 수 없으므로 홈은 항상 로그아웃 상태로 머무른다.
+                UnavailableHomeRepository,
+            )
         }
     }
+}
+
+/**
+ * Firebase 구성이 없을 때 쓰는 홈 저장소이다.
+ *
+ * 샘플 식물을 지어내지 않고 상태만 정직하게 돌려준다.
+ */
+private object UnavailableHomeRepository : HomeRepository {
+    override suspend fun session(): HomeSession = HomeSession.SignedOut
+
+    override suspend fun plantCare(): Result<List<HomePlantCare>> = Result.success(emptyList())
+
+    override suspend fun weather(): Result<HomeWeather?> = Result.success(null)
+
+    override suspend fun miniHomePreview(): HomeMiniHomePreview? = null
+
+    override suspend fun syncStatus(): HomeSyncStatus = HomeSyncStatus.Stale(null)
 }
 
 private object OfflineGateway : RemoteMutationGateway {

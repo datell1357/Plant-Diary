@@ -44,6 +44,7 @@ class PlanteriorDesignTokenTest {
     @Test
     fun `radius and border tokens match the Figma frame`() {
         assertEquals(8.dp, PlanteriorRadius.Small)
+        assertEquals(12.dp, PlanteriorRadius.Card)
         assertEquals(16.dp, PlanteriorRadius.Medium)
         assertEquals(48.dp, PlanteriorRadius.Large)
         assertEquals(1.dp, PlanteriorBorderWidth)
