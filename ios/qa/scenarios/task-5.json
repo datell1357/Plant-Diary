@@ -1,0 +1,15 @@
+{
+  "task": 5,
+  "name": "Pinned provisional Firebase compatibility boundary",
+  "sourceCommit": "8f362c4de2bc76d16875ac80d0c8ad794e950340",
+  "happyPath": {
+    "command": "./ios/scripts/qa-task.sh 5 --attempt-dir \"$ATTEMPT_DIR\"",
+    "expectedExit": 0,
+    "evidence": "task-5-ios-app-implementation.json"
+  },
+  "missingContractPath": {
+    "environment": "IOS_QA_MISSING_CONTRACT=1",
+    "expectedExit": 70,
+    "expectedMarker": "IOS_BACKEND_CONTRACT_UNAVAILABLE"
+  }
+}

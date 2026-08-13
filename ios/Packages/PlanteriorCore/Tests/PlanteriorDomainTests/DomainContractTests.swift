@@ -56,13 +56,13 @@ struct DomainContractTests {
         }
     }
 
-    @Test(arguments: ["00:00", "00:00:00", "23:59:59"])
+    @Test(arguments: ["00:00", "09:00", "00:00:00", "23:59:59"])
     func localTimeAcceptsBoundaries(_ value: String) throws {
         let expected = value.count == 5 ? "\(value):00" : value
         #expect(try LocalTime.parse(value).rawValue == expected)
     }
 
-    @Test(arguments: ["24:00:00", "09:60:00", "09:00"])
+    @Test(arguments: ["24:00:00", "09:60:00"])
     func localTimeRejectsOutOfRangeValues(_ value: String) {
         #expect(throws: DomainValidationError.invalidLocalTime) {
             try LocalTime.parse(value)

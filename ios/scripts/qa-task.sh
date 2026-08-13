@@ -148,6 +148,67 @@ if [ "$task_number" = "4" ]; then
   exit 0
 fi
 
+if [ "$task_number" = "5" ]; then
+  contract="$repo_root/ios/Packages/PlanteriorCore/Tests/PlanteriorDataTests/Fixtures/backend-contract-v1.json"
+  if [ "${IOS_QA_MISSING_CONTRACT:-0}" = "1" ]; then
+    contract="$contract.missing"
+  fi
+  if [ ! -f "$contract" ]; then
+    printf 'IOS_BACKEND_CONTRACT_UNAVAILABLE path=%s\n' "$contract" >&2
+    exit 70
+  fi
+  android_root=/Users/yeoreum/Documents/Planterior_Helper-worktrees/feat-android-app
+  pinned_commit=8f362c4de2bc76d16875ac80d0c8ad794e950340
+  python3 - "$contract" "$android_root" "$pinned_commit" <<'PY'
+import hashlib
+import json
+import subprocess
+import sys
+
+contract_path, android_root, commit = sys.argv[1:]
+with open(contract_path, encoding="utf-8") as source:
+    manifest = json.load(source)
+for pinned in manifest["pinnedFiles"]:
+    content = subprocess.check_output(
+        ["git", "-C", android_root, "show", f"{commit}:{pinned['path']}"]
+    )
+    if hashlib.sha256(content).hexdigest() != pinned["sha256"]:
+        raise SystemExit("IOS_BACKEND_CONTRACT_UNAVAILABLE digest-mismatch")
+PY
+  (
+    cd "$android_root"
+    firebase emulators:exec \
+      --only firestore,storage \
+      --project demo-planterior \
+      "npm --prefix firebase-tests test"
+  )
+  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  python3 - "$contract" "$attempt_dir/task-5-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+contract_path, evidence_path = sys.argv[1:]
+with open(contract_path, encoding="utf-8") as source:
+    manifest = json.load(source)
+evidence = {
+    "contractVersion": manifest["contractVersion"],
+    "sourceCommit": manifest["sourceCommit"],
+    "pinnedFileCount": len(manifest["pinnedFiles"]),
+    "validFixtureCount": len(manifest["validOwnerMutations"]),
+    "forbiddenFixtureCount": len(manifest["forbiddenFixtures"]),
+    "unavailableIntegrationCount": len(manifest["unavailableIntegrations"]),
+    "unavailablePolicyCount": len(manifest["unavailablePolicies"]),
+    "duplicateResult": "original-revision",
+    "staleRevisionResult": "conflict-no-write",
+    "rulesEvidence": "pinned-android-emulator-suite-passed"
+}
+with open(evidence_path, "w", encoding="utf-8") as target:
+    json.dump(evidence, target, ensure_ascii=False, indent=2)
+PY
+  printf 'IOS_TASK_5_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

@@ -1,0 +1,57 @@
+{
+  "contractVersion": "android-firebase-boundary/v1",
+  "sourceCommit": "8f362c4de2bc76d16875ac80d0c8ad794e950340",
+  "pinnedFiles": [
+    {"path":"firebase.json","sha256":"6994857f9ae052d2ccdd068c202eec7c26d481e76d3e87cb7cddd69ada48885a"},
+    {"path":"firestore.indexes.json","sha256":"f06b33aebd2dac2a045754460f935f579cce4dd7aa606c6fffe044870ff569ef"},
+    {"path":"firestore.rules","sha256":"5347dc93d463d09803c0e4d4cac137779fcf967bbca8bb78e2fbc2a0fa6a41b8"},
+    {"path":"storage.rules","sha256":"bc8608904da0e171c4e90e5f791c3608e797e08177c89c5eed3c4c806cdf2d35"},
+    {"path":"functions/src/contracts.ts","sha256":"331506c0ce569a616807a24a5840ce602f1be2848ec1d3e8c1e52427ae3e88c1"}
+  ],
+  "validOwnerMutations": [
+    {
+      "collection":"personalPlants",
+      "documentID":"plant-a",
+      "expectedRevision":0,
+      "idempotencyKey":"operation-0001",
+      "payload":{"displayName":"몬스테라","registrationMethod":"MANUAL"}
+    }
+  ],
+  "forbiddenFixtures": [
+    {"reason":"foreign-owner","value":"users/other/personalPlants/plant-a"},
+    {"reason":"server-only-write","value":"users/me/weatherSnapshots/snapshot-a"},
+    {"reason":"unsafe-storage-name","value":".hidden.jpg"},
+    {"reason":"placement-target-xor","value":"plantId+itemId"},
+    {"reason":"unknown-enum","value":"registrationMethod=UNKNOWN"}
+  ],
+  "unavailableIntegrations": [
+    {"id":"plantIdentification.submit","integrationStatus":"unavailable"},
+    {"id":"weather.refreshCanonicalSnapshot","integrationStatus":"unavailable"},
+    {"id":"notifications.registerEndpoint","integrationStatus":"unavailable"},
+    {"id":"notifications.dispatchWatering","integrationStatus":"unavailable"},
+    {"id":"notifications.dispatchWeatherRisk","integrationStatus":"unavailable"},
+    {"id":"items.acquire","integrationStatus":"unavailable"},
+    {"id":"items.setApplied","integrationStatus":"unavailable"},
+    {"id":"shares.create","integrationStatus":"unavailable"},
+    {"id":"shares.revoke","integrationStatus":"unavailable"},
+    {"id":"shares.resolveImage","integrationStatus":"unavailable"},
+    {"id":"deletion.previewScope","integrationStatus":"unavailable"},
+    {"id":"deletion.request","integrationStatus":"unavailable"},
+    {"id":"deletion.cancel","integrationStatus":"unavailable"},
+    {"id":"deletion.executeScheduled","integrationStatus":"unavailable"},
+    {"id":"identificationOriginals.cleanup","integrationStatus":"unavailable"}
+  ],
+  "unavailablePolicies": [
+    {"id":"identificationOriginalRetention","value":"PT24H","integrationStatus":"unavailable"},
+    {"id":"weatherStaleAfter","value":"PT3H","integrationStatus":"unavailable"},
+    {"id":"publicShareLifetime","value":"P30D","integrationStatus":"unavailable"},
+    {"id":"accountDeletionGrace","value":"P7D","integrationStatus":"unavailable"}
+  ],
+  "compatibilityNotes": [
+    "TypeScript placement payload enforces exactly one plantId or itemId; rules and Kotlin do not.",
+    "Server-state writer omits revision metadata required by rules and Kotlin DTOs.",
+    "Public share documents are readable but share-images storage remains owner-private.",
+    "Direct owner writes do not atomically create operation receipts.",
+    "Firestore *At and *For values become Timestamp while most Kotlin DTOs declare strings."
+  ]
+}

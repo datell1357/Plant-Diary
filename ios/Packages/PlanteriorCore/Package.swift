@@ -16,6 +16,11 @@ let package = Package(
         .target(name: "PlanteriorDesignSystem"),
         .target(name: "PlanteriorTestingSupport", dependencies: ["PlanteriorDomain"]),
         .testTarget(name: "PlanteriorDomainTests", dependencies: ["PlanteriorDomain"]),
-        .testTarget(name: "PlanteriorDesignSystemTests", dependencies: ["PlanteriorDesignSystem"])
+        .testTarget(name: "PlanteriorDesignSystemTests", dependencies: ["PlanteriorDesignSystem"]),
+        .testTarget(
+            name: "PlanteriorDataTests",
+            dependencies: ["PlanteriorData"],
+            resources: [.copy("Fixtures")]
+        )
     ]
 )
