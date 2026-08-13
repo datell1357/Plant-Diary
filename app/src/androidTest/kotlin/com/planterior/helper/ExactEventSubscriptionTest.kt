@@ -1,6 +1,7 @@
 package com.planterior.helper
 
 import android.util.Log
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
@@ -121,6 +122,8 @@ class ExactEventSubscriptionTest {
         private val onCloseSelected: (String) -> Unit = {},
         private val onCloseLinearized: (String, Boolean) -> Unit = { _, _ -> },
         private val onTerminal: (String) -> Unit = {},
+        private val onTerminalWaitResolved: (Boolean) -> Unit = {},
+        private val onCloseReturning: (Boolean) -> Unit = {},
     ) : ExactEventStateObserver {
         override fun awaitClaimed() = onAwaitClaimed()
 
@@ -130,6 +133,10 @@ class ExactEventSubscriptionTest {
             onCloseLinearized(reason, ownsDetach)
 
         override fun terminal(outcome: String) = onTerminal(outcome)
+
+        override fun terminalWaitResolved(ownsDetach: Boolean) = onTerminalWaitResolved(ownsDetach)
+
+        override fun closeReturning(ownsDetach: Boolean) = onCloseReturning(ownsDetach)
     }
 
     private data class Fixture<T>(
@@ -263,6 +270,14 @@ class ExactEventSubscriptionTest {
         val api37 = reconstructedTerminalWakeupTrace(awaitContinuationFirst = true)
         assertEquals(api29.normalized, api37.normalized)
         assertEquals(api29.hash, api37.hash)
+
+        val pairedCloseReturns = captureConcurrentCloseTrace(interleavedReturns = false)
+        val interleavedCloseReturns = captureConcurrentCloseTrace(interleavedReturns = true)
+        assertEquals(pairedCloseReturns.normalized, interleavedCloseReturns.normalized)
+        assertEquals(pairedCloseReturns.hash, interleavedCloseReturns.hash)
+        val orderedSecondClose = captureOrderedSecondCloseTrace()
+        assertFalse(pairedCloseReturns.normalized == orderedSecondClose.normalized)
+        assertFalse(pairedCloseReturns.hash == orderedSecondClose.hash)
 
         val causalFirstThenSecond = reconstructedCausalEventOrder(reverse = false)
         val causalSecondThenFirst = reconstructedCausalEventOrder(reverse = true)
@@ -1386,6 +1401,83 @@ class ExactEventSubscriptionTest {
         return recorder.snapshot()
     }
 
+    private fun captureConcurrentCloseTrace(
+        interleavedReturns: Boolean
+    ): ExactEventBehaviorSnapshot = captureBehavior {
+        val ownerDetachStarted = CountDownLatch(1)
+        val releaseOwnerDetach = CountDownLatch(1)
+        val joinerLinearized = CountDownLatch(1)
+        val releaseJoinerWait = CountDownLatch(1)
+        val ownerReturning = CountDownLatch(1)
+        val joinerReturning = CountDownLatch(1)
+        val releaseOwnerReturn = CountDownLatch(1)
+        val releaseJoinerReturn = CountDownLatch(1)
+        val fixture =
+            fixture<String>(
+                matches = { it == "home" },
+                leaseObserver =
+                    LeaseHooks(
+                        onDetachStarted = {
+                            ownerDetachStarted.countDown()
+                            check(releaseOwnerDetach.await(BOUND, TimeUnit.SECONDS))
+                        }
+                    ),
+                stateObserver =
+                    StateHooks(
+                        onCloseLinearized = { _, ownsDetach ->
+                            if (!ownsDetach) joinerLinearized.countDown()
+                        },
+                        onTerminalWaitResolved = { ownsDetach ->
+                            if (!ownsDetach && !interleavedReturns) {
+                                check(releaseJoinerWait.await(BOUND, TimeUnit.SECONDS))
+                            }
+                        },
+                        onCloseReturning = { ownsDetach ->
+                            if (interleavedReturns) {
+                                if (ownsDetach) {
+                                    ownerReturning.countDown()
+                                    check(releaseOwnerReturn.await(BOUND, TimeUnit.SECONDS))
+                                } else {
+                                    joinerReturning.countDown()
+                                    check(releaseJoinerReturn.await(BOUND, TimeUnit.SECONDS))
+                                }
+                            }
+                        },
+                    ),
+            )
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            fixture.subscription.arm()
+            val owner = executor.submit { fixture.subscription.close() }
+            check(ownerDetachStarted.await(BOUND, TimeUnit.SECONDS))
+            val joiner = executor.submit { fixture.subscription.close() }
+            check(joinerLinearized.await(BOUND, TimeUnit.SECONDS))
+            releaseOwnerDetach.countDown()
+            if (interleavedReturns) {
+                check(ownerReturning.await(BOUND, TimeUnit.SECONDS))
+                check(joinerReturning.await(BOUND, TimeUnit.SECONDS))
+                releaseOwnerReturn.countDown()
+                owner.get(BOUND, TimeUnit.SECONDS)
+                releaseJoinerReturn.countDown()
+            } else {
+                owner.get(BOUND, TimeUnit.SECONDS)
+                releaseJoinerWait.countDown()
+            }
+            joiner.get(BOUND, TimeUnit.SECONDS)
+            assertClean(fixture)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun captureOrderedSecondCloseTrace(): ExactEventBehaviorSnapshot = captureBehavior {
+        val fixture = fixture<String>(matches = { it == "home" })
+        fixture.subscription.arm()
+        fixture.subscription.close()
+        fixture.subscription.close()
+        assertClean(fixture)
+    }
+
     private fun reconstructedCausalEventOrder(reverse: Boolean): ExactEventBehaviorSnapshot {
         val recorder = BehaviorRecorder()
         val handle = recorder.newHandle(BehaviorComponent.SUBSCRIPTION)
@@ -1566,6 +1658,8 @@ class ExactEventSubscriptionTest {
     companion object {
         const val BOUND = 3L
         private const val TRACE_LOG_TAG = "ExactEventBehavior"
+        private const val EXPECTED_COMPLETE_DIGEST =
+            "7f4b84d498bb33b5c46c6df71c07d11b1900030e34d9e15459b890b905abbb82"
         private val EXECUTED_BEHAVIORS = ConcurrentHashMap<String, ExactEventBehaviorSnapshot>()
         private val EXECUTED_BOUNDARIES = ConcurrentHashMap<String, Int>()
 
@@ -1590,6 +1684,19 @@ class ExactEventSubscriptionTest {
                 collisions.isEmpty(),
             )
             assertEquals(29, EXECUTED_BEHAVIORS.values.map { it.hash }.toSet().size)
+            val completeDigest =
+                MessageDigest.getInstance("SHA-256")
+                    .digest(
+                        executions
+                            .sortedBy { it.first }
+                            .joinToString(
+                                separator = "",
+                                transform = { "${it.first}|${it.second.hash}\n" },
+                            )
+                            .toByteArray()
+                    )
+                    .joinToString("") { "%02x".format(it) }
+            assertEquals(EXPECTED_COMPLETE_DIGEST, completeDigest)
             assertEquals(SCHEDULES.map { it.boundaryTag }.toSet(), EXECUTED_BOUNDARIES.keys)
             assertTrue(EXECUTED_BOUNDARIES.values.all { it == 1 })
         }

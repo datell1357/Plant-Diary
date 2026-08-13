@@ -378,15 +378,27 @@ internal class BehaviorRecorder {
             BehaviorCausalBranch.entries
                 .filterNot { it == BehaviorCausalBranch.NONE }
                 .forEach { causalBranch ->
-                    var branchPredecessors = predecessors
-                    branchEvents
-                        .filter { it.payload.causalBranch == causalBranch }
-                        .forEach { event ->
-                            canonical += CanonicalEvent(event, branchPredecessors)
-                            branchPredecessors = listOf(canonical.lastIndex)
+                    val closeRoles =
+                        if (causalBranch == BehaviorCausalBranch.CLOSE_CONTINUATION) {
+                            listOf(BehaviorFlag.TRUE, BehaviorFlag.FALSE, BehaviorFlag.UNSET)
+                        } else {
+                            listOf<BehaviorFlag?>(null)
                         }
-                    if (branchPredecessors !== predecessors) {
-                        branchEnds += branchPredecessors.single()
+                    closeRoles.forEach { closeOwnsDetach ->
+                        var branchPredecessors = predecessors
+                        branchEvents
+                            .filter {
+                                it.payload.causalBranch == causalBranch &&
+                                    (closeOwnsDetach == null ||
+                                        it.payload.ownsDetach == closeOwnsDetach)
+                            }
+                            .forEach { event ->
+                                canonical += CanonicalEvent(event, branchPredecessors)
+                                branchPredecessors = listOf(canonical.lastIndex)
+                            }
+                        if (branchPredecessors !== predecessors) {
+                            branchEnds += branchPredecessors.single()
+                        }
                     }
                 }
             predecessors = branchEnds
@@ -817,6 +829,10 @@ internal interface ExactEventStateObserver {
 
     fun terminal(outcome: String) = Unit
 
+    fun terminalWaitResolved(ownsDetach: Boolean) = Unit
+
+    fun closeReturning(ownsDetach: Boolean) = Unit
+
     companion object {
         val NONE = object : ExactEventStateObserver {}
     }
@@ -951,12 +967,13 @@ internal class ExactEventSubscription<T>(
         val terminal =
             checkNotNull(
                 closeObservation(
-                    reason,
-                    CLOSE_TIMEOUT_SECONDS,
-                    TimeUnit.SECONDS,
-                    false,
-                    BehaviorCausalBranch.AWAIT_CONTINUATION,
-                )
+                        reason,
+                        CLOSE_TIMEOUT_SECONDS,
+                        TimeUnit.SECONDS,
+                        false,
+                        BehaviorCausalBranch.AWAIT_CONTINUATION,
+                    )
+                    .outcome
             )
         return when (terminal) {
             is Outcome.Success -> {
@@ -1075,7 +1092,7 @@ internal class ExactEventSubscription<T>(
         unit: TimeUnit,
         permitReentrantReturn: Boolean,
         causalBranch: BehaviorCausalBranch,
-    ): Outcome<T>? {
+    ): CloseObservationResult<T> {
         var immediateOutcome: Outcome<T>? = null
         val transition =
             synchronized(lock) {
@@ -1128,7 +1145,7 @@ internal class ExactEventSubscription<T>(
                 BehaviorTransition.CLOSED_OUTCOME_OBSERVED,
                 BehaviorPayload.Facts(outcome = it.behaviorOutcome()),
             )
-            return it
+            return CloseObservationResult(it, ownsDetach)
         }
 
         stateObserver.closeLinearized(requestedReason.name, ownsDetach)
@@ -1153,14 +1170,21 @@ internal class ExactEventSubscription<T>(
                 BehaviorTransition.REENTRANT_CLOSE_RETURNED,
                 BehaviorPayload.Facts(callerOwnsLease = BehaviorFlag.TRUE),
             )
-            return null
+            return CloseObservationResult(null, ownsDetach)
         }
         val drained = closed.await(timeout, unit)
+        stateObserver.terminalWaitResolved(ownsDetach)
         behavior.observe(
             BehaviorTransition.TERMINAL_WAIT_RESOLVED,
             BehaviorPayload.Facts(
                 drained = drained.behaviorFlag(),
                 phase = synchronized(lock) { phase }.behaviorPhase(),
+                ownsDetach =
+                    if (causalBranch == BehaviorCausalBranch.CLOSE_CONTINUATION) {
+                        ownsDetach.behaviorFlag()
+                    } else {
+                        BehaviorFlag.UNSET
+                    },
                 causalBranch = causalBranch,
             ),
         )
@@ -1174,8 +1198,13 @@ internal class ExactEventSubscription<T>(
                 IllegalStateException("listener detach/drain이 제한 시간 안에 끝나지 않았다"),
             )
         }
-        return synchronized(lock) { checkNotNull(outcome) }
+        return CloseObservationResult(synchronized(lock) { checkNotNull(outcome) }, ownsDetach)
     }
+
+    private data class CloseObservationResult<T>(
+        val outcome: Outcome<T>?,
+        val ownsDetach: Boolean,
+    )
 
     private fun completeObservation(detachFailure: Throwable?) {
         val terminalLabel =
@@ -1252,7 +1281,7 @@ internal class ExactEventSubscription<T>(
             BehaviorTransition.CLOSE_INVOKED,
             BehaviorPayload.Facts(phase = synchronized(lock) { phase }.behaviorPhase()),
         )
-        val terminal =
+        val observation =
             closeObservation(
                 CloseReason.CANCELLED,
                 CLOSE_TIMEOUT_SECONDS,
@@ -1260,11 +1289,14 @@ internal class ExactEventSubscription<T>(
                 true,
                 BehaviorCausalBranch.CLOSE_CONTINUATION,
             )
+        val terminal = observation.outcome
+        stateObserver.closeReturning(observation.ownsDetach)
         behavior.observe(
             BehaviorTransition.CLOSE_RETURNED,
             BehaviorPayload.Facts(
                 outcome = terminal?.behaviorOutcome() ?: BehaviorOutcome.NONE,
                 phase = synchronized(lock) { phase }.behaviorPhase(),
+                ownsDetach = observation.ownsDetach.behaviorFlag(),
                 causalBranch = BehaviorCausalBranch.CLOSE_CONTINUATION,
             ),
         )
