@@ -38,6 +38,59 @@ require_file() {
     "$variable_name" "$(basename "$file_path")"
 }
 
+verify_firebase_plist() {
+  variable_name=$1
+  eval "plist_path=\${$variable_name:-}"
+  if [ -z "$plist_path" ] || [ ! -f "$plist_path" ]; then
+    report_missing "$variable_name"
+    return
+  fi
+
+  bundle_id=$(plutil -extract BUNDLE_ID raw -o - "$plist_path" 2>/dev/null || true)
+  project_id=$(plutil -extract PROJECT_ID raw -o - "$plist_path" 2>/dev/null || true)
+  app_id=$(plutil -extract GOOGLE_APP_ID raw -o - "$plist_path" 2>/dev/null || true)
+  reversed_client_id=$(
+    plutil -extract REVERSED_CLIENT_ID raw -o - "$plist_path" 2>/dev/null || true
+  )
+
+  if [ "$bundle_id" != "com.planterior.helper" ]; then
+    report_missing "$variable_name:BUNDLE_ID"
+    return
+  fi
+  if [ -z "$project_id" ] || [ -z "$app_id" ] || [ -z "$reversed_client_id" ]; then
+    report_missing "$variable_name:FIREBASE_METADATA"
+    return
+  fi
+  if ! command -v firebase >/dev/null 2>&1; then
+    report_missing FIREBASE_CLI
+    return
+  fi
+
+  apps_json=$(mktemp)
+  trap 'rm -f "$apps_json"' EXIT HUP INT TERM
+  if ! firebase apps:list IOS --project "$project_id" --json >"$apps_json" 2>/dev/null; then
+    report_missing "$variable_name:FIREBASE_PROJECT_ACCESS"
+    rm -f "$apps_json"
+    trap - EXIT HUP INT TERM
+    return
+  fi
+  if ! jq -e \
+    --arg app_id "$app_id" \
+    --arg bundle_id "$bundle_id" \
+    '.result[]? | select(.appId == $app_id and .platform == "IOS" and .metadata.bundleId == $bundle_id)' \
+    "$apps_json" >/dev/null; then
+    report_missing "$variable_name:FIREBASE_IOS_APP_REGISTRATION"
+    rm -f "$apps_json"
+    trap - EXIT HUP INT TERM
+    return
+  fi
+  rm -f "$apps_json"
+  trap - EXIT HUP INT TERM
+
+  printf 'IOS_RELEASE_PREREQUISITE_PRESENT asset=%s project=%s\n' \
+    "$variable_name" "$project_id"
+}
+
 if [ "$require_device" = true ]; then
   if [ -z "${IOS_PHYSICAL_UDID:-}" ]; then
     report_missing IOS_PHYSICAL_UDID
@@ -70,11 +123,24 @@ if [ "$require_signing" = true ]; then
         "$identity_count"
     fi
 
-    profile_dir=${IOS_PROVISIONING_PROFILE_DIR:-"$HOME/Library/MobileDevice/Provisioning Profiles"}
-    profile_count=$(
-      find "$profile_dir" -maxdepth 1 -type f 2>/dev/null |
-        awk 'END { print NR + 0 }'
-    )
+    if [ -n "${IOS_PROVISIONING_PROFILE_DIR:-}" ]; then
+      profile_roots=$IOS_PROVISIONING_PROFILE_DIR
+    else
+      profile_roots="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles
+$HOME/Library/MobileDevice/Provisioning Profiles"
+    fi
+    profile_count=0
+    old_ifs=$IFS
+    IFS='
+'
+    for profile_dir in $profile_roots; do
+      count=$(
+        find "$profile_dir" -maxdepth 1 -type f 2>/dev/null |
+          awk 'END { print NR + 0 }'
+      )
+      profile_count=$((profile_count + count))
+    done
+    IFS=$old_ifs
     if [ "$profile_count" -eq 0 ]; then
       report_missing IOS_PROVISIONING_PROFILE
     else
@@ -85,20 +151,15 @@ if [ "$require_signing" = true ]; then
 fi
 
 if [ "$require_firebase" = true ]; then
-  require_file IOS_FIREBASE_PLIST_DEV
-  require_file IOS_FIREBASE_PLIST_PROD
-  if [ -z "${GOOGLE_REVERSED_CLIENT_ID:-}" ]; then
-    report_missing GOOGLE_REVERSED_CLIENT_ID
-  else
-    printf 'IOS_RELEASE_PREREQUISITE_PRESENT asset=GOOGLE_REVERSED_CLIENT_ID\n'
-  fi
+  verify_firebase_plist IOS_FIREBASE_PLIST_DEV
+  verify_firebase_plist IOS_FIREBASE_PLIST_PROD
 fi
 
 if [ "$require_asc" = true ]; then
   require_file APP_STORE_CONNECT_API_KEY_PATH
   require_file APNS_KEY_PATH
   for variable_name in APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_ID \
-    APPLE_TEAM_ID APNS_KEY_ID; do
+    APP_STORE_CONNECT_APP_ID APPLE_TEAM_ID APNS_KEY_ID; do
     eval "variable_value=\${$variable_name:-}"
     if [ -z "$variable_value" ]; then
       report_missing "$variable_name"
