@@ -6,3 +6,5 @@ DerivedData/
 *.ipa
 .omo/evidence/
 .omo/senpi-task/
+.omo/start-work/
+.omo/ulw-loop/
