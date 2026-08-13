@@ -1,5 +1,16 @@
+import java.security.KeyStore
 import java.util.Properties
+import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.MapProperty
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 
 plugins {
     alias(libs.plugins.android.application)
@@ -8,7 +19,102 @@ plugins {
     alias(libs.plugins.kover)
 }
 
+object ReleaseValidationConstants {
+    const val MISSING_VALUE = "release-configuration-required"
+}
+
 data class ReleaseInput(val propertyName: String, val environmentName: String)
+
+@DisableCachingByDefault(because = "Validation must execute for every requested release build")
+abstract class ValidateReleaseAuthConfigurationTask : DefaultTask() {
+    @get:Input abstract val values: MapProperty<String, String>
+
+    @TaskAction
+    fun validate() {
+        val configured = values.get()
+        val missing =
+            configured.filterValues { it == ReleaseValidationConstants.MISSING_VALUE }.keys
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release authentication configuration is incomplete. Set: ${missing.sorted().joinToString()}"
+            )
+        }
+        val malformed = buildList {
+            if (
+                !configured
+                    .getValue("GOOGLE_WEB_CLIENT_ID")
+                    .matches(
+                        Regex("^[0-9]{6,}-[A-Za-z0-9_-]{10,}\\.apps\\.googleusercontent\\.com$")
+                    )
+            )
+                add("GOOGLE_WEB_CLIENT_ID")
+            if (
+                !configured
+                    .getValue("FIREBASE_PROJECT_ID")
+                    .matches(Regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$"))
+            )
+                add("FIREBASE_PROJECT_ID")
+            if (
+                !configured
+                    .getValue("FIREBASE_APP_ID")
+                    .matches(Regex("^[0-9]+:[0-9]+:android:[0-9a-fA-F]{16,64}$"))
+            )
+                add("FIREBASE_APP_ID")
+            if (!configured.getValue("FIREBASE_API_KEY").matches(Regex("^AIza[0-9A-Za-z_-]{35}$")))
+                add("FIREBASE_API_KEY")
+        }
+        if (malformed.isNotEmpty()) {
+            throw GradleException(
+                "Release authentication configuration is malformed: ${malformed.sorted().joinToString()}"
+            )
+        }
+    }
+}
+
+@DisableCachingByDefault(
+    because = "Signing credentials must be opened for every requested release build"
+)
+abstract class ValidateReleaseSigningConfigurationTask : DefaultTask() {
+    @get:Input abstract val values: MapProperty<String, String>
+
+    @get:Optional
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val storeFile: RegularFileProperty
+
+    @TaskAction
+    fun validate() {
+        val configured = values.get()
+        val missing =
+            configured.filterValues { it == ReleaseValidationConstants.MISSING_VALUE }.keys
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release signing configuration is incomplete. Set: ${missing.sorted().joinToString()}"
+            )
+        }
+        val file = storeFile.orNull?.asFile
+        if (file == null || !file.isFile) {
+            throw GradleException("Release signing store file does not exist.")
+        }
+        val storePassword = configured.getValue("RELEASE_STORE_PASSWORD").toCharArray()
+        val keyPassword = configured.getValue("RELEASE_KEY_PASSWORD").toCharArray()
+        try {
+            val keyStore = KeyStore.getInstance(file, storePassword)
+            val alias = configured.getValue("RELEASE_KEY_ALIAS")
+            val key = keyStore.getKey(alias, keyPassword)
+            if (!keyStore.isKeyEntry(alias) || key !is java.security.PrivateKey) {
+                throw GradleException("Release signing credentials could not be verified.")
+            }
+        } catch (error: GradleException) {
+            throw error
+        } catch (_: Exception) {
+            throw GradleException("Release signing credentials could not be verified.")
+        } finally {
+            storePassword.fill('\u0000')
+            keyPassword.fill('\u0000')
+        }
+    }
+}
 
 fun loadReleaseProperties(): Properties {
     val explicitPath = providers.gradleProperty("planterior.release.configFile").orNull
@@ -19,7 +125,16 @@ fun loadReleaseProperties(): Properties {
         } else {
             rootProject.file("local.properties").takeIf { it.isFile }
         }
-    return Properties().apply { source?.inputStream()?.use(::load) }
+    return Properties().apply {
+        source?.let {
+            providers
+                .fileContents(layout.projectDirectory.file(it.absolutePath))
+                .asText
+                .get()
+                .reader()
+                .use(::load)
+        }
+    }
 }
 
 val releaseProperties = loadReleaseProperties()
@@ -81,7 +196,6 @@ val signingInputs =
     )
 val releaseSigning = signingInputs.mapValues { releaseValue(it.value) }
 val hasReleaseSigning = releaseSigning.values.all { it != null }
-val missingReleaseValue = "release-configuration-required"
 val minimumSdk = 29
 
 android {
@@ -126,22 +240,30 @@ android {
             buildConfigField(
                 "String",
                 "GOOGLE_WEB_CLIENT_ID",
-                javaStringLiteral(releaseAuth["GOOGLE_WEB_CLIENT_ID"] ?: missingReleaseValue),
+                javaStringLiteral(
+                    releaseAuth["GOOGLE_WEB_CLIENT_ID"] ?: ReleaseValidationConstants.MISSING_VALUE
+                ),
             )
             buildConfigField(
                 "String",
                 "FIREBASE_PROJECT_ID",
-                javaStringLiteral(releaseAuth["FIREBASE_PROJECT_ID"] ?: missingReleaseValue),
+                javaStringLiteral(
+                    releaseAuth["FIREBASE_PROJECT_ID"] ?: ReleaseValidationConstants.MISSING_VALUE
+                ),
             )
             buildConfigField(
                 "String",
                 "FIREBASE_APP_ID",
-                javaStringLiteral(releaseAuth["FIREBASE_APP_ID"] ?: missingReleaseValue),
+                javaStringLiteral(
+                    releaseAuth["FIREBASE_APP_ID"] ?: ReleaseValidationConstants.MISSING_VALUE
+                ),
             )
             buildConfigField(
                 "String",
                 "FIREBASE_API_KEY",
-                javaStringLiteral(releaseAuth["FIREBASE_API_KEY"] ?: missingReleaseValue),
+                javaStringLiteral(
+                    releaseAuth["FIREBASE_API_KEY"] ?: ReleaseValidationConstants.MISSING_VALUE
+                ),
             )
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
@@ -177,65 +299,21 @@ android {
 }
 
 val validateReleaseAuthConfiguration =
-    tasks.register("validateReleaseAuthConfiguration") {
+    tasks.register<ValidateReleaseAuthConfigurationTask>("validateReleaseAuthConfiguration") {
         group = "verification"
         description =
             "Validates external release authentication identifiers without printing values."
-        doLast {
-            val missing = releaseAuth.filterValues { it == null }.keys
-            if (missing.isNotEmpty()) {
-                throw GradleException(
-                    "Release authentication configuration is incomplete. Set: ${missing.sorted().joinToString()}"
-                )
-            }
-            val malformed = buildList {
-                if (
-                    !requireNotNull(releaseAuth["GOOGLE_WEB_CLIENT_ID"])
-                        .matches(
-                            Regex("^[0-9]{6,}-[A-Za-z0-9_-]{10,}\\.apps\\.googleusercontent\\.com$")
-                        )
-                )
-                    add("GOOGLE_WEB_CLIENT_ID")
-                if (
-                    !requireNotNull(releaseAuth["FIREBASE_PROJECT_ID"])
-                        .matches(Regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$"))
-                )
-                    add("FIREBASE_PROJECT_ID")
-                if (
-                    !requireNotNull(releaseAuth["FIREBASE_APP_ID"])
-                        .matches(Regex("^[0-9]+:[0-9]+:android:[0-9a-fA-F]{16,64}$"))
-                )
-                    add("FIREBASE_APP_ID")
-                if (
-                    !requireNotNull(releaseAuth["FIREBASE_API_KEY"])
-                        .matches(Regex("^AIza[0-9A-Za-z_-]{35}$"))
-                )
-                    add("FIREBASE_API_KEY")
-            }
-            if (malformed.isNotEmpty()) {
-                throw GradleException(
-                    "Release authentication configuration is malformed: ${malformed.sorted().joinToString()}"
-                )
-            }
-        }
+        values.set(releaseAuth.mapValues { it.value ?: ReleaseValidationConstants.MISSING_VALUE })
     }
 
 val validateReleaseSigningConfiguration =
-    tasks.register("validateReleaseSigningConfiguration") {
+    tasks.register<ValidateReleaseSigningConfigurationTask>("validateReleaseSigningConfiguration") {
         group = "verification"
         description = "Validates external release signing inputs without printing values."
-        doLast {
-            val missing = releaseSigning.filterValues { it == null }.keys
-            if (missing.isNotEmpty()) {
-                throw GradleException(
-                    "Release signing configuration is incomplete. Set: ${missing.sorted().joinToString()}"
-                )
-            }
-            val storePath = rootProject.file(requireNotNull(releaseSigning["RELEASE_STORE_FILE"]))
-            if (!storePath.isFile) {
-                throw GradleException("Release signing store file does not exist.")
-            }
-        }
+        values.set(
+            releaseSigning.mapValues { it.value ?: ReleaseValidationConstants.MISSING_VALUE }
+        )
+        releaseSigning["RELEASE_STORE_FILE"]?.let { storeFile.set(rootProject.file(it)) }
     }
 
 val validateReleaseConfiguration =
