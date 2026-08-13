@@ -1,7 +1,10 @@
 {
   "name": "planterior-emulator-contract-tests",
   "private": true,
-  "scripts": { "test": "mocha --timeout 20000 test/**/*.test.cjs" },
+  "scripts": {
+    "test": "node scripts/run-rules-tests.cjs",
+    "test:harness": "node --test test-harness/*.test.cjs"
+  },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.1",
     "firebase": "12.17.1",
