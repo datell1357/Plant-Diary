@@ -108,6 +108,10 @@ class AuthDebugHarnessTest {
         val delegate = FirestoreAccountSyncRemote(firestore)
         val partialRemote =
             object : AccountSyncRemote by delegate {
+                // 미니홈피는 이제 전용 snapshot 조회를 쓴다. 부분 동기화를 만들려면 그 경로를 실패시켜야 한다.
+                override suspend fun miniHome(accountUid: String): RemoteMiniHome? =
+                    error("forced partial sync")
+
                 override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) {
                     if (domain == SyncDomain.MINI_HOME) error("forced partial sync")
                     delegate.verifyDomain(accountUid, domain)

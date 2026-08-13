@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -159,11 +160,113 @@ class AccountSynchronizerPersistenceTest {
         assertEquals(SyncStatus.FAILED, restored.records.getValue(SyncDomain.MINI_HOME).status)
     }
 
+    @Test
+    fun `mini home snapshot is cached so home can render it without the network`() = runTest {
+        val remote =
+            FakeRemote(miniHome = RemoteMiniHome("home-a", "민지의 미니 식물원", 3, 2, now.toEpochMilli()))
+        val synchronizer = FirestoreAccountSynchronizer(remote, database, now = { now })
+
+        val summary = synchronizer.sync(account)
+
+        val cached = database.cacheDao().miniHome(account)
+        assertEquals("민지의 미니 식물원", cached?.name)
+        assertEquals(3, cached?.placedPlantCount)
+        assertEquals("home-a", cached?.miniHomeId)
+        assertEquals(SyncStatus.SUCCESS, summary.records.getValue(SyncDomain.MINI_HOME).status)
+    }
+
+    @Test
+    fun `remote mini home update replaces the cached configuration`() = runTest {
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = RemoteMiniHome("home-a", "이전 이름", 1, 1, now.toEpochMilli())),
+                database,
+                now = { now },
+            )
+            .sync(account)
+
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = RemoteMiniHome("home-a", "새 이름", 5, 2, now.toEpochMilli())),
+                database,
+                now = { now },
+            )
+            .sync(account)
+
+        assertEquals("새 이름", database.cacheDao().miniHome(account)?.name)
+        assertEquals(5, database.cacheDao().miniHome(account)?.placedPlantCount)
+    }
+
+    @Test
+    fun `remote mini home deletion clears the cached configuration`() = runTest {
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = RemoteMiniHome("home-a", "사라질 방", 2, 1, now.toEpochMilli())),
+                database,
+                now = { now },
+            )
+            .sync(account)
+        assertNotNull(database.cacheDao().miniHome(account))
+
+        FirestoreAccountSynchronizer(FakeRemote(miniHome = null), database, now = { now })
+            .sync(account)
+
+        assertNull(
+            "서버에서 지워진 구성을 계속 보여주면 안 된다",
+            database.cacheDao().miniHome(account),
+        )
+    }
+
+    @Test
+    fun `mini home sync failure leaves the previously cached configuration usable`() = runTest {
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = RemoteMiniHome("home-a", "캐시된 방", 4, 1, now.toEpochMilli())),
+                database,
+                now = { now },
+            )
+            .sync(account)
+
+        val summary =
+            FirestoreAccountSynchronizer(
+                    FakeRemote(failures = setOf(SyncDomain.MINI_HOME)),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+        assertEquals("캐시된 방", database.cacheDao().miniHome(account)?.name)
+        assertEquals(SyncStatus.FAILED, summary.records.getValue(SyncDomain.MINI_HOME).status)
+    }
+
+    @Test
+    fun `mini home cache never leaks across accounts`() = runTest {
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = RemoteMiniHome("home-a", "A의 방", 3, 1, now.toEpochMilli())),
+                database,
+                now = { now },
+            )
+            .sync(account)
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = RemoteMiniHome("home-b", "B의 방", 7, 1, now.toEpochMilli())),
+                database,
+                now = { now },
+            )
+            .sync("account-b")
+
+        // 계정별 분할이 기본이다. 두 계정을 번갈아 동기화해도 서로의 방을 덮어쓰지 않는다.
+        assertEquals("A의 방", database.cacheDao().miniHome(account)?.name)
+        assertEquals("B의 방", database.cacheDao().miniHome("account-b")?.name)
+
+        // 계정 전환 시 이전 계정의 보이는 캐시를 지우면 미니홈피도 함께 사라져야 한다.
+        database.cacheDao().clearVisibleAccount(account)
+
+        assertNull(database.cacheDao().miniHome(account))
+        assertEquals("B의 방", database.cacheDao().miniHome("account-b")?.name)
+    }
+
     private fun plant(id: String) = CachedPlantEntity(account, id, id, null, 1, now.toEpochMilli())
 
     private class FakeRemote(
         private val plants: List<RemotePlant> = emptyList(),
         private val schedules: List<RemoteWateringSchedule> = emptyList(),
+        private val miniHome: RemoteMiniHome? = null,
         private val failures: Set<SyncDomain> = emptySet(),
     ) : AccountSyncRemote {
         override suspend fun plants(accountUid: String): List<RemotePlant> =
@@ -171,6 +274,9 @@ class AccountSynchronizerPersistenceTest {
 
         override suspend fun wateringSchedules(accountUid: String): List<RemoteWateringSchedule> =
             result(SyncDomain.WATERING, schedules)
+
+        override suspend fun miniHome(accountUid: String): RemoteMiniHome? =
+            result(SyncDomain.MINI_HOME, miniHome)
 
         override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) {
             result(domain, Unit)

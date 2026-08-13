@@ -25,6 +25,7 @@ class HomeDebugBoundaryTest {
         val debugText = debugSource.readText()
         assertTrue(debugText.contains("weather-failure"))
         assertTrue(debugText.contains("weather-risk"))
+        assertTrue(debugText.contains("session-signed-in"))
 
         val releaseText = releaseSource.readText()
         SCENARIO_MARKERS.forEach { marker ->
@@ -51,6 +52,10 @@ class HomeDebugBoundaryTest {
                 "weather-ok",
                 "home-qa",
                 "setDebugHomeScenario",
+                "session-signed-in",
+                "session-logged-out",
+                "session-restoring",
+                "setDebugHomeSession",
             )
     }
 }

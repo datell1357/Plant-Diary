@@ -10,8 +10,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 홈 대시보드의 상태를 만든다.
@@ -33,13 +35,29 @@ class HomeViewModel(
     /** 화면이 구독하는 홈 상태. */
     val state: StateFlow<HomeUiState> = mutableState.asStateFlow()
 
-    /** 홈을 다시 불러온다. 화면 진입과 사용자의 새로고침 모두 이 경로를 쓴다. */
-    fun refresh() {
-        viewModelScope.launch { mutableState.value = withContext(dispatcher) { load() } }
+    /**
+     * 수동 새로고침 신호이다.
+     *
+     * 세션이 그대로여도 다시 읽어야 할 때(화면 복귀 등) 값을 올려 재조회를 트리거한다.
+     */
+    private val refreshTicks = MutableStateFlow(0L)
+
+    init {
+        viewModelScope.launch(dispatcher) {
+            // 세션과 새로고침을 함께 관찰한다. `collectLatest`가 이전 조회를 취소하므로 늦게 끝난 결과가
+            // 최신 세션의 화면을 덮어쓸 수 없다.
+            combine(repository.sessions().distinctUntilChanged(), refreshTicks, ::Pair)
+                .collectLatest { (session, _) -> mutableState.value = load(session) }
+        }
     }
 
-    private suspend fun load(): HomeUiState {
-        val session = repository.session()
+    /** 홈을 다시 불러온다. 화면 복귀와 사용자의 새로고침 모두 이 경로를 쓴다. */
+    fun refresh() {
+        refreshTicks.value += 1
+    }
+
+    private suspend fun load(session: HomeSession): HomeUiState {
+        if (session is HomeSession.Restoring) return HomeUiState.Loading
         if (session !is HomeSession.SignedIn) return HomeUiState.LoggedOut
 
         val sync = repository.syncStatus().toUiState()
@@ -57,8 +75,8 @@ class HomeViewModel(
             )
         }
 
-        val today = LocalDate.now(clock.withZone(session.zoneId))
-        val items = care.map { it.toItem(today) }.sortedWith(CareOrder)
+        // 오늘은 식물마다 다를 수 있다. 각 일정의 시간대 자정 경계로 따로 판단한다.
+        val items = care.map { it.toItem() }.sortedWith(CareOrder)
         return HomeUiState.Content(
             greetingName = session.displayName,
             careItems = items,
@@ -91,16 +109,13 @@ class HomeViewModel(
             onFailure = { HomeWeatherState.Unavailable },
         )
 
-    private fun HomePlantCare.toItem(today: LocalDate): HomeCareItem =
-        HomeCareItem(
-            plantId = plantId,
-            displayName = displayName,
-            status = careStatus(today),
-        )
+    private fun HomePlantCare.toItem(): HomeCareItem =
+        HomeCareItem(plantId = plantId, displayName = displayName, status = careStatus())
 
-    private fun HomePlantCare.careStatus(today: LocalDate): HomeCareStatus {
+    private fun HomePlantCare.careStatus(): HomeCareStatus {
         val due = nextWateringDate ?: return HomeCareStatus.Unavailable
         if (wateringIntervalDays == null) return HomeCareStatus.Unavailable
+        val today = LocalDate.now(clock.withZone(zoneId))
         val days = ChronoUnit.DAYS.between(today, due).toInt()
         return when {
             days == 0 -> HomeCareStatus.DueToday

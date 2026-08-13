@@ -70,14 +70,26 @@ class PlanteriorNavigationTest {
 
         fun signIn() {
             signedIn = true
+            sessions.value = HomeSession.SignedIn("uid-1", "민지", ZoneId.of("Asia/Seoul"))
         }
 
-        override suspend fun session(): HomeSession =
-            if (signedIn) HomeSession.SignedIn("uid-1", "민지", ZoneId.of("Asia/Seoul"))
-            else HomeSession.SignedOut
+        private val sessions =
+            kotlinx.coroutines.flow.MutableStateFlow<HomeSession>(HomeSession.SignedOut)
+
+        override fun sessions(): kotlinx.coroutines.flow.Flow<HomeSession> = sessions
 
         override suspend fun plantCare(): Result<List<HomePlantCare>> =
-            Result.success(listOf(HomePlantCare("plant-1", "몬몬이", LocalDate.of(2026, 8, 12), 7)))
+            Result.success(
+                listOf(
+                    HomePlantCare(
+                        "plant-1",
+                        "몬몬이",
+                        LocalDate.of(2026, 8, 12),
+                        7,
+                        ZoneId.of("Asia/Seoul"),
+                    )
+                )
+            )
 
         override suspend fun weather(): Result<HomeWeather?> = Result.success(null)
 
@@ -92,8 +104,10 @@ class PlanteriorNavigationTest {
         HomeViewModel(
             repository =
                 object : HomeRepository {
-                    override suspend fun session(): HomeSession =
-                        HomeSession.SignedIn("uid-1", "민지", ZoneId.of("Asia/Seoul"))
+                    override fun sessions(): kotlinx.coroutines.flow.Flow<HomeSession> =
+                        kotlinx.coroutines.flow.flowOf(
+                            HomeSession.SignedIn("uid-1", "민지", ZoneId.of("Asia/Seoul"))
+                        )
 
                     override suspend fun plantCare(): Result<List<HomePlantCare>> =
                         Result.success(
@@ -103,6 +117,7 @@ class PlanteriorNavigationTest {
                                     "몬몬이",
                                     LocalDate.of(2026, 8, 12),
                                     7,
+                                    ZoneId.of("Asia/Seoul"),
                                 )
                             )
                         )

@@ -14,6 +14,7 @@ import com.planterior.helper.core.data.RemoteMutationGateway
 import com.planterior.helper.core.data.RemoteMutationResult
 import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
+import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.feature.auth.AccountProfileStore
 import com.planterior.helper.feature.auth.AccountSessionCache
@@ -26,6 +27,7 @@ import com.planterior.helper.feature.auth.AuthFailure
 import com.planterior.helper.feature.auth.AuthGatewayException
 import com.planterior.helper.feature.auth.AuthProvider
 import com.planterior.helper.feature.auth.AuthProviderAdapter
+import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.feature.auth.FirebaseAppleCallable
 import com.planterior.helper.feature.auth.FirebaseIdentityAdapter
 import com.planterior.helper.feature.auth.FirestoreAccountProfileStore
@@ -45,6 +47,7 @@ import com.planterior.helper.feature.home.HomeSession
 import com.planterior.helper.feature.home.HomeSyncStatus
 import com.planterior.helper.feature.home.HomeWeather
 import com.planterior.helper.home.CachedHomeRepository
+import com.planterior.helper.home.debugHomeSessions
 import com.planterior.helper.home.debugHomeWeatherSource
 import java.net.URI
 
@@ -59,6 +62,9 @@ private constructor(
     suspend fun handleAppleCallback(uri: URI): Boolean = apple?.handleCallback(uri) ?: false
 
     companion object {
+        /** 에뮬레이터 연결을 이미 지정했는지. Firebase SDK가 재설정을 허용하지 않아 직접 추적한다. */
+        private val emulatorsConnected = java.util.concurrent.atomic.AtomicBoolean(false)
+
         fun create(activity: ComponentActivity): AuthRuntime {
             prepareDebugAuth(activity)
             if (
@@ -81,14 +87,16 @@ private constructor(
             val auth = FirebaseAuth.getInstance(app)
             val firestore = FirebaseFirestore.getInstance(app)
             val functions = FirebaseFunctions.getInstance(app)
-            if (BuildConfig.DEBUG) {
+            // 에뮬레이터 연결은 프로세스당 한 번만 지정할 수 있다. Activity가 다시 만들어질 때마다 호출하면 화면 회전이나
+            // 프로세스 복원에서 그대로 크래시난다.
+            if (BuildConfig.DEBUG && emulatorsConnected.compareAndSet(false, true)) {
                 auth.useEmulator("10.0.2.2", 9099)
                 firestore.useEmulator("10.0.2.2", 8080)
                 functions.useEmulator("10.0.2.2", 5001)
             }
             val database =
                 Room.databaseBuilder(activity, PlanteriorDatabase::class.java, "planterior.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
             val repository = OfflineFirstSyncRepository(database, OfflineGateway)
             val apple =
@@ -125,11 +133,27 @@ private constructor(
                 coordinator,
                 apple,
                 identity.current() != null,
-                CachedHomeRepository(
-                    database,
-                    coordinator.state,
-                    debugHomeWeatherSource(activity),
-                ),
+                // 데이터는 항상 실제 캐시에서 읽는다. 디버그 QA는 세션과 날씨만 고정할 수 있다.
+                debugHomeSessions(activity).let { forcedSessions ->
+                    var forcedUid: String? = null
+                    val repository =
+                        CachedHomeRepository(
+                            database,
+                            coordinator.state,
+                            debugHomeWeatherSource(activity),
+                            activeAccountUid = {
+                                forcedUid
+                                    ?: (coordinator.state.value as? AuthUiState.Authenticated)
+                                        ?.account
+                                        ?.uid
+                            },
+                        )
+                    if (forcedSessions == null) repository
+                    else
+                        ForcedSessionHomeRepository(repository, forcedSessions) { uid ->
+                            forcedUid = uid
+                        }
+                },
             )
         }
 
@@ -201,8 +225,29 @@ private constructor(
  *
  * 샘플 식물을 지어내지 않고 상태만 정직하게 돌려준다.
  */
+/**
+ * 세션만 고정하고 나머지는 실제 저장소에 그대로 위임한다.
+ *
+ * 디버그 계측 테스트가 실제 계정을 만들지 않고도 진짜 캐시 데이터를 검증할 수 있게 한다.
+ */
+private class ForcedSessionHomeRepository(
+    private val delegate: HomeRepository,
+    private val forcedSessions: kotlinx.coroutines.flow.Flow<HomeSession>,
+    private val onSession: (String?) -> Unit,
+) : HomeRepository by delegate {
+    override fun sessions(): kotlinx.coroutines.flow.Flow<HomeSession> =
+        kotlinx.coroutines.flow.flow {
+            forcedSessions.collect { session ->
+                // 조회대상 계정을 먼저 바꿀 뒤에 상태를 흘려야 뒤따르는 조회가 같은 계정을 본다.
+                onSession((session as? HomeSession.SignedIn)?.accountUid)
+                emit(session)
+            }
+        }
+}
+
 private object UnavailableHomeRepository : HomeRepository {
-    override suspend fun session(): HomeSession = HomeSession.SignedOut
+    override fun sessions(): kotlinx.coroutines.flow.Flow<HomeSession> =
+        kotlinx.coroutines.flow.flowOf(HomeSession.SignedOut)
 
     override suspend fun plantCare(): Result<List<HomePlantCare>> = Result.success(emptyList())
 

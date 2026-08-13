@@ -2,6 +2,7 @@ package com.planterior.helper.feature.auth
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
+import com.planterior.helper.core.database.CachedMiniHomeEntity
 import com.planterior.helper.core.database.CachedPlantEntity
 import com.planterior.helper.core.database.CachedWateringScheduleEntity
 import com.planterior.helper.core.database.LastSyncEntity
@@ -27,10 +28,26 @@ data class RemoteWateringSchedule(
     val updatedAtEpochMillis: Long,
 )
 
+/**
+ * 홈 미리보기에 필요한 만큼의 서버 미니홈피 구성이다.
+ *
+ * 좌표·z-order·아이템 목록은 미니홈피 화면의 몫이므로 여기서 가져오지 않는다.
+ */
+data class RemoteMiniHome(
+    val id: String,
+    val name: String,
+    val placedPlantCount: Int,
+    val revision: Long,
+    val updatedAtEpochMillis: Long,
+)
+
 interface AccountSyncRemote {
     suspend fun plants(accountUid: String): List<RemotePlant>
 
     suspend fun wateringSchedules(accountUid: String): List<RemoteWateringSchedule>
+
+    /** 마지막으로 확정된 미니홈피. 아직 만들지 않았거나 삭제되었으면 `null`. */
+    suspend fun miniHome(accountUid: String): RemoteMiniHome?
 
     suspend fun verifyDomain(accountUid: String, domain: SyncDomain)
 }
@@ -75,11 +92,30 @@ class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : Acc
                 )
             }
 
+    override suspend fun miniHome(accountUid: String): RemoteMiniHome? =
+        firestore
+            .collection("users/$accountUid/miniHomes")
+            .get()
+            .await()
+            .documents
+            .asSequence()
+            .mapNotNull { document ->
+                val name = document.getString("name") ?: return@mapNotNull null
+                RemoteMiniHome(
+                    document.id,
+                    name,
+                    (document.getLong("placedPlantCount") ?: 0L).toInt(),
+                    document.getLong("revision") ?: 0L,
+                    document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+                )
+            }
+            // 계정당 미니홈피는 하나다. 예기치 않게 여럿이면 revision이 가장 높은 확정본을 쓴다.
+            .maxByOrNull { it.revision }
+
     override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) {
         val collection =
             when (domain) {
                 SyncDomain.NOTIFICATIONS -> "notificationSettings"
-                SyncDomain.MINI_HOME -> "miniHomes"
                 else -> error("$domain has a typed snapshot operation")
             }
         firestore.collection("users/$accountUid/$collection").get().await()
@@ -145,7 +181,22 @@ class FirestoreAccountSynchronizer(
             remote.verifyDomain(accountUid, SyncDomain.NOTIFICATIONS)
         }
         syncDomain(accountUid, SyncDomain.MINI_HOME) {
-            remote.verifyDomain(accountUid, SyncDomain.MINI_HOME)
+            val remoteMiniHome = remote.miniHome(accountUid)
+            database
+                .cacheDao()
+                .reconcileMiniHome(
+                    accountUid,
+                    remoteMiniHome?.let {
+                        CachedMiniHomeEntity(
+                            accountUid,
+                            it.id,
+                            it.name,
+                            it.placedPlantCount,
+                            it.revision,
+                            it.updatedAtEpochMillis,
+                        )
+                    },
+                )
         }
         return lastKnown(accountUid)
     }

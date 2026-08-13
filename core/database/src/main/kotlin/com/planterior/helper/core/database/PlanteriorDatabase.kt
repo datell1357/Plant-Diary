@@ -10,10 +10,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         [
             CachedPlantEntity::class,
             CachedWateringScheduleEntity::class,
+            CachedMiniHomeEntity::class,
             OperationOutboxEntity::class,
             LastSyncEntity::class,
         ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
@@ -50,6 +51,16 @@ val MIGRATION_1_2 =
             )
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS last_sync (`accountId` TEXT NOT NULL, `domain` TEXT NOT NULL, `syncedAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `errorCode` TEXT, PRIMARY KEY(`accountId`, `domain`))"
+            )
+        }
+    }
+
+/** 홈 미니홈피 미리보기를 위한 계정별 캐시를 추가한다. 기존 행은 건드리지 않는다. */
+val MIGRATION_3_4 =
+    object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS cached_mini_homes (`accountId` TEXT NOT NULL, `miniHomeId` TEXT NOT NULL, `name` TEXT NOT NULL, `placedPlantCount` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`))"
             )
         }
     }

@@ -33,6 +33,25 @@ interface CacheDao {
     )
     suspend fun schedule(accountId: String, scheduleId: String): CachedWateringScheduleEntity?
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMiniHome(entity: CachedMiniHomeEntity)
+
+    @Query("SELECT * FROM cached_mini_homes WHERE accountId = :accountId")
+    suspend fun miniHome(accountId: String): CachedMiniHomeEntity?
+
+    @Query("DELETE FROM cached_mini_homes WHERE accountId = :accountId")
+    suspend fun clearMiniHome(accountId: String)
+
+    /**
+     * 서버가 확정한 미니홈피 구성을 캐시에 반영한다.
+     *
+     * @param remote 서버 구성. 서버에서 삭제되었으면 `null`이며 이때 캐시도 비워 삭제된 방을 계속 보여주지 않는다.
+     */
+    @Transaction
+    suspend fun reconcileMiniHome(accountId: String, remote: CachedMiniHomeEntity?) {
+        if (remote == null) clearMiniHome(accountId) else upsertMiniHome(remote)
+    }
+
     @Query("DELETE FROM cached_plants WHERE accountId = :accountId")
     suspend fun clearPlants(accountId: String)
 
@@ -80,6 +99,7 @@ interface CacheDao {
     suspend fun clearVisibleAccount(accountId: String) {
         clearPlants(accountId)
         clearSchedules(accountId)
+        clearMiniHome(accountId)
     }
 }
 

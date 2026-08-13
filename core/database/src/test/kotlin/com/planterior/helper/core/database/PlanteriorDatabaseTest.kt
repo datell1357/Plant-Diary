@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -124,6 +125,111 @@ class PlanteriorDatabaseTest {
     }
 
     @Test
+    fun `mini home cache is partitioned by account and cleared with the account view`() = runTest {
+        val dao = database.cacheDao()
+        dao.upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "민지의 미니 식물원", 3, 2, 10))
+        dao.upsertMiniHome(CachedMiniHomeEntity("account-b", "home-b", "다른 사람의 방", 9, 1, 20))
+
+        assertEquals("민지의 미니 식물원", dao.miniHome("account-a")?.name)
+        assertEquals(3, dao.miniHome("account-a")?.placedPlantCount)
+        assertEquals("다른 사람의 방", dao.miniHome("account-b")?.name)
+
+        dao.clearVisibleAccount("account-a")
+
+        assertNull("계정 캐시를 비우면 미니홈피도 사라져야 한다", dao.miniHome("account-a"))
+        assertEquals("다른 계정은 그대로여야 한다", "다른 사람의 방", dao.miniHome("account-b")?.name)
+    }
+
+    @Test
+    fun `mini home reconcile applies remote updates and removes remote deletions`() = runTest {
+        val dao = database.cacheDao()
+        dao.upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "이전 이름", 1, 1, 10))
+
+        dao.reconcileMiniHome(
+            "account-a",
+            CachedMiniHomeEntity("account-a", "home-a", "새 이름", 4, 2, 20),
+        )
+        assertEquals("새 이름", dao.miniHome("account-a")?.name)
+        assertEquals(4, dao.miniHome("account-a")?.placedPlantCount)
+
+        // 서버에서 미니홈피가 삭제되면 홈도 더 이상 이전 구성을 보여주면 안 된다.
+        dao.reconcileMiniHome("account-a", null)
+        assertNull(dao.miniHome("account-a"))
+    }
+
+    @Test
+    fun `mini home survives reopening the database file`() = runTest {
+        database.close()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.getDatabasePath("persisted.db").path)
+        file.delete()
+
+        val first =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, "persisted.db")
+                .allowMainThreadQueries()
+                .build()
+        first
+            .cacheDao()
+            .upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "저장된 방", 2, 1, 30))
+        first.close()
+
+        // 프로세스가 죽었다 살아나는 경우를 흑낸다. 다시 열어도 같은 구성이 남아 있어야 한다.
+        val second =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, "persisted.db")
+                .allowMainThreadQueries()
+                .build()
+        assertEquals("저장된 방", second.cacheDao().miniHome("account-a")?.name)
+        assertEquals(2, second.cacheDao().miniHome("account-a")?.placedPlantCount)
+        second.close()
+        file.delete()
+
+        database =
+            Room.inMemoryDatabaseBuilder(context, PlanteriorDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+    }
+
+    @Test
+    fun `migration three to four adds the mini home cache without losing rows`() {
+        database.close()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.getDatabasePath("migration-3-4.db").path)
+        file.delete()
+
+        val seeded =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, "migration-3-4.db")
+                .allowMainThreadQueries()
+                .build()
+        runTest {
+            seeded
+                .cacheDao()
+                .upsertPlant(CachedPlantEntity("account-a", "plant-a", "몬스테라", null, 1, 1))
+        }
+        seeded.close()
+
+        val reopened =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, "migration-3-4.db")
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .allowMainThreadQueries()
+                .build()
+        runTest {
+            assertEquals(1, reopened.cacheDao().plants("account-a").size)
+            assertNull(reopened.cacheDao().miniHome("account-a"))
+            reopened
+                .cacheDao()
+                .upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "마이그레이션", 1, 1, 2))
+            assertEquals("마이그레이션", reopened.cacheDao().miniHome("account-a")?.name)
+        }
+        reopened.close()
+        file.delete()
+
+        database =
+            Room.inMemoryDatabaseBuilder(context, PlanteriorDatabase::class.java)
+                .allowMainThreadQueries()
+                .build()
+    }
+
+    @Test
     fun `migration one to two preserves rows and adds account partition`() {
         database.close()
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -157,7 +263,7 @@ class PlanteriorDatabaseTest {
         }
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, "migration.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .allowMainThreadQueries()
                 .build()
         assertEquals(
@@ -220,7 +326,7 @@ class PlanteriorDatabaseTest {
         }
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .allowMainThreadQueries()
                 .build()
         migrated

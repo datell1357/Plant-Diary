@@ -235,6 +235,73 @@ class AuthCoordinatorTest {
     }
 
     @Test
+    fun `cancelling inside lastKnown still leaves an authenticated session`() = runTest {
+        val google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("google-token"))
+        val identity =
+            FakeIdentity(mapOf("google-token" to account("account-a", AuthProvider.GOOGLE)))
+        val gate = CompletableDeferred<Unit>()
+        val profile = RecordingProfileStore()
+        val coordinator =
+            coordinator(
+                google,
+                identity = identity,
+                profile = profile,
+                synchronizer = StallingLastKnownSynchronizer(gate),
+            )
+
+        val signingIn = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+        testScheduler.advanceUntilIdle()
+
+        // lastKnown 안에서 멈춰 있는 상태다. 그래도 Firebase 성공 직후이므로 이미 로그인 상태여야 한다.
+        val duringLastKnown = coordinator.state.value
+        assertTrue(
+            "lastKnown 중단 중에도 Authenticated여야 한다: $duringLastKnown",
+            duringLastKnown is AuthUiState.Authenticated,
+        )
+        assertEquals("account-a", (duringLastKnown as AuthUiState.Authenticated).account.uid)
+
+        signingIn.cancel()
+        testScheduler.advanceUntilIdle()
+
+        val afterCancel = coordinator.state.value
+        assertTrue(
+            "취소 후에도 세션을 잃으면 안 된다: $afterCancel",
+            afterCancel is AuthUiState.Authenticated,
+        )
+        // 취소되었으므로 이후 서버 부수 효과는 일어나지 않아야 한다.
+        assertTrue("취소 후 프로필 쓰기가 이어지면 안 된다", profile.upserts.isEmpty())
+    }
+
+    @Test
+    fun `a late sync result never overwrites a session that already moved on`() = runTest {
+        val google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("google-token"))
+        val identity =
+            FakeIdentity(mapOf("google-token" to account("account-a", AuthProvider.GOOGLE)))
+        val gate = CompletableDeferred<Unit>()
+        val coordinator =
+            coordinator(
+                google,
+                identity = identity,
+                synchronizer = StallingSynchronizer(gate, SyncSummary.EMPTY),
+            )
+
+        val signingIn = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+        testScheduler.advanceUntilIdle()
+        assertTrue(coordinator.state.value is AuthUiState.Authenticated)
+
+        // 동기화가 끝나기 전에 로그아웃하고, 늦게 도착한 결과가 로그아웃을 되돌리는지 본다.
+        coordinator.logout()
+        gate.complete(Unit)
+        signingIn.join()
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(
+            "늦게 끝난 동기화가 로그아웃을 덮어쓰면 안 된다: ${coordinator.state.value}",
+            coordinator.state.value is AuthUiState.SignedOut,
+        )
+    }
+
+    @Test
     fun `logout and A to B to A clear visible cache while preserving scoped drafts`() = runTest {
         val identity =
             FakeIdentity(
@@ -451,6 +518,20 @@ class AuthCoordinatorTest {
 
     private class FakeSynchronizer(private val result: SyncSummary) : AccountSynchronizer {
         override suspend fun sync(accountUid: String) = result
+    }
+
+    /** `lastKnown` 안에서 멈추는 저장소를 흑낸다. 세션 공개가 이 중단점 뒤에 있으면 테스트가 실패한다. */
+    private class StallingLastKnownSynchronizer(private val gate: CompletableDeferred<Unit>) :
+        AccountSynchronizer {
+        override suspend fun sync(accountUid: String): SyncSummary {
+            gate.await()
+            return SyncSummary.EMPTY
+        }
+
+        override suspend fun lastKnown(accountUid: String): SyncSummary {
+            gate.await()
+            return SyncSummary.EMPTY
+        }
     }
 
     /** 동기화 자체가 실패하는 서버를 흑낸다. */

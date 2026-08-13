@@ -87,6 +87,12 @@ fun debugAuthProvider(context: Context, delegate: AuthProviderAdapter): AuthProv
 
 fun debugAccountSyncRemote(context: Context, delegate: AccountSyncRemote): AccountSyncRemote =
     object : AccountSyncRemote by delegate {
+        override suspend fun miniHome(accountUid: String): RemoteMiniHome? {
+            // 미니홈피 도메인만 실패시켜 부분 동기화를 만든다. 식물 관리는 그대로 유지되어야 한다.
+            if (scenario(context) == PARTIAL) error("QA partial synchronization")
+            return delegate.miniHome(accountUid)
+        }
+
         override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) {
             if (scenario(context) == PARTIAL && domain == SyncDomain.MINI_HOME) {
                 error("QA partial synchronization")

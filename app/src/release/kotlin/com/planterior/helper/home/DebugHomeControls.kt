@@ -1,6 +1,8 @@
 package com.planterior.helper.home
 
 import android.content.Context
+import com.planterior.helper.feature.home.HomeSession
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 출시 빌드의 날씨 공급자이다.
@@ -10,3 +12,6 @@ import android.content.Context
 fun debugHomeWeatherSource(context: Context): HomeWeatherSource = HomeWeatherSource {
     Result.success(null)
 }
+
+/** 출시 빌드에는 세션을 가로채는 경로가 없다. 항상 실제 인증 상태만 쓴다. */
+fun debugHomeSessions(context: Context): Flow<HomeSession>? = null

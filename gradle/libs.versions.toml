@@ -24,6 +24,7 @@ credentials = "1.6.0"
 googleid = "1.2.0"
 androidx-browser = "1.10.0"
 androidx-test-runner = "1.7.0"
+androidx-test-espresso = "3.7.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
@@ -58,6 +59,7 @@ androidx-credentials-play-services-auth = { module = "androidx.credentials:crede
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
+androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-test-espresso" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

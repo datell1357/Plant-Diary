@@ -170,22 +170,42 @@ class AuthCoordinator(
         returnRoute: String?,
         previousUid: String?,
     ) {
-        cache.clearVisible(previousUid)
+        // Firebase 인증이 끝난 직후, 어떤 중단점도 거치지 않고 세션을 먼저 공개한다.
+        // 캐시 정리·프로필 쓰기·동기화는 모두 그 뒤에 오므로, 그중 어느 한 곳에서 취소되거나 실패해도
+        // 방금 생긴 세션을 잃지 않는다.
+        val generationAtStart = generation
+        mutableState.value = AuthUiState.Authenticated(account, SyncSummary.EMPTY, returnRoute)
+        // 이전 계정의 보이는 범위를 먼저 닫고 새 계정을 열어야 계정 간 데이터가 섞이지 않는다.
+        ignoringServerFailure { cache.clearVisible(previousUid) }
         cache.activate(account.uid)
-        // 서버 왕복보다 먼저 세션을 공개한다. 그래야 프로필 쓰기나 동기화가 느리거나 실패해도 홈이 캐시된 식물 관리를
-        // 그대로 보여주고 마지막 동기화 시각을 함께 알릴 수 있다.
-        mutableState.value =
-            AuthUiState.Authenticated(account, lastKnownOrEmpty(account.uid), returnRoute)
-        // 프로필 쓰기와 동기화는 서버 왕복이라 따로 실패할 수 있다. 실패해도 이미 복원한 세션을 되돌리지 않고
+        publishSync(account, returnRoute, generationAtStart, lastKnownOrEmpty(account.uid))
+        // 프로필 쓰기와 동기화는 서버 왕복이라 따로 실패할 수 있다. 실패해도 이미 공개한 세션을 되돌리지 않고
         // 마지막으로 알고 있는 동기화 상태를 그대로 유지한다.
         ignoringServerFailure { profiles.upsert(account) }
         val sync = ignoringServerFailure { synchronizer.sync(account.uid) }
-        mutableState.value =
-            AuthUiState.Authenticated(
-                account,
-                sync ?: lastKnownOrEmpty(account.uid),
-                returnRoute,
-            )
+        publishSync(
+            account,
+            returnRoute,
+            generationAtStart,
+            sync ?: lastKnownOrEmpty(account.uid),
+        )
+    }
+
+    /**
+     * 동기화 요약만 갱신한다.
+     *
+     * 로그아웃이나 다른 계정 로그인이 먼저 일어난 뒤 늦게 도착한 결과가 현재 상태를 덮어쓰지 않도록, 세대와 계정이 모두 그대로일 때만 반영한다.
+     */
+    private fun publishSync(
+        account: AuthAccount,
+        returnRoute: String?,
+        generationAtStart: Long,
+        sync: SyncSummary,
+    ) {
+        if (generation != generationAtStart) return
+        val current = mutableState.value
+        if (current !is AuthUiState.Authenticated || current.account.uid != account.uid) return
+        mutableState.value = AuthUiState.Authenticated(account, sync, returnRoute)
     }
 
     /** 마지막으로 알고 있는 동기화 요약을 읽는다. 이것까지 실패하면 빈 요약으로 두고 세션은 지킨다. */

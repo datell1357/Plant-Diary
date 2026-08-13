@@ -4,8 +4,11 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -53,12 +56,14 @@ class HomeViewModelTest {
         name: String,
         due: LocalDate?,
         interval: Int? = 7,
+        zone: ZoneId = this.zone,
     ): HomePlantCare =
         HomePlantCare(
             plantId = id,
             displayName = name,
             nextWateringDate = due,
             wateringIntervalDays = interval,
+            zoneId = zone,
         )
 
     private fun viewModel(
@@ -80,6 +85,114 @@ class HomeViewModelTest {
             clock = clock,
             dispatcher = mainDispatcher,
         )
+
+    /** 세션 흐름만 주입해 상태 전이를 관찰하는 ViewModel을 만든다. */
+    private fun sessionModel(sessions: Flow<HomeSession>) =
+        HomeViewModel(
+            repository = SessionFlowRepository(sessions, listOf(plant("p-today", "오늘이", today))),
+            clock = clock,
+            dispatcher = mainDispatcher,
+        )
+
+    @Test
+    fun `a restoring session shows loading and never latches logged out`() = runTest {
+        val sessions = MutableStateFlow<HomeSession>(HomeSession.Restoring)
+        val model = sessionModel(sessions)
+
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(
+            "세션을 복원하는 동안은 로그아웃으로 단정하면 안 된다",
+            HomeUiState.Loading,
+            model.state.value,
+        )
+    }
+
+    @Test
+    fun `restoring then authenticated reaches content without any manual refresh`() = runTest {
+        val sessions = MutableStateFlow<HomeSession>(HomeSession.Restoring)
+        val model = sessionModel(sessions)
+        testScheduler.advanceUntilIdle()
+        assertEquals(HomeUiState.Loading, model.state.value)
+
+        sessions.value = HomeSession.SignedIn("uid-1", "민지", zone)
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(
+            "세션이 서면 수동 갱신 없이도 홈이 채워져야 한다: ${model.state.value}",
+            model.state.value is HomeUiState.Content,
+        )
+    }
+
+    @Test
+    fun `restoring then signed out reaches the logged out home`() = runTest {
+        val sessions = MutableStateFlow<HomeSession>(HomeSession.Restoring)
+        val model = sessionModel(sessions)
+        testScheduler.advanceUntilIdle()
+
+        sessions.value = HomeSession.SignedOut
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(HomeUiState.LoggedOut, model.state.value)
+    }
+
+    @Test
+    fun `switching account A to B to A reloads each session in order`() = runTest {
+        val sessions = MutableStateFlow<HomeSession>(HomeSession.SignedIn("uid-a", "A", zone))
+        val perAccount =
+            mapOf(
+                "uid-a" to listOf(plant("p-a", "A 식물", today)),
+                "uid-b" to listOf(plant("p-b", "B 식물", today)),
+            )
+        val model =
+            HomeViewModel(
+                repository = PerAccountRepository(sessions, perAccount),
+                clock = clock,
+                dispatcher = mainDispatcher,
+            )
+        testScheduler.advanceUntilIdle()
+        assertEquals(
+            listOf("p-a"),
+            (model.state.value as HomeUiState.Content).careItems.map { it.plantId },
+        )
+
+        sessions.value = HomeSession.SignedIn("uid-b", "B", zone)
+        testScheduler.advanceUntilIdle()
+        assertEquals(
+            listOf("p-b"),
+            (model.state.value as HomeUiState.Content).careItems.map { it.plantId },
+        )
+
+        sessions.value = HomeSession.SignedIn("uid-a", "A", zone)
+        testScheduler.advanceUntilIdle()
+        assertEquals(
+            listOf("p-a"),
+            (model.state.value as HomeUiState.Content).careItems.map { it.plantId },
+        )
+    }
+
+    @Test
+    fun `a slow load for a stale session never overwrites the newer session`() = runTest {
+        val sessions = MutableStateFlow<HomeSession>(HomeSession.SignedIn("uid-a", "A", zone))
+        val gate = CompletableDeferred<Unit>()
+        val repository = GatedRepository(sessions, gate)
+        val model =
+            HomeViewModel(repository = repository, clock = clock, dispatcher = mainDispatcher)
+        testScheduler.advanceUntilIdle()
+
+        // A 계정 조회가 멈춰 있는 사이 B로 전환한다.
+        sessions.value = HomeSession.SignedIn("uid-b", "B", zone)
+        testScheduler.advanceUntilIdle()
+        // 늦게 끝난 A 조회 결과가 도착해도 B 화면을 덮어쓰면 안 된다.
+        gate.complete(Unit)
+        testScheduler.advanceUntilIdle()
+
+        val content = model.state.value as HomeUiState.Content
+        assertEquals("B", content.greetingName)
+        assertEquals(listOf("p-uid-b"), content.careItems.map { it.plantId })
+        // A 조회는 끝까지 가지 못하고 취소되어야 한다.
+        assertEquals("취소된 조회가 완료되면 안 된다", 0, repository.completedStaleLoads)
+    }
 
     @Test
     fun `logged out session renders the guest home without any plant data`() = runTest {
@@ -425,6 +538,173 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `each schedule is classified at its own local date boundary`() = runTest {
+        // 고정 시각 2026-08-12T15:30Z = 서울 8월13일 00:30, LA 8월12일 08:30, UTC 8월12일 15:30.
+        val instant = Instant.parse("2026-08-12T15:30:00Z")
+        val model =
+            HomeViewModel(
+                repository =
+                    FakeHomeRepository(
+                        session = HomeSession.SignedIn("uid-1", "민지", ZoneId.of("UTC")),
+                        care =
+                            Result.success(
+                                listOf(
+                                    plant(
+                                        "p-seoul",
+                                        "서울",
+                                        LocalDate.of(2026, 8, 13),
+                                        zone = ZoneId.of("Asia/Seoul"),
+                                    ),
+                                    plant(
+                                        "p-utc",
+                                        "UTC",
+                                        LocalDate.of(2026, 8, 12),
+                                        zone = ZoneId.of("UTC"),
+                                    ),
+                                    plant(
+                                        "p-la",
+                                        "LA",
+                                        LocalDate.of(2026, 8, 12),
+                                        zone = ZoneId.of("America/Los_Angeles"),
+                                    ),
+                                )
+                            ),
+                        weather = Result.success(null),
+                        miniHome = null,
+                        sync = HomeSyncStatus.Synced(instant),
+                    ),
+                clock = Clock.fixed(instant, ZoneId.of("UTC")),
+                dispatcher = mainDispatcher,
+            )
+
+        model.refresh()
+
+        val content = model.state.value as HomeUiState.Content
+        val byId = content.careItems.associateBy { it.plantId }
+        // 세 식물 모두 자기 지역 기준으로는 “오늘”이다. 계정 지역 하나로 묶으면 이 중 둘은 어깃난다.
+        assertEquals(HomeCareStatus.DueToday, byId.getValue("p-seoul").status)
+        assertEquals(HomeCareStatus.DueToday, byId.getValue("p-utc").status)
+        assertEquals(HomeCareStatus.DueToday, byId.getValue("p-la").status)
+        assertEquals(3, content.dueTodayCount)
+    }
+
+    @Test
+    fun `a schedule just past midnight in its own zone counts as overdue`() = runTest {
+        // 서울은 이미 8월13일 00:30이므로 8월12일 예정은 하루 지났고, LA는 아직 8월12일이라 오늘이다.
+        val instant = Instant.parse("2026-08-12T15:30:00Z")
+        val model =
+            HomeViewModel(
+                repository =
+                    FakeHomeRepository(
+                        session = HomeSession.SignedIn("uid-1", "민지", ZoneId.of("UTC")),
+                        care =
+                            Result.success(
+                                listOf(
+                                    plant(
+                                        "p-seoul",
+                                        "서울",
+                                        LocalDate.of(2026, 8, 12),
+                                        zone = ZoneId.of("Asia/Seoul"),
+                                    ),
+                                    plant(
+                                        "p-la",
+                                        "LA",
+                                        LocalDate.of(2026, 8, 12),
+                                        zone = ZoneId.of("America/Los_Angeles"),
+                                    ),
+                                )
+                            ),
+                        weather = Result.success(null),
+                        miniHome = null,
+                        sync = HomeSyncStatus.Synced(instant),
+                    ),
+                clock = Clock.fixed(instant, ZoneId.of("UTC")),
+                dispatcher = mainDispatcher,
+            )
+
+        model.refresh()
+
+        val content = model.state.value as HomeUiState.Content
+        val byId = content.careItems.associateBy { it.plantId }
+        assertEquals(HomeCareStatus.Overdue(1), byId.getValue("p-seoul").status)
+        assertEquals(HomeCareStatus.DueToday, byId.getValue("p-la").status)
+        // 오늘이 먼저, 그 다음 지연이다.
+        assertEquals(listOf("p-la", "p-seoul"), content.careItems.map { it.plantId })
+    }
+
+    @Test
+    fun `a daylight saving transition day is still one local day`() = runTest {
+        // 2026-11-01 LA 서머타임 해제일(25시간). 그날 09:30Z = LA 02:30 로 여전히 11월1일이다.
+        val instant = Instant.parse("2026-11-01T09:30:00Z")
+        val model =
+            HomeViewModel(
+                repository =
+                    FakeHomeRepository(
+                        session = HomeSession.SignedIn("uid-1", "민지", ZoneId.of("UTC")),
+                        care =
+                            Result.success(
+                                listOf(
+                                    plant(
+                                        "p-la",
+                                        "LA",
+                                        LocalDate.of(2026, 11, 1),
+                                        zone = ZoneId.of("America/Los_Angeles"),
+                                    ),
+                                    plant(
+                                        "p-la-next",
+                                        "LA 다음날",
+                                        LocalDate.of(2026, 11, 2),
+                                        zone = ZoneId.of("America/Los_Angeles"),
+                                    ),
+                                )
+                            ),
+                        weather = Result.success(null),
+                        miniHome = null,
+                        sync = HomeSyncStatus.Synced(instant),
+                    ),
+                clock = Clock.fixed(instant, ZoneId.of("UTC")),
+                dispatcher = mainDispatcher,
+            )
+
+        model.refresh()
+
+        val content = model.state.value as HomeUiState.Content
+        val byId = content.careItems.associateBy { it.plantId }
+        assertEquals(HomeCareStatus.DueToday, byId.getValue("p-la").status)
+        assertEquals(HomeCareStatus.Upcoming(1), byId.getValue("p-la-next").status)
+    }
+
+    @Test
+    fun `identical due dates in the same zone keep the deterministic id order`() = runTest {
+        val instant = Instant.parse("2026-08-12T15:30:00Z")
+        val model =
+            HomeViewModel(
+                repository =
+                    FakeHomeRepository(
+                        session = HomeSession.SignedIn("uid-1", "민지", ZoneId.of("UTC")),
+                        care =
+                            Result.success(
+                                listOf(
+                                    plant("p-c", "C", LocalDate.of(2026, 8, 13), zone = zone),
+                                    plant("p-a", "A", LocalDate.of(2026, 8, 13), zone = zone),
+                                    plant("p-b", "B", LocalDate.of(2026, 8, 13), zone = zone),
+                                )
+                            ),
+                        weather = Result.success(null),
+                        miniHome = null,
+                        sync = HomeSyncStatus.Synced(instant),
+                    ),
+                clock = Clock.fixed(instant, ZoneId.of("UTC")),
+                dispatcher = mainDispatcher,
+            )
+
+        model.refresh()
+
+        val content = model.state.value as HomeUiState.Content
+        assertEquals(listOf("p-a", "p-b", "p-c"), content.careItems.map { it.plantId })
+    }
+
+    @Test
     fun `state is produced without depending on wall clock progress`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val model =
@@ -448,6 +728,86 @@ class HomeViewModelTest {
     }
 }
 
+/** 세션 흐름만 바꾸면서 나머지는 고정해 두는 저장소이다. */
+private class SessionFlowRepository(
+    private val sessions: Flow<HomeSession>,
+    private val care: List<HomePlantCare>,
+) : HomeRepository {
+    override fun sessions(): Flow<HomeSession> = sessions
+
+    override suspend fun plantCare(): Result<List<HomePlantCare>> = Result.success(care)
+
+    override suspend fun weather(): Result<HomeWeather?> = Result.success(null)
+
+    override suspend fun miniHomePreview(): HomeMiniHomePreview? = null
+
+    override suspend fun syncStatus(): HomeSyncStatus =
+        HomeSyncStatus.Synced(Instant.parse("2026-08-12T00:00:00Z"))
+}
+
+/** 계정마다 다른 식물을 돌려줘 계정 전환이 실제로 다시 읽는지 확인한다. */
+private class PerAccountRepository(
+    private val sessions: MutableStateFlow<HomeSession>,
+    private val perAccount: Map<String, List<HomePlantCare>>,
+) : HomeRepository {
+    override fun sessions(): Flow<HomeSession> = sessions
+
+    override suspend fun plantCare(): Result<List<HomePlantCare>> {
+        val uid = (sessions.value as? HomeSession.SignedIn)?.accountUid
+        return Result.success(perAccount[uid].orEmpty())
+    }
+
+    override suspend fun weather(): Result<HomeWeather?> = Result.success(null)
+
+    override suspend fun miniHomePreview(): HomeMiniHomePreview? = null
+
+    override suspend fun syncStatus(): HomeSyncStatus =
+        HomeSyncStatus.Synced(Instant.parse("2026-08-12T00:00:00Z"))
+}
+
+/**
+ * 첫 계정 조회를 gate로 멈춰 늦게 끝난 결과가 최신 세션을 덮는지 확인한다.
+ *
+ * 조회를 시작한 시점의 계정을 그대로 들고 있다가 돌려준다. 실제 저장소도 요청 시점 계정으로 질의하므로, 취소하지 않으면 늦게 끝난 A 결과가 B 화면을 덮어쓴다.
+ */
+private class GatedRepository(
+    private val sessions: MutableStateFlow<HomeSession>,
+    private val gate: CompletableDeferred<Unit>,
+) : HomeRepository {
+    /** gate 뒤까지 살아남은 예전 계정 조회 수. 취소가 제대로 동작하면 0이어야 한다. */
+    var completedStaleLoads: Int = 0
+        private set
+
+    override fun sessions(): Flow<HomeSession> = sessions
+
+    override suspend fun plantCare(): Result<List<HomePlantCare>> {
+        // 조회를 시작한 시점의 계정을 고정한다. 멈춰 있는 동안 계정이 바뀌어도 결과는 예전 계정 것이 된다.
+        val uid = (sessions.value as? HomeSession.SignedIn)?.accountUid.orEmpty()
+        if (uid == "uid-a") {
+            gate.await()
+            completedStaleLoads += 1
+        }
+        return Result.success(
+            listOf(
+                HomePlantCare(
+                    "p-$uid",
+                    uid,
+                    LocalDate.of(2026, 8, 12),
+                    7,
+                    ZoneId.of("Asia/Seoul"),
+                )
+            )
+        )
+    }
+
+    override suspend fun weather(): Result<HomeWeather?> = Result.success(null)
+
+    override suspend fun miniHomePreview(): HomeMiniHomePreview? = null
+
+    override suspend fun syncStatus(): HomeSyncStatus =
+        HomeSyncStatus.Synced(Instant.parse("2026-08-12T00:00:00Z"))
+}
+
 private class FakeHomeRepository(
     private val session: HomeSession,
     private val care: Result<List<HomePlantCare>>,
@@ -455,7 +815,7 @@ private class FakeHomeRepository(
     private val miniHome: HomeMiniHomePreview?,
     private val sync: HomeSyncStatus,
 ) : HomeRepository {
-    override suspend fun session(): HomeSession = session
+    override fun sessions(): Flow<HomeSession> = MutableStateFlow(session)
 
     override suspend fun plantCare(): Result<List<HomePlantCare>> = care
 

@@ -3,6 +3,7 @@ package com.planterior.helper.feature.home
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 홈이 필요로 하는 세션 상태이다.
@@ -10,6 +11,13 @@ import java.time.ZoneId
  * 로그인 전·후 화면은 이 값에서만 갈라진다. 디버그 기본값이나 빌드 타입으로 결정하지 않는다.
  */
 sealed interface HomeSession {
+    /**
+     * 저장된 세션을 복원하는 중이라 아직 로그인 여부를 모른다.
+     *
+     * 로그아웃과 반드시 구분해야 한다. 하나로 묶으면 복원이 끝나기 전에 로그아웃 홈을 그려 버리고 그대로 멈춴다.
+     */
+    data object Restoring : HomeSession
+
     /** 아직 로그인하지 않은 상태. */
     data object SignedOut : HomeSession
 
@@ -34,12 +42,14 @@ sealed interface HomeSession {
  * @param displayName 사용자가 정한 식물 이름.
  * @param nextWateringDate 다음 물 주기 예정일. 계산할 수 없으면 `null`.
  * @param wateringIntervalDays 공개 콘텐츠의 물 주기 간격. 없으면 `null`이며 임의 기본값을 만들지 않는다.
+ * @param zoneId 이 일정이 생성된 시간대. “오늘”은 이 시간대의 자정 경계로 판단한다. 여행·이사로 식물마다 기준이 다를 수 있어 하나로 묶지 않는다.
  */
 data class HomePlantCare(
     val plantId: String,
     val displayName: String,
     val nextWateringDate: LocalDate?,
     val wateringIntervalDays: Int?,
+    val zoneId: ZoneId,
 )
 
 /** 홈이 표시하는 날씨 관측 값과 그로부터 판정된 위험 목록이다. */
@@ -107,8 +117,12 @@ sealed interface HomeSyncStatus {
  * 날씨와 식물 관리는 서로 다른 저장소에서 오며 한쪽 실패가 다른 쪽을 막지 않는다. 그래서 각각 독립적인 [Result]로 돌려준다.
  */
 interface HomeRepository {
-    /** 현재 세션. */
-    suspend fun session(): HomeSession
+    /**
+     * 세션 변화 흐름이다.
+     *
+     * 홈은 한 번 읽고 말지 않고 이 흐름을 구독한다. 복원 중·로그인·로그아웃·계정 전환이 모두 여기서 밀려오므로 타이밍에 따라 상태가 잘못 고정되지 않는다.
+     */
+    fun sessions(): Flow<HomeSession>
 
     /** 오늘의 관리 대상 식물. 실패하면 홈은 오류 상태가 된다. */
     suspend fun plantCare(): Result<List<HomePlantCare>>
