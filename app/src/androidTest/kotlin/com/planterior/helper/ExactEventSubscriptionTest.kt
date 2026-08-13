@@ -1,5 +1,7 @@
 package com.planterior.helper
 
+import android.util.Log
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
@@ -9,25 +11,55 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import org.junit.AfterClass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.BeforeClass
 import org.junit.Test
 
 class ExactEventSubscriptionTest {
+    private data class TracePoint(
+        val checkpoint: String,
+        val actor: String,
+        val operation: String,
+        val phase: String,
+    ) {
+        val normalized: String
+            get() = "$actor|$operation|$phase"
+    }
+
     private data class Schedule(
         val name: String,
         val partialOrderId: String,
         val order: List<String>,
-    )
+        val operationOverrides: Map<String, String> = emptyMap(),
+        val boundaryTag: String = "boundary:$name",
+    ) {
+        val normalizedExpectedTrace: String
+            get() =
+                normalizeTrace(
+                    order.map { checkpoint ->
+                        tracePoint(checkpoint, operationOverrides[checkpoint] ?: checkpoint)
+                    }
+                )
+    }
 
-    /** 각 checkpoint는 직전 checkpoint의 exact latch를 기다린다. 시간은 교착 fail-safe일 뿐 순서를 만들지 않는다. */
-    private class DeterministicScheduler(val definition: Schedule) {
+    /**
+     * 각 transition은 직전 transition의 exact latch를 기다리고 실제 actor/operation/phase와 happens-before edge를
+     * 기록한다. 시간은 교착 fail-safe일 뿐 순서를 만들지 않는다.
+     */
+    private class DeterministicScheduler(
+        val definition: Schedule,
+        private val publish: Boolean = true,
+    ) {
         private val reached = definition.order.associateWith { CountDownLatch(1) }
         private val claimed = ConcurrentHashMap.newKeySet<String>()
+        private val actual = mutableListOf<TracePoint>()
 
-        fun step(id: String) {
+        fun step(id: String, operation: String = id) {
+            val point = tracePoint(id, operation)
             val index = definition.order.indexOf(id)
             check(index >= 0) { "${definition.name}: 정의되지 않은 checkpoint $id" }
             if (index > 0) {
@@ -38,6 +70,7 @@ class ExactEventSubscriptionTest {
                 }
             }
             check(claimed.add(id)) { "${definition.name}: checkpoint 중복 $id" }
+            synchronized(actual) { actual += point }
             reached.getValue(id).countDown()
         }
 
@@ -47,8 +80,21 @@ class ExactEventSubscriptionTest {
             }
         }
 
-        fun assertComplete() {
+        fun assertComplete(): String {
             assertEquals(definition.name, definition.order.toSet(), claimed)
+            val normalized = synchronized(actual) { normalizeTrace(actual.toList()) }
+            assertEquals(definition.name, definition.normalizedExpectedTrace, normalized)
+            if (publish) {
+                check(EXECUTED_TRACES.putIfAbsent(definition.name, normalized) == null) {
+                    "${definition.name}: schedule이 두 번 실행되었다"
+                }
+                EXECUTED_BOUNDARIES.merge(definition.boundaryTag, 1, Int::plus)
+                Log.i(
+                    TRACE_LOG_TAG,
+                    "${definition.name}|${sha256(normalized)}|$normalized",
+                )
+            }
+            return normalized
         }
     }
 
@@ -111,11 +157,15 @@ class ExactEventSubscriptionTest {
     private class StateHooks(
         private val onAwaitClaimed: () -> Unit = {},
         private val onCloseSelected: (String) -> Unit = {},
+        private val onCloseLinearized: (String, Boolean) -> Unit = { _, _ -> },
         private val onTerminal: (String) -> Unit = {},
     ) : ExactEventStateObserver {
         override fun awaitClaimed() = onAwaitClaimed()
 
         override fun closeSelected(reason: String) = onCloseSelected(reason)
+
+        override fun closeLinearized(reason: String, ownsDetach: Boolean) =
+            onCloseLinearized(reason, ownsDetach)
 
         override fun terminal(outcome: String) = onTerminal(outcome)
     }
@@ -154,16 +204,30 @@ class ExactEventSubscriptionTest {
     fun scheduleDefinitionsAreNamedAndStructurallyDistinct() {
         assertEquals(SCHEDULES.size, SCHEDULES.map { it.name }.toSet().size)
         assertEquals(SCHEDULES.size, SCHEDULES.map { it.partialOrderId }.toSet().size)
+        assertEquals(SCHEDULES.size, SCHEDULES.map { it.boundaryTag }.toSet().size)
         assertEquals(
             SCHEDULES.size,
-            SCHEDULES.map { it.partialOrderId to it.order }.toSet().size,
+            SCHEDULES.map { it.normalizedExpectedTrace }.toSet().size,
         )
         SCHEDULES.forEach { schedule ->
             assertTrue(schedule.name, schedule.order.isNotEmpty())
             assertEquals(schedule.name, schedule.order.size, schedule.order.toSet().size)
             assertTrue(schedule.partialOrderId, schedule.partialOrderId.startsWith("po:"))
+            assertTrue(schedule.boundaryTag, schedule.boundaryTag.startsWith("boundary:"))
         }
         assertFalse(SCHEDULES.any { it.name.contains("repeat", ignoreCase = true) })
+    }
+
+    @Test
+    fun aliasedScheduleHelperOrderIsRejectedByExecutedTraceValidation() {
+        val original = SCHEDULES.single { it.name == "emit-acquired-then-cancellation" }
+        val mutated = SCHEDULES.single { it.name == "close-concurrent-with-acquired-callback" }
+        val scheduler = DeterministicScheduler(mutated, publish = false)
+
+        assertThrows(IllegalStateException::class.java) {
+            original.order.forEach { scheduler.step(it) }
+            scheduler.assertComplete()
+        }
     }
 
     @Test
@@ -344,8 +408,8 @@ class ExactEventSubscriptionTest {
             }
             assertClean(fixture)
         }
-        runCancellationWithLease("emit-acquired-then-cancellation")
-        runCancellationWithLease("cancellation-while-drain-waits")
+        runEmitAcquiredThenCancellation()
+        runCancellationWhileDuplicateDrainWaits()
 
         runSchedule("cancellation-after-terminal") { scheduler ->
             val fixture = fixture<String>(matches = { it == "home" })
@@ -360,33 +424,88 @@ class ExactEventSubscriptionTest {
         }
     }
 
-    private fun runCancellationWithLease(name: String) {
-        runSchedule(name) { scheduler ->
+    private fun runEmitAcquiredThenCancellation() {
+        runSchedule("emit-acquired-then-cancellation") { scheduler ->
             val fixture =
                 fixture<String>(
                     matches = { it == "home" },
                     leaseObserver =
                         LeaseHooks(
                             onAcquired = {
-                                scheduler.step("emit-acquired")
-                                scheduler.await("emit-release")
+                                scheduler.step("cancel-event-acquired")
+                                scheduler.await("cancel-event-release")
                             },
-                            onDetachStarted = { scheduler.step("cancel-detach") },
+                            onDetachStarted = { scheduler.step("cancel-detach-started") },
+                        ),
+                    stateObserver =
+                        StateHooks(
+                            onAwaitClaimed = { scheduler.step("cancel-await-claimed") },
+                            onTerminal = { scheduler.step("cancel-terminal") },
                         ),
                 )
-            val executor = Executors.newFixedThreadPool(2)
+            val executor = Executors.newFixedThreadPool(3)
             try {
                 fixture.subscription.arm()
+                val awaitFuture = executor.submitAwait(fixture.subscription)
+                scheduler.await("cancel-await-claimed")
                 val emitFuture = executor.submit { fixture.source.emit("home") }
-                scheduler.await("emit-acquired")
+                scheduler.await("cancel-event-acquired")
                 val closeFuture = executor.submit { fixture.subscription.close() }
-                scheduler.await("cancel-detach")
-                scheduler.step("emit-release")
+                scheduler.await("cancel-detach-started")
+                scheduler.step("cancel-event-release")
                 emitFuture.get(BOUND, TimeUnit.SECONDS)
+                scheduler.await("cancel-terminal")
                 closeFuture.get(BOUND, TimeUnit.SECONDS)
-                assertFailure(ExactEventFailure.CANCELLED) {
-                    fixture.subscription.await(BOUND, TimeUnit.SECONDS, "home")
-                }
+                assertFutureFailure(awaitFuture, ExactEventFailure.CANCELLED)
+                assertClean(fixture)
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+    }
+
+    private fun runCancellationWhileDuplicateDrainWaits() {
+        runSchedule("cancellation-while-drain-waits") { scheduler ->
+            val acquisitions = AtomicInteger()
+            val fixture =
+                fixture<String>(
+                    matches = { it == "home" },
+                    leaseObserver =
+                        LeaseHooks(
+                            onAcquired = {
+                                if (acquisitions.incrementAndGet() == 2) {
+                                    scheduler.step("drain-duplicate-acquired")
+                                    scheduler.await("drain-duplicate-release")
+                                }
+                            },
+                            onDetachStarted = { scheduler.step("success-drain-started") },
+                        ),
+                    stateObserver =
+                        StateHooks(
+                            onCloseLinearized = { reason, ownsDetach ->
+                                if (reason == "CANCELLED" && !ownsDetach) {
+                                    scheduler.step("drain-cancellation-linearized")
+                                }
+                            },
+                            onTerminal = { scheduler.step("drain-cancel-terminal") },
+                        ),
+                )
+            val executor = Executors.newFixedThreadPool(3)
+            try {
+                fixture.subscription.arm()
+                scheduler.step("drain-first-event")
+                fixture.source.emit("home")
+                val duplicateFuture = executor.submit { fixture.source.emit("home") }
+                scheduler.await("drain-duplicate-acquired")
+                val awaitFuture = executor.submitAwait(fixture.subscription)
+                scheduler.await("success-drain-started")
+                val closeFuture = executor.submit { fixture.subscription.close() }
+                scheduler.await("drain-cancellation-linearized")
+                scheduler.step("drain-duplicate-release")
+                duplicateFuture.get(BOUND, TimeUnit.SECONDS)
+                scheduler.await("drain-cancel-terminal")
+                closeFuture.get(BOUND, TimeUnit.SECONDS)
+                assertFutureFailure(awaitFuture, ExactEventFailure.CANCELLED)
                 assertClean(fixture)
             } finally {
                 executor.shutdownNow()
@@ -430,7 +549,7 @@ class ExactEventSubscriptionTest {
                     leaseObserver =
                         LeaseHooks(
                             onAcquired = {
-                                scheduler.step("emit-acquired")
+                                scheduler.step("emit-acquired", "event:$event")
                                 scheduler.await("emit-release")
                             },
                             onDetachStarted = { scheduler.step("timeout-detach") },
@@ -471,7 +590,7 @@ class ExactEventSubscriptionTest {
             assertEquals(0, fixture.source.emit("home"))
             assertClean(fixture)
         }
-        runCancellationWithLease("close-concurrent-with-acquired-callback")
+        runCloseConcurrentWithAcquiredCallbackThenObserveClosed()
 
         runSchedule("double-close") { scheduler ->
             val fixture =
@@ -495,6 +614,52 @@ class ExactEventSubscriptionTest {
                 scheduler.step("first-detach-release")
                 first.get(BOUND, TimeUnit.SECONDS)
                 second.get(BOUND, TimeUnit.SECONDS)
+                assertClean(fixture)
+            } finally {
+                executor.shutdownNow()
+            }
+        }
+    }
+
+    private fun runCloseConcurrentWithAcquiredCallbackThenObserveClosed() {
+        runSchedule("close-concurrent-with-acquired-callback") { scheduler ->
+            val fixture =
+                fixture<String>(
+                    matches = { it == "home" },
+                    leaseObserver =
+                        LeaseHooks(
+                            onAcquired = {
+                                scheduler.step("close-callback-acquired")
+                                scheduler.await("close-callback-release")
+                            },
+                            onDetachStarted = { scheduler.step("close-detach-started") },
+                        ),
+                    stateObserver =
+                        StateHooks(
+                            onCloseLinearized = { reason, ownsDetach ->
+                                if (reason == "CANCELLED" && ownsDetach) {
+                                    scheduler.step("close-linearized")
+                                }
+                            },
+                            onTerminal = { scheduler.step("close-terminal") },
+                        ),
+                )
+            val executor = Executors.newFixedThreadPool(2)
+            try {
+                fixture.subscription.arm()
+                val callbackFuture = executor.submit { fixture.source.emit("home") }
+                scheduler.await("close-callback-acquired")
+                val closeFuture = executor.submit { fixture.subscription.close() }
+                scheduler.await("close-detach-started")
+                scheduler.step("close-callback-release")
+                callbackFuture.get(BOUND, TimeUnit.SECONDS)
+                scheduler.await("close-terminal")
+                closeFuture.get(BOUND, TimeUnit.SECONDS)
+                fixture.subscription.close()
+                scheduler.step("second-close-observed-closed")
+                assertFailure(ExactEventFailure.CANCELLED) {
+                    fixture.subscription.await(BOUND, TimeUnit.SECONDS, "home")
+                }
                 assertClean(fixture)
             } finally {
                 executor.shutdownNow()
@@ -819,10 +984,91 @@ class ExactEventSubscriptionTest {
         assertEquals(expected, thrown.failure)
     }
 
-    private companion object {
+    companion object {
         const val BOUND = 3L
+        private const val TRACE_LOG_TAG = "ExactEventTrace"
+        private val EXECUTED_TRACES = ConcurrentHashMap<String, String>()
+        private val EXECUTED_BOUNDARIES = ConcurrentHashMap<String, Int>()
 
-        val SCHEDULES =
+        @BeforeClass
+        @JvmStatic
+        fun resetExecutedTraceAudit() {
+            EXECUTED_TRACES.clear()
+            EXECUTED_BOUNDARIES.clear()
+        }
+
+        @AfterClass
+        @JvmStatic
+        fun verifyExecutedTraceAudit() {
+            assertEquals(29, SCHEDULES.size)
+            assertEquals(SCHEDULES.map { it.name }.toSet(), EXECUTED_TRACES.keys)
+            assertEquals(29, EXECUTED_TRACES.values.toSet().size)
+            assertEquals(
+                SCHEDULES.map { it.boundaryTag }.toSet(),
+                EXECUTED_BOUNDARIES.keys,
+            )
+            assertTrue(EXECUTED_BOUNDARIES.values.all { it == 1 })
+        }
+
+        private fun tracePoint(checkpoint: String, operation: String = checkpoint): TracePoint {
+            val actor =
+                when {
+                    checkpoint.contains("detach") ||
+                        checkpoint == "success-drain-started" ||
+                        checkpoint.contains("drain-complete") ||
+                        checkpoint.contains("drained") ||
+                        checkpoint.contains("unregister") -> "adapter"
+                    checkpoint.contains("callback") ||
+                        checkpoint.contains("emit") ||
+                        checkpoint.contains("event") ||
+                        checkpoint.contains("duplicate") ||
+                        checkpoint.contains("route") ||
+                        checkpoint.contains("generation") ||
+                        checkpoint.contains("details") ||
+                        checkpoint.contains("home") ||
+                        checkpoint.contains("old") ||
+                        checkpoint.contains("new") -> "source-callback"
+                    checkpoint.contains("await") ||
+                        checkpoint.contains("cancel") ||
+                        checkpoint.contains("close") ||
+                        checkpoint.contains("timeout") ||
+                        checkpoint.contains("terminal") ||
+                        checkpoint.contains("success") -> "subscription"
+                    else -> "test-driver"
+                }
+            val phase =
+                when {
+                    checkpoint.contains("acquired") -> "lease-acquired"
+                    checkpoint.contains("release") -> "lease-released"
+                    checkpoint.contains("detach") || checkpoint == "success-drain-started" ->
+                        "detach-started"
+                    checkpoint.contains("drain-complete") || checkpoint.contains("drained") ->
+                        "drain-completed"
+                    checkpoint.contains("terminal") -> "terminalized"
+                    checkpoint.contains("linearized") -> "linearized"
+                    checkpoint.contains("observed") -> "terminal-observed"
+                    checkpoint.contains("claimed") -> "wait-armed"
+                    checkpoint.contains("rejected") -> "rejected"
+                    checkpoint.contains("failed") || checkpoint.contains("failure") -> "failed"
+                    else -> "transition"
+                }
+            return TracePoint(checkpoint, actor, operation, phase)
+        }
+
+        private fun normalizeTrace(points: List<TracePoint>): String =
+            points
+                .mapIndexed { index, point ->
+                    val predecessor = points.getOrNull(index - 1)?.normalized ?: "ROOT"
+                    "${point.normalized}|hb=$predecessor->${point.normalized}"
+                }
+                .joinToString(";")
+
+        private fun sha256(value: String): String =
+            MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") {
+                "%02x".format(it)
+            }
+
+        private val SCHEDULES =
             listOf(
                 Schedule("first-emit-before-await", "po:emit<await", listOf("emit", "await")),
                 Schedule(
@@ -863,13 +1109,26 @@ class ExactEventSubscriptionTest {
                 ),
                 Schedule(
                     "emit-acquired-then-cancellation",
-                    "po:acquire<cancel-detach<release",
-                    listOf("emit-acquired", "cancel-detach", "emit-release"),
+                    "po:await<acquire<cancel-detach<release<cancel-terminal",
+                    listOf(
+                        "cancel-await-claimed",
+                        "cancel-event-acquired",
+                        "cancel-detach-started",
+                        "cancel-event-release",
+                        "cancel-terminal",
+                    ),
                 ),
                 Schedule(
                     "cancellation-while-drain-waits",
-                    "po:acquire<cancel-wait<release",
-                    listOf("emit-acquired", "cancel-detach", "emit-release"),
+                    "po:first<dup-acquire<success-drain<cancel<dup-release<cancel-terminal",
+                    listOf(
+                        "drain-first-event",
+                        "drain-duplicate-acquired",
+                        "success-drain-started",
+                        "drain-cancellation-linearized",
+                        "drain-duplicate-release",
+                        "drain-cancel-terminal",
+                    ),
                 ),
                 Schedule(
                     "cancellation-after-terminal",
@@ -885,17 +1144,26 @@ class ExactEventSubscriptionTest {
                     "emit-acquired-before-timeout",
                     "po:acquire<timeout-detach<release",
                     listOf("emit-acquired", "timeout-detach", "emit-release"),
+                    operationOverrides = mapOf("emit-acquired" to "event:home"),
                 ),
                 Schedule(
                     "timeout-while-drain-waits",
                     "po:wrong-acquire<timeout-wait<wrong-release",
                     listOf("emit-acquired", "timeout-detach", "emit-release"),
+                    operationOverrides = mapOf("emit-acquired" to "event:settings"),
                 ),
                 Schedule("close-before-emit", "po:close<emit", listOf("close", "emit")),
                 Schedule(
                     "close-concurrent-with-acquired-callback",
-                    "po:acquire<close-detach<callback-release",
-                    listOf("emit-acquired", "cancel-detach", "emit-release"),
+                    "po:acquire<close<detach<release<terminal<second-close-observe",
+                    listOf(
+                        "close-callback-acquired",
+                        "close-linearized",
+                        "close-detach-started",
+                        "close-callback-release",
+                        "close-terminal",
+                        "second-close-observed-closed",
+                    ),
                 ),
                 Schedule(
                     "double-close",

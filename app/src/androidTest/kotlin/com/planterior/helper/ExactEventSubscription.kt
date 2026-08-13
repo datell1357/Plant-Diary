@@ -159,6 +159,8 @@ internal interface ExactEventStateObserver {
 
     fun closeSelected(reason: String) = Unit
 
+    fun closeLinearized(reason: String, ownsDetach: Boolean) = Unit
+
     fun terminal(outcome: String) = Unit
 
     companion object {
@@ -241,7 +243,17 @@ internal class ExactEventSubscription<T>(
                 }
             }
         stateObserver.closeSelected(reason.name)
-        return when (val terminal = checkNotNull(closeObservation(reason, timeout, unit, false))) {
+        return when (
+            val terminal =
+                checkNotNull(
+                    closeObservation(
+                        reason,
+                        CLOSE_TIMEOUT_SECONDS,
+                        TimeUnit.SECONDS,
+                        false,
+                    )
+                )
+        ) {
             is Outcome.Success -> terminal.value
             is Outcome.Failure ->
                 throw ExactEventException(terminal.failure, terminal.cause).also {
@@ -309,6 +321,8 @@ internal class ExactEventSubscription<T>(
                     }
                 }
             }
+
+        stateObserver.closeLinearized(requestedReason.name, ownsDetach)
 
         var callerOwnsLease = false
         if (ownsDetach) {
