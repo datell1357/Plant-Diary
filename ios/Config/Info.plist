@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>식물 사진을 촬영해 식별하고 돌봄 기록에 추가하기 위해 카메라를 사용합니다.</string>
 	<key>CFBundleDisplayName</key>
 	<string>초보 식집사</string>
 	<key>CFBundleExecutable</key>

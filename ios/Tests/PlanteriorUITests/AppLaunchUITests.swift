@@ -128,4 +128,43 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertFalse(app.otherElements["onboarding.screen"].exists)
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
     }
+
+    func testPhotoReviewReplaceAndAcknowledgementCancellation() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_PHOTO_FIXTURE"] = "valid"
+        app.launch()
+        app.buttons["tab.camera"].tap()
+
+        XCTAssertTrue(app.images["photo.review"].waitForExistence(timeout: 5))
+        app.buttons["photo.acknowledge"].tap()
+        XCTAssertTrue(app.alerts["사진 처리 안내"].waitForExistence(timeout: 5))
+        app.alerts["사진 처리 안내"].buttons["취소"].tap()
+        XCTAssertTrue(app.images["photo.review"].exists)
+        XCTAssertTrue(app.buttons["photo.retake"].exists)
+        XCTAssertTrue(app.buttons["photo.replace"].exists)
+    }
+
+    func testDeniedCameraAndCorruptPhotoPreserveFallbackActions() {
+        let denied = XCUIApplication()
+        denied.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        denied.launchEnvironment["QA_CAMERA_DENIED"] = "1"
+        denied.launch()
+        denied.buttons["tab.camera"].tap()
+        denied.buttons["photo.camera"].tap()
+        XCTAssertTrue(denied.staticTexts["photo.error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(denied.buttons["photo.settings"].exists)
+        XCTAssertTrue(denied.buttons["photo.library"].exists)
+        XCTAssertTrue(denied.buttons["photo.manual"].exists)
+        denied.terminate()
+
+        let corrupt = XCUIApplication()
+        corrupt.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        corrupt.launchEnvironment["QA_PHOTO_FIXTURE"] = "corrupt"
+        corrupt.launch()
+        corrupt.buttons["tab.camera"].tap()
+        XCTAssertTrue(corrupt.staticTexts["photo.error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(corrupt.buttons["photo.library"].exists)
+        XCTAssertTrue(corrupt.buttons["photo.manual"].exists)
+    }
 }

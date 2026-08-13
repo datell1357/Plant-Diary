@@ -110,8 +110,8 @@
 			isa = PBXGroup;
 			children = (
 				AC08AAEAC4B847CB21B1E4DF /* App */,
-				0996C63EFD1BC71F5335C2DC /* Config */,
 				319F1832E96D2FCC5B7C4B85 /* Config */,
+				0996C63EFD1BC71F5335C2DC /* Config */,
 				7799E9E668D289BC8812914E /* Packages */,
 				F9FDBC37A02C5BB10CC6DFCA /* Tests/PlanteriorTests */,
 				A167C7BAF36ADA4BA4E6D6D8 /* Tests/PlanteriorUITests */,

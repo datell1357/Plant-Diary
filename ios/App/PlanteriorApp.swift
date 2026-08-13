@@ -52,12 +52,15 @@ struct PlantRouteTarget: Hashable, RawRepresentable, Sendable {
 enum AppRoute: Hashable, Sendable {
     case tabDetail(AppTab)
     case plant(PlantRouteTarget)
+    case identificationDraft
+    case manualRegistration
     case unavailable
 
     var destinationTab: AppTab {
         switch self {
         case let .tabDetail(tab): tab
         case .plant: .collection
+        case .identificationDraft, .manualRegistration: .collection
         case .unavailable: .home
         }
     }

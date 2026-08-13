@@ -275,6 +275,43 @@ if [ "$task_number" = "6" ]; then
   printf 'IOS_TASK_6_QA_OK device=%s\n' "$IOS_PHYSICAL_UDID"
 fi
 
+if [ "$task_number" = "7" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter PhotoInputTests
+  xcodebuild \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
+    -derivedDataPath /tmp/planterior-task-7-qa \
+    -parallel-testing-enabled NO \
+    test \
+    -only-testing:PlanteriorUITests/AppLaunchUITests/testPhotoReviewReplaceAndAcknowledgementCancellation \
+    -only-testing:PlanteriorUITests/AppLaunchUITests/testDeniedCameraAndCorruptPhotoPreserveFallbackActions
+  if [ "${IOS_QA_PROTOCOL_ONLY:-0}" = "1" ]; then
+    printf 'IOS_TASK_7_PROTOCOL_QA_OK physical_capture=not_run\n'
+    exit 0
+  fi
+  IOS_PHYSICAL_UDID=${device:-${IOS_PHYSICAL_UDID:-}}
+  export IOS_PHYSICAL_UDID
+  "$script_dir/preflight-release-assets.sh" \
+    --require-device \
+    --require-signing
+  if [ "${IOS_TASK_7_PHYSICAL_CONFIRMED:-0}" != "1" ]; then
+    printf 'IOS_TASK_7_PHYSICAL_QA_REQUIRED device=%s\n' "$IOS_PHYSICAL_UDID"
+    exit 65
+  fi
+  if [ -z "${IOS_TASK_7_PHYSICAL_SCREENSHOT:-}" ] ||
+     [ ! -f "$IOS_TASK_7_PHYSICAL_SCREENSHOT" ]; then
+    printf 'IOS_TASK_7_PHYSICAL_EVIDENCE_MISSING\n' >&2
+    exit 65
+  fi
+  cp "$IOS_TASK_7_PHYSICAL_SCREENSHOT" \
+    "$attempt_dir/task-7-ios-app-implementation.png"
+  printf 'IOS_TASK_7_QA_OK device=%s\n' "$IOS_PHYSICAL_UDID"
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

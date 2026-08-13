@@ -1,0 +1,32 @@
+{
+  "task": 7,
+  "name": "Camera, PhotosPicker and photo-processing acknowledgement",
+  "automated": {
+    "covers": [
+      "EXIF orientation normalization",
+      "256-8192 pixel dimensions",
+      "20 MiB input limit",
+      "empty and corrupt assets",
+      "selection cancellation",
+      "zero transfer before acknowledgement",
+      "review, replace and acknowledgement cancellation",
+      "denied camera and corrupt-photo fallbacks"
+    ]
+  },
+  "physicalDevice": {
+    "requires": [
+      "IOS_PHYSICAL_UDID",
+      "IOS_CODESIGN_IDENTITY",
+      "IOS_PROVISIONING_PROFILE",
+      "IOS_TASK_7_PHYSICAL_CONFIRMED",
+      "IOS_TASK_7_PHYSICAL_SCREENSHOT"
+    ],
+    "checklist": [
+      "capture a plant photo",
+      "review and retake",
+      "choose through PhotosPicker without broad library permission",
+      "acknowledge photo processing",
+      "deny camera and use Settings, PhotosPicker, or manual registration"
+    ]
+  }
+}
