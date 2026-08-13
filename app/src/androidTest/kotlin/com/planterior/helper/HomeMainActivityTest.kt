@@ -427,11 +427,7 @@ class HomeMainActivityTest {
 
     private fun pressBack() {
         navigateTo(PlanteriorRoute.Home) {
-            InstrumentationRegistry.getInstrumentation()
-                .uiAutomation
-                .performGlobalAction(
-                    android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
-                )
+            composeRule.runOnIdle { composeRule.activity.onBackPressedDispatcher.onBackPressed() }
         }
         assertHome()
     }
@@ -468,13 +464,17 @@ class HomeMainActivityTest {
     private fun subscribeToDestinations(
         controller: NavController,
         receiver: (RouteEvent) -> Unit,
-    ): () -> Unit {
+    ): ExactEventRegistration {
+        // NavController는 destination callback과 listener 제거를 모두 main thread에서 직렬 실행한다.
+        // 같은 main queue의 제거가 반환되면 먼저 캡처된 callback도 모두 반환되었고 이후 callback은 불가능하다.
         val listener = NavController.OnDestinationChangedListener { current, _, _ ->
             val entry = current.currentBackStackEntry
             receiver(RouteEvent(entry.toPlanteriorRoute(), entry))
         }
         composeRule.runOnIdle { controller.addOnDestinationChangedListener(listener) }
-        return { composeRule.runOnIdle { controller.removeOnDestinationChangedListener(listener) } }
+        return ExactEventRegistration {
+            composeRule.runOnIdle { controller.removeOnDestinationChangedListener(listener) }
+        }
     }
 
     /** 탭 복귀는 스크롤 위치도 복원하므로 인사말을 화면 안으로 옮긴 뒤 단언한다. */
