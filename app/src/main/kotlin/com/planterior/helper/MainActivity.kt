@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -23,10 +24,19 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private lateinit var authRuntime: AuthRuntime
 
+    /** 현재 제품 NavHost. 계측은 이 실제 컨트롤러의 목적지 이벤트를 관찰한다. */
+    internal lateinit var navigationController: NavHostController
+        private set
+
+    /** 현재 제품 홈 상태. Activity 재생성 검증은 이 실제 상태 흐름을 관찰한다. */
+    internal lateinit var homeViewModel: HomeViewModel
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         authRuntime = AuthRuntime.create(this)
+        homeViewModel = HomeViewModel(authRuntime.homeRepository, Clock.systemDefaultZone())
         val requested = PlanteriorRouteResolver.resolve(intent.deepLinkUri())
         val target = AuthRouteGuard.destination(requested, authRuntime.hasSession)
         lifecycleScope.launch {
@@ -37,7 +47,14 @@ class MainActivity : ComponentActivity() {
                 ?.takeIf { it.scheme == "planterior" && it.host == "auth" && it.path == "/apple" }
                 ?.let { authRuntime.handleAppleCallback(it) }
         }
-        setContent { PlanteriorApp(target, authRuntime) }
+        setContent {
+            PlanteriorApp(
+                target = target,
+                authRuntime = authRuntime,
+                homeViewModel = homeViewModel,
+                onNavigationReady = { navigationController = it },
+            )
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -56,21 +73,29 @@ class MainActivity : ComponentActivity() {
  * @param target 딥링크에서 해석한 최종 목적지.
  */
 @Composable
-internal fun PlanteriorApp(target: PlanteriorRoute, authRuntime: AuthRuntime? = null) {
+internal fun PlanteriorApp(
+    target: PlanteriorRoute,
+    authRuntime: AuthRuntime? = null,
+    homeViewModel: HomeViewModel? = null,
+    onNavigationReady: (NavHostController) -> Unit = {},
+) {
     PlanteriorTheme {
         val navController = rememberNavController()
+        SideEffect { onNavigationReady(navController) }
         val backStack = PlanteriorRouteResolver.backStackFor(target)
         navController.RestoreDeepLinkBackStack(backStack)
-        val homeViewModel = authRuntime?.let { runtime ->
-            androidx.compose.runtime.remember(runtime) {
-                HomeViewModel(runtime.homeRepository, Clock.systemDefaultZone())
-            }
-        }
+        val resolvedHomeViewModel =
+            homeViewModel
+                ?: authRuntime?.let { runtime ->
+                    androidx.compose.runtime.remember(runtime) {
+                        HomeViewModel(runtime.homeRepository, Clock.systemDefaultZone())
+                    }
+                }
         PlanteriorNavHost(
             navController = navController,
             startRoute = backStack.first(),
             authCoordinator = authRuntime?.coordinator,
-            homeViewModel = homeViewModel,
+            homeViewModel = resolvedHomeViewModel,
         )
     }
 }

@@ -1,6 +1,9 @@
 package com.planterior.helper
 
+import android.app.Activity
+import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -9,6 +12,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -22,6 +28,7 @@ import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.feature.home.HomeTestTags
+import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.home.SESSION_LOGGED_OUT
 import com.planterior.helper.home.SESSION_RESTORING
 import com.planterior.helper.home.SESSION_SIGNED_IN
@@ -30,11 +37,20 @@ import com.planterior.helper.home.WEATHER_OK
 import com.planterior.helper.home.WEATHER_RISK
 import com.planterior.helper.home.setDebugHomeScenario
 import com.planterior.helper.home.setDebugHomeSession
+import com.planterior.helper.navigation.PlanteriorRoute
+import com.planterior.helper.navigation.toPlanteriorRoute
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -136,26 +152,75 @@ class HomeMainActivityTest {
 
     private fun signedIn() = setDebugHomeSession(context, SESSION_SIGNED_IN, account, "민지")
 
-    /**
-     * 시나리오를 적용한 뒤 Activity를 다시 만들어 제품 시작 경로를 그대로 태운다.
-     *
-     * 재생성 직후에는 Compose 계층이 아직 없을 수 있으므로 고정 sleep 대신 계층이 생길 때까지 조건으로 기다린다.
-     */
-    private fun relaunch() {
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitUntil(WAIT_TIMEOUT_MILLIS) {
-            runCatching {
-                composeRule.onAllNodesWithTag(HomeTestTags.GREETING).fetchSemanticsNodes()
+    /** Activity 재생성과 홈 상태 구독을 트리거 전에 걸고 새 인스턴스의 실제 복원 상태를 기다린다. */
+    private fun relaunch(expectedState: (HomeUiState) -> Boolean) {
+        val application = context as Application
+        val previousActivity = composeRule.activity
+        val resumedActivity = AtomicReference<MainActivity?>()
+        val restoredState = AtomicReference<HomeUiState?>()
+        val resumedSignal = CountDownLatch(1)
+        val stateSignal = CountDownLatch(1)
+        val callbacks =
+            object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) =
+                    Unit
+
+                override fun onActivityPostCreated(
+                    activity: Activity,
+                    savedInstanceState: Bundle?,
+                ) {
+                    if (activity !is MainActivity || activity === previousActivity) return
+                    activity.lifecycleScope.launch {
+                        restoredState.set(activity.homeViewModel.state.first(expectedState))
+                        stateSignal.countDown()
+                    }
+                }
+
+                override fun onActivityResumed(activity: Activity) {
+                    if (activity is MainActivity && activity !== previousActivity) {
+                        resumedActivity.set(activity)
+                        resumedSignal.countDown()
+                    }
+                }
+
+                override fun onActivityStarted(activity: Activity) = Unit
+
+                override fun onActivityPaused(activity: Activity) = Unit
+
+                override fun onActivityStopped(activity: Activity) = Unit
+
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) =
+                    Unit
+
+                override fun onActivityDestroyed(activity: Activity) = Unit
             }
-                .isSuccess
+
+        application.registerActivityLifecycleCallbacks(callbacks)
+        try {
+            composeRule.activityRule.scenario.recreate()
+            assertTrue(
+                "새 MainActivity가 RESUMED 상태가 되어야 한다",
+                resumedSignal.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+            assertTrue(
+                "새 MainActivity의 홈 상태가 복원되어야 한다",
+                stateSignal.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+        } finally {
+            application.unregisterActivityLifecycleCallbacks(callbacks)
         }
+
+        val restoredActivity = checkNotNull(resumedActivity.get())
+        assertNotSame(previousActivity, restoredActivity)
+        assertSame(restoredActivity, composeRule.activity)
+        assertTrue(expectedState(checkNotNull(restoredState.get())))
         composeRule.waitForIdle()
     }
 
     @Test
     fun loggedOutHomeOffersSignInAndHidesAllPlantData() {
         setDebugHomeSession(context, SESSION_LOGGED_OUT)
-        relaunch()
+        relaunch { it is HomeUiState.LoggedOut }
 
         composeRule.onNodeWithText("안녕하세요, 게스트님!").assertIsDisplayed()
         composeRule.onNodeWithTag(HomeTestTags.SIGN_IN).assertIsDisplayed()
@@ -169,7 +234,7 @@ class HomeMainActivityTest {
     @Test
     fun restoringSessionDoesNotLatchTheLoggedOutHome() {
         setDebugHomeSession(context, SESSION_RESTORING)
-        relaunch()
+        relaunch { it is HomeUiState.Loading }
 
         // 복원 중에는 로그인 유도를 확정적으로 그리면 안 된다.
         assertEquals(
@@ -183,7 +248,7 @@ class HomeMainActivityTest {
     fun emptyHomeNeverInventsSamplePlants() {
         signedIn()
         setDebugHomeScenario(context, WEATHER_OK)
-        relaunch()
+        relaunch { it is HomeUiState.Empty }
 
         composeRule.onNodeWithTag(HomeTestTags.EMPTY).performScrollTo().assertIsDisplayed()
         assertEquals(
@@ -197,7 +262,7 @@ class HomeMainActivityTest {
         seedCare()
         signedIn()
         setDebugHomeScenario(context, WEATHER_OK)
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
         composeRule.onNodeWithTag(HomeTestTags.CARE_SECTION).performScrollTo().assertIsDisplayed()
         val order =
@@ -219,7 +284,7 @@ class HomeMainActivityTest {
         seedMiniHome("민지의 미니 식물원", 3)
         signedIn()
         setDebugHomeScenario(context, WEATHER_OK)
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
         // 저장된 구성이 제품 화면에 그대로 나타나야 한다.
         composeRule.onNodeWithText("민지의 미니 식물원").performScrollTo().assertIsDisplayed()
@@ -232,10 +297,10 @@ class HomeMainActivityTest {
         seedCare()
         seedMiniHome("복원된 미니 식물원", 2)
         signedIn()
-        relaunch()
+        relaunch { it is HomeUiState.Content }
         composeRule.onNodeWithText("복원된 미니 식물원").performScrollTo().assertIsDisplayed()
 
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
         composeRule.onNodeWithText("복원된 미니 식물원").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("배치한 식물 2개").performScrollTo().assertIsDisplayed()
@@ -246,7 +311,7 @@ class HomeMainActivityTest {
         seedCare()
         signedIn()
         setDebugHomeScenario(context, WEATHER_FAILURE)
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
         composeRule
             .onNodeWithTag(HomeTestTags.WEATHER_UNAVAILABLE)
@@ -268,7 +333,7 @@ class HomeMainActivityTest {
         seedCare()
         signedIn()
         setDebugHomeScenario(context, WEATHER_RISK)
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
         composeRule.onNodeWithTag(HomeTestTags.WEATHER_RISK).performScrollTo().assertIsDisplayed()
         assertEquals(
@@ -283,7 +348,7 @@ class HomeMainActivityTest {
         markSyncFailed()
         signedIn()
         setDebugHomeScenario(context, WEATHER_OK)
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
         composeRule.onNodeWithTag(HomeTestTags.SYNC_STALE).performScrollTo().assertIsDisplayed()
         composeRule
@@ -298,33 +363,40 @@ class HomeMainActivityTest {
         seedMiniHome("민지의 미니 식물원", 1)
         signedIn()
         setDebugHomeScenario(context, WEATHER_OK)
-        relaunch()
+        relaunch { it is HomeUiState.Content }
 
-        composeRule.onNodeWithTag(HomeTestTags.MINI_HOME).performScrollTo().performClick()
-        composeRule.waitForIdle()
+        navigateTo(PlanteriorRoute.MiniHome) {
+            composeRule.onNodeWithTag(HomeTestTags.MINI_HOME).performScrollTo().performClick()
+        }
         composeRule.onNodeWithText("미니 식물원").assertIsDisplayed()
         pressBack()
 
-        composeRule.onNodeWithTag(HomeTestTags.NOTIFICATION).performClick()
-        composeRule.waitForIdle()
+        navigateTo(PlanteriorRoute.Notifications) {
+            composeRule.onNodeWithTag(HomeTestTags.NOTIFICATION).performClick()
+        }
         composeRule.onNodeWithText("알림").assertIsDisplayed()
         pressBack()
 
-        composeRule.onNodeWithTag(HomeTestTags.IDENTIFY_CTA).performScrollTo().performClick()
-        composeRule.waitForIdle()
+        navigateTo(PlanteriorRoute.Camera) {
+            composeRule.onNodeWithTag(HomeTestTags.IDENTIFY_CTA).performScrollTo().performClick()
+        }
         composeRule.onNodeWithText("식물 촬영").assertIsDisplayed()
         pressBack()
 
-        composeRule.onNodeWithContentDescription("도감").performClick()
-        composeRule.waitForIdle()
+        navigateTo(PlanteriorRoute.Collection) {
+            composeRule.onNodeWithContentDescription("도감").performClick()
+        }
         composeRule.onNodeWithText("도감").assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("설정").performClick()
-        composeRule.waitForIdle()
+        navigateTo(PlanteriorRoute.Settings) {
+            composeRule.onNodeWithContentDescription("설정").performClick()
+        }
         composeRule.onNodeWithText("설정").assertIsDisplayed()
 
-        composeRule.onNodeWithContentDescription("홈").performClick()
-        awaitHome()
+        navigateTo(PlanteriorRoute.Home) {
+            composeRule.onNodeWithContentDescription("홈").performClick()
+        }
+        assertHome()
     }
 
     @Test
@@ -349,35 +421,73 @@ class HomeMainActivityTest {
 
         signedIn()
         setDebugHomeScenario(context, WEATHER_OK)
-        relaunch()
-        awaitHome()
+        relaunch { it is HomeUiState.Empty }
+        assertHome()
     }
 
-    /** 뒤로 가기 후 홈으로 돌아올 때까지 기다린다. 고정 sleep 대신 조건으로만 대기한다. */
     private fun pressBack() {
-        InstrumentationRegistry.getInstrumentation()
-            .uiAutomation
-            .performGlobalAction(
-                android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
-            )
-        awaitHome()
+        navigateTo(PlanteriorRoute.Home) {
+            InstrumentationRegistry.getInstrumentation()
+                .uiAutomation
+                .performGlobalAction(
+                    android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
+                )
+        }
+        assertHome()
     }
 
-    /**
-     * 홈 화면이 다시 앞에 나올 때까지 기다린 뒤 인사말이 보이는지 확인한다.
-     *
-     * 탭 복귀는 스크롤 위치까지 복원하므로 인사말이 화면 밖에 있을 수 있다. 먼저 위로 올린 뒤 단언한다.
-     */
-    private fun awaitHome() {
-        composeRule.waitForIdle()
-        composeRule.waitUntil(WAIT_TIMEOUT_MILLIS) {
-            composeRule.onAllNodesWithTag(HomeTestTags.GREETING).fetchSemanticsNodes().isNotEmpty()
+    /** 트리거 전에 실제 NavController listener를 붙이고 정확한 새 목적지 하나만 받는다. */
+    private fun navigateTo(expectedRoute: PlanteriorRoute, trigger: () -> Unit) {
+        val controller = composeRule.activity.navigationController
+        val previousEntry = controller.currentBackStackEntry
+        ExactEventSubscription<RouteEvent>(
+                matches = { it.route == expectedRoute },
+                subscribe = { receiver -> subscribeToDestinations(controller, receiver) },
+            )
+            .use { subscription ->
+                subscription.arm()
+                trigger()
+                val observed =
+                    subscription.await(
+                        EVENT_TIMEOUT_SECONDS,
+                        TimeUnit.SECONDS,
+                        expectedRoute.toString(),
+                    )
+                composeRule.waitForIdle()
+                composeRule.runOnIdle {
+                    assertEquals(
+                        expectedRoute,
+                        controller.currentBackStackEntry.toPlanteriorRoute(),
+                    )
+                    assertSame(observed.entry, controller.currentBackStackEntry)
+                    assertNotSame(previousEntry, observed.entry)
+                }
+            }
+    }
+
+    private fun subscribeToDestinations(
+        controller: NavController,
+        receiver: (RouteEvent) -> Unit,
+    ): () -> Unit {
+        val listener = NavController.OnDestinationChangedListener { current, _, _ ->
+            val entry = current.currentBackStackEntry
+            receiver(RouteEvent(entry.toPlanteriorRoute(), entry))
         }
+        composeRule.runOnIdle { controller.addOnDestinationChangedListener(listener) }
+        return { composeRule.runOnIdle { controller.removeOnDestinationChangedListener(listener) } }
+    }
+
+    /** 탭 복귀는 스크롤 위치도 복원하므로 인사말을 화면 안으로 옮긴 뒤 단언한다. */
+    private fun assertHome() {
         composeRule.onNodeWithTag(HomeTestTags.GREETING).performScrollTo().assertIsDisplayed()
     }
 
+    private data class RouteEvent(
+        val route: PlanteriorRoute?,
+        val entry: NavBackStackEntry?,
+    )
+
     private companion object {
-        /** 조건 대기 상한. 이 안에 조건이 참이 되지 않으면 실패로 본다. */
-        const val WAIT_TIMEOUT_MILLIS = 10_000L
+        const val EVENT_TIMEOUT_SECONDS = 10L
     }
 }
