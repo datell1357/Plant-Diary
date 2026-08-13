@@ -241,6 +241,16 @@ class ExactEventSubscriptionTest {
 
     @Test
     fun oppositeObservedCallbackOrdersWithSameTypedEventHashDifferently() {
+        val api29 = reconstructedTerminalWakeupTrace(awaitContinuationFirst = false)
+        val api37 = reconstructedTerminalWakeupTrace(awaitContinuationFirst = true)
+        assertEquals(api29.normalized, api37.normalized)
+        assertEquals(api29.hash, api37.hash)
+
+        val causalFirstThenSecond = reconstructedCausalEventOrder(reverse = false)
+        val causalSecondThenFirst = reconstructedCausalEventOrder(reverse = true)
+        assertFalse(causalFirstThenSecond.normalized == causalSecondThenFirst.normalized)
+        assertFalse(causalFirstThenSecond.hash == causalSecondThenFirst.hash)
+
         val event = OpaqueEvent("ignored")
         val firstThenSecond = captureSharedCallbackOrder(event, reverse = false)
         val secondThenFirst = captureSharedCallbackOrder(event, reverse = true)
@@ -1154,6 +1164,82 @@ class ExactEventSubscriptionTest {
     private enum class RouteCategory {
         HOME,
         DETAILS,
+    }
+
+    private fun reconstructedTerminalWakeupTrace(
+        awaitContinuationFirst: Boolean
+    ): ExactEventBehaviorSnapshot {
+        val recorder = BehaviorRecorder()
+        val handle = recorder.newHandle(BehaviorComponent.SUBSCRIPTION)
+        recorder.observe(
+            handle,
+            BehaviorTransition.TERMINALIZED,
+            BehaviorPayload.Facts(
+                phase = BehaviorPhase.CLOSED,
+                outcome = BehaviorOutcome.CANCELLED,
+                matchingCount = 1,
+            ),
+        )
+        val awaitContinuation = {
+            recorder.observe(
+                handle,
+                BehaviorTransition.TERMINAL_WAIT_RESOLVED,
+                BehaviorPayload.Facts(
+                    phase = BehaviorPhase.CLOSED,
+                    drained = BehaviorFlag.TRUE,
+                    causalBranch = BehaviorCausalBranch.AWAIT_CONTINUATION,
+                ),
+            )
+            recorder.observe(
+                handle,
+                BehaviorTransition.AWAIT_THROWN,
+                BehaviorPayload.Facts(
+                    outcome = BehaviorOutcome.CANCELLED,
+                    causalBranch = BehaviorCausalBranch.AWAIT_CONTINUATION,
+                ),
+            )
+        }
+        val closeContinuation = {
+            recorder.observe(
+                handle,
+                BehaviorTransition.TERMINAL_WAIT_RESOLVED,
+                BehaviorPayload.Facts(
+                    phase = BehaviorPhase.CLOSED,
+                    drained = BehaviorFlag.TRUE,
+                    causalBranch = BehaviorCausalBranch.CLOSE_CONTINUATION,
+                ),
+            )
+            recorder.observe(
+                handle,
+                BehaviorTransition.CLOSE_RETURNED,
+                BehaviorPayload.Facts(
+                    phase = BehaviorPhase.CLOSED,
+                    outcome = BehaviorOutcome.CANCELLED,
+                    causalBranch = BehaviorCausalBranch.CLOSE_CONTINUATION,
+                ),
+            )
+        }
+        if (awaitContinuationFirst) {
+            awaitContinuation()
+            closeContinuation()
+        } else {
+            closeContinuation()
+            awaitContinuation()
+        }
+        return recorder.snapshot()
+    }
+
+    private fun reconstructedCausalEventOrder(reverse: Boolean): ExactEventBehaviorSnapshot {
+        val recorder = BehaviorRecorder()
+        val handle = recorder.newHandle(BehaviorComponent.SUBSCRIPTION)
+        val first = BehaviorPayload.Facts(valueCategory = ExactEventValueCategory.ROUTE_HOME)
+        val second = BehaviorPayload.Facts(valueCategory = ExactEventValueCategory.ROUTE_DETAILS)
+        listOf(first, second)
+            .let { if (reverse) it.reversed() else it }
+            .forEach { payload ->
+                recorder.observe(handle, BehaviorTransition.EVENT_RECEIVED, payload)
+            }
+        return recorder.snapshot()
     }
 
     private fun captureSharedCallbackOrder(

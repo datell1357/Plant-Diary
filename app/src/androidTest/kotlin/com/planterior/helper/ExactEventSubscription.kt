@@ -120,6 +120,13 @@ internal enum class BehaviorDeadline {
     BOUNDED,
 }
 
+/** 같은 terminal 신호에서 깨어나 서로 happens-before 관계가 없는 continuation이다. */
+internal enum class BehaviorCausalBranch {
+    NONE,
+    AWAIT_CONTINUATION,
+    CLOSE_CONTINUATION,
+}
+
 internal enum class ExactEventValueCategory {
     GENERIC,
     ROUTE_HOME,
@@ -152,6 +159,7 @@ internal sealed interface BehaviorPayload {
         val permitReentrantReturn: BehaviorFlag = BehaviorFlag.UNSET,
         val drained: BehaviorFlag = BehaviorFlag.UNSET,
         val deadline: BehaviorDeadline = BehaviorDeadline.NONE,
+        val causalBranch: BehaviorCausalBranch = BehaviorCausalBranch.NONE,
         val valueCategory: ExactEventValueCategory = ExactEventValueCategory.GENERIC,
     ) : BehaviorPayload
 }
@@ -213,21 +221,34 @@ internal class BehaviorRecorder {
 
     fun snapshot(): ExactEventBehaviorSnapshot {
         val captured = synchronized(lock) { events.toList() }
+        captured.forEachIndexed { index, event ->
+            check(event.sequence == index) { "behavior trace sequence가 단조 증가하지 않았다" }
+        }
+        val canonical = canonicalizeCausalBranches(captured)
         val normalized = buildString {
-            captured.forEachIndexed { index, event ->
-                check(event.sequence == index) { "behavior trace sequence가 단조 증가하지 않았다" }
+            canonical.forEachIndexed { index, event ->
                 if (index > 0) append(';')
-                append("seq=").append(event.sequence)
+                append("seq=").append(index)
                 append("|hb=")
-                if (index == 0) append("ROOT") else append(index - 1)
+                when (event.predecessors.size) {
+                    0 -> append("ROOT")
+                    1 -> append(event.predecessors.single())
+                    else ->
+                        event.predecessors.joinTo(
+                            this,
+                            prefix = "{",
+                            postfix = "}",
+                            separator = ",",
+                        )
+                }
                 append("->").append(index)
-                append("|thread=").append(event.threadRole.name)
+                append("|thread=").append(event.event.threadRole.name)
                 append("|component=")
-                    .append(event.component.name)
+                    .append(event.event.component.name)
                     .append('#')
-                    .append(event.instance)
-                append("|transition=").append(event.transition.name)
-                appendTypedPayload(event.payload)
+                    .append(event.event.instance)
+                append("|transition=").append(event.event.transition.name)
+                appendTypedPayload(event.event.payload)
             }
         }
         val hash =
@@ -235,6 +256,53 @@ internal class BehaviorRecorder {
                 "%02x".format(it)
             }
         return ExactEventBehaviorSnapshot(normalized, hash)
+    }
+
+    private data class CanonicalEvent(
+        val event: BehaviorEvent,
+        val predecessors: List<Int>,
+    )
+
+    /**
+     * Recorder lock 획득 순서는 happens-before가 아니다. 같은 terminal 신호에서 시작한 typed branch만 fork/join으로
+     * canonicalize하고, 각 branch 내부와 일반 event의 관찰 순서는 그대로 보존한다.
+     */
+    private fun canonicalizeCausalBranches(captured: List<BehaviorEvent>): List<CanonicalEvent> {
+        val canonical = mutableListOf<CanonicalEvent>()
+        var predecessors = emptyList<Int>()
+        var cursor = 0
+        while (cursor < captured.size) {
+            val branch = captured[cursor].payload.causalBranch
+            if (branch == BehaviorCausalBranch.NONE) {
+                canonical += CanonicalEvent(captured[cursor], predecessors)
+                predecessors = listOf(canonical.lastIndex)
+                cursor += 1
+                continue
+            }
+
+            val branchEvents =
+                captured.drop(cursor).takeWhile {
+                    it.payload.causalBranch != BehaviorCausalBranch.NONE
+                }
+            val branchEnds = mutableListOf<Int>()
+            BehaviorCausalBranch.entries
+                .filterNot { it == BehaviorCausalBranch.NONE }
+                .forEach { causalBranch ->
+                    var branchPredecessors = predecessors
+                    branchEvents
+                        .filter { it.payload.causalBranch == causalBranch }
+                        .forEach { event ->
+                            canonical += CanonicalEvent(event, branchPredecessors)
+                            branchPredecessors = listOf(canonical.lastIndex)
+                        }
+                    if (branchPredecessors !== predecessors) {
+                        branchEnds += branchPredecessors.single()
+                    }
+                }
+            predecessors = branchEnds
+            cursor += branchEvents.size
+        }
+        return canonical
     }
 
     private fun StringBuilder.appendTypedPayload(payload: BehaviorPayload.Facts) {
@@ -258,6 +326,7 @@ internal class BehaviorRecorder {
         append("|reentrant=").append(payload.permitReentrantReturn.name)
         append("|drained=").append(payload.drained.name)
         append("|deadline=").append(payload.deadline.name)
+        append("|branch=").append(payload.causalBranch.name)
         append("|valueCategory=").append(payload.valueCategory.name)
     }
 }
@@ -729,13 +798,17 @@ internal class ExactEventSubscription<T>(
                     CLOSE_TIMEOUT_SECONDS,
                     TimeUnit.SECONDS,
                     false,
+                    BehaviorCausalBranch.AWAIT_CONTINUATION,
                 )
             )
         return when (terminal) {
             is Outcome.Success -> {
                 behavior.observe(
                     BehaviorTransition.AWAIT_RETURNED,
-                    BehaviorPayload.Facts(outcome = BehaviorOutcome.SUCCESS),
+                    BehaviorPayload.Facts(
+                        outcome = BehaviorOutcome.SUCCESS,
+                        causalBranch = BehaviorCausalBranch.AWAIT_CONTINUATION,
+                    ),
                 )
                 terminal.value
             }
@@ -750,6 +823,7 @@ internal class ExactEventSubscription<T>(
                             } else {
                                 BehaviorFailureCategory.DETACH
                             },
+                        causalBranch = BehaviorCausalBranch.AWAIT_CONTINUATION,
                     ),
                 )
                 throw ExactEventException(terminal.failure, terminal.cause).also {
@@ -840,6 +914,7 @@ internal class ExactEventSubscription<T>(
         timeout: Long,
         unit: TimeUnit,
         permitReentrantReturn: Boolean,
+        causalBranch: BehaviorCausalBranch,
     ): Outcome<T>? {
         var immediateOutcome: Outcome<T>? = null
         val transition =
@@ -925,6 +1000,7 @@ internal class ExactEventSubscription<T>(
             BehaviorPayload.Facts(
                 drained = drained.behaviorFlag(),
                 phase = synchronized(lock) { phase }.behaviorPhase(),
+                causalBranch = causalBranch,
             ),
         )
         if (!drained) {
@@ -1021,12 +1097,14 @@ internal class ExactEventSubscription<T>(
                 CLOSE_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS,
                 true,
+                BehaviorCausalBranch.CLOSE_CONTINUATION,
             )
         behavior.observe(
             BehaviorTransition.CLOSE_RETURNED,
             BehaviorPayload.Facts(
                 outcome = terminal?.behaviorOutcome() ?: BehaviorOutcome.NONE,
                 phase = synchronized(lock) { phase }.behaviorPhase(),
+                causalBranch = BehaviorCausalBranch.CLOSE_CONTINUATION,
             ),
         )
         if (terminal is Outcome.Failure && terminal.failure == ExactEventFailure.SOURCE) {
