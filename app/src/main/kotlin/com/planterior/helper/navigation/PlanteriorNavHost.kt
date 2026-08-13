@@ -1,7 +1,10 @@
 package com.planterior.helper.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavHostController
@@ -13,7 +16,11 @@ import com.planterior.helper.R
 import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
+import com.planterior.helper.feature.auth.AuthCoordinator
+import com.planterior.helper.feature.auth.AuthScreen
+import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.ui.PlaceholderScreen
+import kotlinx.coroutines.launch
 
 /**
  * 하단 탭 순서이다. Figma `tab-bar`의 좌측 2개와 우측 2개 순서를 그대로 따른다.
@@ -39,6 +46,7 @@ fun PlanteriorNavHost(
     navController: NavHostController,
     startRoute: PlanteriorRoute,
     modifier: Modifier = Modifier,
+    authCoordinator: AuthCoordinator? = null,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
@@ -66,17 +74,53 @@ fun PlanteriorNavHost(
     NavHost(navController = navController, startDestination = startRoute, modifier = modifier) {
         composable<PlanteriorRoute.Login> { entry ->
             val route = entry.toRoute<PlanteriorRoute.Login>()
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_login),
-                description = stringResource(R.string.screen_login_description),
-                onPrimaryAction = {
-                    val target = PlanteriorRouteResolver.resolveReturnRoute(route.returnRoute)
+            if (authCoordinator == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_login),
+                    description = stringResource(R.string.screen_login_description),
+                    onPrimaryAction = {
+                        val target = PlanteriorRouteResolver.resolveReturnRoute(route.returnRoute)
+                        navController.navigate(target) {
+                            popUpTo<PlanteriorRoute.Login> { inclusive = true }
+                        }
+                    },
+                    primaryActionLabel = stringResource(R.string.action_continue),
+                )
+            } else {
+                val state by authCoordinator.state.collectAsState()
+                val scope = rememberCoroutineScope()
+                LaunchedEffect(state) {
+                    val authenticated = state as? AuthUiState.Authenticated ?: return@LaunchedEffect
+                    val target =
+                        PlanteriorRouteResolver.resolveReturnRoute(
+                            authenticated.returnRoute ?: route.returnRoute
+                        )
                     navController.navigate(target) {
                         popUpTo<PlanteriorRoute.Login> { inclusive = true }
                     }
-                },
-                primaryActionLabel = stringResource(R.string.action_continue),
-            )
+                }
+                AuthScreen(
+                    state = state,
+                    onGoogle = {
+                        scope.launch {
+                            authCoordinator.signIn(
+                                com.planterior.helper.feature.auth.AuthProvider.GOOGLE,
+                                route.returnRoute,
+                            )
+                        }
+                    },
+                    onApple = {
+                        scope.launch {
+                            authCoordinator.signIn(
+                                com.planterior.helper.feature.auth.AuthProvider.APPLE,
+                                route.returnRoute,
+                            )
+                        }
+                    },
+                    onCancel = authCoordinator::cancelSignIn,
+                    onRetry = { scope.launch { authCoordinator.restore() } },
+                )
+            }
         }
         composable<PlanteriorRoute.Home> {
             PlaceholderScreen(
@@ -100,10 +144,24 @@ fun PlanteriorNavHost(
             )
         }
         composable<PlanteriorRoute.Settings> {
+            val scope = rememberCoroutineScope()
             PlaceholderScreen(
                 title = stringResource(R.string.screen_settings),
                 description = stringResource(R.string.screen_settings_description),
                 bottomBar = bottomBar,
+                primaryActionLabel =
+                    if (authCoordinator == null) null else stringResource(R.string.action_logout),
+                onPrimaryAction =
+                    authCoordinator?.let { coordinator ->
+                        {
+                            scope.launch {
+                                coordinator.logout()
+                                navController.navigate(PlanteriorRoute.Login()) {
+                                    popUpTo(navController.graph.id) { inclusive = true }
+                                }
+                            }
+                        }
+                    },
             )
         }
         composable<PlanteriorRoute.Camera> {

@@ -31,6 +31,26 @@ android {
 
         buildConfigField("String", "DEFAULT_LOCALE", "\"ko\"")
         buildConfigField("int", "MIN_SUPPORTED_SDK", minimumSdk.toString())
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"${System.getenv("PLANTERIOR_GOOGLE_WEB_CLIENT_ID").orEmpty()}\"",
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_PROJECT_ID",
+            "\"${System.getenv("PLANTERIOR_FIREBASE_PROJECT_ID").orEmpty()}\"",
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_APP_ID",
+            "\"${System.getenv("PLANTERIOR_FIREBASE_APP_ID").orEmpty()}\"",
+        )
+        buildConfigField(
+            "String",
+            "FIREBASE_API_KEY",
+            "\"${System.getenv("PLANTERIOR_FIREBASE_API_KEY").orEmpty()}\"",
+        )
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -49,11 +69,18 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
+            buildConfigField("String", "FIREBASE_PROJECT_ID", "\"demo-planterior\"")
+            buildConfigField("String", "FIREBASE_APP_ID", "\"1:1234567890:android:debug\"")
+            buildConfigField("String", "FIREBASE_API_KEY", "\"demo-api-key\"")
         }
         release {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
+            buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"\"")
+            buildConfigField("String", "FIREBASE_PROJECT_ID", "\"\"")
+            buildConfigField("String", "FIREBASE_APP_ID", "\"\"")
+            buildConfigField("String", "FIREBASE_API_KEY", "\"\"")
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -113,11 +140,18 @@ tasks
 
 dependencies {
     implementation(project(":core:designsystem"))
+    implementation(project(":core:data"))
+    implementation(project(":core:database"))
+    implementation(project(":feature:auth"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.functions)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)

@@ -9,7 +9,7 @@ plugins {
 spotless {
     kotlin {
         target("**/*.kt")
-        targetExclude("**/build/**")
+        targetExclude("**/build/**", "**/* 2.kt", "**/* 3.kt")
         ktfmt(libs.versions.ktfmt.get()).kotlinlangStyle()
     }
     kotlinGradle {
@@ -35,6 +35,10 @@ spotless {
 }
 
 subprojects {
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        exclude { element -> element.file.name.matches(Regex(".* [0-9]+\\.kt")) }
+    }
+
     plugins.withId("com.android.library") {
         extensions.configure<com.android.build.api.dsl.LibraryExtension> {
             namespace = "com.planterior.helper" + project.path.replace(':', '.')

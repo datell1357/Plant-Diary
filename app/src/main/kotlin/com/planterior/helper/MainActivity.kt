@@ -6,19 +6,43 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
+import com.planterior.helper.auth.AuthRuntime
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.navigation.AuthRouteGuard
 import com.planterior.helper.navigation.PlanteriorNavHost
 import com.planterior.helper.navigation.PlanteriorRoute
 import com.planterior.helper.navigation.PlanteriorRouteResolver
+import java.net.URI
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private lateinit var authRuntime: AuthRuntime
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val target = PlanteriorRouteResolver.resolve(intent.deepLinkUri())
-        setContent { PlanteriorApp(target) }
+        authRuntime = AuthRuntime.create(this)
+        val requested = PlanteriorRouteResolver.resolve(intent.deepLinkUri())
+        val target = AuthRouteGuard.destination(requested, authRuntime.hasSession)
+        lifecycleScope.launch {
+            authRuntime.coordinator.restore()
+            intent
+                .deepLinkUri()
+                ?.let { runCatching { URI(it) }.getOrNull() }
+                ?.takeIf { it.scheme == "planterior" && it.host == "auth" && it.path == "/apple" }
+                ?.let { authRuntime.handleAppleCallback(it) }
+        }
+        setContent { PlanteriorApp(target, authRuntime) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val callback = intent.deepLinkUri()?.let { runCatching { URI(it) }.getOrNull() } ?: return
+        lifecycleScope.launch { authRuntime.handleAppleCallback(callback) }
     }
 }
 
@@ -30,12 +54,16 @@ class MainActivity : ComponentActivity() {
  * @param target 딥링크에서 해석한 최종 목적지.
  */
 @Composable
-internal fun PlanteriorApp(target: PlanteriorRoute) {
+internal fun PlanteriorApp(target: PlanteriorRoute, authRuntime: AuthRuntime? = null) {
     PlanteriorTheme {
         val navController = rememberNavController()
         val backStack = PlanteriorRouteResolver.backStackFor(target)
         navController.RestoreDeepLinkBackStack(backStack)
-        PlanteriorNavHost(navController = navController, startRoute = backStack.first())
+        PlanteriorNavHost(
+            navController = navController,
+            startRoute = backStack.first(),
+            authCoordinator = authRuntime?.coordinator,
+        )
     }
 }
 

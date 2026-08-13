@@ -21,6 +21,10 @@ class OfflineFirstSyncRepository(
         activeAccount = accountId
     }
 
+    fun deactivate() {
+        activeAccount = null
+    }
+
     suspend fun visiblePlants(): List<PersonalPlant> {
         val account = checkNotNull(activeAccount) { "No active account" }
         return database.cacheDao().plants(account.value).map {
