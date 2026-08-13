@@ -67,6 +67,8 @@ interface FirebaseIdentityGateway {
 
     suspend fun signIn(proof: ProviderProof): AuthAccount
 
+    suspend fun reauthenticate(proof: ProviderProof): AuthAccount
+
     suspend fun link(proof: ProviderProof): AuthAccount
 
     suspend fun signOut()
@@ -89,9 +91,21 @@ enum class SyncDomain {
     MINI_HOME,
 }
 
+enum class SyncStatus {
+    SUCCESS,
+    FAILED,
+}
+
+data class SyncRecord(
+    val attemptedAt: java.time.Instant,
+    val status: SyncStatus,
+    val errorCode: String?,
+)
+
 data class SyncSummary(
     val completed: Set<SyncDomain>,
     val failures: Map<SyncDomain, String>,
+    val records: Map<SyncDomain, SyncRecord> = emptyMap(),
 ) {
     val isPartial: Boolean
         get() = completed.isNotEmpty() && failures.isNotEmpty()
@@ -103,6 +117,8 @@ data class SyncSummary(
 
 fun interface AccountSynchronizer {
     suspend fun sync(accountUid: String): SyncSummary
+
+    suspend fun lastKnown(accountUid: String): SyncSummary = SyncSummary.EMPTY
 }
 
 sealed interface AuthUiState {

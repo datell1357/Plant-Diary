@@ -70,7 +70,7 @@ class AuthCoordinator(
         mutableState.value = AuthUiState.SignedOut(AuthFailure.Cancelled)
     }
 
-    suspend fun link(provider: AuthProvider, consentConfirmed: Boolean, reauthenticated: Boolean) {
+    suspend fun link(provider: AuthProvider, consentConfirmed: Boolean) {
         val current = identity.current()
         if (current == null) {
             mutableState.value = AuthUiState.SignedOut(AuthFailure.InvalidCredential)
@@ -85,17 +85,45 @@ class AuthCoordinator(
             mutableState.value = AuthUiState.LinkConsentRequired(provider)
             return
         }
-        if (!reauthenticated) {
-            mutableState.value = AuthUiState.ReauthenticationRequired(provider)
+        val currentProvider = current.providers.firstOrNull()
+        if (currentProvider == null) {
+            mutableState.value = AuthUiState.LinkFailure(provider, AuthFailure.InvalidCredential)
             return
         }
         val requestId = ++generation
+        val reauthAdapter = providers.getValue(currentProvider)
+        activeRequest = requestId to reauthAdapter
+        mutableState.value = AuthUiState.ReauthenticationRequired(provider)
+        val reauthOutcome = acquire(reauthAdapter, requestId)
+        if (requestId != generation) return
+        if (reauthOutcome !is ProviderOutcome.Proof) {
+            activeRequest = null
+            mutableState.value =
+                when (reauthOutcome) {
+                    ProviderOutcome.Cancelled ->
+                        AuthUiState.Authenticated(current, lastSync(current))
+                    is ProviderOutcome.Failed ->
+                        AuthUiState.LinkFailure(provider, reauthOutcome.failure)
+                    is ProviderOutcome.Proof -> error("unreachable")
+                }
+            return
+        }
+        try {
+            identity.reauthenticate(
+                ProviderProof(currentProvider, reauthOutcome.token, reauthOutcome.rawNonce)
+            )
+        } catch (error: AuthGatewayException) {
+            activeRequest = null
+            mutableState.value = AuthUiState.LinkFailure(provider, error.failure)
+            return
+        }
+
         val adapter = providers.getValue(provider)
         activeRequest = requestId to adapter
         mutableState.value = AuthUiState.SigningIn(provider)
-        when (val outcome = adapter.acquire(requestId)) {
+        when (val outcome = acquire(adapter, requestId)) {
             ProviderOutcome.Cancelled ->
-                mutableState.value = AuthUiState.Authenticated(current, SyncSummary.EMPTY)
+                mutableState.value = AuthUiState.Authenticated(current, lastSync(current))
             is ProviderOutcome.Failed ->
                 mutableState.value = AuthUiState.LinkFailure(provider, outcome.failure)
             is ProviderOutcome.Proof ->
@@ -103,7 +131,7 @@ class AuthCoordinator(
                     val linked =
                         identity.link(ProviderProof(provider, outcome.token, outcome.rawNonce))
                     profiles.upsert(linked)
-                    mutableState.value = AuthUiState.Authenticated(linked, SyncSummary.EMPTY)
+                    mutableState.value = AuthUiState.Authenticated(linked, lastSync(linked))
                 } catch (error: AuthGatewayException) {
                     mutableState.value =
                         if (error.failure is AuthFailure.AccountCollision) {
@@ -115,6 +143,17 @@ class AuthCoordinator(
         }
         activeRequest = null
     }
+
+    private suspend fun acquire(adapter: AuthProviderAdapter, requestId: Long): ProviderOutcome =
+        try {
+            adapter.acquire(requestId)
+        } catch (error: AuthGatewayException) {
+            ProviderOutcome.Failed(error.failure)
+        } catch (_: Exception) {
+            ProviderOutcome.Failed(AuthFailure.Unknown)
+        }
+
+    private suspend fun lastSync(account: AuthAccount) = synchronizer.lastKnown(account.uid)
 
     suspend fun logout() {
         generation += 1

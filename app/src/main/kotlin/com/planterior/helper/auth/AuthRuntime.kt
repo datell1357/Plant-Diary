@@ -29,11 +29,15 @@ import com.planterior.helper.feature.auth.AuthProviderAdapter
 import com.planterior.helper.feature.auth.FirebaseAppleCallable
 import com.planterior.helper.feature.auth.FirebaseIdentityAdapter
 import com.planterior.helper.feature.auth.FirestoreAccountProfileStore
+import com.planterior.helper.feature.auth.FirestoreAccountSyncRemote
 import com.planterior.helper.feature.auth.FirestoreAccountSynchronizer
 import com.planterior.helper.feature.auth.GoogleCredentialProvider
 import com.planterior.helper.feature.auth.ProviderOutcome
 import com.planterior.helper.feature.auth.RoomAccountSessionCache
 import com.planterior.helper.feature.auth.SyncSummary
+import com.planterior.helper.feature.auth.debugAccountSyncRemote
+import com.planterior.helper.feature.auth.debugAuthProvider
+import com.planterior.helper.feature.auth.prepareDebugAuth
 import java.net.URI
 
 class AuthRuntime
@@ -46,6 +50,7 @@ private constructor(
 
     companion object {
         fun create(activity: ComponentActivity): AuthRuntime {
+            prepareDebugAuth(activity)
             if (
                 BuildConfig.FIREBASE_PROJECT_ID.isBlank() ||
                     BuildConfig.FIREBASE_APP_ID.isBlank() ||
@@ -86,13 +91,25 @@ private constructor(
                 AuthCoordinator(
                     mapOf(
                         AuthProvider.GOOGLE to
-                            GoogleCredentialProvider(activity, BuildConfig.GOOGLE_WEB_CLIENT_ID),
-                        AuthProvider.APPLE to apple,
+                            debugAuthProvider(
+                                activity,
+                                GoogleCredentialProvider(
+                                    activity,
+                                    BuildConfig.GOOGLE_WEB_CLIENT_ID,
+                                ),
+                            ),
+                        AuthProvider.APPLE to debugAuthProvider(activity, apple),
                     ),
                     identity,
                     FirestoreAccountProfileStore(firestore),
-                    RoomAccountSessionCache(database, repository),
-                    FirestoreAccountSynchronizer(firestore, database),
+                    RoomAccountSessionCache(repository),
+                    FirestoreAccountSynchronizer(
+                        debugAccountSyncRemote(
+                            activity,
+                            FirestoreAccountSyncRemote(firestore),
+                        ),
+                        database,
+                    ),
                 ),
                 apple,
                 identity.current() != null,
@@ -123,6 +140,10 @@ private constructor(
                     override fun current(): AuthAccount? = null
 
                     override suspend fun signIn(
+                        proof: com.planterior.helper.feature.auth.ProviderProof
+                    ): AuthAccount = throw AuthGatewayException(AuthFailure.ConfigurationMissing)
+
+                    override suspend fun reauthenticate(
                         proof: com.planterior.helper.feature.auth.ProviderProof
                     ): AuthAccount = throw AuthGatewayException(AuthFailure.ConfigurationMissing)
 

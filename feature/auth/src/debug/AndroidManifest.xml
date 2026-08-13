@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <application android:usesCleartextTraffic="true">
         <activity
             android:name="com.planterior.helper.feature.auth.DebugAuthHarnessActivity"
             android:exported="true"

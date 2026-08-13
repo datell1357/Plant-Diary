@@ -91,6 +91,8 @@ class DebugAuthHarnessActivity : ComponentActivity() {
                 )
                 .also { account = it }
 
+        override suspend fun reauthenticate(proof: ProviderProof) = requireNotNull(account)
+
         override suspend fun link(proof: ProviderProof) =
             requireNotNull(account)
                 .copy(providers = requireNotNull(account).providers + proof.provider)

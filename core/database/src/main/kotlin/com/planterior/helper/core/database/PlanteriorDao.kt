@@ -39,6 +39,43 @@ interface CacheDao {
     @Query("DELETE FROM cached_watering_schedules WHERE accountId = :accountId")
     suspend fun clearSchedules(accountId: String)
 
+    @Query("SELECT plantId FROM cached_plants WHERE accountId = :accountId")
+    suspend fun plantIds(accountId: String): List<String>
+
+    @Query("SELECT scheduleId FROM cached_watering_schedules WHERE accountId = :accountId")
+    suspend fun scheduleIds(accountId: String): List<String>
+
+    @Query(
+        "DELETE FROM cached_plants WHERE accountId = :accountId AND plantId = :plantId AND NOT EXISTS (SELECT 1 FROM operation_outbox WHERE accountId = :accountId AND aggregateType = 'personalPlant' AND aggregateId = :plantId AND state IN ('PENDING', 'CONFLICT', 'FAILED'))"
+    )
+    suspend fun deleteRemoteMissingPlantUnlessDraft(accountId: String, plantId: String)
+
+    @Query(
+        "DELETE FROM cached_watering_schedules WHERE accountId = :accountId AND scheduleId = :scheduleId AND NOT EXISTS (SELECT 1 FROM operation_outbox WHERE accountId = :accountId AND aggregateType = 'wateringSchedule' AND aggregateId = :scheduleId AND state IN ('PENDING', 'CONFLICT', 'FAILED'))"
+    )
+    suspend fun deleteRemoteMissingScheduleUnlessDraft(accountId: String, scheduleId: String)
+
+    @Transaction
+    suspend fun reconcilePlants(accountId: String, remote: List<CachedPlantEntity>) {
+        remote.forEach { upsertPlant(it) }
+        val remoteIds = remote.mapTo(mutableSetOf()) { it.plantId }
+        plantIds(accountId).filterNot(remoteIds::contains).forEach {
+            deleteRemoteMissingPlantUnlessDraft(accountId, it)
+        }
+    }
+
+    @Transaction
+    suspend fun reconcileSchedules(
+        accountId: String,
+        remote: List<CachedWateringScheduleEntity>,
+    ) {
+        remote.forEach { upsertSchedule(it) }
+        val remoteIds = remote.mapTo(mutableSetOf()) { it.scheduleId }
+        scheduleIds(accountId).filterNot(remoteIds::contains).forEach {
+            deleteRemoteMissingScheduleUnlessDraft(accountId, it)
+        }
+    }
+
     @Transaction
     suspend fun clearVisibleAccount(accountId: String) {
         clearPlants(accountId)

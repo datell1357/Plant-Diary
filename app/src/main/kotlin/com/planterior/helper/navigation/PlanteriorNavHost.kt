@@ -16,6 +16,7 @@ import com.planterior.helper.R
 import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
+import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
 import com.planterior.helper.feature.auth.AuthScreen
 import com.planterior.helper.feature.auth.AuthUiState
@@ -145,24 +146,31 @@ fun PlanteriorNavHost(
         }
         composable<PlanteriorRoute.Settings> {
             val scope = rememberCoroutineScope()
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_settings),
-                description = stringResource(R.string.screen_settings_description),
-                bottomBar = bottomBar,
-                primaryActionLabel =
-                    if (authCoordinator == null) null else stringResource(R.string.action_logout),
-                onPrimaryAction =
-                    authCoordinator?.let { coordinator ->
-                        {
-                            scope.launch {
-                                coordinator.logout()
-                                navController.navigate(PlanteriorRoute.Login()) {
-                                    popUpTo(navController.graph.id) { inclusive = true }
-                                }
+            if (authCoordinator == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_settings),
+                    description = stringResource(R.string.screen_settings_description),
+                    bottomBar = bottomBar,
+                )
+            } else {
+                val state by authCoordinator.state.collectAsState()
+                AuthAccountScreen(
+                    state = state,
+                    onLink = { provider, consent ->
+                        scope.launch { authCoordinator.link(provider, consent) }
+                    },
+                    onLogout = {
+                        scope.launch {
+                            authCoordinator.logout()
+                            navController.navigate(PlanteriorRoute.Login()) {
+                                popUpTo(navController.graph.id) { inclusive = true }
                             }
                         }
                     },
-            )
+                    logoutLabel = stringResource(R.string.action_logout),
+                    bottomBar = bottomBar,
+                )
+            }
         }
         composable<PlanteriorRoute.Camera> {
             PlaceholderScreen(

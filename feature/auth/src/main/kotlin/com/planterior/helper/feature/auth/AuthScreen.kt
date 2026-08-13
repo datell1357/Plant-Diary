@@ -63,6 +63,7 @@ fun AuthScreen(
                     ) {
                         Text("Apple로 계속하기")
                     }
+                    DebugAuthControls(onGoogle, onApple)
                 }
                 is AuthUiState.LinkConsentRequired -> AuthNotice("계정을 연결하려면 다시 확인해 주세요.")
                 is AuthUiState.ReauthenticationRequired ->
@@ -77,6 +78,81 @@ fun AuthScreen(
         }
     }
 }
+
+@Composable
+fun AuthAccountScreen(
+    state: AuthUiState,
+    onLink: (AuthProvider, Boolean) -> Unit,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier,
+    logoutLabel: String = "로그아웃",
+    bottomBar: @Composable () -> Unit = {},
+) {
+    PlanteriorScreenScaffold(title = "설정", modifier = modifier, bottomBar = bottomBar) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.large),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            when (state) {
+                is AuthUiState.Authenticated -> {
+                    Text(
+                        "계정 ${state.account.uid}",
+                        modifier = Modifier.fillMaxWidth().testTag("account-uid"),
+                    )
+                    Text(
+                        "동기화 성공 ${state.sync.completed.size} · 실패 ${state.sync.failures.size}",
+                        modifier = Modifier.fillMaxWidth().testTag("account-sync-summary"),
+                    )
+                    AuthProvider.entries.filterNot(state.account.providers::contains).forEach {
+                        provider ->
+                        OutlinedButton(
+                            onClick = { onLink(provider, false) },
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .testTag("link-${provider.name.lowercase()}"),
+                        ) {
+                            Text("${provider.displayName()} 계정 연결")
+                        }
+                    }
+                }
+                is AuthUiState.LinkConsentRequired -> {
+                    AuthNotice("현재 계정의 데이터는 유지됩니다. 다른 계정을 가져오거나 덮어쓰지 않고 로그인 수단만 연결합니다.")
+                    Button(
+                        onClick = { onLink(state.provider, true) },
+                        modifier = Modifier.fillMaxWidth().testTag("link-consent-confirm"),
+                    ) {
+                        Text("동의하고 다시 인증")
+                    }
+                }
+                is AuthUiState.ReauthenticationRequired -> AuthProgress("현재 계정으로 다시 인증하고 있어요")
+                is AuthUiState.LinkConflict -> {
+                    Text(
+                        "이 로그인 수단은 다른 계정에서 사용 중이라 연결할 수 없어요. 현재 계정과 데이터는 변경되지 않았습니다.",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().testTag("link-conflict"),
+                    )
+                }
+                is AuthUiState.LinkFailure -> AuthErrorMessage(state.failure) {}
+                is AuthUiState.SigningIn -> AuthProgress("로그인 수단을 연결하고 있어요")
+                AuthUiState.Restoring -> AuthProgress("계정을 확인하고 있어요")
+                is AuthUiState.SignedOut -> AuthNotice("로그인된 계정이 없어요.")
+            }
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth().testTag("account-logout"),
+            ) {
+                Text(logoutLabel)
+            }
+        }
+    }
+}
+
+private fun AuthProvider.displayName(): String =
+    when (this) {
+        AuthProvider.GOOGLE -> "Google"
+        AuthProvider.APPLE -> "Apple"
+    }
 
 @Composable
 private fun AuthProgress(label: String) {

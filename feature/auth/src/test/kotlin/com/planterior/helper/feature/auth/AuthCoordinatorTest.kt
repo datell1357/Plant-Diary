@@ -92,7 +92,7 @@ class AuthCoordinatorTest {
         val coordinator = coordinator(google = provider, identity = identity)
         coordinator.restore()
 
-        coordinator.link(AuthProvider.GOOGLE, consentConfirmed = true, reauthenticated = true)
+        coordinator.link(AuthProvider.GOOGLE, consentConfirmed = true)
 
         assertEquals(
             AuthUiState.LinkFailure(
@@ -110,23 +110,22 @@ class AuthCoordinatorTest {
         identity.linkFailure = AuthFailure.AccountCollision(AuthProvider.APPLE)
         val coordinator =
             coordinator(
+                google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("reauth-token")),
                 apple =
                     FakeProvider(AuthProvider.APPLE, ProviderOutcome.Proof("link-token", "nonce")),
                 identity = identity,
             )
         coordinator.restore()
 
-        coordinator.link(AuthProvider.APPLE, consentConfirmed = false, reauthenticated = false)
+        coordinator.link(AuthProvider.APPLE, consentConfirmed = false)
         assertEquals(AuthUiState.LinkConsentRequired(AuthProvider.APPLE), coordinator.state.value)
-        coordinator.link(AuthProvider.APPLE, consentConfirmed = true, reauthenticated = false)
-        assertEquals(
-            AuthUiState.ReauthenticationRequired(AuthProvider.APPLE),
-            coordinator.state.value,
-        )
-        coordinator.link(AuthProvider.APPLE, consentConfirmed = true, reauthenticated = true)
+        coordinator.link(AuthProvider.APPLE, consentConfirmed = true)
 
         assertEquals(AuthUiState.LinkConflict(AuthProvider.APPLE), coordinator.state.value)
+        assertEquals(1, identity.reauthenticateCalls)
+        assertEquals(AuthProvider.GOOGLE, identity.reauthenticatedProof?.provider)
         assertEquals(1, identity.linkCalls)
+        assertEquals("account-a", identity.current()?.uid)
     }
 
     @Test
@@ -307,6 +306,8 @@ class AuthCoordinatorTest {
     ) : FirebaseIdentityGateway {
         var signInCalls = 0
         var linkCalls = 0
+        var reauthenticateCalls = 0
+        var reauthenticatedProof: ProviderProof? = null
         var lastProof: ProviderProof? = null
         var linkFailure: AuthFailure? = null
 
@@ -316,6 +317,12 @@ class AuthCoordinatorTest {
             signInCalls += 1
             lastProof = proof
             return accounts.getValue(proof.token).also { currentAccount = it }
+        }
+
+        override suspend fun reauthenticate(proof: ProviderProof): AuthAccount {
+            reauthenticateCalls += 1
+            reauthenticatedProof = proof
+            return requireNotNull(currentAccount)
         }
 
         override suspend fun link(proof: ProviderProof): AuthAccount {

@@ -27,6 +27,15 @@ class FirebaseIdentityAdapter(private val auth: FirebaseAuth) : FirebaseIdentity
             throw error.toGatewayFailure(proof.provider)
         }
 
+    override suspend fun reauthenticate(proof: ProviderProof): AuthAccount =
+        try {
+            val user = auth.currentUser ?: throw AuthGatewayException(AuthFailure.InvalidCredential)
+            user.reauthenticate(proof.credential()).await()
+            requireNotNull(auth.currentUser).toAccount()
+        } catch (error: Exception) {
+            throw error.toGatewayFailure(proof.provider)
+        }
+
     override suspend fun link(proof: ProviderProof): AuthAccount =
         try {
             val user = auth.currentUser ?: throw AuthGatewayException(AuthFailure.InvalidCredential)
