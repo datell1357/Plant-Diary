@@ -25,6 +25,8 @@ googleid = "1.2.0"
 androidx-browser = "1.10.0"
 androidx-test-runner = "1.7.0"
 androidx-test-espresso = "3.7.0"
+camerax = "1.6.1"
+exifinterface = "1.4.2"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
@@ -60,6 +62,11 @@ googleid = { module = "com.google.android.libraries.identity.googleid:googleid",
 androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-test-espresso" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
