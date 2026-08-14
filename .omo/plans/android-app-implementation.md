@@ -141,7 +141,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): API 29·최신 API 에뮬레이터에서 촬영→검토→교체→고지 승인; 영구 거부와 손상 URI에서 대체 CTA와 draft 보존 확인. Evidence `<attemptDir>/task-6-android-app-implementation.png`.
   Commit: Y | `feat(camera): 식물 사진 촬영과 처리 동의 흐름 구현`
 
-- [ ] 7. Plant.id 식별 프록시와 후보 화면 구현
+- [x] 7. Plant.id 식별 프록시와 후보 화면 구현
   Recommended task executor category: `deep`
   What to do / Must NOT do: Cloud Function에서 Plant.id API key를 보관하고 임시 Storage 사진을 전송해 Pending/Candidates/NoCandidates/Failed typed 응답으로 변환한다. 상위 3개 후보를 신뢰도 내림차순으로 표시하고 후보 선택 전 확정을 막으며, 낮은 신뢰도는 참고 정보로만 표시한다. double submit은 idempotency key로 한 요청만 만들고 provider 내부 오류를 사용자 진단처럼 노출하지 않는다.
   Parallelization: Wave 2 | Blocked by: 3, 6 | Blocks: 8, 17
