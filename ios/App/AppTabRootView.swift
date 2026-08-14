@@ -4,9 +4,21 @@ import SwiftUI
 struct AppTabRootView: View {
     let tab: AppTab
     let openDetail: () -> Void
+    let openCamera: () -> Void
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
 
     var body: some View {
+        if tab == .collection {
+            PlantCollectionView(
+                openLegacyDetail: openDetail,
+                openCamera: openCamera
+            )
+        } else {
+            placeholder
+        }
+    }
+
+    private var placeholder: some View {
         VStack(spacing: 16) {
             Image(systemName: tab.systemImage + ".fill")
                 .font(.system(size: 52))
@@ -14,15 +26,6 @@ struct AppTabRootView: View {
                 .accessibilityHidden(true)
             Text(tab.title)
                 .font(PlanteriorTypography.screenTitle)
-            if tab == .collection {
-                ForEach(
-                    Array(collection.plants.enumerated()),
-                    id: \.offset
-                ) { _, plant in
-                    Text(plant.displayName)
-                        .accessibilityIdentifier("collection.plant-row")
-                }
-            }
             PlanteriorPrimaryButton("상세 보기", action: openDetail)
                 .frame(maxWidth: 240)
                 .accessibilityLabel("\(tab.title) 상세 보기")

@@ -403,6 +403,83 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "10" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter PlantCollectionTests
+  task_10_derived_data="$attempt_dir/DerivedData"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
+    -derivedDataPath "$task_10_derived_data" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  task_10_tests="
+testSearchDetailTimelineAndDeleteConfirmation
+testFilteredEmptyDoesNotClaimCollectionIsEmpty
+testLoadingStateDoesNotLeakPrivateContent
+testErrorStateDoesNotLeakPrivateContent
+testPartialStateDoesNotLeakPrivateContent
+testStaleStateDoesNotLeakPrivateContent
+"
+  primary_result=""
+  for test_name in $task_10_tests; do
+    result_path="$attempt_dir/task-10-$test_name.xcresult"
+    xcodebuild \
+      -quiet \
+      -project "$repo_root/ios/Planterior.xcodeproj" \
+      -scheme Planterior \
+      -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
+      -derivedDataPath "$task_10_derived_data" \
+      -resultBundlePath "$result_path" \
+      -parallel-testing-enabled NO \
+      CODE_SIGNING_ALLOWED=NO \
+      test-without-building \
+      -only-testing:"PlanteriorUITests/PlantCollectionUITests/$test_name"
+    if [ -z "$primary_result" ]; then
+      primary_result="$result_path"
+    fi
+  done
+  screenshot_path="$attempt_dir/task-10-ios-app-implementation.png"
+  attachments_dir="$attempt_dir/task-10-attachments"
+  xcrun xcresulttool export attachments \
+    --path "$primary_result" \
+    --output-path "$attachments_dir"
+  attachment_file="$(find "$attachments_dir" \
+    -type f -name '*task-10-ios-app-implementation*' -print | head -1)"
+  if [ -z "$attachment_file" ]; then
+    attachment_file="$(find "$attachments_dir" \
+      -type f -name '*.png' -print | head -1)"
+  fi
+  cp "$attachment_file" "$screenshot_path"
+  python3 - "$attempt_dir/task-10-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 10,
+            "searchAndSort": "passed",
+            "detailDraft": "passed",
+            "healthTimeline": "passed",
+            "deleteConfirmationCancel": "passed",
+            "filteredEmpty": "passed",
+            "stateFixtures": "passed",
+            "evidencePNG": "task-10-ios-app-implementation.png"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_10_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

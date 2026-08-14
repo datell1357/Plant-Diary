@@ -1,0 +1,93 @@
+import XCTest
+
+@MainActor
+final class PlantCollectionUITests: XCTestCase {
+    func testSearchDetailTimelineAndDeleteConfirmation() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launch()
+
+        app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.textFields["collection.search"].waitForExistence(timeout: 5))
+        app.textFields["collection.search"].tap()
+        app.textFields["collection.search"].typeText("몬")
+        XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = "task-10-ios-app-implementation"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["collection.row.0"].tap()
+
+        XCTAssertTrue(app.textFields["plant.detail.nickname"].waitForExistence(timeout: 5))
+        app.textFields["plant.detail.location"].tap()
+        app.textFields["plant.detail.location"].typeText("거실\n")
+        app.textFields["plant.detail.private-memo"].tap()
+        app.textFields["plant.detail.private-memo"].typeText("창가에서 관리\n")
+        app.buttons["plant.detail.save"].tap()
+        app.textFields["plant.detail.note"].tap()
+        app.textFields["plant.detail.note"].typeText("새잎이 자랐어요\n")
+        app.buttons["plant.detail.add-note"].tap()
+        XCTAssertTrue(app.staticTexts["plant.detail.timeline"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        app.buttons["plant.detail.delete"].tap()
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["plant.detail.delete-confirm"].waitForExistence(timeout: 5)
+        )
+        app.buttons.matching(
+            identifier: "plant.detail.delete-cancel"
+        ).firstMatch.tap()
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        XCTAssertTrue(app.buttons["plant.detail.delete"].exists)
+    }
+
+    func testFilteredEmptyDoesNotClaimCollectionIsEmpty() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launch()
+
+        app.buttons["tab.collection"].tap()
+        let search = app.textFields["collection.search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 2))
+        search.typeText("없는 식물")
+        XCTAssertTrue(app.staticTexts["검색 결과가 없어요"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["등록한 식물이 없어요"].exists)
+    }
+
+    func testLoadingStateDoesNotLeakPrivateContent() {
+        assertState("loading", label: "도감을 불러오는 중")
+    }
+
+    func testErrorStateDoesNotLeakPrivateContent() {
+        assertState("error", label: "도감을 불러오지 못했어요")
+    }
+
+    func testPartialStateDoesNotLeakPrivateContent() {
+        assertState("partial", label: "일부 식물 정보만 표시 중이에요.")
+    }
+
+    func testStaleStateDoesNotLeakPrivateContent() {
+        assertState("stale", label: "저장된 정보를 표시하고 있어요.")
+    }
+
+    private func assertState(_ state: String, label: String) {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_COLLECTION_PRIVATE_FIXTURE"] = "1"
+        app.launchEnvironment["QA_COLLECTION_STATE"] = state
+        app.launch()
+        app.buttons["tab.collection"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts[label].waitForExistence(timeout: 5)
+                || app.progressIndicators[label].exists
+        )
+        XCTAssertFalse(app.staticTexts["비공개 식물"].exists)
+    }
+}

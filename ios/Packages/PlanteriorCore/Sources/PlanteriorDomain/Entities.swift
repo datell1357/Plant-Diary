@@ -17,6 +17,30 @@ public struct PersonalPlant: Codable, Equatable, Sendable {
     public let lastWateredDate: CalendarDate?
     public let revision: Revision
     public let updatedAt: Instant
+
+    public init(
+        id: PersonalPlantID,
+        displayName: String,
+        contentID: PlantContentID?,
+        registrationMethod: RegistrationMethod,
+        representativePhotoPath: String?,
+        location: String?,
+        note: String?,
+        lastWateredDate: CalendarDate?,
+        revision: Revision,
+        updatedAt: Instant
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.contentID = contentID
+        self.registrationMethod = registrationMethod
+        self.representativePhotoPath = representativePhotoPath
+        self.location = location
+        self.note = note
+        self.lastWateredDate = lastWateredDate
+        self.revision = revision
+        self.updatedAt = updatedAt
+    }
 }
 
 public struct SymptomGuidance: Codable, Equatable, Sendable {
@@ -157,31 +181,5 @@ public struct AccountDeletionRequest: Codable, Equatable, Sendable {
     public let scheduledFor: Instant
     public let status: DeletionStatus
     public let completedAt: Instant?
-    public let revision: Revision
-}
-
-public struct NotificationDelivery: Codable, Equatable, Sendable {
-    public let id: NotificationDeliveryID
-    public let plantID: PersonalPlantID?
-    public let scheduledFor: Instant
-    public let deliveredAt: Instant?
-    public let status: DeliveryStatus
-    public let deduplicationKey: String
-    public let revision: Revision
-}
-
-public struct ContentAudit: Codable, Equatable, Sendable {
-    public let id: String
-    public let contentID: String
-    public let actorID: String
-    public let action: String
-    public let changedAt: Instant
-}
-
-public struct IdentificationRequest: Codable, Equatable, Sendable {
-    public let id: IdentificationRequestID
-    public let temporaryOriginalPath: String
-    public let createdAt: Instant
-    public let expiresAt: Instant
     public let revision: Revision
 }

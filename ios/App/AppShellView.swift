@@ -8,6 +8,16 @@ struct AppShellView: View {
     @State private var showsLogin = false
     @State private var showsOnboarding = OnboardingState.shouldPresent
 
+    init() {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_INITIAL_TAB"] == "collection" {
+                var state = AppNavigationState()
+                state.select(.collection)
+                _navigation = State(initialValue: state)
+            }
+        #endif
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             tabContent
@@ -99,6 +109,9 @@ struct AppShellView: View {
             }
         }
         .onChange(of: auth.isSignedIn) { _, isSignedIn in
+            LocalPlantCollectionStore.shared.mount(
+                accountID: auth.accountID?.rawValue
+            )
             guard isSignedIn else {
                 navigation = AppNavigationState()
                 return
@@ -163,9 +176,11 @@ struct AppShellView: View {
 
     private func tabStack(tab: AppTab, path: Binding<[AppRoute]>) -> some View {
         NavigationStack(path: path) {
-            AppTabRootView(tab: tab) {
-                navigation.push(.tabDetail(tab))
-            }
+            AppTabRootView(
+                tab: tab,
+                openDetail: { navigation.push(.tabDetail(tab)) },
+                openCamera: { navigation.presentCamera() }
+            )
             .navigationDestination(for: AppRoute.self) { route in
                 AppRouteDestination(route: route)
             }

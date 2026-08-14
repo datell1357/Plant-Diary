@@ -1,15 +1,56 @@
 import Foundation
 import PlanteriorData
+import PlanteriorDomain
 
 @MainActor
 final class LocalPlantCollectionStore: ObservableObject {
     static let shared = LocalPlantCollectionStore()
-    @Published private(set) var plants: [PlantRegistrationDraft] = []
+    @Published var plants: [PlantRegistrationDraft] = []
+    @Published var healthNotes: [Int: [String]] = [:]
+    @Published private(set) var scrollAnchor: Int?
+    @Published var snapshotState = CollectionViewState.content
+    @Published private(set) var saveError: String?
+    private var accountID = "signed-out"
+    private let defaults = UserDefaults.standard
+    private var plantsKey: String {
+        "collection.\(accountID).plants"
+    }
 
-    private init() {}
+    private var notesKey: String {
+        "collection.\(accountID).health-notes"
+    }
+
+    private init() {
+        restore()
+    }
+
+    func mount(accountID: String?) {
+        self.accountID = accountID ?? "signed-out"
+        restore()
+    }
+
+    private func restore() {
+        plants = []
+        healthNotes = [:]
+        scrollAnchor = nil
+        if let data = defaults.data(forKey: plantsKey) {
+            plants = (try? JSONDecoder().decode(
+                [PlantRegistrationDraft].self,
+                from: data
+            )) ?? []
+        }
+        if let data = defaults.data(forKey: notesKey) {
+            healthNotes = (try? JSONDecoder().decode(
+                [Int: [String]].self,
+                from: data
+            )) ?? [:]
+        }
+        restoreScrollAnchor()
+    }
 
     func save(_ draft: PlantRegistrationDraft) {
         plants.append(draft)
+        persist()
     }
 
     func contains(_ plantID: String) -> Bool {
@@ -19,4 +60,111 @@ final class LocalPlantCollectionStore: ObservableObject {
     func existingName(for plantID: String) -> String? {
         plants.first { $0.plantID?.rawValue == plantID }?.displayName
     }
+
+    func remove(at index: Int) {
+        guard plants.indices.contains(index) else {
+            return
+        }
+        plants.remove(at: index)
+        healthNotes[index] = nil
+        defaults.set(true, forKey: "collection.\(accountID).tombstone.\(index)")
+        persist()
+    }
+
+    func update(
+        at index: Int,
+        displayName: String,
+        location: String?,
+        note: String?,
+        lastWateredOn: CalendarDate?
+    ) throws {
+        guard plants.indices.contains(index) else {
+            return
+        }
+        let coordinator = try PlantCareDetailCoordinator(
+            plant: personalPlant(at: index)
+        )
+        try coordinator.validateEdits(
+            location: location ?? "",
+            privateMemo: note ?? ""
+        )
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_COLLECTION_SAVE_FAILURE"] == "1" {
+                saveError = "변경사항을 저장하지 못했어요."
+                throw CollectionSaveError.failed
+            }
+        #endif
+        let current = plants[index]
+        plants[index] = PlantRegistrationDraft(
+            plantID: current.plantID,
+            displayName: displayName,
+            representativePhoto: current.representativePhoto,
+            lastWateredOn: lastWateredOn,
+            registrationMethod: current.registrationMethod,
+            location: location,
+            privateMemo: note
+        )
+        persist()
+        saveError = nil
+    }
+
+    func addHealthNote(_ note: String, at index: Int) {
+        healthNotes[index, default: []].append(note)
+        persist()
+    }
+
+    func rememberScrollAnchor(_ index: Int) {
+        scrollAnchor = index
+        defaults.set(index, forKey: "collection.\(accountID).scroll-anchor")
+    }
+
+    func restoreScrollAnchor() {
+        guard defaults.object(
+            forKey: "collection.\(accountID).scroll-anchor"
+        ) != nil else {
+            return
+        }
+        scrollAnchor = defaults.integer(
+            forKey: "collection.\(accountID).scroll-anchor"
+        )
+    }
+
+    private func personalPlant(at index: Int) throws -> PersonalPlant {
+        let draft = plants[index]
+        return try PersonalPlant(
+            id: PersonalPlantID.parse("local-\(index)"),
+            displayName: draft.displayName,
+            contentID: draft.plantID,
+            registrationMethod: draft.registrationMethod,
+            representativePhotoPath: nil,
+            location: draft.location,
+            note: draft.privateMemo,
+            lastWateredDate: draft.lastWateredOn,
+            revision: Revision.parse(0),
+            updatedAt: Instant.parse("2026-08-14T00:00:00Z")
+        )
+    }
+
+    func persist() {
+        defaults.set(
+            try? JSONEncoder().encode(plants),
+            forKey: plantsKey
+        )
+        defaults.set(
+            try? JSONEncoder().encode(healthNotes),
+            forKey: notesKey
+        )
+    }
+}
+
+enum CollectionViewState: String {
+    case loading
+    case content
+    case error
+    case partial
+    case stale
+}
+
+enum CollectionSaveError: Error {
+    case failed
 }

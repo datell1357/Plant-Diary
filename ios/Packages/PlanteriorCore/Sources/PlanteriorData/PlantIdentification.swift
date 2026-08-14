@@ -45,25 +45,31 @@ public protocol PlantIdentificationService: Sendable {
     ) -> AsyncStream<IdentificationState>
 }
 
-public struct PlantRegistrationDraft: Equatable, Sendable {
+public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
     public let plantID: PlantContentID?
     public let displayName: String
     public let representativePhoto: Data?
     public let lastWateredOn: CalendarDate?
     public let registrationMethod: RegistrationMethod
+    public let location: String?
+    public let privateMemo: String?
 
     public init(
         plantID: PlantContentID?,
         displayName: String,
         representativePhoto: Data?,
         lastWateredOn: CalendarDate?,
-        registrationMethod: RegistrationMethod
+        registrationMethod: RegistrationMethod,
+        location: String? = nil,
+        privateMemo: String? = nil
     ) {
         self.plantID = plantID
         self.displayName = displayName
         self.representativePhoto = representativePhoto
         self.lastWateredOn = lastWateredOn
         self.registrationMethod = registrationMethod
+        self.location = location
+        self.privateMemo = privateMemo
     }
 }
 
