@@ -1,6 +1,7 @@
 package com.planterior.helper.identify
 
 import android.content.Context
+import androidx.core.net.toUri
 import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
@@ -34,7 +35,7 @@ internal fun photoIdentificationHandoff(context: Context): PhotoIdentificationHa
         backend,
         PrivatePhotoBytes { uri ->
             withContext(Dispatchers.IO) {
-                context.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use {
+                context.contentResolver.openInputStream(uri.toUri())?.use {
                     it.readBytes()
                 } ?: throw IOException("Photo unavailable")
             }
