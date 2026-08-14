@@ -1,0 +1,242 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.7.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+Calculating task graph as configuration cache cannot be reused due to --write-verification-metadata
+> Task :core:designsystem:preBuild UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :core:database:preBuild UP-TO-DATE
+> Task :feature:auth:preBuild UP-TO-DATE
+> Task :core:data:preBuild UP-TO-DATE
+> Task :core:model:preBuild UP-TO-DATE
+> Task :feature:camera:preBuild UP-TO-DATE
+> Task :feature:identify:preBuild UP-TO-DATE
+> Task :feature:home:preBuild UP-TO-DATE
+> Task :core:data:preDebugBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :core:model:preDebugBuild UP-TO-DATE
+> Task :feature:auth:preDebugBuild UP-TO-DATE
+> Task :core:designsystem:preDebugBuild UP-TO-DATE
+> Task :feature:home:preDebugBuild UP-TO-DATE
+> Task :feature:camera:preDebugBuild UP-TO-DATE
+> Task :core:database:preDebugBuild UP-TO-DATE
+> Task :feature:identify:preDebugBuild UP-TO-DATE
+> Task :feature:identify:extractDebugSupportedLocales
+> Task :core:database:extractDebugSupportedLocales
+> Task :feature:home:extractDebugSupportedLocales
+> Task :core:designsystem:extractDebugSupportedLocales
+> Task :app:generateDebugBuildConfig
+> Task :feature:auth:extractDebugSupportedLocales
+> Task :core:model:extractDebugSupportedLocales
+> Task :core:data:extractDebugSupportedLocales
+> Task :feature:camera:extractDebugSupportedLocales
+> Task :feature:auth:processDebugNavigationResources
+> Task :feature:home:processDebugNavigationResources
+> Task :feature:camera:processDebugNavigationResources
+> Task :core:data:processDebugNavigationResources
+> Task :feature:identify:processDebugNavigationResources
+> Task :core:designsystem:processDebugNavigationResources
+> Task :core:model:processDebugNavigationResources
+> Task :core:database:processDebugNavigationResources
+> Task :app:extractDebugSupportedLocales
+> Task :feature:home:generateDebugResources
+> Task :core:designsystem:generateDebugResources
+> Task :core:database:generateDebugResources
+> Task :feature:identify:generateDebugResources
+> Task :core:data:generateDebugResources
+> Task :core:model:generateDebugResources
+> Task :feature:auth:generateDebugBuildConfig
+> Task :app:mapDebugSourceSetPaths
+> Task :feature:camera:generateDebugResources
+> Task :feature:auth:generateDebugResources FROM-CACHE
+> Task :feature:auth:writeDebugAarMetadata
+> Task :feature:auth:javaPreCompileDebug
+> Task :feature:auth:extractDeepLinksDebug
+> Task :core:designsystem:packageDebugResources
+> Task :feature:identify:packageDebugResources
+> Task :core:data:packageDebugResources
+> Task :feature:home:packageDebugResources
+> Task :feature:camera:packageDebugResources
+> Task :core:model:packageDebugResources
+> Task :core:database:packageDebugResources
+> Task :feature:auth:packageDebugResources
+> Task :feature:auth:processDebugManifest
+> Task :core:model:javaPreCompileDebug FROM-CACHE
+> Task :feature:identify:parseDebugLocalResources
+> Task :core:database:parseDebugLocalResources
+> Task :feature:camera:parseDebugLocalResources
+> Task :feature:auth:parseDebugLocalResources
+> Task :core:designsystem:parseDebugLocalResources
+> Task :core:model:parseDebugLocalResources
+> Task :feature:home:parseDebugLocalResources
+> Task :core:data:parseDebugLocalResources
+> Task :core:data:javaPreCompileDebug FROM-CACHE
+> Task :core:designsystem:javaPreCompileDebug FROM-CACHE
+> Task :feature:camera:javaPreCompileDebug FROM-CACHE
+> Task :feature:home:javaPreCompileDebug FROM-CACHE
+> Task :feature:identify:javaPreCompileDebug FROM-CACHE
+> Task :core:data:writeDebugAarMetadata
+> Task :core:designsystem:writeDebugAarMetadata
+> Task :core:model:writeDebugAarMetadata
+> Task :feature:camera:writeDebugAarMetadata
+> Task :feature:auth:generateDebugRFile
+> Task :feature:camera:generateDebugRFile
+> Task :feature:home:generateDebugRFile
+> Task :core:data:generateDebugRFile
+> Task :core:model:generateDebugRFile
+> Task :core:designsystem:generateDebugRFile
+> Task :feature:identify:generateDebugRFile
+> Task :core:database:generateDebugRFile
+> Task :core:data:extractDeepLinksDebug FROM-CACHE
+> Task :core:database:writeDebugAarMetadata
+> Task :core:database:javaPreCompileDebug
+> Task :core:database:extractDeepLinksDebug FROM-CACHE
+> Task :feature:identify:writeDebugAarMetadata
+> Task :core:model:extractDeepLinksDebug FROM-CACHE
+> Task :feature:home:writeDebugAarMetadata
+> Task :feature:auth:mapDebugSourceSetPaths
+> Task :feature:identify:extractDeepLinksDebug FROM-CACHE
+> Task :feature:home:extractDeepLinksDebug FROM-CACHE
+> Task :feature:camera:extractDeepLinksDebug FROM-CACHE
+> Task :core:data:mapDebugSourceSetPaths
+> Task :core:data:processDebugManifest
+> Task :feature:identify:processDebugManifest
+> Task :feature:home:processDebugManifest
+> Task :feature:camera:mapDebugSourceSetPaths
+> Task :feature:camera:processDebugManifest
+> Task :core:database:mapDebugSourceSetPaths
+> Task :feature:home:mapDebugSourceSetPaths
+> Task :feature:identify:mapDebugSourceSetPaths
+> Task :core:database:processDebugManifest
+> Task :feature:auth:generateDebugAssets UP-TO-DATE
+> Task :core:database:generateDebugAssets UP-TO-DATE
+> Task :core:data:generateDebugAssets UP-TO-DATE
+> Task :feature:home:compileDebugLibraryResources
+> Task :core:database:compileDebugLibraryResources
+> Task :feature:identify:compileDebugLibraryResources
+> Task :feature:camera:compileDebugLibraryResources
+> Task :feature:auth:compileDebugLibraryResources
+> Task :feature:identify:generateDebugAssets UP-TO-DATE
+> Task :feature:home:generateDebugAssets UP-TO-DATE
+> Task :feature:camera:generateDebugAssets UP-TO-DATE
+> Task :feature:home:mergeDebugAssets
+> Task :feature:identify:mergeDebugAssets
+> Task :core:database:mergeDebugAssets
+> Task :feature:camera:mergeDebugAssets
+> Task :feature:auth:mergeDebugAssets
+> Task :feature:camera:preDebugUnitTestBuild UP-TO-DATE
+> Task :core:data:mergeDebugAssets
+> Task :core:data:compileDebugLibraryResources
+> Task :app:generateDebugLocaleConfig
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :feature:camera:mapDebugUnitTestSourceSetPaths
+> Task :feature:camera:generateDebugUnitTestResources FROM-CACHE
+> Task :feature:camera:checkDebugUnitTestAarMetadata
+> Task :core:designsystem:extractDeepLinksDebug FROM-CACHE
+> Task :core:designsystem:mapDebugSourceSetPaths
+> Task :core:designsystem:compileDebugLibraryResources FROM-CACHE
+> Task :core:model:mapDebugSourceSetPaths
+> Task :core:model:compileDebugLibraryResources FROM-CACHE
+> Task :core:designsystem:generateDebugAssets UP-TO-DATE
+> Task :core:designsystem:mergeDebugAssets
+> Task :core:model:generateDebugAssets UP-TO-DATE
+> Task :core:designsystem:processDebugManifest
+> Task :core:model:mergeDebugAssets
+> Task :core:model:processDebugManifest
+> Task :app:processDebugNavigationResources
+> Task :app:javaPreCompileDebug FROM-CACHE
+> Task :app:parseDebugLocalResources
+> Task :app:checkDebugAarMetadata
+> Task :app:generateDebugRFile
+> Task :app:compileDebugNavigationResources
+> Task :core:model:compileDebugKotlin
+> Task :core:model:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:model:processDebugJavaRes
+> Task :core:model:bundleLibCompileToJarDebug
+> Task :core:model:bundleLibRuntimeToJarDebug
+> Task :feature:camera:mergeDebugUnitTestResources
+> Task :core:designsystem:compileDebugKotlin
+> Task :core:designsystem:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:designsystem:processDebugJavaRes
+> Task :core:designsystem:bundleLibCompileToJarDebug
+> Task :feature:camera:mergeDebugUnitTestManifest
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :core:designsystem:bundleLibRuntimeToJarDebug
+> Task :app:processDebugMainManifest
+> Task :app:mergeDebugResources
+> Task :app:processDebugManifest
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :feature:camera:processDebugUnitTestManifest
+> Task :app:mergeDebugAssets
+> Task :app:mergeDebugUnitTestManifest
+> Task :app:processDebugUnitTestManifest
+> Task :app:koverFindJar
+> Task :app:processDebugManifestForPackage
+> Task :feature:camera:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :feature:camera:generateDebugUnitTestAssets UP-TO-DATE
+> Task :feature:camera:mergeDebugUnitTestAssets
+> Task :feature:identify:compileDebugKotlin
+> Task :feature:identify:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:identify:bundleLibCompileToJarDebug
+> Task :feature:identify:bundleLibRuntimeToJarDebug
+> Task :feature:identify:processDebugJavaRes
+> Task :feature:home:compileDebugKotlin
+> Task :feature:home:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:home:processDebugJavaRes
+> Task :feature:home:bundleLibRuntimeToJarDebug
+> Task :feature:home:bundleLibCompileToJarDebug
+> Task :feature:camera:processDebugUnitTestResources
+> Task :feature:camera:packageDebugUnitTestForUnitTest
+> Task :feature:camera:generateDebugUnitTestConfig
+> Task :app:processDebugResources
+> Task :app:packageDebugUnitTestForUnitTest
+> Task :app:generateDebugUnitTestConfig
+> Task :feature:camera:compileDebugKotlin
+> Task :feature:camera:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:camera:bundleLibCompileToJarDebug
+> Task :feature:camera:processDebugJavaRes
+> Task :feature:camera:bundleLibRuntimeToJarDebug
+
+> Task :feature:camera:compileDebugUnitTestKotlin
+w: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/feature/camera/src/test/kotlin/com/planterior/helper/feature/camera/CameraScreenTest.kt:22:33 'fun createComposeRule(effectContext: CoroutineContext = ...): ComposeContentTestRule' is deprecated. Use `androidx.compose.ui.test.junit4.v2.createComposeRule` instead. The v2 APIs use StandardTestDispatcher instead of UnconfinedTestDispatcher, which aligns with standard coroutine behavior by queuing tasks rather than executing them immediately. Tests relying on immediate execution may require explicit synchronization. Please refer to the migration guide for more details.
+
+> Task :feature:camera:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:camera:processDebugUnitTestJavaRes
+> Task :feature:camera:testDebugUnitTest
+> Task :core:database:kspDebugKotlin
+> Task :core:database:compileDebugKotlin
+> Task :core:database:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:database:bundleLibCompileToJarDebug
+> Task :core:database:bundleLibRuntimeToJarDebug
+> Task :core:database:processDebugJavaRes
+> Task :core:data:compileDebugKotlin
+> Task :core:data:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:data:processDebugJavaRes
+> Task :core:data:bundleLibRuntimeToJarDebug
+> Task :core:data:bundleLibCompileToJarDebug
+> Task :feature:auth:compileDebugKotlin
+> Task :feature:auth:compileDebugJavaWithJavac
+> Task :feature:auth:processDebugJavaRes
+> Task :feature:auth:bundleLibRuntimeToJarDebug
+> Task :feature:auth:bundleLibCompileToJarDebug
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToCompileJar
+
+> Task :app:compileDebugUnitTestKotlin
+w: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/navigation/IdentificationLifecycleRestorationTest.kt:25:29 'fun createComposeRule(effectContext: CoroutineContext = ...): ComposeContentTestRule' is deprecated. Use `androidx.compose.ui.test.junit4.v2.createComposeRule` instead. The v2 APIs use StandardTestDispatcher instead of UnconfinedTestDispatcher, which aligns with standard coroutine behavior by queuing tasks rather than executing them immediately. Tests relying on immediate execution may require explicit synchronization. Please refer to the migration guide for more details.
+w: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/navigation/PlanteriorNavigationTest.kt:42:33 'fun createComposeRule(effectContext: CoroutineContext = ...): ComposeContentTestRule' is deprecated. Use `androidx.compose.ui.test.junit4.v2.createComposeRule` instead. The v2 APIs use StandardTestDispatcher instead of UnconfinedTestDispatcher, which aligns with standard coroutine behavior by queuing tasks rather than executing them immediately. Tests relying on immediate execution may require explicit synchronization. Please refer to the migration guide for more details.
+
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+> Task :app:testDebugUnitTest
+
+[Incubating] Problems report is available at: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 50s
+187 actionable tasks: 167 executed, 20 from cache
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.7.0/userguide/configuration_cache_enabling.html

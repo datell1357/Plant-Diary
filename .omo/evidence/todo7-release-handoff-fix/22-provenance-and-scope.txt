@@ -1,0 +1,20 @@
+base=42e5171450c1761160159db87d9317ffa45cb77e
+head=42e5171450c1761160159db87d9317ffa45cb77e
+branch=feat-day/todo7-release-handoff-fix
+-- changed tracked paths --
+M	app/build.gradle.kts
+M	app/src/main/kotlin/com/planterior/helper/navigation/PlanteriorNavHost.kt
+M	core/data/src/main/kotlin/com/planterior/helper/core/data/FirebaseContracts.kt
+M	feature/camera/src/main/kotlin/com/planterior/helper/feature/camera/CameraFlowController.kt
+M	feature/camera/src/main/kotlin/com/planterior/helper/feature/camera/CameraRoute.kt
+M	feature/camera/src/test/kotlin/com/planterior/helper/feature/camera/CameraFlowContractTest.kt
+M	functions/src/plant-identification-runtime.test.ts
+M	gradle/libs.versions.toml
+M	gradle/verification-metadata.xml
+-- untracked implementation paths --
+app/src/debug/kotlin/com/planterior/helper/identify/PhotoIdentificationHandoffFactory.kt
+app/src/main/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoff.kt
+app/src/release/kotlin/com/planterior/helper/identify/PhotoIdentificationHandoffFactory.kt
+app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt
+functions/src/plant-identification-handoff.emulator-spec.ts
+-- forbidden scope status --

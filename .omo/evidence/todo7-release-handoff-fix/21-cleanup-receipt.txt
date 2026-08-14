@@ -1,0 +1,5 @@
+debug_journal=REMOVED
+firestore_debug_log=REMOVED
+gradle_daemons=STOPPED
+owned_emulator_ports=CLEAN
+shared_preexisting_ports=UNTOUCHED

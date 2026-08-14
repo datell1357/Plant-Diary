@@ -1,0 +1,259 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.7.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+> Task :core:data:preBuild UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :feature:home:preBuild UP-TO-DATE
+> Task :feature:camera:preBuild UP-TO-DATE
+> Task :feature:identify:preBuild UP-TO-DATE
+> Task :feature:auth:preBuild UP-TO-DATE
+> Task :core:database:preBuild UP-TO-DATE
+> Task :core:designsystem:preBuild UP-TO-DATE
+> Task :core:model:preBuild UP-TO-DATE
+> Task :core:model:preDebugBuild UP-TO-DATE
+> Task :feature:auth:preDebugBuild UP-TO-DATE
+> Task :feature:identify:preDebugBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :feature:home:preDebugBuild UP-TO-DATE
+> Task :core:database:preDebugBuild UP-TO-DATE
+> Task :core:data:preDebugBuild UP-TO-DATE
+> Task :core:designsystem:preDebugBuild UP-TO-DATE
+> Task :feature:camera:preDebugBuild UP-TO-DATE
+> Task :core:data:extractDebugSupportedLocales FROM-CACHE
+> Task :feature:auth:extractDebugSupportedLocales FROM-CACHE
+> Task :app:generateDebugBuildConfig FROM-CACHE
+> Task :feature:identify:extractDebugSupportedLocales FROM-CACHE
+> Task :core:designsystem:extractDebugSupportedLocales FROM-CACHE
+> Task :feature:home:extractDebugSupportedLocales FROM-CACHE
+> Task :core:model:extractDebugSupportedLocales FROM-CACHE
+> Task :core:database:extractDebugSupportedLocales FROM-CACHE
+> Task :feature:camera:extractDebugSupportedLocales FROM-CACHE
+> Task :feature:identify:processDebugNavigationResources FROM-CACHE
+> Task :core:database:processDebugNavigationResources FROM-CACHE
+> Task :core:designsystem:processDebugNavigationResources FROM-CACHE
+> Task :core:model:processDebugNavigationResources FROM-CACHE
+> Task :core:data:processDebugNavigationResources FROM-CACHE
+> Task :feature:camera:processDebugNavigationResources FROM-CACHE
+> Task :feature:auth:processDebugNavigationResources FROM-CACHE
+> Task :feature:home:processDebugNavigationResources FROM-CACHE
+> Task :core:designsystem:generateDebugResources FROM-CACHE
+> Task :core:database:generateDebugResources FROM-CACHE
+> Task :feature:home:generateDebugResources FROM-CACHE
+> Task :core:data:generateDebugResources FROM-CACHE
+> Task :app:extractDebugSupportedLocales FROM-CACHE
+> Task :core:model:generateDebugResources FROM-CACHE
+> Task :feature:identify:generateDebugResources FROM-CACHE
+> Task :feature:camera:generateDebugResources FROM-CACHE
+> Task :feature:auth:generateDebugBuildConfig FROM-CACHE
+> Task :feature:auth:generateDebugResources FROM-CACHE
+> Task :feature:home:packageDebugResources FROM-CACHE
+> Task :core:designsystem:packageDebugResources FROM-CACHE
+> Task :core:data:packageDebugResources FROM-CACHE
+> Task :core:model:packageDebugResources FROM-CACHE
+> Task :feature:identify:packageDebugResources FROM-CACHE
+> Task :core:database:packageDebugResources FROM-CACHE
+> Task :feature:camera:packageDebugResources FROM-CACHE
+> Task :feature:auth:packageDebugResources FROM-CACHE
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugLocaleConfig FROM-CACHE
+> Task :app:generateDebugResources FROM-CACHE
+> Task :app:packageDebugResources FROM-CACHE
+> Task :app:processDebugNavigationResources FROM-CACHE
+> Task :core:database:parseDebugLocalResources FROM-CACHE
+> Task :core:database:generateDebugRFile FROM-CACHE
+> Task :feature:auth:parseDebugLocalResources FROM-CACHE
+> Task :core:database:javaPreCompileDebug FROM-CACHE
+> Task :feature:home:parseDebugLocalResources FROM-CACHE
+> Task :core:database:extractDeepLinksDebug FROM-CACHE
+> Task :core:database:writeDebugAarMetadata
+> Task :core:designsystem:parseDebugLocalResources FROM-CACHE
+> Task :feature:auth:generateDebugRFile FROM-CACHE
+> Task :feature:home:generateDebugRFile FROM-CACHE
+> Task :feature:home:javaPreCompileDebug FROM-CACHE
+> Task :feature:auth:javaPreCompileDebug FROM-CACHE
+> Task :feature:camera:parseDebugLocalResources FROM-CACHE
+> Task :feature:auth:writeDebugAarMetadata
+> Task :feature:home:writeDebugAarMetadata
+> Task :core:designsystem:generateDebugRFile FROM-CACHE
+> Task :feature:auth:extractDeepLinksDebug FROM-CACHE
+> Task :feature:camera:generateDebugRFile FROM-CACHE
+> Task :feature:home:extractDeepLinksDebug FROM-CACHE
+> Task :core:database:processDebugManifest FROM-CACHE
+> Task :feature:camera:javaPreCompileDebug FROM-CACHE
+> Task :core:database:mapDebugSourceSetPaths
+> Task :feature:auth:processDebugManifest FROM-CACHE
+> Task :feature:home:processDebugManifest FROM-CACHE
+> Task :feature:camera:writeDebugAarMetadata
+> Task :core:database:compileDebugLibraryResources FROM-CACHE
+> Task :core:database:generateDebugAssets UP-TO-DATE
+> Task :feature:identify:parseDebugLocalResources FROM-CACHE
+> Task :feature:camera:extractDeepLinksDebug FROM-CACHE
+> Task :feature:auth:mapDebugSourceSetPaths
+> Task :feature:home:mapDebugSourceSetPaths
+> Task :feature:home:compileDebugLibraryResources FROM-CACHE
+> Task :feature:home:generateDebugAssets UP-TO-DATE
+> Task :feature:auth:compileDebugLibraryResources FROM-CACHE
+> Task :feature:auth:generateDebugAssets UP-TO-DATE
+> Task :core:data:parseDebugLocalResources FROM-CACHE
+> Task :feature:identify:generateDebugRFile FROM-CACHE
+> Task :feature:identify:javaPreCompileDebug FROM-CACHE
+> Task :feature:camera:processDebugManifest FROM-CACHE
+> Task :feature:auth:mergeDebugAssets
+> Task :core:database:mergeDebugAssets
+> Task :feature:home:mergeDebugAssets
+> Task :feature:camera:mapDebugSourceSetPaths
+> Task :core:data:generateDebugRFile FROM-CACHE
+> Task :feature:identify:writeDebugAarMetadata
+> Task :feature:identify:extractDeepLinksDebug FROM-CACHE
+> Task :core:data:javaPreCompileDebug FROM-CACHE
+> Task :feature:camera:compileDebugLibraryResources FROM-CACHE
+> Task :core:model:parseDebugLocalResources FROM-CACHE
+> Task :feature:camera:generateDebugAssets UP-TO-DATE
+> Task :core:data:writeDebugAarMetadata
+> Task :feature:identify:processDebugManifest FROM-CACHE
+> Task :feature:camera:mergeDebugAssets
+> Task :core:data:extractDeepLinksDebug FROM-CACHE
+> Task :feature:identify:mapDebugSourceSetPaths
+> Task :core:model:generateDebugRFile FROM-CACHE
+> Task :feature:identify:compileDebugLibraryResources FROM-CACHE
+> Task :feature:identify:generateDebugAssets UP-TO-DATE
+> Task :core:data:processDebugManifest FROM-CACHE
+> Task :feature:identify:mergeDebugAssets
+> Task :core:data:mapDebugSourceSetPaths
+> Task :core:data:compileDebugLibraryResources FROM-CACHE
+> Task :core:data:generateDebugAssets UP-TO-DATE
+> Task :core:data:mergeDebugAssets
+> Task :app:parseDebugLocalResources FROM-CACHE
+> Task :app:generateDebugRFile FROM-CACHE
+> Task :app:javaPreCompileDebug FROM-CACHE
+> Task :app:compileDebugNavigationResources FROM-CACHE
+> Task :core:model:compileDebugKotlin FROM-CACHE
+> Task :core:designsystem:compileDebugKotlin FROM-CACHE
+> Task :core:model:javaPreCompileDebug FROM-CACHE
+> Task :core:designsystem:javaPreCompileDebug FROM-CACHE
+> Task :core:model:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:designsystem:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:designsystem:writeDebugAarMetadata
+> Task :core:designsystem:extractDeepLinksDebug FROM-CACHE
+> Task :core:model:extractDeepLinksDebug FROM-CACHE
+> Task :core:model:writeDebugAarMetadata
+> Task :core:designsystem:processDebugManifest FROM-CACHE
+> Task :core:model:processDebugManifest FROM-CACHE
+> Task :core:designsystem:mapDebugSourceSetPaths
+> Task :core:designsystem:bundleLibCompileToJarDebug
+> Task :core:model:bundleLibCompileToJarDebug
+> Task :core:model:mapDebugSourceSetPaths
+> Task :core:model:compileDebugLibraryResources FROM-CACHE
+> Task :core:designsystem:compileDebugLibraryResources FROM-CACHE
+> Task :core:model:generateDebugAssets UP-TO-DATE
+> Task :core:designsystem:generateDebugAssets UP-TO-DATE
+> Task :core:model:mergeDebugAssets
+> Task :core:designsystem:mergeDebugAssets
+> Task :core:designsystem:bundleLibRuntimeToJarDebug
+> Task :core:model:bundleLibRuntimeToJarDebug
+> Task :core:model:processDebugJavaRes
+> Task :core:designsystem:processDebugJavaRes
+> Task :feature:camera:compileDebugKotlin FROM-CACHE
+> Task :feature:camera:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:home:compileDebugKotlin FROM-CACHE
+> Task :feature:camera:bundleLibCompileToJarDebug
+> Task :feature:identify:compileDebugKotlin FROM-CACHE
+> Task :feature:home:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:identify:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:camera:bundleLibRuntimeToJarDebug
+> Task :feature:identify:bundleLibCompileToJarDebug
+> Task :feature:home:bundleLibCompileToJarDebug
+> Task :feature:camera:processDebugJavaRes
+> Task :feature:home:bundleLibRuntimeToJarDebug
+> Task :feature:home:processDebugJavaRes
+> Task :feature:identify:bundleLibRuntimeToJarDebug
+> Task :app:mergeDebugResources FROM-CACHE
+> Task :feature:identify:processDebugJavaRes
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug FROM-CACHE
+> Task :app:checkDebugAarMetadata
+> Task :app:processDebugMainManifest FROM-CACHE
+> Task :app:processDebugManifest FROM-CACHE
+> Task :app:processDebugManifestForPackage FROM-CACHE
+> Task :app:processDebugResources FROM-CACHE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest FROM-CACHE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:packageDebugUnitTestForUnitTest
+> Task :app:mergeDebugUnitTestManifest
+> Task :app:processDebugUnitTestManifest
+> Task :app:generateDebugUnitTestConfig
+> Task :app:koverFindJar
+> Task :core:database:kspDebugKotlin
+> Task :core:database:compileDebugKotlin FROM-CACHE
+> Task :core:database:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:database:bundleLibCompileToJarDebug
+> Task :core:database:bundleLibRuntimeToJarDebug
+> Task :core:database:processDebugJavaRes
+> Task :core:data:compileDebugKotlin FROM-CACHE
+> Task :core:data:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:data:bundleLibCompileToJarDebug
+> Task :core:data:bundleLibRuntimeToJarDebug
+> Task :core:data:processDebugJavaRes
+> Task :feature:auth:compileDebugKotlin FROM-CACHE
+> Task :feature:auth:compileDebugJavaWithJavac FROM-CACHE
+> Task :feature:auth:processDebugJavaRes
+> Task :feature:auth:bundleLibCompileToJarDebug
+> Task :feature:auth:bundleLibRuntimeToJarDebug
+> Task :app:compileDebugKotlin FROM-CACHE
+> Task :app:compileDebugJavaWithJavac FROM-CACHE
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+
+> Task :app:compileDebugUnitTestKotlin FAILED
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:41:23 Unresolved reference 'ApprovedPhotoIdentificationHandoff'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:41:67 Unresolved reference 'PrivatePhotoBytes'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:64:24 Cannot infer type for type parameter 'T'. Specify it explicitly.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:67:22 Unresolved reference 'path'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:69:45 Unresolved reference 'contentType'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:70:41 Unresolved reference 'ownerUid'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:71:51 Unresolved reference 'requestId'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:72:70 Unresolved reference 'expiresAt'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:73:43 Unresolved reference 'bytes'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:76:31 Unresolved reference 'path'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:77:52 Unresolved reference 'toDate'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:78:31 Unresolved reference 'expiresAt'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:78:60 Unresolved reference 'toDate'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:90:17 Unresolved reference 'ApprovedPhotoIdentificationHandoff'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:92:21 Unresolved reference 'PrivatePhotoBytes'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:94:27 Unresolved reference 'IdentificationHandoffFailure'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:101:17 Unresolved reference 'ApprovedPhotoIdentificationHandoff'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:101:61 Unresolved reference 'PrivatePhotoBytes'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:102:27 Unresolved reference 'IdentificationHandoffFailure'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:117:19 Unresolved reference 'IdentificationHandoffFailure'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:121:31 Unresolved reference 'IdentificationHandoffException'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:122:44 Unresolved reference 'IdentificationHandoffException'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:122:76 Unresolved reference 'reason'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:123:31 Unresolved reference 'name'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:129:9 Unresolved reference 'IdentificationHandoffBackend'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:131:23 Unresolved reference 'TemporaryIdentificationOriginal'.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:146:33 Argument type mismatch: actual type is 'Timestamp', but 'String' was expected.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:146:63 Outer class 'class ApprovedPhotoIdentificationHandoffTest : Any' of non-inner class cannot be used as receiver.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:148:25 Argument type mismatch: actual type is 'Timestamp', but 'String' was expected.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:149:29 Outer class 'class ApprovedPhotoIdentificationHandoffTest : Any' of non-inner class cannot be used as receiver.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:155:33 Outer class 'class ApprovedPhotoIdentificationHandoffTest : Any' of non-inner class cannot be used as receiver.
+e: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/app/src/test/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoffTest.kt:160:47 Unresolved reference 'TemporaryIdentificationOriginal'.
+
+[Incubating] Problems report is available at: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileDebugUnitTestKotlin' (registered by plugin 'com.android.internal.application').
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.btapi.BuildToolsApiCompilationWork
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 12s
+171 actionable tasks: 62 executed, 109 from cache

@@ -1,0 +1,193 @@
+TAP version 13
+# Subtest: Apple start callback and completion return a server-validated id token once
+ok 1 - Apple start callback and completion return a server-validated id token once
+  ---
+  duration_ms: 29.565666
+  type: 'test'
+  ...
+# Subtest: replayed Apple completion is rejected before token exchange
+ok 2 - replayed Apple completion is rejected before token exchange
+  ---
+  duration_ms: 1.284917
+  type: 'test'
+  ...
+# Subtest: malformed callback wrong state expired session and wrong PKCE are rejected
+ok 3 - malformed callback wrong state expired session and wrong PKCE are rejected
+  ---
+  duration_ms: 0.776
+  type: 'test'
+  ...
+# Subtest: issuer audience expiry and nonce verification failures from injectable exchange stay typed and redact tokens
+ok 4 - issuer audience expiry and nonce verification failures from injectable exchange stay typed and redact tokens
+  ---
+  duration_ms: 0.449416
+  type: 'test'
+  ...
+# Subtest: strict input rejects unknown fields and callback errors never include provider payload
+ok 5 - strict input rejects unknown fields and callback errors never include provider payload
+  ---
+  duration_ms: 0.303416
+  type: 'test'
+  ...
+# Subtest: owner is derived from auth and duplicate idempotency key applies once
+ok 6 - owner is derived from auth and duplicate idempotency key applies once
+  ---
+  duration_ms: 3.174625
+  type: 'test'
+  ...
+# Subtest: auth spoof malformed operation and revision conflict are typed errors
+ok 7 - auth spoof malformed operation and revision conflict are typed errors
+  ---
+  duration_ms: 1.192709
+  type: 'test'
+  ...
+# Subtest: owner callable rejects impossible dates enums and unknown sensitive fields
+ok 8 - owner callable rejects impossible dates enums and unknown sensitive fields
+  ---
+  duration_ms: 0.320542
+  type: 'test'
+  ...
+# Subtest: server-only delivery weather deletion and item writes validate state
+ok 9 - server-only delivery weather deletion and item writes validate state
+  ---
+  duration_ms: 6.345458
+  type: 'test'
+  ...
+# {"verifications":{"app":"MISSING","auth":"MISSING"},"logging.googleapis.com/labels":{"firebase-log-type":"callable-request-verification"},"severity":"DEBUG","message":"Callable request verification passed"}
+# Subtest: compiled identifyPlant endpoint rejects a request with missing App Check
+ok 10 - compiled identifyPlant endpoint rejects a request with missing App Check
+  ---
+  duration_ms: 40.366166
+  type: 'test'
+  ...
+# {"severity":"WARNING","message":"Failed to validate AppCheck token. Error: invalid App Check fixture\\n    at appCheck.verifyToken (/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/lib/index.test.js:53:15)\\n    at checkAppCheckToken (/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/firebase-functions/lib/common/providers/https.js:365:97)\\n    at checkTokens (/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/firebase-functions/lib/common/providers/https.js:290:89)\\n    at /Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/firebase-functions/lib/common/providers/https.js:478:30\\n    at /Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/firebase-functions/lib/common/providers/https.js:421:13\\n    at cors (/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/cors/lib/index.js:188:7)\\n    at /Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/cors/lib/index.js:224:17\\n    at originCallback (/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/cors/lib/index.js:214:15)\\n    at /Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/cors/lib/index.js:219:13\\n    at optionsCallback (/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions/node_modules/cors/lib/index.js:199:9)"}
+# {"verifications":{"app":"INVALID","auth":"MISSING"},"logging.googleapis.com/labels":{"firebase-log-type":"callable-request-verification"},"severity":"WARNING","message":"Callable request verification failed: AppCheck token was rejected."}
+# Subtest: compiled identifyPlant endpoint rejects a request with invalid App Check
+ok 11 - compiled identifyPlant endpoint rejects a request with invalid App Check
+  ---
+  duration_ms: 11.084375
+  type: 'test'
+  ...
+# Subtest: Plant.id HTTP 429 maps to rate_limited without exposing the provider body
+ok 12 - Plant.id HTTP 429 maps to rate_limited without exposing the provider body
+  ---
+  duration_ms: 1.158708
+  type: 'test'
+  ...
+# Subtest: Plant.id HTTP 503 maps to provider_unavailable without exposing the provider body
+ok 13 - Plant.id HTTP 503 maps to provider_unavailable without exposing the provider body
+  ---
+  duration_ms: 0.17225
+  type: 'test'
+  ...
+# Subtest: Plant.id HTTP timeout maps to an actionable timeout failure
+ok 14 - Plant.id HTTP timeout maps to an actionable timeout failure
+  ---
+  duration_ms: 0.531167
+  type: 'test'
+  ...
+# Subtest: production store returns not_found without calling the provider when the request is missing
+ok 15 - production store returns not_found without calling the provider when the request is missing
+  ---
+  duration_ms: 0.305542
+  type: 'test'
+  ...
+# Subtest: production store rejects arbitrary and cross-owner original paths before download
+ok 16 - production store rejects arbitrary and cross-owner original paths before download
+  ---
+  duration_ms: 0.214625
+  type: 'test'
+  ...
+# Subtest: production store serializes concurrent claims and leaves personal plant storage unchanged
+ok 17 - production store serializes concurrent claims and leaves personal plant storage unchanged
+  ---
+  duration_ms: 0.398583
+  type: 'test'
+  ...
+# Subtest: production store reclaims a stuck pending claim with a fresh retry key
+ok 18 - production store reclaims a stuck pending claim with a fresh retry key
+  ---
+  duration_ms: 0.14875
+  type: 'test'
+  ...
+# Subtest: production store replays one to three stored candidates
+ok 19 - production store replays one to three stored candidates
+  ---
+  duration_ms: 1.361667
+  type: 'test'
+  ...
+# Subtest: production store rejects four stored candidates
+ok 20 - production store rejects four stored candidates
+  ---
+  duration_ms: 0.592792
+  type: 'test'
+  ...
+# Subtest: production store persists only the confidence-descending top three provider candidates
+ok 21 - production store persists only the confidence-descending top three provider candidates
+  ---
+  duration_ms: 1.297208
+  type: 'test'
+  ...
+# Subtest: normalizes provider candidates by descending confidence and limits the result
+ok 22 - normalizes provider candidates by descending confidence and limits the result
+  ---
+  duration_ms: 1.782416
+  type: 'test'
+  ...
+# Subtest: returns no candidates when the provider returns an empty suggestion list
+ok 23 - returns no candidates when the provider returns an empty suggestion list
+  ---
+  duration_ms: 0.362708
+  type: 'test'
+  ...
+# Subtest: rejects malformed callable input as invalid argument
+ok 24 - rejects malformed callable input as invalid argument
+  ---
+  duration_ms: 0.397666
+  type: 'test'
+  ...
+# Subtest: rejects malformed provider candidates instead of leaking partial data
+ok 25 - rejects malformed provider candidates instead of leaking partial data
+  ---
+  duration_ms: 9.051917
+  type: 'test'
+  ...
+# Subtest: maps timeout to an actionable public failure
+ok 26 - maps timeout to an actionable public failure
+  ---
+  duration_ms: 0.151083
+  type: 'test'
+  ...
+# Subtest: maps rate_limited to an actionable public failure
+ok 27 - maps rate_limited to an actionable public failure
+  ---
+  duration_ms: 0.734583
+  type: 'test'
+  ...
+# Subtest: maps provider_unavailable to an actionable public failure
+ok 28 - maps provider_unavailable to an actionable public failure
+  ---
+  duration_ms: 3.503083
+  type: 'test'
+  ...
+# Subtest: deduplicates concurrent submissions with the same idempotency key
+ok 29 - deduplicates concurrent submissions with the same idempotency key
+  ---
+  duration_ms: 0.495042
+  type: 'test'
+  ...
+# Subtest: rejects unauthenticated and cross-owner requests before calling Plant.id
+ok 30 - rejects unauthenticated and cross-owner requests before calling Plant.id
+  ---
+  duration_ms: 0.9285
+  type: 'test'
+  ...
+1..30
+# tests 30
+# suites 0
+# pass 30
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 721.696625

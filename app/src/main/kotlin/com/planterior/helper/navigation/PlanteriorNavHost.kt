@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavHostController
@@ -31,6 +32,7 @@ import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
 import com.planterior.helper.feature.identify.IdentificationRoute
 import com.planterior.helper.identify.debugIdentificationGateway
+import com.planterior.helper.identify.photoIdentificationHandoff
 import com.planterior.helper.ui.PlaceholderScreen
 import kotlinx.coroutines.launch
 
@@ -206,6 +208,11 @@ fun PlanteriorNavHost(
             }
         }
         composable<PlanteriorRoute.Camera> {
+            val context = LocalContext.current
+            val photoHandoff =
+                remember(context) {
+                    lazy(LazyThreadSafetyMode.NONE) { photoIdentificationHandoff(context) }
+                }
             CameraRoute(
                 onExit = { navController.popBackStack() },
                 onDirectRegistration = {
@@ -213,6 +220,7 @@ fun PlanteriorNavHost(
                     navController.navigate(PlanteriorRoute.Registration)
                 },
                 onIdentificationRequested = { submission ->
+                    photoHandoff.value.prepare(submission)
                     registrationHandoff.clear()
                     navController.navigate(PlanteriorRoute.Identification(submission.requestId))
                 },

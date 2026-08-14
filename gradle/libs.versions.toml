@@ -20,6 +20,7 @@ coroutines = "1.11.0"
 firebase-firestore = "26.5.0"
 firebase-auth = "24.2.0"
 firebase-functions = "22.1.1"
+firebase-storage = "22.0.1"
 credentials = "1.6.0"
 googleid = "1.2.0"
 androidx-browser = "1.10.0"
@@ -56,6 +57,7 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 firebase-firestore = { module = "com.google.firebase:firebase-firestore", version.ref = "firebase-firestore" }
 firebase-auth = { module = "com.google.firebase:firebase-auth", version.ref = "firebase-auth" }
 firebase-functions = { module = "com.google.firebase:firebase-functions", version.ref = "firebase-functions" }
+firebase-storage = { module = "com.google.firebase:firebase-storage", version.ref = "firebase-storage" }
 androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
 androidx-credentials-play-services-auth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }

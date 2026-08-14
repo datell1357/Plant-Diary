@@ -1,0 +1,19 @@
+accepted release auth source modes: environment, Gradle properties, ignored local.properties
+release auth source precedence passed: Gradle properties > environment > local.properties
+rejected escaped malformed auth fixture safely: quote-escaping
+rejected escaped malformed auth fixture safely: backslash-escaping
+rejected escaped malformed auth fixture safely: whitespace-only
+rejected escaped malformed auth fixture safely: newline-escaping
+rejected signing fixture early: wrong-store-password
+rejected signing fixture early: wrong-key-password
+rejected signing fixture early: missing-alias
+rejected signing fixture early: certificate-only-alias
+rejected signing fixture early: corrupt-keystore
+accepted signing fixture: separate store and key passwords
+configuration-cache stale credential mutation rejected: store and key passwords
+retained release class: com.planterior.helper.auth.AuthRuntime
+retained release class: com.planterior.helper.feature.auth.GoogleCredentialProvider
+retained release class: com.planterior.helper.feature.auth.AppleWebAuthProvider
+retained release class: com.planterior.helper.feature.auth.FirebaseIdentityAdapter
+retained release class: com.planterior.helper.feature.auth.FirebaseAppleCallable
+release auth contract passed: missing/malformed auth and invalid signing credentials rejected early; signed supplied build retained Google+Apple production paths

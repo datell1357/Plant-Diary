@@ -3,6 +3,7 @@ package com.planterior.helper.feature.camera
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -125,7 +126,7 @@ class CameraFlowContractTest {
     }
 
     @Test
-    fun `disclosure approval invokes exactly one request with per-request consent`() {
+    fun `disclosure approval invokes exactly one request with per-request consent`() = runBlocking {
         val fixture = fixture()
         fixture.flow.photoPrepared(photo)
         fixture.flow.requestIdentification()
@@ -183,7 +184,7 @@ class CameraFlowContractTest {
     private class RecordingGateway : IdentificationGateway {
         val submissions = mutableListOf<PhotoSubmission>()
 
-        override fun submit(submission: PhotoSubmission) {
+        override suspend fun submit(submission: PhotoSubmission) {
             submissions += submission
         }
     }

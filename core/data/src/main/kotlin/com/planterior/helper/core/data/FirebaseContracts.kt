@@ -276,8 +276,8 @@ data class ShopItemDto(
 data class IdentificationRequestDto(
     override val ownerUid: String,
     val temporaryOriginalPath: String,
-    val createdAt: String,
-    val expiresAt: String,
+    val createdAt: Timestamp,
+    val expiresAt: Timestamp,
     override val revision: Long,
     override val expectedRevision: Long,
     override val idempotencyKey: String,
