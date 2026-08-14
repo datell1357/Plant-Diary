@@ -57,7 +57,7 @@ function storedResponse(value: unknown): IdentificationResponse {
     case "no_candidates":
       return { kind: "no_candidates" };
     case "candidates": {
-      if (!Array.isArray(parsed.candidates) || parsed.candidates.length < 1 || parsed.candidates.length > 5) {
+      if (!Array.isArray(parsed.candidates) || parsed.candidates.length < 1 || parsed.candidates.length > 3) {
         throw new IdentificationRuntimeError("malformed_state");
       }
       return { kind: "candidates", candidates: parsed.candidates.map(storedCandidate) };

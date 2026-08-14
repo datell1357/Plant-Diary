@@ -71,7 +71,7 @@ private fun parseCandidates(value: Any?): IdentificationResult {
         IdentificationFailureReason.MALFORMED_RESPONSE
     )
     val candidates = values.mapNotNull(::parseCandidate)
-    if (candidates.size != values.size || candidates.size !in 1..5) {
+    if (candidates.size != values.size || candidates.size !in 1..3) {
         return IdentificationResult.Failed(IdentificationFailureReason.MALFORMED_RESPONSE)
     }
     return runCatching { IdentificationResult.Candidates(candidates) }

@@ -47,15 +47,16 @@ class IdentificationControllerTest {
     }
 
     @Test
-    fun `response enforces one to five candidate bounds`() {
+    fun `response enforces one to three candidate bounds`() {
         // Given
         val controller = IdentificationController(requestId, onConfirmed = {})
 
         // When / Then
         runCatching { controller.show(IdentificationResult.Candidates(emptyList())) }
             .onSuccess { throw AssertionError("empty candidates must be rejected") }
-        runCatching { controller.show(IdentificationResult.Candidates(List(6) { monstera })) }
-            .onSuccess { throw AssertionError("more than five candidates must be rejected") }
+        controller.show(IdentificationResult.Candidates(List(3) { monstera }))
+        runCatching { controller.show(IdentificationResult.Candidates(List(4) { monstera })) }
+            .onSuccess { throw AssertionError("more than three candidates must be rejected") }
     }
 
     @Test
