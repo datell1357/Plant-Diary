@@ -15,6 +15,7 @@ class PlanteriorRouteResolverTest {
             PlanteriorRouteResolver.resolve("planterior://identify/fixture-success/extra"),
         )
     }
+
     @Test
     fun `each bottom tab deep link resolves to its top level route`() {
         assertEquals(PlanteriorRoute.Home, PlanteriorRouteResolver.resolve("planterior://home"))

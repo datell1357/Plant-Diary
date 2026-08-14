@@ -46,9 +46,9 @@ class FirebaseIdentificationGateway(
 }
 
 internal fun parseIdentificationResult(value: Any?): IdentificationResult {
-    val data = value as? Map<*, *> ?: return IdentificationResult.Failed(
-        IdentificationFailureReason.MALFORMED_RESPONSE
-    )
+    val data =
+        value as? Map<*, *>
+            ?: return IdentificationResult.Failed(IdentificationFailureReason.MALFORMED_RESPONSE)
     return when (data["kind"]) {
         "pending" -> IdentificationResult.Pending
         "no_candidates" -> IdentificationResult.NoCandidates
@@ -67,9 +67,9 @@ internal fun parseIdentificationResult(value: Any?): IdentificationResult {
 }
 
 private fun parseCandidates(value: Any?): IdentificationResult {
-    val values = value as? List<*> ?: return IdentificationResult.Failed(
-        IdentificationFailureReason.MALFORMED_RESPONSE
-    )
+    val values =
+        value as? List<*>
+            ?: return IdentificationResult.Failed(IdentificationFailureReason.MALFORMED_RESPONSE)
     val candidates = values.mapNotNull(::parseCandidate)
     if (candidates.size != values.size || candidates.size !in 1..3) {
         return IdentificationResult.Failed(IdentificationFailureReason.MALFORMED_RESPONSE)
@@ -84,15 +84,15 @@ private fun parseCandidate(value: Any?): IdentificationCandidate? {
     val scientificName = data["scientificName"] as? String ?: return null
     val confidence = (data["confidence"] as? Number)?.toDouble() ?: return null
     return runCatching {
-            IdentificationCandidate(
-                publicContentId = PlantContentId(id),
-                koreanName = data["koreanName"] as? String,
-                commonName = data["commonName"] as? String,
-                scientificName = scientificName,
-                confidence = confidence,
-                thumbnailUrl = data["thumbnailUrl"] as? String,
-            )
-        }
+        IdentificationCandidate(
+            publicContentId = PlantContentId(id),
+            koreanName = data["koreanName"] as? String,
+            commonName = data["commonName"] as? String,
+            scientificName = scientificName,
+            confidence = confidence,
+            thumbnailUrl = data["thumbnailUrl"] as? String,
+        )
+    }
         .getOrNull()
 }
 

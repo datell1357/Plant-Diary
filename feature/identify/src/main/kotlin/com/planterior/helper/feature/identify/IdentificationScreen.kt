@@ -133,7 +133,9 @@ private fun CandidateContent(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            candidate.koreanName ?: candidate.commonName ?: candidate.scientificName,
+                            candidate.koreanName
+                                ?: candidate.commonName
+                                ?: candidate.scientificName,
                             style = MaterialTheme.typography.titleMedium,
                         )
                         candidate.commonName
@@ -156,7 +158,10 @@ private fun CandidateContent(
     Button(
         onClick = onConfirm,
         enabled = state.selectedId != null,
-        modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 48.dp).testTag(IdentificationTestTags.CONFIRM),
+        modifier =
+            Modifier.fillMaxWidth()
+                .sizeIn(minHeight = 48.dp)
+                .testTag(IdentificationTestTags.CONFIRM),
     ) {
         Text("선택한 후보 확정")
     }
