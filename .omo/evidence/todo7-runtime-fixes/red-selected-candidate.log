@@ -1,0 +1,104 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.7.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+> Task :core:designsystem:preBuild UP-TO-DATE
+> Task :feature:identify:preBuild UP-TO-DATE
+> Task :feature:identify:preDebugBuild UP-TO-DATE
+> Task :core:designsystem:preDebugBuild UP-TO-DATE
+> Task :core:model:preBuild UP-TO-DATE
+> Task :core:model:preDebugBuild UP-TO-DATE
+> Task :core:designsystem:generateDebugResources UP-TO-DATE
+> Task :feature:identify:generateDebugResources UP-TO-DATE
+> Task :core:model:generateDebugResources UP-TO-DATE
+> Task :core:model:packageDebugResources UP-TO-DATE
+> Task :core:designsystem:packageDebugResources UP-TO-DATE
+> Task :feature:identify:packageDebugResources UP-TO-DATE
+> Task :feature:identify:processDebugNavigationResources UP-TO-DATE
+> Task :core:model:processDebugNavigationResources UP-TO-DATE
+> Task :core:designsystem:processDebugNavigationResources UP-TO-DATE
+> Task :feature:identify:parseDebugLocalResources UP-TO-DATE
+> Task :core:model:parseDebugLocalResources UP-TO-DATE
+> Task :core:designsystem:parseDebugLocalResources UP-TO-DATE
+> Task :feature:identify:generateDebugRFile UP-TO-DATE
+> Task :core:model:generateDebugRFile UP-TO-DATE
+> Task :core:designsystem:generateDebugRFile UP-TO-DATE
+> Task :feature:identify:javaPreCompileDebug UP-TO-DATE
+> Task :feature:identify:preDebugUnitTestBuild UP-TO-DATE
+> Task :feature:identify:writeDebugAarMetadata UP-TO-DATE
+> Task :feature:identify:mapDebugSourceSetPaths UP-TO-DATE
+> Task :feature:identify:compileDebugLibraryResources UP-TO-DATE
+> Task :feature:identify:mapDebugUnitTestSourceSetPaths UP-TO-DATE
+> Task :feature:identify:generateDebugUnitTestResources UP-TO-DATE
+> Task :core:model:compileDebugKotlin UP-TO-DATE
+> Task :core:model:javaPreCompileDebug UP-TO-DATE
+> Task :core:model:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:model:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :core:model:processDebugJavaRes UP-TO-DATE
+> Task :core:model:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:model:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:model:compileDebugLibraryResources UP-TO-DATE
+> Task :core:model:writeDebugAarMetadata UP-TO-DATE
+> Task :core:model:extractDeepLinksDebug UP-TO-DATE
+> Task :core:model:processDebugManifest UP-TO-DATE
+> Task :core:model:generateDebugAssets UP-TO-DATE
+> Task :core:model:mergeDebugAssets UP-TO-DATE
+> Task :core:designsystem:compileDebugKotlin UP-TO-DATE
+> Task :core:designsystem:javaPreCompileDebug UP-TO-DATE
+> Task :core:designsystem:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:designsystem:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :core:designsystem:processDebugJavaRes UP-TO-DATE
+> Task :core:designsystem:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :core:designsystem:mapDebugSourceSetPaths UP-TO-DATE
+> Task :core:designsystem:compileDebugLibraryResources UP-TO-DATE
+> Task :core:designsystem:writeDebugAarMetadata UP-TO-DATE
+> Task :core:designsystem:extractDeepLinksDebug UP-TO-DATE
+> Task :core:designsystem:processDebugManifest UP-TO-DATE
+> Task :core:designsystem:generateDebugAssets UP-TO-DATE
+> Task :core:designsystem:mergeDebugAssets UP-TO-DATE
+> Task :feature:identify:mergeDebugUnitTestResources UP-TO-DATE
+> Task :feature:identify:compileDebugKotlin UP-TO-DATE
+> Task :feature:identify:compileDebugJavaWithJavac NO-SOURCE
+> Task :feature:identify:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :feature:identify:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :feature:identify:checkDebugUnitTestAarMetadata UP-TO-DATE
+> Task :feature:identify:extractDeepLinksDebug UP-TO-DATE
+> Task :feature:identify:processDebugManifest UP-TO-DATE
+> Task :feature:identify:mergeDebugUnitTestManifest UP-TO-DATE
+> Task :feature:identify:processDebugUnitTestManifest UP-TO-DATE
+> Task :feature:identify:processDebugUnitTestResources UP-TO-DATE
+> Task :feature:identify:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :feature:identify:generateDebugUnitTestAssets UP-TO-DATE
+> Task :feature:identify:generateDebugAssets UP-TO-DATE
+> Task :feature:identify:mergeDebugAssets UP-TO-DATE
+> Task :feature:identify:mergeDebugUnitTestAssets UP-TO-DATE
+> Task :feature:identify:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :feature:identify:generateDebugUnitTestConfig UP-TO-DATE
+> Task :feature:identify:processDebugJavaRes UP-TO-DATE
+
+> Task :feature:identify:compileDebugUnitTestKotlin
+w: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-runtime-fixes/feature/identify/src/test/kotlin/com/planterior/helper/feature/identify/IdentificationRouteRestorationTest.kt:21:29 'fun createComposeRule(effectContext: CoroutineContext = ...): ComposeContentTestRule' is deprecated. Use `androidx.compose.ui.test.junit4.v2.createComposeRule` instead. The v2 APIs use StandardTestDispatcher instead of UnconfinedTestDispatcher, which aligns with standard coroutine behavior by queuing tasks rather than executing them immediately. Tests relying on immediate execution may require explicit synchronization. Please refer to the migration guide for more details.
+
+> Task :feature:identify:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :feature:identify:processDebugUnitTestJavaRes UP-TO-DATE
+
+> Task :feature:identify:testDebugUnitTest
+
+IdentificationRouteRestorationTest > second candidate survives saved state recreation and remains confirmable FAILED
+    java.lang.AssertionError at IdentificationRouteRestorationTest.kt:72
+
+1 test completed, 1 failed
+
+> Task :feature:identify:testDebugUnitTest FAILED
+
+[Incubating] Problems report is available at: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-runtime-fixes/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':feature:identify:testDebugUnitTest'.
+> There were failing tests. See the report at: file:///Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-runtime-fixes/feature/identify/build/reports/tests/testDebugUnitTest/index.html
+
+* Try:
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 18s
+62 actionable tasks: 2 executed, 60 up-to-date

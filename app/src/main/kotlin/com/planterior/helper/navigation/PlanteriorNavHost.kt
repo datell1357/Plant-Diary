@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -64,7 +65,10 @@ fun PlanteriorNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
     val selectedIndex = BottomTabRoutes.indexOfFirst { it == currentRoute }
-    val registrationHandoff = remember { IdentificationRegistrationHandoff() }
+    val registrationHandoff =
+        rememberSaveable(saver = IdentificationRegistrationHandoff.Saver) {
+            IdentificationRegistrationHandoff()
+        }
 
     val tabs =
         listOf(
@@ -216,9 +220,10 @@ fun PlanteriorNavHost(
         }
         composable<PlanteriorRoute.Identification> { entry ->
             val route = entry.toRoute<PlanteriorRoute.Identification>()
-            val gateway = remember(route.requestId) {
-                debugIdentificationGateway(route.requestId) ?: FirebaseIdentificationGateway()
-            }
+            val gateway =
+                remember(route.requestId) {
+                    debugIdentificationGateway(route.requestId) ?: FirebaseIdentificationGateway()
+                }
             IdentificationRoute(
                 requestIdValue = route.requestId,
                 gateway = gateway,
