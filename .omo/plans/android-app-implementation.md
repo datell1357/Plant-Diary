@@ -87,7 +87,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
 ## Todos
 > Implementation + Test = ONE todo. Never separate.
 <!-- APPEND TASK BATCHES BELOW THIS LINE WITH edit/apply_patch - never rewrite the headers above. -->
-- [ ] 1. Android 프로젝트와 품질 기반 구성
+- [x] 1. Android 프로젝트와 품질 기반 구성
   Recommended task executor category: `unspecified-high`
   What to do / Must NOT do: Gradle version catalog을 사용하는 Kotlin·Compose 멀티모듈 프로젝트를 생성한다. `app`, `core:model`, `core:designsystem`, `core:data`, `core:database`, `core:network`, `core:testing`과 기능 모듈 틀, API 29 최소 버전, 한국어 기본 locale, debug/release build type, Spotless·Android Lint·Kover·dependency verification·GitHub Actions를 구성한다. 실제 Firebase·외부 API 비밀값은 로컬 환경/CI secret에서만 주입하고 샘플 값이나 작동하지 않는 fallback을 제품 코드에 넣지 않는다.
   Parallelization: Wave 1 | Blocked by: none | Blocks: 2-18
@@ -96,7 +96,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): `./gradlew :app:installDebug` 후 `adb shell monkey -p com.planterior.helper 1`로 앱 셸 표시; 잘못된 secret 없이 release task를 실행해 명시적 구성 오류를 확인하고 값 노출이 없음을 검사. Evidence `<attemptDir>/task-1-android-app-implementation.log`.
   Commit: Y | `build(android): 안드로이드 프로젝트와 품질 검사 기반 구성`
 
-- [ ] 2. Figma 디자인 시스템과 앱 내비게이션 구현
+- [x] 2. Figma 디자인 시스템과 앱 내비게이션 구현
   Recommended task executor category: `visual-engineering`
   What to do / Must NOT do: Figma `Page 1`의 402x874 프레임, `#FCFBF7`, `#E5E7EB`, 녹색 primary, 48px 대형 모서리, 타이포·간격·아이콘을 Compose token/component로 구현한다. 홈·도감·카메라·창고·설정 5탭과 typed route, 인증 전후 그래프, cold-start 딥링크 백스택을 만든다. route에는 사용자 ID·사진 bytes·본문을 넣지 말고 불투명 domain ID만 전달한다. Figma에 없는 화면은 동일 token과 컴포넌트만 사용한다.
   Parallelization: Wave 1 | Blocked by: 1 | Blocks: 4-16, 18
@@ -105,7 +105,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): Compose UI test로 홈→도감→카메라→창고→설정 순회 및 back stack 확인; 유효하지 않은 외부 route를 `adb shell am start -W -a android.intent.action.VIEW ...`로 호출해 홈으로 안전 복귀 확인. Evidence `<attemptDir>/task-2-android-app-implementation.png`.
   Commit: Y | `feat(ui): 피그마 디자인 시스템과 앱 내비게이션 구현`
 
-- [ ] 3. Firebase 데이터 계약과 보안 규칙 구축
+- [x] 3. Firebase 데이터 계약과 보안 규칙 구축
   Recommended task executor category: `deep`
   What to do / Must NOT do: Firestore 컬렉션과 typed DTO/mapper를 사용자, 개인 식물, 공개 관리 콘텐츠, 물 주기 기록·일정·설정, 날씨 snapshot·위험, 미니홈피·배치, 아이템·보유, 공유 링크, 동의, 삭제 요청, 알림 delivery로 정의한다. Storage는 임시 식별 원본·사용자 선택 대표 사진·공유 이미지 prefix를 분리한다. Security Rules, indexes, Functions 공통 auth/validation/idempotency/revision/error 계약과 Emulator fixture를 만든다. 앱이 관리자 write를 수행하거나 다른 사용자의 존재 여부를 추측할 수 있게 하지 않는다.
   Parallelization: Wave 1 | Blocked by: 1 | Blocks: 4, 7-17
@@ -114,7 +114,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): Emulator에서 사용자 A가 자기 식물 생성·조회 성공; 사용자 B ID로 같은 문서와 파일 접근 시 `PERMISSION_DENIED`이며 응답에 외부 데이터가 없는지 검사. Evidence `<attemptDir>/task-3-android-app-implementation.json`.
   Commit: Y | `feat(db): Firebase 데이터 계약과 보안 규칙 구축`
 
-- [ ] 4. Google·Apple 로그인과 계정 동기화 구현
+- [x] 4. Google·Apple 로그인과 계정 동기화 구현
   Recommended task executor category: `deep`
   What to do / Must NOT do: Credential Manager 기반 Google 로그인과 Android 웹 인증 기반 Sign in with Apple을 Firebase Auth로 통합한다. 로그인 bottom sheet, 공급자 오류, 취소, 세션 복구, 로그아웃, 로그인 후 domain별 동기화, last sync·partial failure, 계정 전환 시 Room 계정 partition 제거를 구현한다. Apple client secret 생성은 Cloud Functions/보안 환경에 두고 앱에 private key를 포함하지 않는다. 사용자 가입 별도 이메일 폼은 만들지 않는다.
   Parallelization: Wave 2 | Blocked by: 2, 3 | Blocks: 5, 8-18
@@ -123,7 +123,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): debug fake provider로 로그인→Home→재실행 세션 복원; 실패 공급자와 네트워크 단절에서 로그인 화면 유지·재시도·타 계정 데이터 미표시 확인. Evidence `<attemptDir>/task-4-android-app-implementation.log`.
   Commit: Y | `feat(auth): 소셜 로그인과 계정 동기화 구현`
 
-- [ ] 5. 홈 대시보드와 부분 실패 상태 구현
+- [x] 5. 홈 대시보드와 부분 실패 상태 구현
   Recommended task executor category: `visual-engineering`
   What to do / Must NOT do: Figma 로그인 전·후 홈을 재현하고 인사말, 미니홈피 preview, 오늘의 관리(오늘→지연→예정 정렬), 날씨 위험 priority, 식별 CTA, 알림 진입을 구현한다. 날씨 실패는 홈 전체 실패가 아닌 Partial, sync 실패는 cached content+last sync로 표시한다. 빈 홈에서 식물·아이템 샘플을 실제 데이터처럼 꾸미지 않는다.
   Parallelization: Wave 2 | Blocked by: 2, 4 | Blocks: 18
@@ -132,7 +132,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): `connectedDebugAndroidTest`로 로그인 홈에서 식별·도감·미니홈피·설정 진입; 날씨 repository만 실패시켜 식물 관리가 유지되는지 확인. Evidence `<attemptDir>/task-5-android-app-implementation.png`.
   Commit: Y | `feat(ui): 오늘의 식물 관리를 보여주는 홈 화면 구현`
 
-- [ ] 6. 카메라·사진 선택과 처리 고지 구현
+- [x] 6. 카메라·사진 선택과 처리 고지 구현
   Recommended task executor category: `unspecified-high`
   What to do / Must NOT do: CameraX 촬영, Android Photo Picker, 앱 전용 임시 URI, EXIF 회전, 검토·교체·재촬영, 요청별 사진 처리 목적 고지를 구현한다. 카메라 권한은 촬영 선택 시에만 요청하고 거부·영구 거부 시 설정·Photo Picker·직접 등록을 제공한다. 광범위 저장소 권한을 요청하거나 고지 확인 전에 upload하지 않는다.
   Parallelization: Wave 2 | Blocked by: 2 | Blocks: 7, 8
