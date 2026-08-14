@@ -5,6 +5,17 @@ import org.junit.Test
 
 class PlanteriorRouteResolverTest {
     @Test
+    fun `identification deep link accepts only one opaque request id`() {
+        assertEquals(
+            PlanteriorRoute.Identification("fixture-success"),
+            PlanteriorRouteResolver.resolve("planterior://identify/fixture-success"),
+        )
+        assertEquals(
+            PlanteriorRoute.Home,
+            PlanteriorRouteResolver.resolve("planterior://identify/fixture-success/extra"),
+        )
+    }
+    @Test
     fun `each bottom tab deep link resolves to its top level route`() {
         assertEquals(PlanteriorRoute.Home, PlanteriorRouteResolver.resolve("planterior://home"))
         assertEquals(

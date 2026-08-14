@@ -7,12 +7,20 @@ import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeC
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
+import {
+  FirestoreIdentificationRequestStore,
+  IdentificationRuntimeError,
+  PlantIdStorageProvider,
+  productionPlantIdHttpClient,
+} from "./plant-identification-runtime.js";
+import { executePlantIdentification, PlantIdentificationError } from "./plant-identification.js";
 
 if (getApps().length === 0) initializeApp();
 const firestore = getFirestore();
 const store = new FirestoreMutationStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
 const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
+const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
 
 function requiredEnvironment(name: "APPLE_CLIENT_ID" | "APPLE_REDIRECT_URI" | "APPLE_TEAM_ID" | "APPLE_KEY_ID"): string {
   const value = process.env[name];
@@ -89,5 +97,30 @@ export const completeAppleSignIn = onCall({ secrets: [applePrivateKey] }, async 
     return await executeCompleteAppleSignIn(request.data, appleStore, exchange, new Date());
   } catch (error: unknown) {
     return appleHttpsError(error);
+  }
+});
+
+export const identifyPlant = onCall({ secrets: [plantIdApiKey] }, async (request) => {
+  try {
+    return await executePlantIdentification(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      new FirestoreIdentificationRequestStore(firestore),
+      new PlantIdStorageProvider(productionPlantIdHttpClient(plantIdApiKey.value())),
+    );
+  } catch (error: unknown) {
+    if (error instanceof PlantIdentificationError) {
+      if (error.reason === "unauthenticated") throw new HttpsError("unauthenticated", "Sign-in is required");
+      if (error.reason === "invalid_argument") throw new HttpsError("invalid-argument", "Identification request is invalid");
+      if (error.reason === "permission_denied") throw new HttpsError("permission-denied", "Request is not owned by this user");
+    }
+    if (error instanceof IdentificationRuntimeError) {
+      switch (error.reason) {
+        case "not_found": throw new HttpsError("not-found", "Identification request was not found");
+        case "permission_denied": throw new HttpsError("permission-denied", "Request is not owned by this user");
+        case "malformed_state": throw new HttpsError("failed-precondition", "Identification request is unavailable");
+      }
+    }
+    throw error;
   }
 });

@@ -27,6 +27,9 @@ import com.planterior.helper.feature.camera.CameraRoute
 import com.planterior.helper.feature.home.HomeScreen
 import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
+import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
+import com.planterior.helper.feature.identify.IdentificationRoute
+import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.ui.PlaceholderScreen
 import kotlinx.coroutines.launch
 
@@ -61,6 +64,7 @@ fun PlanteriorNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
     val selectedIndex = BottomTabRoutes.indexOfFirst { it == currentRoute }
+    val registrationHandoff = remember { IdentificationRegistrationHandoff() }
 
     val tabs =
         listOf(
@@ -200,22 +204,60 @@ fun PlanteriorNavHost(
         composable<PlanteriorRoute.Camera> {
             CameraRoute(
                 onExit = { navController.popBackStack() },
-                onDirectRegistration = { navController.navigate(PlanteriorRoute.Registration) },
+                onDirectRegistration = {
+                    registrationHandoff.clear()
+                    navController.navigate(PlanteriorRoute.Registration)
+                },
                 onIdentificationRequested = { submission ->
+                    registrationHandoff.clear()
                     navController.navigate(PlanteriorRoute.Identification(submission.requestId))
                 },
             )
         }
-        composable<PlanteriorRoute.Identification> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_identification),
-                description = stringResource(R.string.screen_identification_description),
+        composable<PlanteriorRoute.Identification> { entry ->
+            val route = entry.toRoute<PlanteriorRoute.Identification>()
+            val gateway = remember(route.requestId) {
+                debugIdentificationGateway(route.requestId) ?: FirebaseIdentificationGateway()
+            }
+            IdentificationRoute(
+                requestIdValue = route.requestId,
+                gateway = gateway,
+                onExit = { navController.popBackStack() },
+                onRetakePhoto = {
+                    navController.navigate(PlanteriorRoute.Camera) {
+                        popUpTo<PlanteriorRoute.Identification> { inclusive = true }
+                    }
+                },
+                onChangePhoto = {
+                    navController.navigate(PlanteriorRoute.Camera) {
+                        popUpTo<PlanteriorRoute.Identification> { inclusive = true }
+                    }
+                },
+                onEditManually = {
+                    registrationHandoff.clear()
+                    navController.navigate(PlanteriorRoute.Registration)
+                },
+                onRegisterManually = {
+                    registrationHandoff.clear()
+                    navController.navigate(PlanteriorRoute.Registration)
+                },
+                onConfirmed = { confirmed ->
+                    registrationHandoff.accept(confirmed)
+                    navController.navigate(PlanteriorRoute.Registration)
+                },
             )
         }
         composable<PlanteriorRoute.Registration> {
+            val candidate = registrationHandoff.confirmed?.candidate
             PlaceholderScreen(
                 title = stringResource(R.string.screen_registration),
-                description = stringResource(R.string.screen_registration_description),
+                description =
+                    candidate?.let {
+                        stringResource(
+                            R.string.screen_registration_identified_description,
+                            it.koreanName ?: it.commonName ?: it.scientificName,
+                        )
+                    } ?: stringResource(R.string.screen_registration_description),
             )
         }
         composable<PlanteriorRoute.MiniHome> {

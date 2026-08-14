@@ -29,6 +29,7 @@ object PlanteriorRouteResolver {
             "storage" -> PlanteriorRoute.Storage
             "settings" -> PlanteriorRoute.Settings
             "camera" -> PlanteriorRoute.Camera
+            "identify" -> resolveIdentification(segments)
             "registration" -> PlanteriorRoute.Registration
             "minihome" -> PlanteriorRoute.MiniHome
             "notifications" -> PlanteriorRoute.Notifications
@@ -72,6 +73,13 @@ object PlanteriorRouteResolver {
             segments.size == 2 && segments[0] == "plant" && PLANT_ID_PATTERN.matches(segments[1]) ->
                 PlanteriorRoute.PlantDetail(segments[1])
             else -> PlanteriorRoute.Home
+        }
+
+    private fun resolveIdentification(segments: List<String>): PlanteriorRoute =
+        if (segments.size == 1 && PLANT_ID_PATTERN.matches(segments[0])) {
+            PlanteriorRoute.Identification(segments[0])
+        } else {
+            PlanteriorRoute.Home
         }
 
     private fun parse(uri: String?): Pair<String, List<String>>? {
