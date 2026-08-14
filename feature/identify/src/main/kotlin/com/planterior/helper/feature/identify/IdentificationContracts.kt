@@ -26,7 +26,7 @@ sealed interface IdentificationResult {
 
     data class Candidates(val candidates: List<IdentificationCandidate>) : IdentificationResult {
         init {
-            require(candidates.size in 1..5)
+            require(candidates.size in 1..3)
             require(candidates.zipWithNext().all { (first, second) -> first.confidence >= second.confidence })
         }
     }

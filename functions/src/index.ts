@@ -100,7 +100,7 @@ export const completeAppleSignIn = onCall({ secrets: [applePrivateKey] }, async 
   }
 });
 
-export const identifyPlant = onCall({ secrets: [plantIdApiKey] }, async (request) => {
+export const identifyPlant = onCall({ enforceAppCheck: true, secrets: [plantIdApiKey] }, async (request) => {
   try {
     return await executePlantIdentification(
       request.auth === undefined ? null : { uid: request.auth.uid },

@@ -37,21 +37,26 @@ class FirebaseIdentificationGatewayTest {
     }
 
     @Test
-    fun `malformed and oversized callable payloads fail closed`() {
+    fun `callable parser accepts one to three candidates`() {
+        for (count in 1..3) {
+            // Given
+            val response = mapOf("kind" to "candidates", "candidates" to List(count, ::candidate))
+
+            // When
+            val result = parseIdentificationResult(response)
+
+            // Then
+            assertTrue(result is IdentificationResult.Candidates)
+            assertEquals(count, (result as IdentificationResult.Candidates).candidates.size)
+        }
+    }
+
+    @Test
+    fun `malformed and four-candidate callable payloads fail closed`() {
         // Given
-        val malformed = mapOf("kind" to "candidates", "candidates" to listOf(mapOf("confidence" to 3.0)))
-        val oversized =
-            mapOf(
-                "kind" to "candidates",
-                "candidates" to
-                    List(6) {
-                        mapOf(
-                            "publicContentId" to "species-$it",
-                            "scientificName" to "Species $it",
-                            "confidence" to 0.5,
-                        )
-                    },
-            )
+        val malformed =
+            mapOf("kind" to "candidates", "candidates" to listOf(mapOf("confidence" to 3.0)))
+        val oversized = mapOf("kind" to "candidates", "candidates" to List(4, ::candidate))
 
         // When
         val malformedResult = parseIdentificationResult(malformed)
@@ -67,4 +72,11 @@ class FirebaseIdentificationGatewayTest {
             oversizedResult,
         )
     }
+
+    private fun candidate(index: Int) =
+        mapOf(
+            "publicContentId" to "species-$index",
+            "scientificName" to "Species $index",
+            "confidence" to 1.0 - index / 10.0,
+        )
 }
