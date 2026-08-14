@@ -1,0 +1,41 @@
+owned_ports firestore=52482 storage=52483 hub=52484 logging=52485
+i  emulators: Starting emulators: firestore, storage
+i  emulators: Detected demo project ID "demo-planterior", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+i  firestore: Firestore Emulator logging to firestore-debug.log
+✔  firestore: Firestore Emulator was started in standard edition.
+✔  firestore: Firestore Emulator UI websocket is running on 9150.
+i  Running script: cd '/Users/yeoreum/Documents/Planterior_Helper-worktrees/todo7-release-handoff-fix/functions' && npx --yes node@22 --test lib/**/*.emulator-spec.js
+TAP version 13
+# Subtest: real Firestore emulator preserves revision idempotency ownership and server timestamps
+ok 1 - real Firestore emulator preserves revision idempotency ownership and server timestamps
+  ---
+  duration_ms: 732.830041
+  type: 'test'
+  ...
+# Subtest: approved photo handoff is retrieved from real local emulators before provider invocation
+ok 2 - approved photo handoff is retrieved from real local emulators before provider invocation
+  ---
+  duration_ms: 700.944959
+  type: 'test'
+  ...
+# Subtest: missing emulator request returns not_found without provider transmission
+ok 3 - missing emulator request returns not_found without provider transmission
+  ---
+  duration_ms: 18.31425
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 989.612459
+✔  Script exited successfully (code 0)
+i  emulators: Shutting down emulators.
+i  firestore: Stopping Firestore Emulator
+i  storage: Stopping Storage Emulator
+i  hub: Stopping emulator hub
+i  logging: Stopping Logging Emulator

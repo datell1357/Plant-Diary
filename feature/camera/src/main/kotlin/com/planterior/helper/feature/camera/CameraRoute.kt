@@ -52,7 +52,7 @@ import kotlinx.coroutines.withContext
 fun CameraRoute(
     onExit: () -> Unit,
     onDirectRegistration: () -> Unit,
-    onIdentificationRequested: (PhotoSubmission) -> Unit,
+    onIdentificationRequested: suspend (PhotoSubmission) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -175,7 +175,7 @@ fun CameraRoute(
         onReplace = controller::replacePhoto,
         onRetake = { controller.retakePhoto(context.currentCameraPermissionAfterRequest()) },
         onSubmit = controller::requestIdentification,
-        onApprove = controller::approveDisclosure,
+        onApprove = { scope.launch { controller.approveDisclosure() } },
         onCancelDisclosure = controller::cancelDisclosure,
         onBack = {
             when (state) {

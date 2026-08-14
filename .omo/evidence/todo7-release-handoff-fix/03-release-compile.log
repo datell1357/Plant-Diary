@@ -1,0 +1,119 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.7.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
+> Task :feature:camera:preBuild UP-TO-DATE
+> Task :core:database:preBuild UP-TO-DATE
+> Task :feature:auth:preBuild UP-TO-DATE
+> Task :core:designsystem:preBuild UP-TO-DATE
+> Task :core:data:preBuild UP-TO-DATE
+> Task :core:database:preReleaseBuild UP-TO-DATE
+> Task :core:model:preBuild UP-TO-DATE
+> Task :core:model:preReleaseBuild UP-TO-DATE
+> Task :feature:auth:preReleaseBuild UP-TO-DATE
+> Task :feature:home:preBuild UP-TO-DATE
+> Task :feature:home:preReleaseBuild UP-TO-DATE
+> Task :core:data:preReleaseBuild UP-TO-DATE
+> Task :core:designsystem:preReleaseBuild UP-TO-DATE
+> Task :feature:camera:preReleaseBuild UP-TO-DATE
+> Task :feature:identify:preBuild UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :feature:identify:preReleaseBuild UP-TO-DATE
+> Task :app:validateReleaseAuthConfiguration
+> Task :feature:identify:extractReleaseSupportedLocales FROM-CACHE
+> Task :feature:home:extractReleaseSupportedLocales FROM-CACHE
+> Task :feature:camera:extractReleaseSupportedLocales FROM-CACHE
+> Task :core:database:extractReleaseSupportedLocales FROM-CACHE
+> Task :core:designsystem:extractReleaseSupportedLocales FROM-CACHE
+> Task :core:data:extractReleaseSupportedLocales FROM-CACHE
+> Task :feature:auth:extractReleaseSupportedLocales FROM-CACHE
+> Task :core:model:extractReleaseSupportedLocales FROM-CACHE
+> Task :feature:home:processReleaseNavigationResources FROM-CACHE
+> Task :feature:auth:processReleaseNavigationResources FROM-CACHE
+> Task :feature:camera:processReleaseNavigationResources FROM-CACHE
+> Task :core:data:processReleaseNavigationResources FROM-CACHE
+> Task :core:database:processReleaseNavigationResources FROM-CACHE
+> Task :core:designsystem:processReleaseNavigationResources FROM-CACHE
+> Task :feature:identify:processReleaseNavigationResources FROM-CACHE
+> Task :feature:home:generateReleaseResources FROM-CACHE
+> Task :core:model:processReleaseNavigationResources FROM-CACHE
+> Task :core:data:generateReleaseResources FROM-CACHE
+> Task :core:database:generateReleaseResources FROM-CACHE
+> Task :core:model:generateReleaseResources FROM-CACHE
+> Task :feature:identify:generateReleaseResources FROM-CACHE
+> Task :core:designsystem:generateReleaseResources FROM-CACHE
+> Task :feature:camera:generateReleaseResources FROM-CACHE
+> Task :feature:auth:generateReleaseBuildConfig
+> Task :app:validateReleaseSigningConfiguration
+> Task :app:validateReleaseConfiguration
+> Task :app:preReleaseBuild
+> Task :feature:auth:generateReleaseResources FROM-CACHE
+> Task :app:generateReleaseBuildConfig
+> Task :app:extractReleaseSupportedLocales FROM-CACHE
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:generateReleaseResources FROM-CACHE
+> Task :feature:identify:packageReleaseResources
+> Task :core:designsystem:packageReleaseResources
+> Task :feature:home:packageReleaseResources
+> Task :core:data:packageReleaseResources
+> Task :core:database:packageReleaseResources
+> Task :feature:auth:packageReleaseResources
+> Task :core:model:packageReleaseResources
+> Task :feature:camera:packageReleaseResources
+> Task :core:data:parseReleaseLocalResources FROM-CACHE
+> Task :core:model:parseReleaseLocalResources FROM-CACHE
+> Task :feature:auth:parseReleaseLocalResources FROM-CACHE
+> Task :core:database:parseReleaseLocalResources FROM-CACHE
+> Task :core:designsystem:parseReleaseLocalResources FROM-CACHE
+> Task :feature:home:parseReleaseLocalResources FROM-CACHE
+> Task :feature:camera:parseReleaseLocalResources FROM-CACHE
+> Task :feature:identify:parseReleaseLocalResources FROM-CACHE
+> Task :core:database:generateReleaseRFile FROM-CACHE
+> Task :core:model:generateReleaseRFile FROM-CACHE
+> Task :feature:camera:generateReleaseRFile FROM-CACHE
+> Task :core:designsystem:generateReleaseRFile FROM-CACHE
+> Task :core:data:generateReleaseRFile FROM-CACHE
+> Task :feature:home:generateReleaseRFile FROM-CACHE
+> Task :feature:identify:generateReleaseRFile FROM-CACHE
+> Task :feature:auth:generateReleaseRFile FROM-CACHE
+> Task :feature:camera:javaPreCompileRelease FROM-CACHE
+> Task :feature:auth:javaPreCompileRelease FROM-CACHE
+> Task :feature:home:javaPreCompileRelease FROM-CACHE
+> Task :core:data:javaPreCompileRelease FROM-CACHE
+> Task :feature:identify:javaPreCompileRelease FROM-CACHE
+> Task :core:database:javaPreCompileRelease FROM-CACHE
+> Task :core:model:javaPreCompileRelease FROM-CACHE
+> Task :core:designsystem:javaPreCompileRelease FROM-CACHE
+> Task :app:processReleaseNavigationResources FROM-CACHE
+> Task :app:generateReleaseLocaleConfig FROM-CACHE
+> Task :app:packageReleaseResources
+> Task :app:parseReleaseLocalResources FROM-CACHE
+> Task :app:generateReleaseRFile FROM-CACHE
+> Task :core:model:compileReleaseKotlin
+> Task :core:model:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:model:bundleLibCompileToJarRelease
+> Task :core:database:kspReleaseKotlin FROM-CACHE
+> Task :core:designsystem:compileReleaseKotlin
+> Task :core:designsystem:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:designsystem:bundleLibCompileToJarRelease
+> Task :core:database:compileReleaseKotlin
+> Task :core:database:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:database:bundleLibCompileToJarRelease
+> Task :feature:identify:compileReleaseKotlin
+> Task :feature:identify:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:identify:bundleLibCompileToJarRelease
+> Task :feature:home:compileReleaseKotlin
+> Task :feature:home:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:home:bundleLibCompileToJarRelease
+> Task :core:data:compileReleaseKotlin
+> Task :core:data:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:data:bundleLibCompileToJarRelease
+> Task :feature:camera:compileReleaseKotlin
+> Task :feature:camera:compileReleaseJavaWithJavac NO-SOURCE
+> Task :feature:camera:bundleLibCompileToJarRelease
+> Task :feature:auth:compileReleaseKotlin
+> Task :feature:auth:compileReleaseJavaWithJavac
+> Task :feature:auth:bundleLibCompileToJarRelease
+> Task :app:compileReleaseKotlin
+
+BUILD SUCCESSFUL in 24s
+87 actionable tasks: 32 executed, 55 from cache
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.7.0/userguide/configuration_cache_enabling.html

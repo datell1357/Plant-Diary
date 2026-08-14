@@ -52,7 +52,7 @@ data class PhotoSubmission(
 )
 
 fun interface IdentificationGateway {
-    fun submit(submission: PhotoSubmission)
+    suspend fun submit(submission: PhotoSubmission)
 }
 
 sealed interface CameraFlowState {
@@ -183,7 +183,7 @@ class CameraFlowController(
         state = CameraFlowState.Review(disclosure.photo)
     }
 
-    fun approveDisclosure() {
+    suspend fun approveDisclosure() {
         val disclosureState = state as? CameraFlowState.Disclosure ?: return
         val submission =
             PhotoSubmission(
@@ -195,6 +195,9 @@ class CameraFlowController(
         state = CameraFlowState.Submitted(submission)
         try {
             gateway.submit(submission)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            state = CameraFlowState.Review(disclosureState.photo, PhotoError.SubmissionFailed)
+            throw error
         } catch (_: Exception) {
             state = CameraFlowState.Review(disclosureState.photo, PhotoError.SubmissionFailed)
         }

@@ -1,0 +1,10 @@
+42e5171 fix(identify): 재생성 상태와 상위 3개 후보 보장
+e5c4384 fix(api): 식별 App Check와 후보 상한 강제
+43a4dea feat(api): Plant.id 식별과 후보 확정 흐름 구현
+1ae3bea feat(camera): 식물 사진 촬영과 처리 고지 구현
+fee4880 feat(ui): 오늘의 식물 관리를 보여주는 홈 화면 구현
+96b950f fix(auth): 계정 동기화와 인증 시나리오 검증 강화
+040cca6 feat(auth): Google·Apple 로그인과 계정 동기화 구현
+9809b4e fix(data): Firebase 데이터 계약과 캐시 격리 강화
+8621902 feat(data): Firebase 데이터 계약과 로컬 캐시 구현
+233d77d feat(ui): 피그마 디자인 시스템과 앱 내비게이션 구현

@@ -3,6 +3,7 @@ import test from "node:test";
 import { TimeoutError } from "ky";
 import {
   FirestoreIdentificationRequestStore,
+  IdentificationRuntimeError,
   PlantIdHttpClient,
 } from "./plant-identification-runtime.js";
 import type { PlantIdTransport } from "./plant-identification-runtime.js";
@@ -69,7 +70,7 @@ class FakeFirestore {
   readonly requestedPaths: string[] = [];
   readonly writtenPaths: string[] = [];
 
-  constructor(data: FakeRequestData) {
+  constructor(data: FakeRequestData, private readonly exists = true) {
     this.reference = new FakeReference("users/user-a/identificationRequests/request_12345678", data);
   }
 
@@ -84,7 +85,7 @@ class FakeFirestore {
     update(reference: FakeReference, value: FakeRequestData): void;
   }) => Promise<T>): Promise<T> {
     return operation({
-      get: async (reference) => ({ exists: true, data: () => reference.data }),
+      get: async (reference) => ({ exists: this.exists, data: () => reference.data }),
       update: (reference, value) => {
         this.writtenPaths.push(reference.path);
         reference.updates.push(value);
@@ -97,6 +98,24 @@ class FakeFirestore {
 function requestData(path = "identification-originals/user-a/request_12345678/original.webp") {
   return { ownerUid: "user-a", temporaryOriginalPath: path };
 }
+
+test("production store returns not_found without calling the provider when the request is missing", async () => {
+  // Given
+  const firestore = new FakeFirestore({}, false);
+  const store = new FirestoreIdentificationRequestStore(firestore as never);
+  let providerCalls = 0;
+
+  // When / Then
+  await assert.rejects(
+    store.runOnce("user-a", "request_12345678", "operation_12345678", async () => {
+      providerCalls += 1;
+      return { kind: "no_candidates" };
+    }),
+    (error: unknown) => error instanceof IdentificationRuntimeError
+      && error.reason === "not_found",
+  );
+  assert.equal(providerCalls, 0);
+});
 
 test("production store rejects arbitrary and cross-owner original paths before download", async () => {
   for (const path of [
