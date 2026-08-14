@@ -1,13 +1,13 @@
 package com.planterior.helper.feature.identify
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.PlantContentId
 import org.junit.Assert.assertEquals
@@ -50,7 +50,9 @@ class IdentificationScreenTest {
 
         // When / Then
         compose.onNodeWithTag(IdentificationTestTags.CONFIRM).assertIsNotEnabled()
-        compose.onNodeWithTag(IdentificationTestTags.candidate(candidate.publicContentId.value)).performClick()
+        compose
+            .onNodeWithTag(IdentificationTestTags.candidate(candidate.publicContentId.value))
+            .performClick()
         compose.onNodeWithTag(IdentificationTestTags.CONFIRM).assertIsEnabled()
         assertEquals(candidate.publicContentId, selectedId)
     }
@@ -58,9 +60,10 @@ class IdentificationScreenTest {
     @Test
     fun `rate limit and no candidate states expose every recovery control`() {
         // Given
-        var state by mutableStateOf<IdentificationUiState>(
-            IdentificationUiState.Failed(IdentificationFailureReason.RATE_LIMITED)
-        )
+        var state by
+            mutableStateOf<IdentificationUiState>(
+                IdentificationUiState.Failed(IdentificationFailureReason.RATE_LIMITED)
+            )
         compose.setContent {
             PlanteriorTheme {
                 IdentificationScreen(

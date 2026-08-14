@@ -5,11 +5,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +24,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -403,9 +403,9 @@ private fun CaptureScreen(
                     ),
                 contentPadding = PaddingValues(6.dp),
                 modifier =
-                    Modifier.size(ShutterSize)
-                        .testTag(CameraTestTags.CAPTURE)
-                        .semantics { contentDescription = "촬영" },
+                    Modifier.size(ShutterSize).testTag(CameraTestTags.CAPTURE).semantics {
+                        contentDescription = "촬영"
+                    },
             ) {
                 Box(
                     Modifier.fillMaxSize()
@@ -431,14 +431,38 @@ private fun CaptureGuide(modifier: Modifier) {
         val right = size.width - inset
         val bottom = size.height - inset
         listOf(
-                Pair(androidx.compose.ui.geometry.Offset(inset, inset), androidx.compose.ui.geometry.Offset(inset + corner, inset)),
-                Pair(androidx.compose.ui.geometry.Offset(inset, inset), androidx.compose.ui.geometry.Offset(inset, inset + corner)),
-                Pair(androidx.compose.ui.geometry.Offset(right - corner, inset), androidx.compose.ui.geometry.Offset(right, inset)),
-                Pair(androidx.compose.ui.geometry.Offset(right, inset), androidx.compose.ui.geometry.Offset(right, inset + corner)),
-                Pair(androidx.compose.ui.geometry.Offset(inset, bottom), androidx.compose.ui.geometry.Offset(inset + corner, bottom)),
-                Pair(androidx.compose.ui.geometry.Offset(inset, bottom - corner), androidx.compose.ui.geometry.Offset(inset, bottom)),
-                Pair(androidx.compose.ui.geometry.Offset(right - corner, bottom), androidx.compose.ui.geometry.Offset(right, bottom)),
-                Pair(androidx.compose.ui.geometry.Offset(right, bottom - corner), androidx.compose.ui.geometry.Offset(right, bottom)),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(inset, inset),
+                    androidx.compose.ui.geometry.Offset(inset + corner, inset),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(inset, inset),
+                    androidx.compose.ui.geometry.Offset(inset, inset + corner),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(right - corner, inset),
+                    androidx.compose.ui.geometry.Offset(right, inset),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(right, inset),
+                    androidx.compose.ui.geometry.Offset(right, inset + corner),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(inset, bottom),
+                    androidx.compose.ui.geometry.Offset(inset + corner, bottom),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(inset, bottom - corner),
+                    androidx.compose.ui.geometry.Offset(inset, bottom),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(right - corner, bottom),
+                    androidx.compose.ui.geometry.Offset(right, bottom),
+                ),
+                Pair(
+                    androidx.compose.ui.geometry.Offset(right, bottom - corner),
+                    androidx.compose.ui.geometry.Offset(right, bottom),
+                ),
             )
             .forEach { (start, end) ->
                 drawLine(guideColor, start, end, strokeWidth = stroke, cap = StrokeCap.Round)
@@ -451,7 +475,10 @@ private fun CaptureGuide(modifier: Modifier) {
     }
 }
 
-private enum class CaptureActionIcon { Gallery, Flash }
+private enum class CaptureActionIcon {
+    Gallery,
+    Flash,
+}
 
 @Composable
 private fun CaptureSideAction(
@@ -479,7 +506,11 @@ private fun CaptureSideAction(
                     drawCircle(
                         CameraCaptureTokens.Foreground,
                         radius = 2.dp.toPx(),
-                        center = androidx.compose.ui.geometry.Offset(size.width * 0.72f, size.height * 0.3f),
+                        center =
+                            androidx.compose.ui.geometry.Offset(
+                                size.width * 0.72f,
+                                size.height * 0.3f,
+                            ),
                     )
                     val mountains =
                         Path().apply {

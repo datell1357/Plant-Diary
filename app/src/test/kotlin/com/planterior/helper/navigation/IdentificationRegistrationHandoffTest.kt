@@ -20,7 +20,8 @@ class IdentificationRegistrationHandoffTest {
                 confidence = 0.93,
                 thumbnailUrl = null,
             )
-        val confirmed = ConfirmedIdentification(IdentificationRequestId("request_12345678"), candidate)
+        val confirmed =
+            ConfirmedIdentification(IdentificationRequestId("request_12345678"), candidate)
         val handoff = IdentificationRegistrationHandoff()
 
         handoff.accept(confirmed)

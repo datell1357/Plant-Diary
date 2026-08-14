@@ -27,7 +27,11 @@ sealed interface IdentificationResult {
     data class Candidates(val candidates: List<IdentificationCandidate>) : IdentificationResult {
         init {
             require(candidates.size in 1..3)
-            require(candidates.zipWithNext().all { (first, second) -> first.confidence >= second.confidence })
+            require(
+                candidates.zipWithNext().all { (first, second) ->
+                    first.confidence >= second.confidence
+                }
+            )
         }
     }
 
@@ -76,6 +80,7 @@ class IdentificationController(
 ) {
     var state: IdentificationUiState by mutableStateOf(restoredState)
         private set
+
     private var confirmed = false
 
     fun show(result: IdentificationResult) {
