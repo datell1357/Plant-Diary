@@ -45,6 +45,12 @@ sealed interface PlanteriorRoute {
     /** 식물 촬영 화면. 하단 탭 가운데 카메라 액션과 홈의 식별 CTA가 연다. */
     @Serializable data object Camera : Authenticated
 
+    /** 사진 처리 고지 승인 뒤 식별 기능이 이어받는 요청. 사진이나 사용자 정보는 route에 넣지 않는다. */
+    @Serializable data class Identification(val requestId: String) : Authenticated
+
+    /** 사진 권한 없이도 열 수 있는 직접 등록 진입점. */
+    @Serializable data object Registration : Authenticated
+
     /** 미니홈피. 홈의 미리보기 카드가 연다. 하단 탭이 아니므로 탭 목록에 넣지 않는다. */
     @Serializable data object MiniHome : Authenticated
 

@@ -28,6 +28,8 @@ object AuthRouteGuard {
             PlanteriorRoute.Storage -> "planterior://storage"
             PlanteriorRoute.Settings -> "planterior://settings"
             PlanteriorRoute.Camera -> "planterior://camera"
+            is PlanteriorRoute.Identification -> "planterior://home"
+            PlanteriorRoute.Registration -> "planterior://registration"
             PlanteriorRoute.MiniHome -> "planterior://minihome"
             PlanteriorRoute.Notifications -> "planterior://notifications"
             is PlanteriorRoute.PlantDetail -> "planterior://collection/plant/${route.plantId}"

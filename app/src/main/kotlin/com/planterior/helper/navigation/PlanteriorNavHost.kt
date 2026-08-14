@@ -23,6 +23,7 @@ import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
 import com.planterior.helper.feature.auth.AuthScreen
 import com.planterior.helper.feature.auth.AuthUiState
+import com.planterior.helper.feature.camera.CameraRoute
 import com.planterior.helper.feature.home.HomeScreen
 import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
@@ -197,9 +198,24 @@ fun PlanteriorNavHost(
             }
         }
         composable<PlanteriorRoute.Camera> {
+            CameraRoute(
+                onExit = { navController.popBackStack() },
+                onDirectRegistration = { navController.navigate(PlanteriorRoute.Registration) },
+                onIdentificationRequested = { submission ->
+                    navController.navigate(PlanteriorRoute.Identification(submission.requestId))
+                },
+            )
+        }
+        composable<PlanteriorRoute.Identification> {
             PlaceholderScreen(
-                title = stringResource(R.string.screen_camera),
-                description = stringResource(R.string.screen_camera_description),
+                title = stringResource(R.string.screen_identification),
+                description = stringResource(R.string.screen_identification_description),
+            )
+        }
+        composable<PlanteriorRoute.Registration> {
+            PlaceholderScreen(
+                title = stringResource(R.string.screen_registration),
+                description = stringResource(R.string.screen_registration_description),
             )
         }
         composable<PlanteriorRoute.MiniHome> {

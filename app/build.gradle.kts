@@ -334,6 +334,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:database"))
     implementation(project(":feature:auth"))
+    implementation(project(":feature:camera"))
     implementation(project(":feature:home"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -365,6 +366,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     // API 37은 InputManager.getInstance를 제거해 Espresso 3.5가 동작하지 않는다.
     androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.exifinterface)
     androidTestImplementation(libs.androidx.room.runtime)
     androidTestImplementation(libs.kotlinx.coroutines.test)
 }
