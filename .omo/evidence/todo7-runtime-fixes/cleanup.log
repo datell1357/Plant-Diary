@@ -1,0 +1,9 @@
+Devices after cleanup:
+List of devices attached
+emulator-5554          device product:sdk_gphone64_arm64 model:Android_SDK_built_for_arm64 device:emulator64_arm64 transport_id:35
+
+Task AVD after cleanup:
+absent
+Temp artifacts after cleanup:
+Journal exclude after cleanup:
+absent
