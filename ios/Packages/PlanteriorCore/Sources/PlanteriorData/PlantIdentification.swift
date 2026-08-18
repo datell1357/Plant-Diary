@@ -50,6 +50,7 @@ public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
     public let displayName: String
     public let representativePhoto: Data?
     public let lastWateredOn: CalendarDate?
+    public let wateringIntervalDays: Int?
     public let registrationMethod: RegistrationMethod
     public let location: String?
     public let privateMemo: String?
@@ -59,6 +60,7 @@ public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
         displayName: String,
         representativePhoto: Data?,
         lastWateredOn: CalendarDate?,
+        wateringIntervalDays: Int? = nil,
         registrationMethod: RegistrationMethod,
         location: String? = nil,
         privateMemo: String? = nil
@@ -67,6 +69,7 @@ public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
         self.displayName = displayName
         self.representativePhoto = representativePhoto
         self.lastWateredOn = lastWateredOn
+        self.wateringIntervalDays = wateringIntervalDays
         self.registrationMethod = registrationMethod
         self.location = location
         self.privateMemo = privateMemo

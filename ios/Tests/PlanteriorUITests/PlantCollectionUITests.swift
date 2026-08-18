@@ -2,6 +2,68 @@ import XCTest
 
 @MainActor
 final class PlantCollectionUITests: XCTestCase {
+    func testWateringDueCompletionUpdatesNextDate() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
+        app.launch()
+
+        app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
+        app.buttons["collection.row.0"].tap()
+
+        let nextDate = app.staticTexts["watering.next-date"]
+        XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
+        XCTAssertTrue(nextDate.label.contains("2026-08-11"))
+        app.swipeUp()
+        let completeButton = app.buttons["watering.complete"]
+        completeButton.tap()
+        expectation(
+            for: NSPredicate(format: "label CONTAINS %@", "기록했어요"),
+            evaluatedWith: completeButton
+        )
+        waitForExpectations(timeout: 5)
+        app.swipeDown()
+        XCTAssertTrue(app.staticTexts["watering.last-date"].label.contains("2026-08-11"))
+        XCTAssertTrue(nextDate.label.contains("2026-08-21"))
+        attachScreenshot(named: "task-11-watering-complete")
+    }
+
+    func testWateringMissingDateShowsSetupGuidance() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
+        app.launch()
+
+        app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.buttons["collection.row.1"].waitForExistence(timeout: 5))
+        app.buttons["collection.row.1"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts["watering.missing-date"].waitForExistence(timeout: 5)
+        )
+        let setTodayButton = app.buttons["watering.set-today"]
+        XCTAssertTrue(setTodayButton.exists)
+        XCTAssertFalse(app.staticTexts["watering.next-date"].exists)
+        XCTAssertTrue(app.buttons["auth.open"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["tab.collection"].exists)
+        attachScreenshot(named: "task-11-watering-missing-date")
+
+        setTodayButton.tap()
+        let nextDate = app.staticTexts["watering.next-date"]
+        XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
+        XCTAssertTrue(nextDate.label.contains("2026-08-21"))
+        let completeButton = app.buttons["watering.complete"]
+        completeButton.tap()
+        expectation(
+            for: NSPredicate(format: "label CONTAINS %@", "기록했어요"),
+            evaluatedWith: completeButton
+        )
+        waitForExpectations(timeout: 5)
+    }
+
     func testSearchDetailTimelineAndDeleteConfirmation() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -26,6 +88,7 @@ final class PlantCollectionUITests: XCTestCase {
         app.textFields["plant.detail.private-memo"].tap()
         app.textFields["plant.detail.private-memo"].typeText("창가에서 관리\n")
         app.buttons["plant.detail.save"].tap()
+        app.swipeUp()
         app.textFields["plant.detail.note"].tap()
         app.textFields["plant.detail.note"].typeText("새잎이 자랐어요\n")
         app.buttons["plant.detail.add-note"].tap()
@@ -89,5 +152,12 @@ final class PlantCollectionUITests: XCTestCase {
                 || app.progressIndicators[label].exists
         )
         XCTAssertFalse(app.staticTexts["비공개 식물"].exists)
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

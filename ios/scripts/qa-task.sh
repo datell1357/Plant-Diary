@@ -480,6 +480,89 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "11" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter WateringScheduleCoordinatorTests
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter PlantCollectionTests
+  task_11_derived_data="$attempt_dir/DerivedData"
+  task_11_result="$attempt_dir/task-11-ios-app-implementation.xcresult"
+  task_11_attachments="$attempt_dir/task-11-attachments"
+  task_11_destination="platform=iOS Simulator,id=${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_11_destination" \
+    -derivedDataPath "$task_11_derived_data" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_11_destination" \
+    -derivedDataPath "$task_11_derived_data" \
+    -resultBundlePath "$task_11_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/PlantCareCalendarTests \
+    -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringDueCompletionUpdatesNextDate \
+    -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringMissingDateShowsSetupGuidance \
+    -only-testing:PlanteriorUITests/PlantCollectionUITests/testSearchDetailTimelineAndDeleteConfirmation
+  xcrun xcresulttool export attachments \
+    --path "$task_11_result" \
+    --output-path "$task_11_attachments"
+  complete_screenshot=$(
+    awk -F '"' '
+      /exportedFileName/ { file = $4 }
+      /task-11-watering-complete/ { print directory "/" file; exit }
+    ' directory="$task_11_attachments" \
+      "$task_11_attachments/manifest.json"
+  )
+  missing_screenshot=$(
+    awk -F '"' '
+      /exportedFileName/ { file = $4 }
+      /task-11-watering-missing-date/ { print directory "/" file; exit }
+    ' directory="$task_11_attachments" \
+      "$task_11_attachments/manifest.json"
+  )
+  test -n "$complete_screenshot"
+  test -n "$missing_screenshot"
+  cp "$complete_screenshot" "$attempt_dir/task-11-watering-complete.png"
+  cp "$missing_screenshot" "$attempt_dir/task-11-watering-missing-date.png"
+  python3 - "$attempt_dir/task-11-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 11,
+            "dueDate": "2026-08-11",
+            "completionDate": "2026-08-11",
+            "nextDate": "2026-08-21",
+            "duplicateCompletion": "idempotent",
+            "missingDate": "setup-guidance",
+            "missingDateSetupCompletion": "passed",
+            "futureDate": "rejected",
+            "localCalendarTimeZone": "passed",
+            "plantIsolation": "passed",
+            "regression": "collection-detail-passed"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_11_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

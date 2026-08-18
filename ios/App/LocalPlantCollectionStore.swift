@@ -2,6 +2,14 @@ import Foundation
 import PlanteriorData
 import PlanteriorDomain
 
+struct PlantCareEdits {
+    let displayName: String
+    let location: String?
+    let note: String?
+    let lastWateredOn: CalendarDate?
+    let wateringIntervalDays: Int
+}
+
 @MainActor
 final class LocalPlantCollectionStore: ObservableObject {
     static let shared = LocalPlantCollectionStore()
@@ -73,10 +81,8 @@ final class LocalPlantCollectionStore: ObservableObject {
 
     func update(
         at index: Int,
-        displayName: String,
-        location: String?,
-        note: String?,
-        lastWateredOn: CalendarDate?
+        edits: PlantCareEdits,
+        today: CalendarDate
     ) throws {
         guard plants.indices.contains(index) else {
             return
@@ -85,9 +91,18 @@ final class LocalPlantCollectionStore: ObservableObject {
             plant: personalPlant(at: index)
         )
         try coordinator.validateEdits(
-            location: location ?? "",
-            privateMemo: note ?? ""
+            location: edits.location ?? "",
+            privateMemo: edits.note ?? ""
         )
+        if let lastWateredOn = edits.lastWateredOn {
+            var watering = WateringScheduleCoordinator(today: today)
+            let plantID = try personalPlantID(at: index)
+            try watering.setSchedule(
+                plantID: plantID,
+                lastWateredDate: lastWateredOn,
+                intervalDays: edits.wateringIntervalDays
+            )
+        }
         #if DEBUG
             if ProcessInfo.processInfo.environment["QA_COLLECTION_SAVE_FAILURE"] == "1" {
                 saveError = "변경사항을 저장하지 못했어요."
@@ -97,12 +112,13 @@ final class LocalPlantCollectionStore: ObservableObject {
         let current = plants[index]
         plants[index] = PlantRegistrationDraft(
             plantID: current.plantID,
-            displayName: displayName,
+            displayName: edits.displayName,
             representativePhoto: current.representativePhoto,
-            lastWateredOn: lastWateredOn,
+            lastWateredOn: edits.lastWateredOn,
+            wateringIntervalDays: edits.wateringIntervalDays,
             registrationMethod: current.registrationMethod,
-            location: location,
-            privateMemo: note
+            location: edits.location,
+            privateMemo: edits.note
         )
         persist()
         saveError = nil
