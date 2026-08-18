@@ -4,17 +4,22 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
+import com.planterior.helper.core.data.RemoteMutationCommand
 import com.planterior.helper.core.data.RemoteMutationGateway
 import com.planterior.helper.core.data.RemoteMutationResult
 import com.planterior.helper.core.database.CachedPlantEntity
 import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +80,9 @@ class AccountSynchronizerPersistenceTest {
             )
             assertEquals("local draft", database.syncDao().pending(account).single().draftPayload)
             assertEquals(SyncStatus.SUCCESS, summary.records.getValue(SyncDomain.PLANTS).status)
+            assertTrue(
+                requireNotNull(database.cacheDao().plantBlocking(account, "remote")).detailsComplete
+            )
         }
 
     @Test
@@ -103,6 +111,86 @@ class AccountSynchronizerPersistenceTest {
         assertNotNull(database.cacheDao().plantBlocking(account, "conflicted"))
         assertEquals("CONFLICT", database.syncDao().pending(account).single().state)
     }
+
+    @Test
+    fun `session synchronization replays account outbox before authoritative plant snapshot`() =
+        runTest {
+            val events = mutableListOf<String>()
+            database
+                .syncDao()
+                .enqueue(
+                    OperationOutboxEntity(
+                        "operation-replay",
+                        account,
+                        "personalPlants",
+                        "plant-a",
+                        "UPDATE",
+                        1,
+                        "{\"location\":\"침실\"}",
+                        now.toEpochMilli(),
+                    )
+                )
+            val outbox =
+                OfflineFirstSyncRepository(
+                    database,
+                    RemoteMutationGateway { command: RemoteMutationCommand ->
+                        events += "replay:${command.operationId.value}"
+                        RemoteMutationResult.Applied(2)
+                    },
+                )
+            val remote =
+                object : AccountSyncRemote {
+                    override suspend fun plants(accountUid: String): List<RemotePlant> {
+                        events += "snapshot"
+                        return listOf(RemotePlant("plant-a", "서버 식물", null, 2, now.toEpochMilli()))
+                    }
+
+                    override suspend fun wateringSchedules(accountUid: String) =
+                        emptyList<RemoteWateringSchedule>()
+
+                    override suspend fun miniHome(accountUid: String): RemoteMiniHome? = null
+
+                    override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) = Unit
+                }
+            val synchronizer =
+                FirestoreAccountSynchronizer(remote, database, outbox = outbox, now = { now })
+
+            val summary = synchronizer.sync(account)
+
+            assertEquals(listOf("replay:operation-replay", "snapshot"), events)
+            assertTrue(database.syncDao().pending(account).isEmpty())
+            assertEquals(
+                "서버 식물",
+                database.cacheDao().plantBlocking(account, "plant-a")?.displayName,
+            )
+            assertEquals(SyncStatus.SUCCESS, summary.records.getValue(SyncDomain.PLANTS).status)
+        }
+
+    @Test
+    fun `account sync adapter rethrows cancellation and writes no false failure record`() =
+        runTest {
+            val cancellation = CancellationException("session left")
+            val remote =
+                object : AccountSyncRemote {
+                    override suspend fun plants(accountUid: String): List<RemotePlant> =
+                        throw cancellation
+
+                    override suspend fun wateringSchedules(accountUid: String) =
+                        emptyList<RemoteWateringSchedule>()
+
+                    override suspend fun miniHome(accountUid: String): RemoteMiniHome? = null
+
+                    override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) = Unit
+                }
+
+            try {
+                FirestoreAccountSynchronizer(remote, database, now = { now }).sync(account)
+                fail("CancellationException expected")
+            } catch (error: CancellationException) {
+                assertSame(cancellation, error)
+            }
+            assertNull(database.syncDao().lastSync(account, SyncDomain.PLANTS.name))
+        }
 
     @Test
     fun `account deactivation hides scope without deleting its cached draft or outbox`() = runTest {

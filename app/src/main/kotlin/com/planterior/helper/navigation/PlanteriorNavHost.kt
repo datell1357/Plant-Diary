@@ -21,11 +21,17 @@ import com.planterior.helper.R
 import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
+import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
 import com.planterior.helper.feature.auth.AuthScreen
 import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.feature.camera.CameraRoute
+import com.planterior.helper.feature.collection.CollectionRepository
+import com.planterior.helper.feature.collection.CollectionRoute
+import com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader
+import com.planterior.helper.feature.collection.PlantDetailRoute
+import com.planterior.helper.feature.collection.PlantThumbnailLoader
 import com.planterior.helper.feature.home.HomeScreen
 import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
@@ -68,9 +74,25 @@ fun PlanteriorNavHost(
     authCoordinator: AuthCoordinator? = null,
     homeViewModel: HomeViewModel? = null,
     registrationRepository: RegistrationRepository? = null,
+    collectionRepository: CollectionRepository? = null,
+    collectionThumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
+    val liveAuthState by
+        authCoordinator?.state?.collectAsState() ?: remember { mutableStateOf<AuthUiState?>(null) }
+    LaunchedEffect(currentRoute, liveAuthState, authCoordinator) {
+        val requested = currentRoute ?: return@LaunchedEffect
+        if (authCoordinator == null || liveAuthState !is AuthUiState.SignedOut) {
+            return@LaunchedEffect
+        }
+        val guarded = AuthRouteGuard.destination(requested, authenticated = false)
+        if (guarded == requested) return@LaunchedEffect
+        navController.navigate(guarded) {
+            backStackEntry?.destination?.id?.let { popUpTo(it) { inclusive = true } }
+            launchSingleTop = true
+        }
+    }
     val selectedIndex = BottomTabRoutes.indexOfFirst { it == currentRoute }
     val registrationHandoff =
         rememberSaveable(saver = IdentificationRegistrationHandoff.Saver) {
@@ -171,11 +193,27 @@ fun PlanteriorNavHost(
             )
         }
         composable<PlanteriorRoute.Collection> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_collection),
-                description = stringResource(R.string.screen_collection_description),
-                bottomBar = bottomBar,
-            )
+            if (collectionRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_collection),
+                    description = stringResource(R.string.screen_collection_description),
+                    bottomBar = bottomBar,
+                )
+            } else {
+                CollectionRoute(
+                    repository = collectionRepository,
+                    onOpenPlant = { plantId ->
+                        navController.navigate(PlanteriorRoute.PlantDetail(plantId.value))
+                    },
+                    onIdentify = { navController.navigate(PlanteriorRoute.Camera) },
+                    onRegisterDirectly = {
+                        registrationHandoff.clear()
+                        navController.navigate(PlanteriorRoute.Registration)
+                    },
+                    bottomBar = bottomBar,
+                    thumbnailLoader = collectionThumbnailLoader,
+                )
+            }
         }
         composable<PlanteriorRoute.Storage> {
             PlaceholderScreen(
@@ -330,11 +368,20 @@ fun PlanteriorNavHost(
                 description = stringResource(R.string.screen_notifications_description),
             )
         }
-        composable<PlanteriorRoute.PlantDetail> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_plant_detail),
-                description = stringResource(R.string.screen_plant_detail_description),
-            )
+        composable<PlanteriorRoute.PlantDetail> { entry ->
+            val route = entry.toRoute<PlanteriorRoute.PlantDetail>()
+            if (collectionRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_plant_detail),
+                    description = stringResource(R.string.screen_plant_detail_description),
+                )
+            } else {
+                PlantDetailRoute(
+                    plantId = PersonalPlantId(route.plantId),
+                    repository = collectionRepository,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
     }
 }

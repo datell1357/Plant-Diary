@@ -17,6 +17,12 @@ data class CachedPlantEntity(
     val representativePhotoPath: String?,
     val revision: Long,
     val updatedAtEpochMillis: Long,
+    val contentId: String? = null,
+    val registrationMethod: String = "MANUAL",
+    val location: String? = null,
+    val note: String? = null,
+    val lastWateredDate: String? = null,
+    val detailsComplete: Boolean = true,
 )
 
 @Entity(

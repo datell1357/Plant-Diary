@@ -335,6 +335,7 @@ dependencies {
     implementation(project(":core:database"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:camera"))
+    implementation(project(":feature:collection"))
     implementation(project(":feature:home"))
     implementation(project(":feature:identify"))
     implementation(project(":feature:registration"))
@@ -360,6 +361,7 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.navigation.testing)
+    testImplementation(project(":feature:collection"))
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))

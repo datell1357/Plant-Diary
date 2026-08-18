@@ -1,3 +1,4 @@
+const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { assertFails, assertSucceeds, initializeTestEnvironment } = require("@firebase/rules-unit-testing");
@@ -16,6 +17,19 @@ const ts = (value) => Timestamp.fromDate(new Date(value));
 let env;
 
 describe("strict server-derived Firebase contract", () => {
+  it("keeps the public risk content query composite index in valid JSON", () => {
+    const indexes = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../firestore.indexes.json"), "utf8"));
+    const riskIndex = indexes.indexes.find((index) => index.collectionGroup === "riskContents");
+    assert.deepEqual(riskIndex, {
+      collectionGroup: "riskContents",
+      queryScope: "COLLECTION",
+      fields: [
+        { fieldPath: "publicationState", order: "ASCENDING" },
+        { fieldPath: "plantContentId", order: "ASCENDING" },
+      ],
+    });
+  });
+
   before(async () => {
     env = await initializeTestEnvironment({
       projectId,

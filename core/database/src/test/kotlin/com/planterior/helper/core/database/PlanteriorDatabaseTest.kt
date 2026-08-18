@@ -196,7 +196,7 @@ class PlanteriorDatabaseTest {
     }
 
     @Test
-    fun `migration three to four runs on a real version three database and keeps every row`() {
+    fun `migration three to five runs on a real version three database and keeps every row`() {
         database.close()
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = createVersion3Database(context, MIGRATION_3_4_DB)
@@ -210,7 +210,7 @@ class PlanteriorDatabaseTest {
 
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, MIGRATION_3_4_DB)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
 
@@ -223,6 +223,18 @@ class PlanteriorDatabaseTest {
             assertEquals(
                 "몬몬이",
                 migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.displayName,
+            )
+            assertEquals(
+                "MANUAL",
+                migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.registrationMethod,
+            )
+            assertNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.location)
+            assertNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.note)
+            assertNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.lastWateredDate)
+            assertFalse(
+                "v4 rows did not contain complete detail fields",
+                requireNotNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1"))
+                    .detailsComplete,
             )
             assertEquals(
                 listOf("plant-b1"),
@@ -266,14 +278,14 @@ class PlanteriorDatabaseTest {
         }
         migrated.close()
 
-        // 4. 마이그레이션이 실제로 실행되어 버전이 올라가고 스키마가 4번과 같아야 한다.
-        assertEquals("마이그레이션 후 user_version은 4여야 한다", 4, readUserVersion(file))
-        assertMatchesVersion4Schema(file)
+        // 4. 두 마이그레이션이 실제로 실행되어 버전이 올라가고 스키마가 5번과 같아야 한다.
+        assertEquals("마이그레이션 후 user_version은 5여야 한다", 5, readUserVersion(file))
+        assertMatchesVersion5Schema(file)
 
         // 5. 닫았다 다시 열어도 내용이 유지되어야 한다.
         val reopened =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, MIGRATION_3_4_DB)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
         runTest {
@@ -281,7 +293,7 @@ class PlanteriorDatabaseTest {
             assertEquals(2, reopened.cacheDao().plants("account-a").size)
         }
         reopened.close()
-        assertEquals(4, readUserVersion(file))
+        assertEquals(5, readUserVersion(file))
 
         assertTrue(file.delete())
         restoreInMemoryDatabase(context)
@@ -295,7 +307,7 @@ class PlanteriorDatabaseTest {
 
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, INDEX_DB)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
         runTest { assertEquals(2, migrated.cacheDao().plants("account-a").size) }
@@ -312,8 +324,8 @@ class PlanteriorDatabaseTest {
                 .contains("index_operation_outbox_accountId_state_createdAtEpochMillis")
         )
 
-        // 스키마 4번은 외래 키가 없다. 마이그레이션이 임의로 만들지 않았는지 확인한다.
-        VERSION_4_TABLES.forEach { table ->
+        // 스키마 5번은 외래 키가 없다. 마이그레이션이 임의로 만들지 않았는지 확인한다.
+        VERSION_5_TABLES.forEach { table ->
             assertEquals("${table}에 외래 키가 생기면 안 된다", 0, readForeignKeyCount(file, table))
         }
 
@@ -329,7 +341,7 @@ class PlanteriorDatabaseTest {
 
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DUPLICATE_DB)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
         runTest {
@@ -345,7 +357,7 @@ class PlanteriorDatabaseTest {
 
         val reopened =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DUPLICATE_DB)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
         runTest {
@@ -365,12 +377,12 @@ class PlanteriorDatabaseTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = createVersion3Database(context, DOWNGRADE_DB)
         // 앞서 배포된 더 높은 버전에서 되돌아온 상황을 흑낸다.
-        openRaw(file).use { it.execSQL("PRAGMA user_version = 5") }
-        assertEquals(5, readUserVersion(file))
+        openRaw(file).use { it.execSQL("PRAGMA user_version = 6") }
+        assertEquals(6, readUserVersion(file))
 
         val downgraded =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DOWNGRADE_DB)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
 
@@ -423,7 +435,7 @@ class PlanteriorDatabaseTest {
         }
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, "migration.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
         assertEquals(
@@ -486,7 +498,7 @@ class PlanteriorDatabaseTest {
         }
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .allowMainThreadQueries()
                 .build()
         migrated
@@ -565,7 +577,7 @@ class PlanteriorDatabaseTest {
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(name)
                 .callback(
-                    object : SupportSQLiteOpenHelper.Callback(VERSION_4) {
+                    object : SupportSQLiteOpenHelper.Callback(VERSION_5) {
                         override fun onCreate(db: SupportSQLiteDatabase) = Unit
 
                         override fun onUpgrade(
@@ -632,9 +644,9 @@ class PlanteriorDatabaseTest {
             }
         }
 
-    /** 마이그레이션 결과가 committed 스키마 `4.json`과 같은지 확인한다. */
-    private fun assertMatchesVersion4Schema(file: File) {
-        VERSION_4_TABLES.forEach { table ->
+    /** 마이그레이션 결과가 committed 스키마 `5.json`과 같은지 확인한다. */
+    private fun assertMatchesVersion5Schema(file: File) {
+        VERSION_5_TABLES.forEach { table ->
             assertTrue("$table 테이블이 있어야 한다", readTableNames(file).contains(table))
         }
 
@@ -661,6 +673,27 @@ class PlanteriorDatabaseTest {
             miniHome.filter { it.primaryKeyPosition > 0 }.map { it.name },
         )
         assertEquals(0, readForeignKeyCount(file, "cached_mini_homes"))
+
+        val plants = readColumns(file, "cached_plants")
+        assertEquals(
+            listOf(
+                "contentId",
+                "registrationMethod",
+                "location",
+                "note",
+                "lastWateredDate",
+                "detailsComplete",
+            ),
+            plants.takeLast(6).map { it.name },
+        )
+        assertFalse(plants.first { it.name == "contentId" }.notNull)
+        assertTrue(plants.first { it.name == "registrationMethod" }.notNull)
+        assertEquals("'MANUAL'", plants.first { it.name == "registrationMethod" }.defaultValue)
+        assertFalse(plants.first { it.name == "location" }.notNull)
+        assertFalse(plants.first { it.name == "note" }.notNull)
+        assertFalse(plants.first { it.name == "lastWateredDate" }.notNull)
+        assertTrue(plants.first { it.name == "detailsComplete" }.notNull)
+        assertEquals("0", plants.first { it.name == "detailsComplete" }.defaultValue)
     }
 
     private fun restoreInMemoryDatabase(context: Context) {
@@ -680,7 +713,7 @@ class PlanteriorDatabaseTest {
 
     private companion object {
         const val VERSION_3 = 3
-        const val VERSION_4 = 4
+        const val VERSION_5 = 5
         const val MIGRATION_3_4_DB = "migration-3-4.db"
         const val INDEX_DB = "migration-3-4-index.db"
         const val DUPLICATE_DB = "migration-3-4-duplicate.db"
@@ -689,7 +722,7 @@ class PlanteriorDatabaseTest {
         /** `schemas/.../3.json`의 identityHash. 실제 v3 Room 파일과 동일하게 재현하기 위해 필요하다. */
         const val VERSION_3_IDENTITY_HASH = "aaa3850f1960bd80061701475b7929c5"
 
-        val VERSION_4_TABLES =
+        val VERSION_5_TABLES =
             listOf(
                 "cached_plants",
                 "cached_watering_schedules",

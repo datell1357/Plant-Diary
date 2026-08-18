@@ -21,11 +21,14 @@ export type ServerCollection =
   | "ownedItems"
   | "shareLinks";
 
+export type OwnerMutationType = "CREATE" | "UPDATE";
+
 export type OwnerMutationCommand = Readonly<{
   ownerUid: string;
   collection: OwnerCollection;
   documentId: string;
   documentPath: string;
+  mutationType: OwnerMutationType;
   expectedRevision: number;
   idempotencyKey: string;
   requestHash: string;
@@ -66,6 +69,10 @@ export class ContractError extends Error {
 
 const opaqueId = /^[A-Za-z0-9_-]{1,128}$/;
 const operationId = /^[A-Za-z0-9_-]{8,128}$/;
+
+function graphemeCount(value: string): number {
+  return [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(value)].length;
+}
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
@@ -227,6 +234,7 @@ function serverCollection(value: string): ServerCollection {
 
 async function validateOwnerPayload(
   collection: OwnerCollection,
+  mutationType: OwnerMutationType,
   payload: Readonly<Record<string, unknown>>,
   ownerUid: string,
   documentId: string,
@@ -234,9 +242,31 @@ async function validateOwnerPayload(
 ): Promise<void> {
   switch (collection) {
     case "personalPlants": {
+      if (mutationType === "UPDATE") {
+        exactFields(payload, [], ["lastWateredDate", "location", "note"]);
+        if (Object.keys(payload).length === 0) {
+          throw new ContractError("invalid-argument", "Personal plant update patch must not be empty");
+        }
+        if ("location" in payload) {
+          const location = nullableStringField(payload, "location");
+          if (location !== null && graphemeCount(location) > 50) {
+            throw new ContractError("invalid-argument", "location must contain at most 50 characters");
+          }
+        }
+        if ("note" in payload) {
+          const note = nullableStringField(payload, "note");
+          if (note !== null && graphemeCount(note) > 1000) {
+            throw new ContractError("invalid-argument", "note must contain at most 1000 characters");
+          }
+        }
+        if ("lastWateredDate" in payload) {
+          await validateLastWateredDate(payload, ownerUid, store);
+        }
+        return;
+      }
       exactFields(payload, ["displayName", "registrationMethod"], ["contentId", "representativePhotoPath", "location", "note", "lastWateredDate"]);
       const displayName = stringField(payload, "displayName");
-      const graphemes = [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(displayName)].length;
+      const graphemes = graphemeCount(displayName);
       if (displayName !== displayName.trim() || graphemes < 1 || graphemes > 100) {
         throw new ContractError("invalid-argument", "displayName must be normalized and contain 1 to 100 characters");
       }
@@ -252,22 +282,15 @@ async function validateOwnerPayload(
       if (photoPath !== null && !new RegExp(`^plant-photos/${ownerUid}/${documentId}/representative[.](jpg|png|webp|heif|heic)$`).test(photoPath)) {
         throw new ContractError("invalid-argument", "representativePhotoPath must belong to the target plant");
       }
-      nullableStringField(payload, "location");
-      nullableStringField(payload, "note");
-      const watered = localDate(payload, "lastWateredDate", true);
-      if (watered !== null) {
-        const ownerZone = await store.ownerZoneId(ownerUid);
-        zoneId({ ownerZone }, "ownerZone");
-        const parts = new Intl.DateTimeFormat("en-US", {
-          timeZone: ownerZone,
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }).formatToParts(new Date());
-        const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value;
-        const today = `${part("year")}-${part("month")}-${part("day")}`;
-        if (watered > today) throw new ContractError("invalid-argument", "lastWateredDate cannot be in the future");
+      const location = nullableStringField(payload, "location");
+      const note = nullableStringField(payload, "note");
+      if (location !== null && graphemeCount(location) > 50) {
+        throw new ContractError("invalid-argument", "location must contain at most 50 characters");
       }
+      if (note !== null && graphemeCount(note) > 1000) {
+        throw new ContractError("invalid-argument", "note must contain at most 1000 characters");
+      }
+      await validateLastWateredDate(payload, ownerUid, store);
       return;
     }
     case "wateringRecords":
@@ -392,6 +415,26 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
   }
 }
 
+async function validateLastWateredDate(
+  payload: Readonly<Record<string, unknown>>,
+  ownerUid: string,
+  store: MutationStore,
+): Promise<void> {
+  const watered = localDate(payload, "lastWateredDate", true);
+  if (watered === null) return;
+  const ownerZone = await store.ownerZoneId(ownerUid);
+  zoneId({ ownerZone }, "ownerZone");
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ownerZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value;
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
+  if (watered > today) throw new ContractError("invalid-argument", "lastWateredDate cannot be in the future");
+}
+
 export async function executeOwnerMutation(
   auth: AuthContext | null,
   input: unknown,
@@ -399,24 +442,26 @@ export async function executeOwnerMutation(
 ): Promise<MutationResult> {
   if (auth === null || !opaqueId.test(auth.uid)) throw new ContractError("unauthenticated", "Authentication is required");
   const value = record(input, "input");
-  exactFields(value, ["expectedOwnerUid", "collection", "documentId", "expectedRevision", "idempotencyKey", "payload"]);
+  exactFields(value, ["expectedOwnerUid", "collection", "documentId", "mutationType", "expectedRevision", "idempotencyKey", "payload"]);
   const expectedOwnerUid = opaqueField(value, "expectedOwnerUid");
   if (expectedOwnerUid !== auth.uid) {
     throw new ContractError("permission-denied", "Authenticated owner does not match the request");
   }
   const collection = ownerCollection(stringField(value, "collection"));
   const documentId = stringField(value, "documentId");
+  const mutationType = oneOf(stringField(value, "mutationType"), ["CREATE", "UPDATE"] as const, "mutationType");
   const idempotencyKey = stringField(value, "idempotencyKey");
   const expectedRevision = value.expectedRevision;
   if (!opaqueId.test(documentId) || !operationId.test(idempotencyKey) || typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
     throw new ContractError("invalid-argument", "Mutation identifiers or revision are invalid");
   }
   const payload = record(value.payload, "payload");
-  await validateOwnerPayload(collection, payload, auth.uid, documentId, store);
+  await validateOwnerPayload(collection, mutationType, payload, auth.uid, documentId, store);
   const requestHash = mutationHash({
     ownerUid: auth.uid,
     collection,
     documentId,
+    mutationType,
     expectedRevision,
     payload,
   });
@@ -425,6 +470,7 @@ export async function executeOwnerMutation(
     collection,
     documentId,
     documentPath: `users/${auth.uid}/${collection}/${documentId}`,
+    mutationType,
     expectedRevision,
     idempotencyKey,
     requestHash,

@@ -319,6 +319,7 @@ data class RemoteMutationCommand(
     val operationId: OperationId,
     val aggregateType: String,
     val aggregateId: String,
+    val mutationType: String,
     val expectedRevision: Revision,
     val draftPayload: String,
 )

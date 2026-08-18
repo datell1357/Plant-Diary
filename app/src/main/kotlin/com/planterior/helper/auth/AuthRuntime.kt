@@ -15,6 +15,7 @@ import com.planterior.helper.core.data.OfflineFirstSyncRepository
 import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
+import com.planterior.helper.core.database.MIGRATION_4_5
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.feature.auth.AccountProfileStore
 import com.planterior.helper.feature.auth.AccountSessionCache
@@ -40,6 +41,12 @@ import com.planterior.helper.feature.auth.SyncSummary
 import com.planterior.helper.feature.auth.debugAccountSyncRemote
 import com.planterior.helper.feature.auth.debugAuthProvider
 import com.planterior.helper.feature.auth.prepareDebugAuth
+import com.planterior.helper.feature.collection.CollectionRepository
+import com.planterior.helper.feature.collection.FirebaseCollectionRemoteDataSource
+import com.planterior.helper.feature.collection.FirebaseCollectionRepository
+import com.planterior.helper.feature.collection.FirebasePlantThumbnailLoader
+import com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader
+import com.planterior.helper.feature.collection.PlantThumbnailLoader
 import com.planterior.helper.feature.home.HomeMiniHomePreview
 import com.planterior.helper.feature.home.HomePlantCare
 import com.planterior.helper.feature.home.HomeRepository
@@ -64,6 +71,8 @@ private constructor(
     /** 홈 대시보드가 읽는 저장소. 인증 상태와 같은 수명을 가진다. */
     val homeRepository: HomeRepository,
     val registrationRepository: RegistrationRepository?,
+    val collectionRepository: CollectionRepository?,
+    val collectionThumbnailLoader: PlantThumbnailLoader,
 ) {
     suspend fun handleAppleCallback(uri: URI): Boolean = apple?.handleCallback(uri) ?: false
 
@@ -104,7 +113,7 @@ private constructor(
             }
             val database =
                 Room.databaseBuilder(activity, PlanteriorDatabase::class.java, "planterior.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
             val mutationGateway = FirebaseRemoteMutationGateway(functions)
             val repository = OfflineFirstSyncRepository(database, mutationGateway)
@@ -124,6 +133,12 @@ private constructor(
                             bytes
                         }
                     },
+                    mutationGateway,
+                )
+            val collectionRepository =
+                FirebaseCollectionRepository(
+                    database,
+                    FirebaseCollectionRemoteDataSource(auth, firestore),
                     mutationGateway,
                 )
             val apple =
@@ -154,6 +169,7 @@ private constructor(
                             FirestoreAccountSyncRemote(firestore),
                         ),
                         database,
+                        outbox = repository,
                     ),
                 )
             return AuthRuntime(
@@ -182,6 +198,8 @@ private constructor(
                         }
                 },
                 registrationRepository,
+                collectionRepository,
+                FirebasePlantThumbnailLoader(storage),
             )
         }
 
@@ -244,6 +262,8 @@ private constructor(
                 // 구성이 없으면 로그인할 수 없으므로 홈은 항상 로그아웃 상태로 머무른다.
                 UnavailableHomeRepository,
                 null,
+                null,
+                PlaceholderPlantThumbnailLoader,
             )
         }
     }

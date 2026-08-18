@@ -27,7 +27,11 @@ class FakeStore implements MutationStore {
     const revision = actual + 1;
     this.revisions.set(command.documentPath, revision);
     this.operations.set(operationPath, { path: command.documentPath, requestHash: command.requestHash, revision });
-    this.writes.set(command.documentPath, command.payload);
+    const previous = this.writes.get(command.documentPath) ?? {};
+    this.writes.set(
+      command.documentPath,
+      command.mutationType === "UPDATE" ? { ...previous, ...command.payload } : command.payload,
+    );
     return { kind: "applied" as const, revision };
   }
 
@@ -36,7 +40,7 @@ class FakeStore implements MutationStore {
   }
 }
 
-const validMutation = { expectedOwnerUid: "user-a", collection: "personalPlants", documentId: "plant-a", expectedRevision: 0, idempotencyKey: "operation-0001", payload: { displayName: "몬스테라", registrationMethod: "MANUAL" } };
+const validMutation = { expectedOwnerUid: "user-a", collection: "personalPlants", documentId: "plant-a", mutationType: "CREATE", expectedRevision: 0, idempotencyKey: "operation-0001", payload: { displayName: "몬스테라", registrationMethod: "MANUAL" } };
 
 test("owner is derived from auth and duplicate idempotency key applies once", async () => {
   const store = new FakeStore();
@@ -76,6 +80,7 @@ test("owner callable rejects impossible dates enums and unknown sensitive fields
     expectedOwnerUid: "user-a",
     collection: "wateringSchedules",
     documentId: "schedule-a",
+    mutationType: "CREATE",
     expectedRevision: 0,
     idempotencyKey: "operation-1001",
     payload: { plantId: "plant-a", dueDate: "2026-02-31", reminderTime: "09:00", zoneId: "Asia/Seoul", enabled: true },
@@ -109,6 +114,105 @@ test("personal plant registration rejects unnormalized names and foreign represe
     () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "몬스테라", registrationMethod: "MANUAL", lastWateredDate: "2999-01-01" } }, store),
     ContractError,
   );
+});
+
+test("personal plant edit enforces location and private note grapheme limits", async () => {
+  const store = new FakeStore();
+  await executeOwnerMutation(
+    { uid: "user-a" },
+    {
+      ...validMutation,
+      payload: {
+        ...validMutation.payload,
+        location: "🌿".repeat(50),
+        note: "🪴".repeat(1000),
+      },
+    },
+    store,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation(
+      { uid: "user-a" },
+      {
+        ...validMutation,
+        documentId: "plant-location-long",
+        idempotencyKey: "operation-location-long",
+        payload: { ...validMutation.payload, location: "🌿".repeat(51), note: null },
+      },
+      store,
+    ),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation(
+      { uid: "user-a" },
+      {
+        ...validMutation,
+        documentId: "plant-note-long",
+        idempotencyKey: "operation-note-long",
+        payload: { ...validMutation.payload, location: null, note: "🪴".repeat(1001) },
+      },
+      store,
+    ),
+    ContractError,
+  );
+});
+
+test("personal plant update accepts only a non-empty care patch and preserves immutable fields", async () => {
+  const store = new FakeStore();
+  await executeOwnerMutation(
+    { uid: "user-a" },
+    { ...validMutation, payload: { ...validMutation.payload, contentId: "species-public", representativePhotoPath: null } },
+    store,
+  );
+  const update = {
+    ...validMutation,
+    mutationType: "UPDATE",
+    expectedRevision: 1,
+    idempotencyKey: "operation-update-0001",
+    payload: { location: "거실", note: null, lastWateredDate: "2026-08-18" },
+  };
+
+  assert.deepEqual(await executeOwnerMutation({ uid: "user-a" }, update, store), { kind: "applied", revision: 2 });
+  assert.deepEqual(store.writes.get("users/user-a/personalPlants/plant-a"), {
+    displayName: "몬스테라",
+    registrationMethod: "MANUAL",
+    contentId: "species-public",
+    representativePhotoPath: null,
+    location: "거실",
+    note: null,
+    lastWateredDate: "2026-08-18",
+  });
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...update, idempotencyKey: "operation-update-full", payload: validMutation.payload }, store),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...update, idempotencyKey: "operation-update-empty", payload: {} }, store),
+    ContractError,
+  );
+});
+
+test("unchanged unpublished personal plant content link does not block a care patch", async () => {
+  const store = new FakeStore();
+  const path = "users/user-a/personalPlants/plant-a";
+  store.revisions.set(path, 4);
+  store.writes.set(path, { displayName: "기존 식물", registrationMethod: "IDENTIFIED", contentId: "species-private" });
+
+  const result = await executeOwnerMutation(
+    { uid: "user-a" },
+    {
+      ...validMutation,
+      mutationType: "UPDATE",
+      expectedRevision: 4,
+      idempotencyKey: "operation-update-private-link",
+      payload: { note: "비공개 메모" },
+    },
+    store,
+  );
+
+  assert.deepEqual(result, { kind: "applied", revision: 5 });
+  assert.equal(store.writes.get(path)?.contentId, "species-private");
 });
 
 test("personal plant content links must resolve to public content", async () => {

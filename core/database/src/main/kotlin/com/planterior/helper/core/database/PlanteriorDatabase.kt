@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
             OperationOutboxEntity::class,
             LastSyncEntity::class,
         ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
@@ -61,6 +61,23 @@ val MIGRATION_3_4 =
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE IF NOT EXISTS cached_mini_homes (`accountId` TEXT NOT NULL, `miniHomeId` TEXT NOT NULL, `name` TEXT NOT NULL, `placedPlantCount` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`))"
+            )
+        }
+    }
+
+/** 상세의 본인 소유 관리 기록을 오프라인에서도 복원하기 위해 기존 식물 캐시를 확장한다. */
+val MIGRATION_4_5 =
+    object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE cached_plants ADD COLUMN contentId TEXT")
+            db.execSQL(
+                "ALTER TABLE cached_plants ADD COLUMN registrationMethod TEXT NOT NULL DEFAULT 'MANUAL'"
+            )
+            db.execSQL("ALTER TABLE cached_plants ADD COLUMN location TEXT")
+            db.execSQL("ALTER TABLE cached_plants ADD COLUMN note TEXT")
+            db.execSQL("ALTER TABLE cached_plants ADD COLUMN lastWateredDate TEXT")
+            db.execSQL(
+                "ALTER TABLE cached_plants ADD COLUMN detailsComplete INTEGER NOT NULL DEFAULT 0"
             )
         }
     }

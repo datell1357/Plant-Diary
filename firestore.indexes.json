@@ -8,6 +8,7 @@
     { "collectionGroup": "shareLinks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "revokedAt", "order": "ASCENDING" }, { "fieldPath": "expiresAt", "order": "ASCENDING" } ] },
     { "collectionGroup": "notificationDeliveries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "scheduledFor", "order": "ASCENDING" } ] },
     { "collectionGroup": "plantContents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" } ] },
+    { "collectionGroup": "riskContents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "plantContentId", "order": "ASCENDING" } ] },
     { "collectionGroup": "shopItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "category", "order": "ASCENDING" } ] }
   ],
   "fieldOverrides": []

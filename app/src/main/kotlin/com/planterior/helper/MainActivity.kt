@@ -97,6 +97,10 @@ internal fun PlanteriorApp(
             authCoordinator = authRuntime?.coordinator,
             homeViewModel = resolvedHomeViewModel,
             registrationRepository = authRuntime?.registrationRepository,
+            collectionRepository = authRuntime?.collectionRepository,
+            collectionThumbnailLoader =
+                authRuntime?.collectionThumbnailLoader
+                    ?: com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader,
         )
     }
 }

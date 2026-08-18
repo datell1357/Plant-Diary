@@ -44,6 +44,7 @@ class FirebaseRemoteMutationGateway(private val callable: OwnerMutationCallable)
                 "expectedOwnerUid" to command.accountId.value,
                 "collection" to command.aggregateType,
                 "documentId" to command.aggregateId,
+                "mutationType" to command.mutationType,
                 "expectedRevision" to command.expectedRevision.value,
                 "idempotencyKey" to command.operationId.value,
                 "payload" to payload as Map<String, Any?>,

@@ -43,6 +43,7 @@ class OfflineFirstSyncRepositoryTest {
         val report = repository.sync(AccountId("account-a"))
         assertEquals(1, report.applied)
         assertEquals(1, remote.calls)
+        assertEquals("personalPlants", remote.commands.single().aggregateType)
         assertTrue(database.syncDao().pending("account-a").isEmpty())
     }
 
@@ -64,6 +65,26 @@ class OfflineFirstSyncRepositoryTest {
     }
 
     @Test
+    fun `replay retries only explicitly transient failed operations`() = runTest {
+        val transient = OperationId("operation-transient")
+        val permanent = OperationId("operation-permanent")
+        val remote = RecordingGateway()
+        val repository = OfflineFirstSyncRepository(database, remote)
+        repository.enqueuePlantDraft(AccountId("account-a"), transient, "plant-a", 1, "transient")
+        repository.enqueuePlantDraft(AccountId("account-a"), permanent, "plant-a", 1, "permanent")
+        database.syncDao().markFailed("account-a", transient.value, "UNAVAILABLE")
+        database.syncDao().markFailed("account-a", permanent.value, "INVALID_ARGUMENT")
+
+        val report = repository.sync(AccountId("account-a"))
+
+        assertEquals(1, report.applied)
+        assertEquals(listOf(transient), remote.commands.map { it.operationId })
+        val retained = database.syncDao().pending("account-a").single()
+        assertEquals(permanent.value, retained.operationId)
+        assertEquals("INVALID_ARGUMENT", retained.lastErrorCode)
+    }
+
+    @Test
     fun `account switch hides A while B is active and A can resume`() = runTest {
         database.cacheDao().upsertPlant(CachedPlantEntity("account-a", "plant-a", "A", null, 1, 1))
         database.cacheDao().upsertPlant(CachedPlantEntity("account-b", "plant-b", "B", null, 1, 1))
@@ -80,9 +101,11 @@ class OfflineFirstSyncRepositoryTest {
         private val result: RemoteMutationResult = RemoteMutationResult.Applied(2)
     ) : RemoteMutationGateway {
         var calls = 0
+        val commands = mutableListOf<RemoteMutationCommand>()
 
         override suspend fun apply(command: RemoteMutationCommand): RemoteMutationResult {
             calls += 1
+            commands += command
             return result
         }
     }

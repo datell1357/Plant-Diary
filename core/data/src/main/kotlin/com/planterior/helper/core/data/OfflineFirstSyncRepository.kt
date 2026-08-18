@@ -57,7 +57,7 @@ class OfflineFirstSyncRepository(
                 OperationOutboxEntity(
                     operationId.value,
                     accountId.value,
-                    "personalPlant",
+                    "personalPlants",
                     plantId,
                     "UPDATE",
                     expectedRevision,
@@ -71,7 +71,7 @@ class OfflineFirstSyncRepository(
         var applied = 0
         var conflicts = 0
         var failed = 0
-        for (operation in database.syncDao().ready(accountId.value)) {
+        for (operation in database.syncDao().replayable(accountId.value, TRANSIENT_FAILURE_CODES)) {
             when (
                 val result =
                     gateway.apply(
@@ -80,6 +80,7 @@ class OfflineFirstSyncRepository(
                             OperationId(operation.operationId),
                             operation.aggregateType,
                             operation.aggregateId,
+                            operation.mutationType,
                             Revision(operation.expectedRevision),
                             operation.draftPayload,
                         )
@@ -105,6 +106,17 @@ class OfflineFirstSyncRepository(
             }
         }
         return SyncReport(applied, conflicts, failed)
+    }
+
+    private companion object {
+        val TRANSIENT_FAILURE_CODES =
+            setOf(
+                "ABORTED",
+                "DEADLINE_EXCEEDED",
+                "INTERNAL",
+                "RESOURCE_EXHAUSTED",
+                "UNAVAILABLE",
+            )
     }
 }
 

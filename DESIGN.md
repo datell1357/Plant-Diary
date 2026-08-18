@@ -95,6 +95,18 @@ Inter의 한글 글리프 대체 결과와 맞도록 `FontFamily.SansSerif`를 �
 - 모든 탭은 최소 48dp 터치 영역, 선택 상태 semantics와 고유한 content description을 가진다.
 - 선택된 탭만 primary, 나머지는 tertiary text 색을 사용한다.
 
+### `CollectionStateBody`
+
+- 도감의 empty/error/denied 상태에서 화면 제목과 하단 바는 고정하고 상태 본문 하나만 세로 스크롤을 소유한다.
+- compact height와 큰 글꼴에서도 마지막 CTA까지 스크롤할 수 있어야 한다.
+- StyleGallery `scroll-body-shell` 패턴을 따른다: https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/scroll-body-shell.md
+
+### `PlantThumbnail`
+
+- 목록 이미지는 화면에서 Firebase를 직접 호출하지 않고 주입 가능한 loader를 거친다.
+- loader는 원본 bytes 상한, 축소 decode, 메모리 cache를 책임진다.
+- loading, loaded, failed, no-photo 상태를 서로 다른 semantics로 노출하며 실패는 no-photo와 구분되는 대체 이미지로 마무리한다.
+
 ### 아이콘
 
 - `PlanteriorIcons`의 24x24 viewport, 2dp round stroke 아이콘을 우선 사용한다.
@@ -108,6 +120,8 @@ Inter의 한글 글리프 대체 결과와 맞도록 `FontFamily.SansSerif`를 �
 - route에는 불투명 ID만 전달하고 사진 bytes, 사용자 ID, 메모 같은 개인정보를 넣지 않는다.
 - loading, empty, error, denied, stale 상태를 빈 화면으로 두지 않는다.
 - 실패 상태에는 재시도와 가능한 대체 경로를 함께 제공한다.
+- 저장 실패 편집본은 exact retry를 위해 읽기 전용 snapshot으로 고정한다. revision conflict와 outbox mismatch는 같은 요청을 반복하지 않고 서버 확정본 reload로 reconciliation한다.
+- stale 목록은 마지막 성공 시각과 사용자가 즉시 실행할 수 있는 retry를 함께 표시한다.
 - 카메라·위치·알림 권한 거부 시 설정 이동 또는 직접 입력 등 핵심 목적을 달성할 다른 경로를 보여 준다.
 - 사진 처리, 위치, 알림과 개인정보 관련 행동은 실행 전에 목적과 보관 범위를 명시한다.
 - 스크롤 가능한 긴 화면은 system inset과 하단 행동 영역이 겹치지 않게 한다.

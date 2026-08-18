@@ -200,6 +200,7 @@ class FirebaseRegistrationRepository(
                                 submission.operationId,
                                 "personalPlants",
                                 submission.plantId.value,
+                                "CREATE",
                                 Revision(0),
                                 payload,
                             )
@@ -275,12 +276,18 @@ class FirebaseRegistrationRepository(
                 .cacheDao()
                 .upsertPlant(
                     CachedPlantEntity(
-                        submission.accountId.value,
-                        plant.id.value,
-                        plant.displayName,
-                        plant.representativePhotoPath,
-                        plant.revision.value,
-                        plant.updatedAt.toEpochMilli(),
+                        accountId = submission.accountId.value,
+                        plantId = plant.id.value,
+                        displayName = plant.displayName,
+                        representativePhotoPath = plant.representativePhotoPath,
+                        revision = plant.revision.value,
+                        updatedAtEpochMillis = plant.updatedAt.toEpochMilli(),
+                        contentId = plant.contentId?.value,
+                        registrationMethod = plant.registrationMethod.name,
+                        location = plant.location,
+                        note = plant.note,
+                        lastWateredDate = plant.lastWateredDate?.toString(),
+                        detailsComplete = true,
                     )
                 )
         } catch (error: CancellationException) {

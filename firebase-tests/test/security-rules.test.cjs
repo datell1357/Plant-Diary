@@ -135,7 +135,11 @@ describe("Planterior Firebase ownership contract", () => {
     await assertSucceeds(getDocs(query(collection(user, "plantContents"), where("publicationState", "==", "PUBLIC"))));
     await assertFails(getDocs(query(collection(user, "plantContents"), where("publicationState", "==", "DRAFT"))));
     await assertFails(getDocs(collection(user, "plantContents")));
-    await assertSucceeds(setDoc(doc(contentAdmin, "riskContents/public"), { publicationState: "PUBLIC", revision: 1 }));
+    await assertSucceeds(setDoc(doc(contentAdmin, "riskContents/public"), { plantContentId: "species-a", symptom: "잎 처짐", possibleCause: "흙 마름", action: "흙을 확인한다", publicationState: "PUBLIC", revision: 1 }));
+    await assertSucceeds(setDoc(doc(contentAdmin, "riskContents/private"), { plantContentId: "species-a", symptom: "비공개", possibleCause: "비공개 원인", action: "비공개 행동", publicationState: "PRIVATE", revision: 2 }));
+    await assertSucceeds(getDocs(query(collection(user, "riskContents"), where("publicationState", "==", "PUBLIC"), where("plantContentId", "==", "species-a"))));
+    await assertFails(getDoc(doc(user, "riskContents/private")));
+    await assertFails(getDocs(query(collection(user, "riskContents"), where("plantContentId", "==", "species-a"))));
     await assertFails(setDoc(doc(opsAdmin, "riskContents/ops-write"), { publicationState: "PUBLIC", revision: 1 }));
     await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/public"), { publicationState: "PUBLIC", revision: 1 }));
     await assertFails(setDoc(doc(user, "shopItems/user-write"), { publicationState: "PUBLIC", revision: 1 }));

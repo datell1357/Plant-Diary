@@ -18,8 +18,9 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
   const plantPath = "users/user-a/personalPlants/emulator-plant";
   const operationOnePath = "users/user-a/operations/operation-emulator-0001";
   const operationTwoPath = "users/user-a/operations/operation-emulator-0002";
+  const operationThreePath = "users/user-a/operations/operation-emulator-0003";
   const riskPath = "users/user-a/weatherRisks/emulator-risk";
-  const cleanup = [plantPath, operationOnePath, operationTwoPath, riskPath];
+  const cleanup = [plantPath, operationOnePath, operationTwoPath, operationThreePath, riskPath];
 
   try {
     await Promise.all(cleanup.map((path) => firestore.doc(path).delete()));
@@ -27,6 +28,7 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
       expectedOwnerUid: "user-a",
       collection: "personalPlants",
       documentId: "emulator-plant",
+      mutationType: "CREATE",
       expectedRevision: 0,
       idempotencyKey: "operation-emulator-0001",
       payload: { displayName: "몬스테라", registrationMethod: "MANUAL" },
@@ -41,9 +43,29 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
       await executeOwnerMutation({ uid: "user-a" }, { ...mutation, expectedRevision: 0, idempotencyKey: "operation-emulator-0002" }, store),
       { kind: "conflict", actualRevision: 1 },
     );
+    await firestore.doc(plantPath).update({ contentId: "unpublished-content" });
+    assert.deepEqual(
+      await executeOwnerMutation(
+        { uid: "user-a" },
+        {
+          ...mutation,
+          mutationType: "UPDATE",
+          expectedRevision: 1,
+          idempotencyKey: "operation-emulator-0003",
+          payload: { location: "거실", note: null },
+        },
+        store,
+      ),
+      { kind: "applied", revision: 2 },
+    );
     const plant = await firestore.doc(plantPath).get();
     assert.equal(plant.get("ownerUid"), "user-a");
-    assert.equal(plant.get("revision"), 1);
+    assert.equal(plant.get("revision"), 2);
+    assert.equal(plant.get("displayName"), "몬스테라");
+    assert.equal(plant.get("registrationMethod"), "MANUAL");
+    assert.equal(plant.get("contentId"), "unpublished-content");
+    assert.equal(plant.get("location"), "거실");
+    assert.equal(plant.get("note"), null);
     assert.ok(plant.get("updatedAt") instanceof Timestamp);
 
     await executeServerStateWrite(

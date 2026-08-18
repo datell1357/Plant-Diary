@@ -16,7 +16,8 @@ export class FirestoreMutationStore implements MutationStore {
     return content.exists && content.get("publicationState") === "PUBLIC";
   }
 
-  async ownerZoneId(ownerUid: string): Promise<string> {    const account = await this.firestore.doc(`users/${ownerUid}`).get();
+  async ownerZoneId(ownerUid: string): Promise<string> {
+    const account = await this.firestore.doc(`users/${ownerUid}`).get();
     const value = account.get("zoneId");
     if (typeof value !== "string") throw new ContractError("invalid-argument", "Account timezone is unavailable");
     return value;
@@ -39,9 +40,15 @@ export class FirestoreMutationStore implements MutationStore {
       const document = await transaction.get(documentRef);
       const actualRevision = document.exists ? document.get("revision") : 0;
       if (typeof actualRevision !== "number") throw new ContractError("invalid-argument", "Stored revision is malformed");
-      if (actualRevision !== command.expectedRevision) return { kind: "conflict", actualRevision };
+      if (
+        actualRevision !== command.expectedRevision ||
+        (command.mutationType === "CREATE" && document.exists) ||
+        (command.mutationType === "UPDATE" && !document.exists)
+      ) return { kind: "conflict", actualRevision };
       const revision = actualRevision + 1;
-      transaction.set(documentRef, { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });
+      const write = { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() };
+      if (command.mutationType === "UPDATE") transaction.set(documentRef, write, { merge: true });
+      else transaction.create(documentRef, write);
       transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, requestHash: command.requestHash, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });
       return { kind: "applied", revision };
     });

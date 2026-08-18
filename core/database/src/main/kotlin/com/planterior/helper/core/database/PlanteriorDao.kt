@@ -65,7 +65,7 @@ interface CacheDao {
     suspend fun scheduleIds(accountId: String): List<String>
 
     @Query(
-        "DELETE FROM cached_plants WHERE accountId = :accountId AND plantId = :plantId AND NOT EXISTS (SELECT 1 FROM operation_outbox WHERE accountId = :accountId AND aggregateType = 'personalPlant' AND aggregateId = :plantId AND state IN ('PENDING', 'CONFLICT', 'FAILED'))"
+        "DELETE FROM cached_plants WHERE accountId = :accountId AND plantId = :plantId AND NOT EXISTS (SELECT 1 FROM operation_outbox WHERE accountId = :accountId AND aggregateType IN ('personalPlant', 'personalPlants') AND aggregateId = :plantId AND state IN ('PENDING', 'CONFLICT', 'FAILED'))"
     )
     suspend fun deleteRemoteMissingPlantUnlessDraft(accountId: String, plantId: String)
 
@@ -140,6 +140,14 @@ interface SyncDao {
         "SELECT * FROM operation_outbox WHERE accountId = :accountId AND state = 'PENDING' ORDER BY createdAtEpochMillis ASC, operationId ASC"
     )
     suspend fun ready(accountId: String): List<OperationOutboxEntity>
+
+    @Query(
+        "SELECT * FROM operation_outbox WHERE accountId = :accountId AND (state = 'PENDING' OR (state = 'FAILED' AND lastErrorCode IN (:transientCodes))) ORDER BY createdAtEpochMillis ASC, operationId ASC"
+    )
+    suspend fun replayable(
+        accountId: String,
+        transientCodes: Set<String>,
+    ): List<OperationOutboxEntity>
 
     @Query(
         "SELECT * FROM operation_outbox WHERE accountId = :accountId AND state IN ('PENDING', 'CONFLICT', 'FAILED') ORDER BY createdAtEpochMillis ASC, operationId ASC"

@@ -21,6 +21,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -71,7 +72,11 @@ class RegistrationRepositoryTest {
                 1,
                 gateway.commands.map(RemoteMutationCommand::operationId).distinct().size,
             )
-            assertNotNull(database.cacheDao().plantBlocking("account-a", "plant-stable"))
+            assertTrue(
+                requireNotNull(database.cacheDao().plantBlocking("account-a", "plant-stable"))
+                    .detailsComplete
+            )
+            assertEquals(listOf("CREATE"), gateway.commands.map { it.mutationType }.distinct())
             assertEquals(
                 listOf("plant-stable"),
                 database.cacheDao().plants("account-a").map(CachedPlantEntity::plantId),

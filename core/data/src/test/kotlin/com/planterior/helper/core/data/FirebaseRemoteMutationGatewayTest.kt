@@ -22,6 +22,7 @@ class FirebaseRemoteMutationGatewayTest {
                 OperationId("operation-stable"),
                 "personalPlants",
                 "plant-stable",
+                "CREATE",
                 Revision(0),
                 "{\"displayName\":\"몬스테라\",\"registrationMethod\":\"MANUAL\"}",
             )
@@ -30,6 +31,7 @@ class FirebaseRemoteMutationGatewayTest {
         assertEquals("personalPlants", callable.input.single()["collection"])
         assertEquals("account-a", callable.input.single()["expectedOwnerUid"])
         assertEquals("plant-stable", callable.input.single()["documentId"])
+        assertEquals("CREATE", callable.input.single()["mutationType"])
         assertEquals("operation-stable", callable.input.single()["idempotencyKey"])
         assertEquals(0L, callable.input.single()["expectedRevision"])
     }
@@ -48,6 +50,7 @@ class FirebaseRemoteMutationGatewayTest {
                     OperationId("operation-stable"),
                     "personalPlants",
                     "plant-stable",
+                    "CREATE",
                     Revision(0),
                     "{}",
                 )
@@ -67,6 +70,7 @@ class FirebaseRemoteMutationGatewayTest {
                     OperationId("operation-stable"),
                     "personalPlants",
                     "plant-stable",
+                    "CREATE",
                     Revision(0),
                     "{}",
                 )

@@ -9,6 +9,7 @@ import com.planterior.helper.core.database.LastSyncEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 
 data class RemotePlant(
     val id: String,
@@ -16,6 +17,11 @@ data class RemotePlant(
     val representativePhotoPath: String?,
     val revision: Long,
     val updatedAtEpochMillis: Long,
+    val contentId: String? = null,
+    val registrationMethod: String = "MANUAL",
+    val location: String? = null,
+    val note: String? = null,
+    val lastWateredDate: String? = null,
 )
 
 data class RemoteWateringSchedule(
@@ -62,11 +68,16 @@ class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : Acc
             .mapNotNull { document ->
                 val displayName = document.getString("displayName") ?: return@mapNotNull null
                 RemotePlant(
-                    document.id,
-                    displayName,
-                    document.getString("representativePhotoPath"),
-                    document.getLong("revision") ?: 0L,
-                    document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+                    id = document.id,
+                    displayName = displayName,
+                    representativePhotoPath = document.getString("representativePhotoPath"),
+                    revision = document.getLong("revision") ?: 0L,
+                    updatedAtEpochMillis = document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+                    contentId = document.getString("contentId"),
+                    registrationMethod = document.getString("registrationMethod") ?: "MANUAL",
+                    location = document.getString("location"),
+                    note = document.getString("note"),
+                    lastWateredDate = document.getString("lastWateredDate"),
                 )
             }
 
@@ -137,29 +148,41 @@ class RoomAccountSessionCache(private val repository: OfflineFirstSyncRepository
 class FirestoreAccountSynchronizer(
     private val remote: AccountSyncRemote,
     private val database: PlanteriorDatabase,
+    private val outbox: OfflineFirstSyncRepository? = null,
     private val now: () -> Instant = Instant::now,
 ) : AccountSynchronizer {
     constructor(
         firestore: FirebaseFirestore,
         database: PlanteriorDatabase,
+        outbox: OfflineFirstSyncRepository? = null,
         now: () -> Instant = Instant::now,
-    ) : this(FirestoreAccountSyncRemote(firestore), database, now)
+    ) : this(FirestoreAccountSyncRemote(firestore), database, outbox, now)
 
     override suspend fun sync(accountUid: String): SyncSummary {
         require(accountUid.matches(Regex("^[A-Za-z0-9_-]{1,128}$")))
         syncDomain(accountUid, SyncDomain.PLANTS) {
+            val replay = outbox?.sync(AccountId(accountUid))
             val entities =
                 remote.plants(accountUid).map {
                     CachedPlantEntity(
-                        accountUid,
-                        it.id,
-                        it.displayName,
-                        it.representativePhotoPath,
-                        it.revision,
-                        it.updatedAtEpochMillis,
+                        accountId = accountUid,
+                        plantId = it.id,
+                        displayName = it.displayName,
+                        representativePhotoPath = it.representativePhotoPath,
+                        revision = it.revision,
+                        updatedAtEpochMillis = it.updatedAtEpochMillis,
+                        contentId = it.contentId,
+                        registrationMethod = it.registrationMethod,
+                        location = it.location,
+                        note = it.note,
+                        lastWateredDate = it.lastWateredDate,
+                        detailsComplete = true,
                     )
                 }
             database.cacheDao().reconcilePlants(accountUid, entities)
+            check(replay == null || (replay.conflicts == 0 && replay.failed == 0)) {
+                "Outbox replay did not reach an authoritative result"
+            }
         }
         syncDomain(accountUid, SyncDomain.WATERING) {
             val entities =
@@ -234,6 +257,8 @@ class FirestoreAccountSynchronizer(
             try {
                 block()
                 LastSyncEntity(accountUid, domain.name, attemptedAt, SyncStatus.SUCCESS.name, null)
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 LastSyncEntity(
                     accountUid,

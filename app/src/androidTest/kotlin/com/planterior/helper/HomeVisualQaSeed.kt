@@ -10,6 +10,7 @@ import com.planterior.helper.core.database.LastSyncEntity
 import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
+import com.planterior.helper.core.database.MIGRATION_4_5
 import com.planterior.helper.core.database.PlanteriorDatabase
 import java.time.LocalDate
 import java.time.ZoneId
@@ -30,7 +31,7 @@ class HomeVisualQaSeed {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val database =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, "planterior.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         try {
             runBlocking {
