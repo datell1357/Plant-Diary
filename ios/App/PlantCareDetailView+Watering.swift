@@ -47,6 +47,7 @@ extension PlantCareDetailView {
         if let todayCalendarDate {
             switch collection.wateringStatus(
                 at: index,
+                lastWateredOn: calendarDate,
                 today: todayCalendarDate,
                 intervalDays: wateringIntervalDays
             ) {

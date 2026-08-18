@@ -130,6 +130,14 @@ struct PlantCareDetailView: View {
             notes = collection.healthNotes[index] ?? []
             wateringIntervalDays = collection.wateringIntervalDays(at: index)
             lastWateredOn = collection.plants[index].lastWateredOn.flatMap(date)
+            #if DEBUG
+                let draftDate = ProcessInfo.processInfo.environment[
+                    "QA_WATERING_DRAFT_DATE"
+                ].flatMap { try? CalendarDate.parse($0) }
+                if let draftDate {
+                    lastWateredOn = date(draftDate)
+                }
+            #endif
         }
         .confirmationDialog(
             "이 식물을 삭제할까요?",

@@ -513,6 +513,8 @@ if [ "$task_number" = "11" ]; then
     -only-testing:PlanteriorTests/PlantCareCalendarTests \
     -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringDueCompletionUpdatesNextDate \
     -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringMissingDateShowsSetupGuidance \
+    -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringDraftDateUpdatesScheduleBeforeSave \
+    -only-testing:PlanteriorUITests/PlantRegistrationUITests/testRegistrationPersistsLocalGregorianWateringDate \
     -only-testing:PlanteriorUITests/PlantCollectionUITests/testSearchDetailTimelineAndDeleteConfirmation
   xcrun xcresulttool export attachments \
     --path "$task_11_result" \
@@ -551,6 +553,8 @@ with open(sys.argv[1], "w", encoding="utf-8") as output:
             "missingDateSetupCompletion": "passed",
             "futureDate": "rejected",
             "localCalendarTimeZone": "passed",
+            "registrationLocalCalendarDate": "passed",
+            "draftSchedulePreview": "passed",
             "plantIsolation": "passed",
             "regression": "collection-detail-passed"
         },

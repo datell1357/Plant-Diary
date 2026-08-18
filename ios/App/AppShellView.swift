@@ -147,6 +147,12 @@ struct AppShellView: View {
     }
 
     private func handleQARouteIfPresent() {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_MANUAL_REGISTRATION"] == "1" {
+                navigation.push(.manualRegistration)
+                return
+            }
+        #endif
         guard let rawURL = ProcessInfo.processInfo.environment["QA_DEEP_LINK"],
               let url = URL(string: rawURL)
         else {

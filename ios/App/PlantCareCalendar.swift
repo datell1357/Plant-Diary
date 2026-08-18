@@ -4,7 +4,9 @@ import PlanteriorDomain
 struct PlantCareCalendar {
     private let calendar: Calendar
 
-    init(calendar: Calendar = .current) {
+    init(calendar userCalendar: Calendar = .current) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = userCalendar.timeZone
         self.calendar = calendar
     }
 

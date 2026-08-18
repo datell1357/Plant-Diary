@@ -29,6 +29,12 @@ final class LocalPlantCollectionStore: ObservableObject {
     }
 
     private init() {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_RESET_COLLECTION"] == "1" {
+                defaults.removeObject(forKey: plantsKey)
+                defaults.removeObject(forKey: notesKey)
+            }
+        #endif
         restore()
     }
 

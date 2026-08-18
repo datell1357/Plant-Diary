@@ -64,6 +64,23 @@ final class PlantCollectionUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
+    func testWateringDraftDateUpdatesScheduleBeforeSave() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
+        app.launchEnvironment["QA_WATERING_DRAFT_DATE"] = "2026-08-02"
+        app.launch()
+
+        app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
+        app.buttons["collection.row.0"].tap()
+
+        let nextDate = app.staticTexts["watering.next-date"]
+        XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
+        XCTAssertTrue(nextDate.label.contains("2026-08-12"))
+    }
+
     func testSearchDetailTimelineAndDeleteConfirmation() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"

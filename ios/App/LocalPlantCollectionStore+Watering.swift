@@ -11,12 +11,13 @@ extension LocalPlantCollectionStore {
 
     func wateringStatus(
         at index: Int,
+        lastWateredOn: CalendarDate?,
         today: CalendarDate,
         intervalDays: Int
     ) -> WateringScheduleStatus {
         guard
             plants.indices.contains(index),
-            let lastWateredOn = plants[index].lastWateredOn
+            let lastWateredOn
         else {
             return .unavailable
         }

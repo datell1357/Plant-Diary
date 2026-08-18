@@ -19,4 +19,20 @@ struct PlantCareCalendarTests {
 
         #expect(date == expected)
     }
+
+    @Test
+    func keepsGregorianDatesForNonGregorianUserCalendars() throws {
+        let timeZone = try #require(TimeZone(identifier: "Asia/Seoul"))
+        let instant = try #require(
+            ISO8601DateFormatter().date(from: "2026-08-10T15:30:00Z")
+        )
+        var userCalendar = Calendar(identifier: .buddhist)
+        userCalendar.timeZone = timeZone
+        let subject = PlantCareCalendar(calendar: userCalendar)
+
+        let date = try subject.calendarDate(from: instant)
+        let expected = try CalendarDate.parse("2026-08-11")
+
+        #expect(date == expected)
+    }
 }

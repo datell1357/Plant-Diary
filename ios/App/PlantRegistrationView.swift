@@ -11,6 +11,7 @@ struct PlantRegistrationView: View {
     @State private var lastWatered = Date()
     @State private var usesLastWateredDate = false
     @State private var saved = false
+    private let plantCalendar = PlantCareCalendar()
     @State private var representativePhoto: Data?
     @State private var showsDuplicate = false
     @State private var openedExisting = false
@@ -60,9 +61,28 @@ struct PlantRegistrationView: View {
             if saved {
                 Text("등록이 완료되었어요.")
                     .accessibilityIdentifier("registration.saved")
+                #if DEBUG
+                    if let lastWateredOn = collection.plants.last?.lastWateredOn {
+                        Text(lastWateredOn.rawValue)
+                            .accessibilityIdentifier(
+                                "registration.saved.last-watered"
+                            )
+                    }
+                #endif
             }
         }
         .navigationTitle("식물 등록")
+        .task {
+            #if DEBUG
+                let date = ProcessInfo.processInfo.environment[
+                    "QA_REGISTRATION_LAST_WATERED_INSTANT"
+                ].flatMap { ISO8601DateFormatter().date(from: $0) }
+                if let date {
+                    lastWatered = date
+                    usesLastWateredDate = true
+                }
+            #endif
+        }
         .confirmationDialog(
             "이미 등록한 식물이에요",
             isPresented: $showsDuplicate
@@ -113,12 +133,7 @@ struct PlantRegistrationView: View {
     }
 
     private var calendarDate: CalendarDate? {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return try? CalendarDate.parse(formatter.string(from: lastWatered))
+        try? plantCalendar.calendarDate(from: lastWatered)
     }
 }
 
