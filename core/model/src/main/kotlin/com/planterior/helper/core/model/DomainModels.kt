@@ -141,6 +141,8 @@ value class OperationId(val value: String) {
     }
 
     companion object {
+        fun random(): OperationId = OperationId(java.util.UUID.randomUUID().toString())
+
         fun stable(
             accountId: AccountId,
             aggregateId: String,
