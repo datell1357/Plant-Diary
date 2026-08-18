@@ -1,0 +1,30 @@
+<resources>
+    <string name="registration_title">식물 등록</string>
+    <string name="registration_name">식물 이름</string>
+    <string name="registration_search">공개 식물 정보 검색</string>
+    <string name="registration_search_action">검색</string>
+    <string name="registration_search_empty">검색 결과가 없어도 이름으로 직접 등록할 수 있어요.</string>
+    <string name="registration_search_failed">검색할 수 없어요. 이름으로 직접 등록하거나 다시 시도해 주세요.</string>
+    <string name="registration_last_watered">마지막 물 준 날짜 (YYYY-MM-DD, 선택)</string>
+    <string name="registration_photo">대표 사진 선택 (선택)</string>
+    <string name="registration_photo_selected">대표 사진 선택됨</string>
+    <string name="registration_photo_disclosure">선택한 사진은 내 식물의 대표 사진으로 비공개 저장돼요.</string>
+    <string name="registration_photo_invalid">JPEG, PNG, WebP, HEIF 사진을 20MB 이하로 선택해 주세요.</string>
+    <string name="registration_identification_photo">식별에 사용한 사진을 대표 사진으로 저장</string>
+    <string name="registration_submit">내 식물로 등록</string>
+    <string name="registration_retry">저장 다시 시도</string>
+    <string name="registration_cancel">취소</string>
+    <string name="registration_duplicate_title">같은 종류의 식물이 이미 있어요</string>
+    <string name="registration_open_existing">기존 식물 열기</string>
+    <string name="registration_add_another">한 그루 더 등록</string>
+    <string name="registration_duplicate_cancel">등록 취소</string>
+    <string name="registration_saving">안전하게 저장하고 있어요…</string>
+    <string name="registration_saved">등록했어요</string>
+    <string name="registration_name_required">식물 이름을 입력해 주세요.</string>
+    <string name="registration_name_long">식물 이름은 100자까지 입력할 수 있어요.</string>
+    <string name="registration_date_invalid">날짜를 YYYY-MM-DD 형식으로 입력해 주세요.</string>
+    <string name="registration_date_future">미래 날짜는 선택할 수 없어요.</string>
+    <string name="registration_save_failed">저장하지 못했어요. 같은 식물로 안전하게 다시 시도할 수 있어요.</string>
+    <string name="registration_profile_failed">계정 정보를 불러오지 못했어요.</string>
+    <string name="registration_duplicate_failed">중복 식물을 확인하지 못했어요.</string>
+</resources>

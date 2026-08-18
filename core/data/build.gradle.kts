@@ -7,6 +7,8 @@ dependencies {
     implementation(project(":core:database"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.firebase.firestore)
+    implementation(libs.firebase.functions)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit4)
     testImplementation(libs.robolectric)

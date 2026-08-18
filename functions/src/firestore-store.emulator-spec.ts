@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
-import { executeOwnerMutation, executeServerStateWrite } from "./contracts.js";
+import { ContractError, executeOwnerMutation, executeServerStateWrite } from "./contracts.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
 
 const projectId = "demo-planterior";
@@ -24,6 +24,7 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
   try {
     await Promise.all(cleanup.map((path) => firestore.doc(path).delete()));
     const mutation = {
+      expectedOwnerUid: "user-a",
       collection: "personalPlants",
       documentId: "emulator-plant",
       expectedRevision: 0,
@@ -32,6 +33,10 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
     };
     assert.deepEqual(await executeOwnerMutation({ uid: "user-a" }, mutation, store), { kind: "applied", revision: 1 });
     assert.deepEqual(await executeOwnerMutation({ uid: "user-a" }, mutation, store), { kind: "duplicate", revision: 1 });
+    await assert.rejects(
+      () => executeOwnerMutation({ uid: "user-a" }, { ...mutation, payload: { ...mutation.payload, displayName: "변경" } }, store),
+      ContractError,
+    );
     assert.deepEqual(
       await executeOwnerMutation({ uid: "user-a" }, { ...mutation, expectedRevision: 0, idempotencyKey: "operation-emulator-0002" }, store),
       { kind: "conflict", actualRevision: 1 },

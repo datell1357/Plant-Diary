@@ -132,6 +132,11 @@ interface SyncDao {
     }
 
     @Query(
+        "SELECT * FROM operation_outbox WHERE accountId = :accountId AND operationId = :operationId"
+    )
+    suspend fun operation(accountId: String, operationId: String): OperationOutboxEntity?
+
+    @Query(
         "SELECT * FROM operation_outbox WHERE accountId = :accountId AND state = 'PENDING' ORDER BY createdAtEpochMillis ASC, operationId ASC"
     )
     suspend fun ready(accountId: String): List<OperationOutboxEntity>

@@ -48,7 +48,7 @@ service cloud.firestore {
       return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'identificationRequests'];
     }
     function ownerWritable(collection) {
-      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'miniHomes', 'placements', 'consents', 'identificationRequests'];
+      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'miniHomes', 'placements', 'consents', 'identificationRequests'];
     }
     function serverWritable(collection) {
       return collection in ['weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries'];
@@ -150,8 +150,10 @@ service cloud.firestore {
       allow read: if owns(uid);
       allow create: if trustedServer()
         && operationId == request.resource.data.idempotencyKey
-        && request.resource.data.keys().hasOnly(metadataFields().concat(['documentPath']))
-        && (!request.resource.data.keys().hasAny(['documentPath']) || request.resource.data.documentPath is string)
+        && request.resource.data.keys().hasOnly(metadataFields().concat(['documentPath', 'requestHash']))
+        && request.resource.data.documentPath is string
+        && request.resource.data.requestHash is string
+        && request.resource.data.requestHash.matches('^[a-f0-9]{64}$')
         && validCreate(uid);
       allow update, delete: if false;
     }

@@ -31,6 +31,10 @@ import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
 import com.planterior.helper.feature.identify.IdentificationRoute
+import com.planterior.helper.feature.registration.RegistrationContent
+import com.planterior.helper.feature.registration.RegistrationRepository
+import com.planterior.helper.feature.registration.RegistrationRoute
+import com.planterior.helper.feature.registration.RegistrationSeed
 import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.identify.photoIdentificationHandoff
 import com.planterior.helper.ui.PlaceholderScreen
@@ -63,6 +67,7 @@ fun PlanteriorNavHost(
     modifier: Modifier = Modifier,
     authCoordinator: AuthCoordinator? = null,
     homeViewModel: HomeViewModel? = null,
+    registrationRepository: RegistrationRepository? = null,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
@@ -261,17 +266,57 @@ fun PlanteriorNavHost(
             )
         }
         composable<PlanteriorRoute.Registration> {
-            val candidate = registrationHandoff.confirmed?.candidate
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_registration),
-                description =
-                    candidate?.let {
-                        stringResource(
-                            R.string.screen_registration_identified_description,
-                            it.koreanName ?: it.commonName ?: it.scientificName,
-                        )
-                    } ?: stringResource(R.string.screen_registration_description),
-            )
+            val confirmed = registrationHandoff.confirmed
+            val seed =
+                confirmed?.let {
+                    RegistrationSeed.Identified(
+                        RegistrationContent(
+                            it.candidate.publicContentId,
+                            it.candidate.koreanName
+                                ?: it.candidate.commonName
+                                ?: it.candidate.scientificName,
+                        ),
+                        it.requestId.value,
+                    )
+                } ?: RegistrationSeed.Manual
+            if (registrationRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_registration),
+                    description =
+                        confirmed?.candidate?.let {
+                            stringResource(
+                                R.string.screen_registration_identified_description,
+                                it.koreanName ?: it.commonName ?: it.scientificName,
+                            )
+                        } ?: stringResource(R.string.screen_registration_description),
+                )
+            } else {
+                val registrationNavigation =
+                    remember(navController) {
+                        RegistrationNavigationCallbacks { destination ->
+                            navController.navigate(destination) {
+                                popUpTo<PlanteriorRoute.Registration> { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                RegistrationRoute(
+                    seed = seed,
+                    repository = registrationRepository,
+                    onOpenExisting = {
+                        registrationHandoff.clear()
+                        registrationNavigation.openExisting(it)
+                    },
+                    onCompleted = {
+                        registrationHandoff.clear()
+                        registrationNavigation.registrationCompleted(it.id)
+                    },
+                    onCancel = {
+                        registrationHandoff.clear()
+                        navController.popBackStack()
+                    },
+                )
+            }
         }
         composable<PlanteriorRoute.MiniHome> {
             PlaceholderScreen(

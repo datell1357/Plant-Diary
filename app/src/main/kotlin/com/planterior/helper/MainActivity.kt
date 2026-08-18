@@ -96,6 +96,7 @@ internal fun PlanteriorApp(
             startRoute = backStack.first(),
             authCoordinator = authRuntime?.coordinator,
             homeViewModel = resolvedHomeViewModel,
+            registrationRepository = authRuntime?.registrationRepository,
         )
     }
 }

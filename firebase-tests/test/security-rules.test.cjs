@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { assertFails, assertSucceeds, initializeTestEnvironment } = require("@firebase/rules-unit-testing");
-const { Timestamp, collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } = require("firebase/firestore");
+const { Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } = require("firebase/firestore");
 const { ref, uploadBytes, getBytes } = require("firebase/storage");
 const { before, after, beforeEach, describe, it } = require("mocha");
 
@@ -50,8 +50,12 @@ describe("Planterior Firebase ownership contract", () => {
     await assertFails(getDoc(doc(anonymous, "users/user-a")));
     await assertFails(setDoc(doc(owner, "users/user-a/personalPlants/root-spoof"), write("user-b")));
     const target = doc(owner, "users/user-a/personalPlants/plant-a");
-    await assertSucceeds(setDoc(target, { ...write("user-a"), ...collectionFixture("personalPlants") }));
+    await assertFails(setDoc(target, { ...write("user-a"), ...collectionFixture("personalPlants") }));
+    await env.withSecurityRulesDisabled(async (admin) =>
+      setDoc(doc(admin.firestore(), "users/user-a/personalPlants/plant-a"), { ...write("user-a"), ...collectionFixture("personalPlants") })
+    );
     await assertSucceeds(getDoc(target));
+    await assertFails(deleteDoc(target));
     await assertFails(getDoc(doc(foreign, "users/user-a/personalPlants/plant-a")));
     await assertFails(updateDoc(doc(foreign, "users/user-a/personalPlants/plant-a"), { displayName: "탈취" }));
     await assertFails(getDoc(doc(anonymous, "users/user-a/personalPlants/plant-a")));
@@ -70,7 +74,14 @@ describe("Planterior Firebase ownership contract", () => {
     for (const collectionName of collections) {
       const path = `users/user-a/${collectionName}/fixture`;
       const writer = serverCollections.has(collectionName) ? server : owner;
-      await assertSucceeds(setDoc(doc(writer, path), { ...write("user-a"), ...collectionFixture(collectionName) }));
+      if (collectionName === "personalPlants") {
+        await assertFails(setDoc(doc(writer, path), { ...write("user-a"), ...collectionFixture(collectionName) }));
+        await env.withSecurityRulesDisabled(async (admin) =>
+          setDoc(doc(admin.firestore(), path), { ...write("user-a"), ...collectionFixture(collectionName) })
+        );
+      } else {
+        await assertSucceeds(setDoc(doc(writer, path), { ...write("user-a"), ...collectionFixture(collectionName) }));
+      }
       await assertSucceeds(getDoc(doc(owner, path)));
       await assertFails(getDoc(doc(foreign, path)));
       await assertFails(setDoc(doc(foreign, path), { ...write("user-b"), ...collectionFixture(collectionName) }));
@@ -83,7 +94,7 @@ describe("Planterior Firebase ownership contract", () => {
     const server = env.authenticatedContext("service", { server: true }).firestore();
     const operation = doc(server, "users/user-a/operations/op-stable-0001");
     await assertFails(setDoc(doc(owner, "users/user-a/operations/op-owner-forged"), write("user-a", 1, 0, "op-owner-forged")));
-    await assertSucceeds(setDoc(operation, { ...write("user-a", 1, 0, "op-stable-0001"), updatedAt: ts("2026-08-12T00:00:00Z") }));
+    await assertSucceeds(setDoc(operation, { ...write("user-a", 1, 0, "op-stable-0001"), documentPath: "users/user-a/personalPlants/plant-a", requestHash: "a".repeat(64), updatedAt: ts("2026-08-12T00:00:00Z") }));
     await assertFails(setDoc(operation, write("user-a", 1, 0, "op-stable-0001")));
     await assertFails(setDoc(doc(server, "users/user-a/operations/path-mismatch"), write("user-a", 1, 0, "other-operation")));
   });
@@ -99,9 +110,11 @@ describe("Planterior Firebase ownership contract", () => {
     await env.withSecurityRulesDisabled(async (admin) => setDoc(doc(admin.firestore(), "users/user-a/unknownCollection/server-only"), { secret: true }));
     await assertFails(getDoc(doc(owner, "users/user-a/unknownCollection/server-only")));
     await assertFails(setDoc(doc(owner, "users/user-a/personalPlants/bad-instant"), { ...write("user-a"), updatedAt: "not-an-instant" }));
-    await assertSucceeds(setDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { ...write("user-a"), ...collectionFixture("personalPlants") }));
-    await assertFails(updateDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { revision: 3, expectedRevision: 1, idempotencyKey: "op-valid-0002" }));
-    await assertSucceeds(updateDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { revision: 2, expectedRevision: 1, idempotencyKey: "op-valid-0002" }));
+    await assertFails(setDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { ...write("user-a"), ...collectionFixture("personalPlants") }));
+    await env.withSecurityRulesDisabled(async (admin) =>
+      setDoc(doc(admin.firestore(), "users/user-a/personalPlants/plant-a"), { ...write("user-a"), ...collectionFixture("personalPlants") })
+    );
+    await assertFails(updateDoc(doc(owner, "users/user-a/personalPlants/plant-a"), { revision: 2, expectedRevision: 1, idempotencyKey: "op-valid-0002" }));
   });
 
   it("reads only public content and separates contentAdmin from opsAdmin", async () => {

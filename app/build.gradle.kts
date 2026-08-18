@@ -337,6 +337,7 @@ dependencies {
     implementation(project(":feature:camera"))
     implementation(project(":feature:home"))
     implementation(project(":feature:identify"))
+    implementation(project(":feature:registration"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)

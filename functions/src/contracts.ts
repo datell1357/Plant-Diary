@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export type AuthContext = Readonly<{ uid: string }>;
 export type ServerContext = Readonly<{ trusted: boolean }>;
 
@@ -26,6 +28,7 @@ export type OwnerMutationCommand = Readonly<{
   documentPath: string;
   expectedRevision: number;
   idempotencyKey: string;
+  requestHash: string;
   payload: Readonly<Record<string, unknown>>;
 }>;
 
@@ -45,6 +48,8 @@ export type MutationResult =
 export interface MutationStore {
   applyOwnerMutation(command: OwnerMutationCommand): Promise<MutationResult>;
   writeServerState(command: ServerStateCommand): Promise<void>;
+  ownerZoneId(ownerUid: string): Promise<string>;
+  publicPlantContentExists(contentId: string): Promise<boolean>;
 }
 
 export type ContractErrorCode =
@@ -61,6 +66,23 @@ export class ContractError extends Error {
 
 const opaqueId = /^[A-Za-z0-9_-]{1,128}$/;
 const operationId = /^[A-Za-z0-9_-]{8,128}$/;
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Readonly<Record<string, unknown>>).sort(
+      ([left], [right]) => (left < right ? -1 : left > right ? 1 : 0),
+    );
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+  }
+  throw new ContractError("invalid-argument", "Payload contains an unsupported value");
+}
+
+function mutationHash(value: Readonly<Record<string, unknown>>): string {
+  return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
+}
 
 function record(value: unknown, label: string): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -203,18 +225,51 @@ function serverCollection(value: string): ServerCollection {
   }
 }
 
-function validateOwnerPayload(collection: OwnerCollection, payload: Readonly<Record<string, unknown>>): void {
+async function validateOwnerPayload(
+  collection: OwnerCollection,
+  payload: Readonly<Record<string, unknown>>,
+  ownerUid: string,
+  documentId: string,
+  store: MutationStore,
+): Promise<void> {
   switch (collection) {
-    case "personalPlants":
+    case "personalPlants": {
       exactFields(payload, ["displayName", "registrationMethod"], ["contentId", "representativePhotoPath", "location", "note", "lastWateredDate"]);
-      stringField(payload, "displayName");
+      const displayName = stringField(payload, "displayName");
+      const graphemes = [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(displayName)].length;
+      if (displayName !== displayName.trim() || graphemes < 1 || graphemes > 100) {
+        throw new ContractError("invalid-argument", "displayName must be normalized and contain 1 to 100 characters");
+      }
       oneOf(stringField(payload, "registrationMethod"), ["IDENTIFIED", "IDENTIFICATION_EDITED", "MANUAL"] as const, "registrationMethod");
-      if (nullableStringField(payload, "contentId") !== null) opaqueField(payload, "contentId");
-      nullableStringField(payload, "representativePhotoPath");
+      const contentId = nullableStringField(payload, "contentId");
+      if (contentId !== null) {
+        opaqueField(payload, "contentId");
+        if (!(await store.publicPlantContentExists(contentId))) {
+          throw new ContractError("invalid-argument", "contentId must reference published plant content");
+        }
+      }
+      const photoPath = nullableStringField(payload, "representativePhotoPath");
+      if (photoPath !== null && !new RegExp(`^plant-photos/${ownerUid}/${documentId}/representative[.](jpg|png|webp|heif|heic)$`).test(photoPath)) {
+        throw new ContractError("invalid-argument", "representativePhotoPath must belong to the target plant");
+      }
       nullableStringField(payload, "location");
       nullableStringField(payload, "note");
-      localDate(payload, "lastWateredDate", true);
+      const watered = localDate(payload, "lastWateredDate", true);
+      if (watered !== null) {
+        const ownerZone = await store.ownerZoneId(ownerUid);
+        zoneId({ ownerZone }, "ownerZone");
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: ownerZone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).formatToParts(new Date());
+        const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value;
+        const today = `${part("year")}-${part("month")}-${part("day")}`;
+        if (watered > today) throw new ContractError("invalid-argument", "lastWateredDate cannot be in the future");
+      }
       return;
+    }
     case "wateringRecords":
       exactFields(payload, ["plantId", "wateredDate", "recordedAt"]);
       opaqueField(payload, "plantId");
@@ -344,7 +399,11 @@ export async function executeOwnerMutation(
 ): Promise<MutationResult> {
   if (auth === null || !opaqueId.test(auth.uid)) throw new ContractError("unauthenticated", "Authentication is required");
   const value = record(input, "input");
-  exactFields(value, ["collection", "documentId", "expectedRevision", "idempotencyKey", "payload"]);
+  exactFields(value, ["expectedOwnerUid", "collection", "documentId", "expectedRevision", "idempotencyKey", "payload"]);
+  const expectedOwnerUid = opaqueField(value, "expectedOwnerUid");
+  if (expectedOwnerUid !== auth.uid) {
+    throw new ContractError("permission-denied", "Authenticated owner does not match the request");
+  }
   const collection = ownerCollection(stringField(value, "collection"));
   const documentId = stringField(value, "documentId");
   const idempotencyKey = stringField(value, "idempotencyKey");
@@ -353,7 +412,14 @@ export async function executeOwnerMutation(
     throw new ContractError("invalid-argument", "Mutation identifiers or revision are invalid");
   }
   const payload = record(value.payload, "payload");
-  validateOwnerPayload(collection, payload);
+  await validateOwnerPayload(collection, payload, auth.uid, documentId, store);
+  const requestHash = mutationHash({
+    ownerUid: auth.uid,
+    collection,
+    documentId,
+    expectedRevision,
+    payload,
+  });
   return store.applyOwnerMutation({
     ownerUid: auth.uid,
     collection,
@@ -361,6 +427,7 @@ export async function executeOwnerMutation(
     documentPath: `users/${auth.uid}/${collection}/${documentId}`,
     expectedRevision,
     idempotencyKey,
+    requestHash,
     payload,
   });
 }

@@ -11,6 +11,17 @@ function timestampPayload(payload: Readonly<Record<string, unknown>>): Readonly<
 export class FirestoreMutationStore implements MutationStore {
   constructor(private readonly firestore: Firestore) {}
 
+  async publicPlantContentExists(contentId: string): Promise<boolean> {
+    const content = await this.firestore.doc(`plantContents/${contentId}`).get();
+    return content.exists && content.get("publicationState") === "PUBLIC";
+  }
+
+  async ownerZoneId(ownerUid: string): Promise<string> {    const account = await this.firestore.doc(`users/${ownerUid}`).get();
+    const value = account.get("zoneId");
+    if (typeof value !== "string") throw new ContractError("invalid-argument", "Account timezone is unavailable");
+    return value;
+  }
+
   async applyOwnerMutation(command: OwnerMutationCommand): Promise<MutationResult> {
     return this.firestore.runTransaction(async (transaction) => {
       const operationRef = this.firestore.doc(`users/${command.ownerUid}/operations/${command.idempotencyKey}`);
@@ -19,7 +30,8 @@ export class FirestoreMutationStore implements MutationStore {
       if (operation.exists) {
         const revision = operation.get("revision");
         const documentPath = operation.get("documentPath");
-        if (typeof revision !== "number" || documentPath !== command.documentPath) {
+        const requestHash = operation.get("requestHash");
+        if (typeof revision !== "number" || documentPath !== command.documentPath || requestHash !== command.requestHash) {
           throw new ContractError("invalid-argument", "Operation receipt does not match the mutation");
         }
         return { kind: "duplicate", revision };
@@ -30,7 +42,7 @@ export class FirestoreMutationStore implements MutationStore {
       if (actualRevision !== command.expectedRevision) return { kind: "conflict", actualRevision };
       const revision = actualRevision + 1;
       transaction.set(documentRef, { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });
-      transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });
+      transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, requestHash: command.requestHash, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });
       return { kind: "applied", revision };
     });
   }

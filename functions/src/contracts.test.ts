@@ -9,21 +9,24 @@ import {
 
 class FakeStore implements MutationStore {
   readonly revisions = new Map<string, number>();
-  readonly operations = new Map<string, { path: string; revision: number }>();
+  readonly operations = new Map<string, { path: string; requestHash: string; revision: number }>();
   readonly writes = new Map<string, Readonly<Record<string, unknown>>>();
+
+  async ownerZoneId(_ownerUid: string) { return "Asia/Seoul"; }
+  async publicPlantContentExists(contentId: string) { return contentId === "species-public"; }
 
   async applyOwnerMutation(command: Parameters<MutationStore["applyOwnerMutation"]>[0]) {
     const operationPath = `users/${command.ownerUid}/operations/${command.idempotencyKey}`;
     const duplicate = this.operations.get(operationPath);
     if (duplicate) {
-      if (duplicate.path !== command.documentPath) throw new ContractError("invalid-argument", "Idempotency key belongs to another document");
+      if (duplicate.path !== command.documentPath || duplicate.requestHash !== command.requestHash) throw new ContractError("invalid-argument", "Idempotency key belongs to another request");
       return { kind: "duplicate" as const, revision: duplicate.revision };
     }
     const actual = this.revisions.get(command.documentPath) ?? 0;
     if (actual !== command.expectedRevision) return { kind: "conflict" as const, actualRevision: actual };
     const revision = actual + 1;
     this.revisions.set(command.documentPath, revision);
-    this.operations.set(operationPath, { path: command.documentPath, revision });
+    this.operations.set(operationPath, { path: command.documentPath, requestHash: command.requestHash, revision });
     this.writes.set(command.documentPath, command.payload);
     return { kind: "applied" as const, revision };
   }
@@ -33,7 +36,7 @@ class FakeStore implements MutationStore {
   }
 }
 
-const validMutation = { collection: "personalPlants", documentId: "plant-a", expectedRevision: 0, idempotencyKey: "operation-0001", payload: { displayName: "몬스테라", registrationMethod: "MANUAL" } };
+const validMutation = { expectedOwnerUid: "user-a", collection: "personalPlants", documentId: "plant-a", expectedRevision: 0, idempotencyKey: "operation-0001", payload: { displayName: "몬스테라", registrationMethod: "MANUAL" } };
 
 test("owner is derived from auth and duplicate idempotency key applies once", async () => {
   const store = new FakeStore();
@@ -43,11 +46,19 @@ test("owner is derived from auth and duplicate idempotency key applies once", as
   assert.deepEqual(duplicate, { kind: "duplicate", revision: 1 });
   assert.equal(store.writes.size, 1);
   assert.ok(store.writes.has("users/user-a/personalPlants/plant-a"));
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "변경", registrationMethod: "MANUAL" } }, store),
+    ContractError,
+  );
 });
 
 test("auth spoof malformed operation and revision conflict are typed errors", async () => {
   const store = new FakeStore();
   await assert.rejects(() => executeOwnerMutation(null, validMutation, store), (error: unknown) => error instanceof ContractError && error.code === "unauthenticated");
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-b" }, validMutation, store),
+    (error: unknown) => error instanceof ContractError && error.code === "permission-denied",
+  );
   await assert.rejects(() => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, userId: "user-b" }, store), (error: unknown) => error instanceof ContractError && error.code === "invalid-argument");
   await assert.rejects(() => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, idempotencyKey: "../bad" }, store), ContractError);
   await executeOwnerMutation({ uid: "user-a" }, validMutation, store);
@@ -62,6 +73,7 @@ test("auth spoof malformed operation and revision conflict are typed errors", as
 test("owner callable rejects impossible dates enums and unknown sensitive fields", async () => {
   const store = new FakeStore();
   const schedule = {
+    expectedOwnerUid: "user-a",
     collection: "wateringSchedules",
     documentId: "schedule-a",
     expectedRevision: 0,
@@ -75,6 +87,43 @@ test("owner callable rejects impossible dates enums and unknown sensitive fields
   );
   await assert.rejects(
     () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { ...validMutation.payload, registrationMethod: "FORGED" } }, store),
+    ContractError,
+  );
+});
+
+test("personal plant registration rejects unnormalized names and foreign representative paths", async () => {
+  const store = new FakeStore();
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: " 몬스테라 ", registrationMethod: "MANUAL" } }, store),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "몬스테라", registrationMethod: "MANUAL", representativePhotoPath: "plant-photos/user-b/plant-a/representative.webp" } }, store),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "🌱".repeat(101), registrationMethod: "MANUAL" } }, store),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "몬스테라", registrationMethod: "MANUAL", lastWateredDate: "2999-01-01" } }, store),
+    ContractError,
+  );
+});
+
+test("personal plant content links must resolve to public content", async () => {
+  const store = new FakeStore();
+  await executeOwnerMutation(
+    { uid: "user-a" },
+    { ...validMutation, payload: { ...validMutation.payload, contentId: "species-public" } },
+    store,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation(
+      { uid: "user-a" },
+      { ...validMutation, documentId: "plant-private", idempotencyKey: "operation-private", payload: { ...validMutation.payload, contentId: "species-private" } },
+      store,
+    ),
     ContractError,
   );
 });

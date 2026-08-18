@@ -2,6 +2,7 @@
 .omo/evidence/
 .omo/senpi-task/
 .gradle/
+.kotlin/
 .idea/
 **/build/
 local.properties

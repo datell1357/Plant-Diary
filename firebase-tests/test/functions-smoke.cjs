@@ -17,7 +17,7 @@ async function main() {
   connectFirestoreEmulator(firestore, "127.0.0.1", 8080);
   connectFunctionsEmulator(functions, "127.0.0.1", 5001);
   const applyWrite = httpsCallable(functions, "applyRevisionedOwnerWrite");
-  const mutation = {
+  const mutationPayload = {
     collection: "personalPlants",
     documentId: "callable-plant",
     expectedRevision: 0,
@@ -26,10 +26,11 @@ async function main() {
   };
 
   await assert.rejects(
-    () => applyWrite(mutation),
+    () => applyWrite({ ...mutationPayload, expectedOwnerUid: "anonymous-owner" }),
     (error) => error.code === "functions/unauthenticated",
   );
   const credential = await signInAnonymously(auth);
+  const mutation = { ...mutationPayload, expectedOwnerUid: credential.user.uid };
   const first = await applyWrite(mutation);
   const duplicate = await applyWrite(mutation);
   const conflict = await applyWrite({ ...mutation, idempotencyKey: "operation-callable-0002" });
