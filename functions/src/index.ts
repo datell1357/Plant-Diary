@@ -7,6 +7,7 @@ import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeC
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
+import { FirestoreWateringCompletionStore } from "./firestore-watering-store.js";
 import {
   FirestoreIdentificationRequestStore,
   IdentificationRuntimeError,
@@ -14,10 +15,12 @@ import {
   productionPlantIdHttpClient,
 } from "./plant-identification-runtime.js";
 import { executePlantIdentification, PlantIdentificationError } from "./plant-identification.js";
+import { WateringError, executeWateringCompletion } from "./watering.js";
 
 if (getApps().length === 0) initializeApp();
 const firestore = getFirestore();
 const store = new FirestoreMutationStore(firestore);
+const wateringStore = new FirestoreWateringCompletionStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
 const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
 const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
@@ -58,6 +61,18 @@ export const applyRevisionedOwnerWrite = onCall(async (request) => {
 
 export { executeOwnerMutation, executeServerStateWrite } from "./contracts.js";
 
+export const completeWatering = onCall(async (request) => {
+  try {
+    return await executeWateringCompletion(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      wateringStore,
+    );
+  } catch (error: unknown) {
+    if (error instanceof WateringError) throw new HttpsError(error.code, error.message);
+    throw error;
+  }
+});
 
 export const beginAppleSignIn = onCall(async (request) => {
   try {

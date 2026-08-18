@@ -167,6 +167,16 @@ class CollectionRepositoryTest {
     }
 
     @Test
+    fun `firestore watering interval is range checked as Long before Int conversion`() {
+        assertEquals(1, 1L.toPublicWateringIntervalDays())
+        assertEquals(365, 365L.toPublicWateringIntervalDays())
+        assertEquals(null, 0L.toPublicWateringIntervalDays())
+        assertEquals(null, 366L.toPublicWateringIntervalDays())
+        assertEquals(null, Long.MAX_VALUE.toPublicWateringIntervalDays())
+        assertEquals(null, Long.MIN_VALUE.toPublicWateringIntervalDays())
+    }
+
+    @Test
     fun `missing humidity is a partial detail while available standards remain visible`() =
         runTest {
             val remote =

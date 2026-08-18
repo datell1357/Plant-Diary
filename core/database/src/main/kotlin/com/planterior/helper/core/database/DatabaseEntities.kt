@@ -35,10 +35,11 @@ data class CachedWateringScheduleEntity(
     val scheduleId: String,
     val plantId: String,
     val dueDate: String,
-    val reminderTime: String,
+    val reminderTime: String?,
     val zoneId: String,
     val revision: Long,
     val updatedAtEpochMillis: Long,
+    val enabled: Boolean? = null,
 ) {
     @Ignore val dueLocalDate: LocalDate = LocalDate.parse(dueDate)
 }

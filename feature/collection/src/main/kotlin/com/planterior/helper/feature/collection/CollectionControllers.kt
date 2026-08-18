@@ -4,10 +4,14 @@ import android.icu.text.BreakIterator
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.feature.watering.WateringScheduleCalculator
+import com.planterior.helper.feature.watering.WateringScheduleStatus
+import com.planterior.helper.feature.watering.WateringUnavailableReason
 import java.time.Clock
 import java.time.LocalDate
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,6 +91,52 @@ class PlantDetailController(
     suspend fun start() = load()
 
     suspend fun retry() = load()
+
+    suspend fun reclassifyAtNextAccountMidnight(): Boolean {
+        val zone = currentAccountZone() ?: return false
+        val now = clock.instant()
+        val nextMidnight = now.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant()
+        delay(java.time.Duration.between(now, nextMidnight).toMillis().coerceAtLeast(1L))
+        onResume()
+        return true
+    }
+
+    fun onResume() {
+        _state.value =
+            when (val current = _state.value) {
+                is PlantDetailUiState.Content ->
+                    current.copy(
+                        wateringSchedule =
+                            wateringSchedule(
+                                current.detail.plant,
+                                current.detail.guidance.wateringIntervalDays,
+                                current.detail.accountZone,
+                            )
+                    )
+                is PlantDetailUiState.Partial ->
+                    current.copy(
+                        wateringSchedule =
+                            wateringSchedule(
+                                current.detail.plant,
+                                current.detail.guidance.wateringIntervalDays,
+                                current.detail.accountZone,
+                            )
+                    )
+                is PlantDetailUiState.Stale ->
+                    current.copy(
+                        wateringSchedule =
+                            current.accountZone?.let { zone ->
+                                wateringSchedule(current.plant, null, zone)
+                            } ?: unavailableWateringSchedule()
+                    )
+                is PlantDetailUiState.NoStandardContent ->
+                    current.copy(
+                        wateringSchedule =
+                            wateringSchedule(current.plant, null, current.accountZone)
+                    )
+                else -> current
+            }
+    }
 
     fun beginEditing() {
         val plant = currentPlant() ?: return
@@ -228,12 +278,25 @@ class PlantDetailController(
         _state.value =
             when (result) {
                 is DetailLoad.Fresh ->
-                    PlantDetailUiState.Content(result.detail, editorFor(result.detail.plant))
+                    PlantDetailUiState.Content(
+                        result.detail,
+                        editorFor(result.detail.plant),
+                        wateringSchedule(
+                            result.detail.plant,
+                            result.detail.guidance.wateringIntervalDays,
+                            result.detail.accountZone,
+                        ),
+                    )
                 is DetailLoad.Partial ->
                     PlantDetailUiState.Partial(
                         result.detail,
                         result.missing,
                         editorFor(result.detail.plant),
+                        wateringSchedule(
+                            result.detail.plant,
+                            result.detail.guidance.wateringIntervalDays,
+                            result.detail.accountZone,
+                        ),
                     )
                 is DetailLoad.Stale ->
                     PlantDetailUiState.Stale(
@@ -243,12 +306,20 @@ class PlantDetailController(
                         else EditorState.from(result.plant).also { restoredEditor = null },
                         result.editingAllowed,
                         result.accountZone,
+                        result.accountZone?.let { zone ->
+                            wateringSchedule(
+                                result.plant,
+                                publicIntervalDays = null,
+                                zone,
+                            )
+                        } ?: unavailableWateringSchedule(),
                     )
                 is DetailLoad.NoStandardContent ->
                     PlantDetailUiState.NoStandardContent(
                         result.plant,
                         editorFor(result.plant),
                         result.accountZone,
+                        wateringSchedule(result.plant, null, result.accountZone),
                     )
                 DetailLoad.Forbidden -> PlantDetailUiState.Forbidden
                 DetailLoad.NotFound -> PlantDetailUiState.NotFound
@@ -284,16 +355,65 @@ class PlantDetailController(
         _state.value =
             when (val current = _state.value) {
                 is PlantDetailUiState.Content ->
-                    current.copy(detail = current.detail.copy(plant = plant), editor = editor)
+                    current.copy(
+                        detail = current.detail.copy(plant = plant),
+                        editor = editor,
+                        wateringSchedule =
+                            wateringSchedule(
+                                plant,
+                                current.detail.guidance.wateringIntervalDays,
+                                current.detail.accountZone,
+                            ),
+                    )
                 is PlantDetailUiState.Partial ->
-                    current.copy(detail = current.detail.copy(plant = plant), editor = editor)
-                is PlantDetailUiState.Stale -> current.copy(plant = plant, editor = editor)
+                    current.copy(
+                        detail = current.detail.copy(plant = plant),
+                        editor = editor,
+                        wateringSchedule =
+                            wateringSchedule(
+                                plant,
+                                current.detail.guidance.wateringIntervalDays,
+                                current.detail.accountZone,
+                            ),
+                    )
+                is PlantDetailUiState.Stale ->
+                    current.copy(
+                        plant = plant,
+                        editor = editor,
+                        wateringSchedule =
+                            current.accountZone?.let { zone ->
+                                wateringSchedule(
+                                    plant,
+                                    publicIntervalDays = null,
+                                    zone,
+                                )
+                            } ?: unavailableWateringSchedule(),
+                    )
                 is PlantDetailUiState.NoStandardContent ->
-                    current.copy(plant = plant, editor = editor)
+                    current.copy(
+                        plant = plant,
+                        editor = editor,
+                        wateringSchedule = wateringSchedule(plant, null, current.accountZone),
+                    )
                 else -> current
             }
         saveEditor(null)
     }
+
+    private fun wateringSchedule(
+        plant: PersonalPlantDetail,
+        publicIntervalDays: Int?,
+        accountZone: java.time.ZoneId,
+    ): WateringScheduleStatus =
+        WateringScheduleCalculator.calculate(
+            plant.lastWateredDate,
+            publicIntervalDays,
+            accountZone,
+            clock,
+        )
+
+    private fun unavailableWateringSchedule(): WateringScheduleStatus =
+        WateringScheduleStatus.Unavailable(WateringUnavailableReason.MISSING_PUBLIC_INTERVAL)
 
     private fun currentPlant(): PersonalPlantDetail? =
         when (val current = _state.value) {

@@ -28,10 +28,11 @@ data class RemoteWateringSchedule(
     val id: String,
     val plantId: String,
     val dueDate: String,
-    val reminderTime: String,
+    val reminderTime: String?,
     val zoneId: String,
     val revision: Long,
     val updatedAtEpochMillis: Long,
+    val enabled: Boolean? = null,
 )
 
 /**
@@ -90,7 +91,7 @@ class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : Acc
             .mapNotNull { document ->
                 val plantId = document.getString("plantId") ?: return@mapNotNull null
                 val dueDate = document.getString("dueDate") ?: return@mapNotNull null
-                val reminderTime = document.getString("reminderTime") ?: return@mapNotNull null
+                val reminderTime = document.getString("reminderTime")
                 val zoneId = document.getString("zoneId") ?: return@mapNotNull null
                 RemoteWateringSchedule(
                     document.id,
@@ -100,6 +101,7 @@ class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : Acc
                     zoneId,
                     document.getLong("revision") ?: 0L,
                     document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+                    document.getBoolean("enabled"),
                 )
             }
 
@@ -196,6 +198,7 @@ class FirestoreAccountSynchronizer(
                         it.zoneId,
                         it.revision,
                         it.updatedAtEpochMillis,
+                        it.enabled,
                     )
                 }
             database.cacheDao().reconcileSchedules(accountUid, entities)

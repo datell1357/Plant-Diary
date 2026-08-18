@@ -23,6 +23,7 @@ class PlanteriorRouteContractTest {
             PlanteriorRoute.MiniHome,
             PlanteriorRoute.Notifications,
             PlanteriorRoute.PlantDetail("plant-1"),
+            PlanteriorRoute.WateringConfirmation("plant-1"),
             PlanteriorRoute.Login(returnRoute = "planterior://collection"),
         )
 
@@ -50,6 +51,12 @@ class PlanteriorRouteContractTest {
                 PlanteriorRoute.PlantDetail("plant-1"),
             ) as JsonObject
         assertEquals(setOf("type", "plantId"), encoded.keys)
+        val watering =
+            json.encodeToJsonElement(
+                PlanteriorRoute.serializer(),
+                PlanteriorRoute.WateringConfirmation("plant-1"),
+            ) as JsonObject
+        assertEquals(setOf("type", "plantId"), watering.keys)
     }
 
     @Test

@@ -113,6 +113,34 @@ class AccountSynchronizerPersistenceTest {
     }
 
     @Test
+    fun `account sync retains an authoritative due schedule without notification preferences`() =
+        runTest {
+            val schedule =
+                RemoteWateringSchedule(
+                    id = "plant-a",
+                    plantId = "plant-a",
+                    dueDate = "2026-08-22",
+                    reminderTime = null,
+                    zoneId = "Asia/Seoul",
+                    revision = 1,
+                    updatedAtEpochMillis = now.toEpochMilli(),
+                    enabled = null,
+                )
+
+            FirestoreAccountSynchronizer(
+                    FakeRemote(schedules = listOf(schedule)),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+            val cached = requireNotNull(database.cacheDao().schedule(account, "plant-a"))
+            assertEquals("2026-08-22", cached.dueDate)
+            assertNull(cached.reminderTime)
+            assertNull(cached.enabled)
+        }
+
+    @Test
     fun `session synchronization replays account outbox before authoritative plant snapshot`() =
         runTest {
             val events = mutableListOf<String>()

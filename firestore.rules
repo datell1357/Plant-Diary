@@ -48,10 +48,10 @@ service cloud.firestore {
       return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'identificationRequests'];
     }
     function ownerWritable(collection) {
-      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'miniHomes', 'placements', 'consents', 'identificationRequests'];
+      return collection in ['notificationSettings', 'miniHomes', 'placements', 'consents', 'identificationRequests'];
     }
     function serverWritable(collection) {
-      return collection in ['weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries'];
+      return collection in ['wateringRecords', 'wateringSchedules', 'weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries'];
     }
     function validPersonalPlant() {
       return validEntityKeys(['displayName', 'registrationMethod'], ['contentId', 'representativePhotoPath', 'location', 'note', 'lastWateredDate'])
@@ -65,8 +65,11 @@ service cloud.firestore {
           && validEntityKeys(['plantId', 'wateredDate', 'recordedAt'], [])
           && validOpaqueId(request.resource.data.plantId) && validDate(request.resource.data.wateredDate) && request.resource.data.recordedAt is timestamp)
         || (collection == 'wateringSchedules'
-          && validEntityKeys(['plantId', 'dueDate', 'reminderTime', 'zoneId', 'enabled'], [])
-          && validOpaqueId(request.resource.data.plantId) && validDate(request.resource.data.dueDate) && validTime(request.resource.data.reminderTime) && request.resource.data.zoneId is string && request.resource.data.enabled is bool)
+          && validEntityKeys(['plantId', 'dueDate', 'zoneId'], ['reminderTime', 'enabled'])
+          && validOpaqueId(request.resource.data.plantId) && validDate(request.resource.data.dueDate) && request.resource.data.zoneId is string
+          && (request.resource.data.keys().hasAll(['reminderTime', 'enabled'])
+            ? validTime(request.resource.data.reminderTime) && request.resource.data.enabled is bool
+            : !request.resource.data.keys().hasAny(['reminderTime', 'enabled'])))
         || (collection == 'notificationSettings'
           && validEntityKeys(['wateringEnabled', 'weatherEnabled', 'defaultTime', 'zoneId'], [])
           && request.resource.data.wateringEnabled is bool && request.resource.data.weatherEnabled is bool && validTime(request.resource.data.defaultTime) && request.resource.data.zoneId is string)
@@ -128,7 +131,45 @@ service cloud.firestore {
     }
     function validPublishedContent() {
       return request.resource.data.publicationState in ['DRAFT', 'PUBLIC', 'PRIVATE']
-        && request.resource.data.revision is int && request.resource.data.revision >= 1;
+        && request.resource.data.revision is int && request.resource.data.revision >= 1
+        && (!request.resource.data.keys().hasAny(['wateringIntervalDays'])
+          || (request.resource.data.wateringIntervalDays is int
+            && request.resource.data.wateringIntervalDays >= 1
+            && request.resource.data.wateringIntervalDays <= 365));
+    }
+    function validOperationMetadata(uid, operationId) {
+      return request.resource.data.ownerUid == uid
+        && request.resource.data.idempotencyKey == operationId
+        && validOperationKey(request.resource.data.idempotencyKey)
+        && request.resource.data.documentPath is string
+        && request.resource.data.requestHash is string
+        && request.resource.data.requestHash.matches('^[a-f0-9]{64}$')
+        && request.resource.data.revision is int
+        && request.resource.data.revision >= 1
+        && request.resource.data.expectedRevision is int
+        && request.resource.data.expectedRevision >= 0
+        && request.resource.data.revision == request.resource.data.expectedRevision + 1
+        && validUpdatedAt(request.resource.data.updatedAt);
+    }
+    function validGenericOperation(uid, operationId) {
+      return request.resource.data.keys().hasOnly(metadataFields().concat(['documentPath', 'requestHash']))
+        && validOperationMetadata(uid, operationId);
+    }
+    function validWateringOperation(uid, operationId) {
+      return request.resource.data.keys().hasOnly(metadataFields().concat([
+          'documentPath', 'requestHash', 'wateredDate', 'dueDate', 'recordId',
+          'plantRevision', 'scheduleRevision', 'recordedAt', 'zoneId'
+        ]))
+        && validOperationMetadata(uid, operationId)
+        && request.resource.data.recordId == operationId
+        && validDate(request.resource.data.wateredDate)
+        && validDate(request.resource.data.dueDate)
+        && request.resource.data.dueDate > request.resource.data.wateredDate
+        && request.resource.data.plantRevision == request.resource.data.revision
+        && request.resource.data.scheduleRevision is int
+        && request.resource.data.scheduleRevision >= 1
+        && request.resource.data.recordedAt is timestamp
+        && request.resource.data.zoneId is string;
     }
     function publicDocument() { return resource.data.publicationState == 'PUBLIC'; }
     function validPublicShare() {
@@ -149,20 +190,18 @@ service cloud.firestore {
     match /users/{uid}/operations/{operationId} {
       allow read: if owns(uid);
       allow create: if trustedServer()
-        && operationId == request.resource.data.idempotencyKey
-        && request.resource.data.keys().hasOnly(metadataFields().concat(['documentPath', 'requestHash']))
-        && request.resource.data.documentPath is string
-        && request.resource.data.requestHash is string
-        && request.resource.data.requestHash.matches('^[a-f0-9]{64}$')
-        && validCreate(uid);
+        && (validGenericOperation(uid, operationId)
+          || validWateringOperation(uid, operationId));
       allow update, delete: if false;
     }
     match /users/{uid}/{collection}/{documentId} {
       allow read: if approvedCollection(collection) && owns(uid);
       allow create: if ownerWritable(collection) && owns(uid) && validCreate(uid) && validOwnerEntity(collection);
       allow update: if ownerWritable(collection) && owns(uid) && validUpdate(uid) && validOwnerEntity(collection);
-      allow create: if serverWritable(collection) && trustedServer() && validCreate(uid) && validServerEntity(collection);
-      allow update: if serverWritable(collection) && trustedServer() && validUpdate(uid) && validServerEntity(collection);
+      allow create: if serverWritable(collection) && trustedServer() && validCreate(uid)
+        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules'] && validOwnerEntity(collection)));
+      allow update: if serverWritable(collection) && trustedServer() && validUpdate(uid)
+        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules'] && validOwnerEntity(collection)));
       allow delete: if ownerWritable(collection) && owns(uid) && resource.data.ownerUid == uid;
       allow delete: if serverWritable(collection) && trustedServer() && resource.data.ownerUid == uid;
     }

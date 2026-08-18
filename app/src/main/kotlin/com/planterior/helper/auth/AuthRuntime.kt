@@ -16,6 +16,7 @@ import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.MIGRATION_4_5
+import com.planterior.helper.core.database.MIGRATION_5_6
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.feature.auth.AccountProfileStore
 import com.planterior.helper.feature.auth.AccountSessionCache
@@ -42,6 +43,7 @@ import com.planterior.helper.feature.auth.debugAccountSyncRemote
 import com.planterior.helper.feature.auth.debugAuthProvider
 import com.planterior.helper.feature.auth.prepareDebugAuth
 import com.planterior.helper.feature.collection.CollectionRepository
+import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRemoteDataSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRepository
 import com.planterior.helper.feature.collection.FirebasePlantThumbnailLoader
@@ -56,6 +58,9 @@ import com.planterior.helper.feature.home.HomeWeather
 import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
 import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
+import com.planterior.helper.feature.watering.FirebaseWateringRemoteDataSource
+import com.planterior.helper.feature.watering.OutboxWateringRepository
+import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.home.CachedHomeRepository
 import com.planterior.helper.home.debugHomeSessions
 import com.planterior.helper.home.debugHomeWeatherSource
@@ -72,6 +77,7 @@ private constructor(
     val homeRepository: HomeRepository,
     val registrationRepository: RegistrationRepository?,
     val collectionRepository: CollectionRepository?,
+    val wateringRepository: WateringRepository?,
     val collectionThumbnailLoader: PlantThumbnailLoader,
 ) {
     suspend fun handleAppleCallback(uri: URI): Boolean = apple?.handleCallback(uri) ?: false
@@ -113,7 +119,13 @@ private constructor(
             }
             val database =
                 Room.databaseBuilder(activity, PlanteriorDatabase::class.java, "planterior.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                    )
                     .build()
             val mutationGateway = FirebaseRemoteMutationGateway(functions)
             val repository = OfflineFirstSyncRepository(database, mutationGateway)
@@ -139,6 +151,13 @@ private constructor(
                 FirebaseCollectionRepository(
                     database,
                     FirebaseCollectionRemoteDataSource(auth, firestore),
+                    mutationGateway,
+                )
+            val wateringRepository =
+                OutboxWateringRepository(
+                    database,
+                    CollectionWateringPreparationSource(collectionRepository),
+                    FirebaseWateringRemoteDataSource(auth, firestore),
                     mutationGateway,
                 )
             val apple =
@@ -199,6 +218,7 @@ private constructor(
                 },
                 registrationRepository,
                 collectionRepository,
+                wateringRepository,
                 FirebasePlantThumbnailLoader(storage),
             )
         }
@@ -261,6 +281,7 @@ private constructor(
                 false,
                 // 구성이 없으면 로그인할 수 없으므로 홈은 항상 로그아웃 상태로 머무른다.
                 UnavailableHomeRepository,
+                null,
                 null,
                 null,
                 PlaceholderPlantThumbnailLoader,

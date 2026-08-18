@@ -22,16 +22,15 @@ fun interface OwnerMutationCallable {
     suspend fun call(data: Map<String, Any?>): Map<String, Any>
 }
 
-class FirebaseRemoteMutationGateway(private val callable: OwnerMutationCallable) :
-    RemoteMutationGateway {
+class FirebaseRemoteMutationGateway(
+    private val callable: OwnerMutationCallable,
+    private val wateringCallable: OwnerMutationCallable = callable,
+) : RemoteMutationGateway {
     constructor(
         functions: FirebaseFunctions
     ) : this(
-        OwnerMutationCallable { data ->
-            @Suppress("UNCHECKED_CAST")
-            (functions.getHttpsCallable("applyRevisionedOwnerWrite").call(data).await().data
-                as? Map<String, Any>) ?: emptyMap()
-        }
+        callable(functions, "applyRevisionedOwnerWrite"),
+        callable(functions, "completeWatering"),
     )
 
     override suspend fun apply(command: RemoteMutationCommand): RemoteMutationResult {
@@ -51,7 +50,10 @@ class FirebaseRemoteMutationGateway(private val callable: OwnerMutationCallable)
             )
         val response =
             try {
-                callable.call(request)
+                val target =
+                    if (command.aggregateType == WATERING_COMPLETIONS) wateringCallable
+                    else callable
+                target.call(request)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: FirebaseFunctionsException) {
@@ -72,6 +74,15 @@ class FirebaseRemoteMutationGateway(private val callable: OwnerMutationCallable)
             else -> RemoteMutationResult.Failed("MALFORMED_RESPONSE")
         }
     }
+
+    private companion object {
+        const val WATERING_COMPLETIONS = "wateringCompletions"
+    }
+}
+
+private fun callable(functions: FirebaseFunctions, name: String) = OwnerMutationCallable { data ->
+    @Suppress("UNCHECKED_CAST")
+    (functions.getHttpsCallable(name).call(data).await().data as? Map<String, Any>) ?: emptyMap()
 }
 
 private fun JsonElement.toPlatformValue(): Any? =

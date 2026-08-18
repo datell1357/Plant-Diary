@@ -51,6 +51,7 @@ object PlantDetailTestTags {
     const val ERROR = "plant-detail:error"
     const val RETRY = "plant-detail:retry"
     const val WATER = "plant-detail:water"
+    const val WATERING_SCHEDULE = "watering:schedule"
     const val LIGHT = "plant-detail:light"
     const val TEMPERATURE = "plant-detail:temperature"
     const val HUMIDITY = "plant-detail:humidity"

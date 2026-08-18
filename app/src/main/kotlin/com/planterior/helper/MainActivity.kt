@@ -98,6 +98,7 @@ internal fun PlanteriorApp(
             homeViewModel = resolvedHomeViewModel,
             registrationRepository = authRuntime?.registrationRepository,
             collectionRepository = authRuntime?.collectionRepository,
+            wateringRepository = authRuntime?.wateringRepository,
             collectionThumbnailLoader =
                 authRuntime?.collectionThumbnailLoader
                     ?: com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader,

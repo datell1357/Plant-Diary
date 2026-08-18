@@ -398,7 +398,8 @@ class FirebaseCollectionRemoteDataSource(
             ?.let { document ->
                 RemotePlantContent(
                     id = PlantContentId(document.id),
-                    wateringIntervalDays = document.getLong("wateringIntervalDays")?.toInt(),
+                    wateringIntervalDays =
+                        document.getLong("wateringIntervalDays").toPublicWateringIntervalDays(),
                     lightGuidance = document.getString("lightGuidance")?.takeIf(String::isNotBlank),
                     minimumTemperatureCelsius = document.getDouble("minimumTemperatureCelsius"),
                     maximumTemperatureCelsius = document.getDouble("maximumTemperatureCelsius"),
@@ -503,6 +504,8 @@ private fun CachedPlantEntity.detail(account: AccountId) =
         revision = revision,
         updatedAt = Instant.ofEpochMilli(updatedAtEpochMillis),
     )
+
+internal fun Long?.toPublicWateringIntervalDays(): Int? = this?.takeIf { it in 1L..365L }?.toInt()
 
 private fun RemotePlantContent.missingFields(): Set<CareField> = buildSet {
     if (wateringIntervalDays == null) add(CareField.WATER)

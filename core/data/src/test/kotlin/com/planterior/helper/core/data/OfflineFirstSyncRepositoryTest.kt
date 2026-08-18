@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.planterior.helper.core.database.CachedPlantEntity
+import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.OperationId
@@ -83,6 +84,35 @@ class OfflineFirstSyncRepositoryTest {
         assertEquals(permanent.value, retained.operationId)
         assertEquals("INVALID_ARGUMENT", retained.lastErrorCode)
     }
+
+    @Test
+    fun `generic replay never removes watering outbox before receipt cache reconciliation`() =
+        runTest {
+            database
+                .syncDao()
+                .enqueue(
+                    OperationOutboxEntity(
+                        operationId = "watering-operation-stable",
+                        accountId = "account-a",
+                        aggregateType = "wateringCompletions",
+                        aggregateId = "plant-a",
+                        mutationType = "UPDATE",
+                        expectedRevision = 4,
+                        draftPayload = "{\"wateredDate\":\"2026-08-12\"}",
+                        createdAtEpochMillis = 1,
+                    )
+                )
+            val remote = RecordingGateway(RemoteMutationResult.Applied(5))
+
+            val report = OfflineFirstSyncRepository(database, remote).sync(AccountId("account-a"))
+
+            assertEquals(SyncReport(0, 0, 0), report)
+            assertEquals(0, remote.calls)
+            assertEquals(
+                listOf("watering-operation-stable"),
+                database.syncDao().pending("account-a").map { it.operationId },
+            )
+        }
 
     @Test
     fun `account switch hides A while B is active and A can resume`() = runTest {

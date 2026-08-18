@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -61,6 +62,9 @@ fun PlantDetailRoute(
     repository: CollectionRepository,
     onBack: () -> Unit,
     clock: Clock = Clock.systemDefaultZone(),
+    onRecordWatering: (() -> Unit)? = null,
+    refreshAfterWatering: String? = null,
+    onWateringRefreshConsumed: () -> Unit = {},
 ) {
     val model =
         viewModel<PlantDetailViewModel>(
@@ -82,7 +86,24 @@ fun PlantDetailRoute(
     val controller = model.controller
     val state by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(controller) { controller.start() }
+    LaunchedEffect(controller) {
+        if (refreshAfterWatering == null) controller.start()
+    }
+    LaunchedEffect(controller, refreshAfterWatering) {
+        if (refreshAfterWatering != null) {
+            controller.retry()
+            onWateringRefreshConsumed()
+        }
+    }
+    LifecycleResumeEffect(controller) {
+        controller.onResume()
+        onPauseOrDispose {}
+    }
+    LaunchedEffect(controller, state::class) {
+        while (controller.reclassifyAtNextAccountMidnight()) {
+            // Re-arm at each account-zone midnight while this detail remains visible.
+        }
+    }
     PlantDetailScreen(
         state = state,
         onBack = onBack,
@@ -94,5 +115,6 @@ fun PlantDetailRoute(
         onSave = { scope.launch { controller.saveEdit() } },
         onCancelEdit = controller::cancelEdit,
         onReconcileEdit = { scope.launch { controller.reconcileFailedEdit() } },
+        onRecordWatering = onRecordWatering,
     )
 }

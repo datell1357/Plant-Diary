@@ -33,6 +33,7 @@ class AuthRouteGuardTest {
                 PlanteriorRoute.MiniHome,
                 PlanteriorRoute.Notifications,
                 PlanteriorRoute.PlantDetail("plant-1"),
+                PlanteriorRoute.WateringConfirmation("plant-1"),
             )
             .forEach { route ->
                 val guarded = AuthRouteGuard.destination(route, false)

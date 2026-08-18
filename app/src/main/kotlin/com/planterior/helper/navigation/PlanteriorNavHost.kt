@@ -41,9 +41,12 @@ import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRoute
 import com.planterior.helper.feature.registration.RegistrationSeed
+import com.planterior.helper.feature.watering.WateringConfirmationRoute
+import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.identify.photoIdentificationHandoff
 import com.planterior.helper.ui.PlaceholderScreen
+import java.time.Clock
 import kotlinx.coroutines.launch
 
 /**
@@ -75,7 +78,9 @@ fun PlanteriorNavHost(
     homeViewModel: HomeViewModel? = null,
     registrationRepository: RegistrationRepository? = null,
     collectionRepository: CollectionRepository? = null,
+    wateringRepository: WateringRepository? = null,
     collectionThumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
+    clock: Clock = Clock.systemDefaultZone(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
@@ -370,6 +375,10 @@ fun PlanteriorNavHost(
         }
         composable<PlanteriorRoute.PlantDetail> { entry ->
             val route = entry.toRoute<PlanteriorRoute.PlantDetail>()
+            val wateringRefresh by
+                entry.savedStateHandle
+                    .getStateFlow<String?>(WATERING_REFRESH_KEY, null)
+                    .collectAsState()
             if (collectionRepository == null) {
                 PlaceholderScreen(
                     title = stringResource(R.string.screen_plant_detail),
@@ -380,8 +389,45 @@ fun PlanteriorNavHost(
                     plantId = PersonalPlantId(route.plantId),
                     repository = collectionRepository,
                     onBack = { navController.popBackStack() },
+                    clock = clock,
+                    onRecordWatering =
+                        wateringRepository?.let {
+                            {
+                                navController.navigate(
+                                    PlanteriorRoute.WateringConfirmation(route.plantId)
+                                )
+                            }
+                        },
+                    refreshAfterWatering = wateringRefresh,
+                    onWateringRefreshConsumed = {
+                        entry.savedStateHandle[WATERING_REFRESH_KEY] = null
+                    },
+                )
+            }
+        }
+        composable<PlanteriorRoute.WateringConfirmation> { entry ->
+            val route = entry.toRoute<PlanteriorRoute.WateringConfirmation>()
+            if (wateringRepository == null) {
+                PlaceholderScreen(
+                    title = "물 주기 완료",
+                    description = "물 주기 기록을 준비하지 못했어요.",
+                )
+            } else {
+                WateringConfirmationRoute(
+                    plantId = PersonalPlantId(route.plantId),
+                    repository = wateringRepository,
+                    onBack = { navController.popBackStack() },
+                    onDone = { navController.popBackStack() },
+                    clock = clock,
+                    onCompleted = { receipt ->
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(WATERING_REFRESH_KEY, receipt.operationId.value)
+                    },
                 )
             }
         }
     }
 }
+
+private const val WATERING_REFRESH_KEY = "watering.refresh-operation"

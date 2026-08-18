@@ -64,6 +64,13 @@ object PlanteriorRouteResolver {
             is PlanteriorRoute.Home -> listOf(PlanteriorRoute.Home)
             is PlanteriorRoute.PlantDetail ->
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.Collection, route)
+            is PlanteriorRoute.WateringConfirmation ->
+                listOf(
+                    PlanteriorRoute.Home,
+                    PlanteriorRoute.Collection,
+                    PlanteriorRoute.PlantDetail(route.plantId),
+                    route,
+                )
             else -> listOf(PlanteriorRoute.Home, route)
         }
 

@@ -6,13 +6,18 @@ import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
 import com.planterior.helper.core.model.RegistrationMethod
+import com.planterior.helper.feature.watering.WateringScheduleStatus
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class CollectionControllerTest {
@@ -162,6 +168,69 @@ class CollectionControllerTest {
             controller.retry()
             assertEquals(PlantDetailUiState.NotFound, controller.state.value)
         }
+
+    @Test
+    fun `detail resume reclassifies schedule across account zone midnight with a virtual clock`() =
+        runTest {
+            val mutableClock =
+                MutableClock(
+                    Instant.parse("2026-08-18T14:59:00Z"),
+                    ZoneId.of("America/Los_Angeles"),
+                )
+            val controller =
+                PlantDetailController(
+                    PersonalPlantId("plant-a"),
+                    FakeRepository(detailBlock = { DetailLoad.Fresh(detail()) }),
+                    mutableClock,
+                    SavedStateHandle(),
+                )
+            controller.start()
+            assertEquals(
+                WateringScheduleStatus.Upcoming(LocalDate.of(2026, 8, 19), 1),
+                (controller.state.value as PlantDetailUiState.Content).wateringSchedule,
+            )
+
+            mutableClock.advanceSeconds(60)
+            controller.onResume()
+
+            assertEquals(
+                WateringScheduleStatus.Due(LocalDate.of(2026, 8, 19)),
+                (controller.state.value as PlantDetailUiState.Content).wateringSchedule,
+            )
+        }
+
+    @Test
+    fun `account zone midnight reclassifies on deterministic coroutine virtual time`() = runTest {
+        val virtualClock =
+            SchedulerClock(
+                Instant.parse("2026-08-18T14:59:00Z"),
+                testScheduler,
+                ZoneId.of("America/Los_Angeles"),
+            )
+        val controller =
+            PlantDetailController(
+                PersonalPlantId("plant-a"),
+                FakeRepository(detailBlock = { DetailLoad.Fresh(detail()) }),
+                virtualClock,
+                SavedStateHandle(),
+            )
+        controller.start()
+        assertTrue(
+            (controller.state.value as PlantDetailUiState.Content).wateringSchedule
+                is WateringScheduleStatus.Upcoming
+        )
+
+        val midnight = launch { controller.reclassifyAtNextAccountMidnight() }
+        runCurrent()
+        advanceTimeBy(60_000)
+        runCurrent()
+        midnight.join()
+
+        assertEquals(
+            WateringScheduleStatus.Due(LocalDate.of(2026, 8, 19)),
+            (controller.state.value as PlantDetailUiState.Content).wateringSchedule,
+        )
+    }
 
     @Test
     fun `edit validates future date and grapheme limits before repository write`() = runTest {
@@ -461,6 +530,40 @@ class CollectionControllerTest {
 
     private fun item(id: String) =
         CollectionPlant(PersonalPlantId(id), "몬스테라", representativePhotoPath = null)
+
+    private class SchedulerClock(
+        private val base: Instant,
+        private val scheduler: TestCoroutineScheduler,
+        private val currentZone: ZoneId,
+    ) : Clock() {
+        override fun getZone(): ZoneId = currentZone
+
+        override fun withZone(zone: ZoneId): Clock = SchedulerClock(base, scheduler, zone)
+
+        override fun instant(): Instant = base.plusMillis(scheduler.currentTime)
+    }
+
+    private class MutableClock(
+        private var current: Instant,
+        private val currentZone: ZoneId,
+    ) : Clock() {
+        override fun getZone(): ZoneId = currentZone
+
+        override fun withZone(zone: ZoneId): Clock =
+            object : Clock() {
+                override fun getZone(): ZoneId = zone
+
+                override fun withZone(zone: ZoneId): Clock = this@MutableClock.withZone(zone)
+
+                override fun instant(): Instant = current
+            }
+
+        override fun instant(): Instant = current
+
+        fun advanceSeconds(seconds: Long) {
+            current = current.plusSeconds(seconds)
+        }
+    }
 
     private fun detail() =
         PlantDetail(

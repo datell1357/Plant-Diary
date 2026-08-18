@@ -6,6 +6,8 @@ import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
 import com.planterior.helper.core.model.PublicationState
 import com.planterior.helper.core.model.RegistrationMethod
+import com.planterior.helper.feature.watering.WateringScheduleStatus
+import com.planterior.helper.feature.watering.WateringUnavailableReason
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -169,12 +171,17 @@ data class EditorState(
 sealed interface PlantDetailUiState {
     data object Loading : PlantDetailUiState
 
-    data class Content(val detail: PlantDetail, val editor: EditorState) : PlantDetailUiState
+    data class Content(
+        val detail: PlantDetail,
+        val editor: EditorState,
+        val wateringSchedule: WateringScheduleStatus = unavailableWateringSchedule(),
+    ) : PlantDetailUiState
 
     data class Partial(
         val detail: PlantDetail,
         val missing: Set<CareField>,
         val editor: EditorState,
+        val wateringSchedule: WateringScheduleStatus = unavailableWateringSchedule(),
     ) : PlantDetailUiState
 
     data class Stale(
@@ -183,12 +190,14 @@ sealed interface PlantDetailUiState {
         val editor: EditorState,
         val editingAllowed: Boolean,
         val accountZone: ZoneId?,
+        val wateringSchedule: WateringScheduleStatus = unavailableWateringSchedule(),
     ) : PlantDetailUiState
 
     data class NoStandardContent(
         val plant: PersonalPlantDetail,
         val editor: EditorState,
         val accountZone: ZoneId,
+        val wateringSchedule: WateringScheduleStatus = unavailableWateringSchedule(),
     ) : PlantDetailUiState
 
     data object Forbidden : PlantDetailUiState
@@ -197,6 +206,9 @@ sealed interface PlantDetailUiState {
 
     data object Error : PlantDetailUiState
 }
+
+private fun unavailableWateringSchedule(): WateringScheduleStatus =
+    WateringScheduleStatus.Unavailable(WateringUnavailableReason.MISSING_PUBLIC_INTERVAL)
 
 enum class PlantEditField(val payloadName: String) {
     LAST_WATERED_DATE("lastWateredDate"),

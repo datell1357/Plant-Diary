@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
             OperationOutboxEntity::class,
             LastSyncEntity::class,
         ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
@@ -78,6 +78,26 @@ val MIGRATION_4_5 =
             db.execSQL("ALTER TABLE cached_plants ADD COLUMN lastWateredDate TEXT")
             db.execSQL(
                 "ALTER TABLE cached_plants ADD COLUMN detailsComplete INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
+
+/** 물 주기 예정일은 알림 설정 없이도 존재한다. v5 행은 유지하고 알 수 없던 enabled는 null로 둔다. */
+val MIGRATION_5_6 =
+    object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS cached_watering_schedules_v6 (`accountId` TEXT NOT NULL, `scheduleId` TEXT NOT NULL, `plantId` TEXT NOT NULL, `dueDate` TEXT NOT NULL, `reminderTime` TEXT, `zoneId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `enabled` INTEGER, PRIMARY KEY(`accountId`, `scheduleId`))"
+            )
+            db.execSQL(
+                "INSERT INTO cached_watering_schedules_v6 (accountId, scheduleId, plantId, dueDate, reminderTime, zoneId, revision, updatedAtEpochMillis, enabled) SELECT accountId, scheduleId, plantId, dueDate, reminderTime, zoneId, revision, updatedAtEpochMillis, NULL FROM cached_watering_schedules"
+            )
+            db.execSQL("DROP TABLE cached_watering_schedules")
+            db.execSQL(
+                "ALTER TABLE cached_watering_schedules_v6 RENAME TO cached_watering_schedules"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_cached_watering_schedules_accountId_plantId ON cached_watering_schedules (`accountId`, `plantId`)"
             )
         }
     }

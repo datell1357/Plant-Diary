@@ -37,6 +37,31 @@ class FirebaseRemoteMutationGatewayTest {
     }
 
     @Test
+    fun `watering outbox replay routes to the atomic completion callable`() = runTest {
+        val owner = RecordingOwnerMutationCallable(mapOf("kind" to "applied", "revision" to 5L))
+        val watering =
+            RecordingOwnerMutationCallable(mapOf("kind" to "duplicate", "revision" to 5L))
+        val gateway = FirebaseRemoteMutationGateway(owner, watering)
+
+        val result =
+            gateway.apply(
+                RemoteMutationCommand(
+                    AccountId("account-a"),
+                    OperationId("watering-operation-stable"),
+                    "wateringCompletions",
+                    "plant-a",
+                    "UPDATE",
+                    Revision(4),
+                    "{\"wateredDate\":\"2026-08-12\"}",
+                )
+            )
+
+        assertEquals(RemoteMutationResult.Duplicate(5), result)
+        assertEquals(0, owner.input.size)
+        assertEquals("wateringCompletions", watering.input.single()["collection"])
+    }
+
+    @Test
     fun `malformed callable response fails closed`() = runTest {
         val gateway =
             FirebaseRemoteMutationGateway(

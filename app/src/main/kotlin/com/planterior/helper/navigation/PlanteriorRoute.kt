@@ -63,4 +63,7 @@ sealed interface PlanteriorRoute {
      * @param plantId 개인 식물의 불투명 domain ID. 사용자 ID나 사진 데이터가 아니다.
      */
     @Serializable data class PlantDetail(val plantId: String) : Authenticated
+
+    /** 식물 상세에서 시작하는 물 주기 완료 확인과 결과 화면. */
+    @Serializable data class WateringConfirmation(val plantId: String) : Authenticated
 }

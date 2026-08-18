@@ -41,6 +41,8 @@ internal fun NavBackStackEntry?.toPlanteriorRoute(): PlanteriorRoute? {
         PlanteriorRoute.Notifications::class.qualifiedName -> PlanteriorRoute.Notifications
         PlanteriorRoute.PlantDetail::class.qualifiedName ->
             entry.toRoute<PlanteriorRoute.PlantDetail>()
+        PlanteriorRoute.WateringConfirmation::class.qualifiedName ->
+            entry.toRoute<PlanteriorRoute.WateringConfirmation>()
         PlanteriorRoute.Login::class.qualifiedName -> entry.toRoute<PlanteriorRoute.Login>()
         else -> null
     }

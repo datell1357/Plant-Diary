@@ -5,8 +5,6 @@ export type ServerContext = Readonly<{ trusted: boolean }>;
 
 export type OwnerCollection =
   | "personalPlants"
-  | "wateringRecords"
-  | "wateringSchedules"
   | "notificationSettings"
   | "miniHomes"
   | "placements"
@@ -205,8 +203,6 @@ function oneOf<T extends string>(candidate: string, allowed: readonly T[], field
 function ownerCollection(value: string): OwnerCollection {
   switch (value) {
     case "personalPlants":
-    case "wateringRecords":
-    case "wateringSchedules":
     case "notificationSettings":
     case "miniHomes":
     case "placements":
@@ -293,20 +289,6 @@ async function validateOwnerPayload(
       await validateLastWateredDate(payload, ownerUid, store);
       return;
     }
-    case "wateringRecords":
-      exactFields(payload, ["plantId", "wateredDate", "recordedAt"]);
-      opaqueField(payload, "plantId");
-      localDate(payload, "wateredDate");
-      isoInstant(payload, "recordedAt");
-      return;
-    case "wateringSchedules":
-      exactFields(payload, ["plantId", "dueDate", "reminderTime", "zoneId", "enabled"]);
-      opaqueField(payload, "plantId");
-      localDate(payload, "dueDate");
-      localTime(payload, "reminderTime");
-      zoneId(payload, "zoneId");
-      booleanField(payload, "enabled");
-      return;
     case "notificationSettings":
       exactFields(payload, ["wateringEnabled", "weatherEnabled", "defaultTime", "zoneId"]);
       booleanField(payload, "wateringEnabled");

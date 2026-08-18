@@ -26,7 +26,7 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "identificationRequests") return { temporaryOriginalPath: "identification-originals/user-a/request-a/original.webp", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-13T00:00:00Z") };
   throw new Error(`Missing fixture for ${collectionName}`);
 };
-const serverCollections = new Set(["weatherSnapshots", "weatherRisks", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries"]);
+const serverCollections = new Set(["wateringRecords", "wateringSchedules", "weatherSnapshots", "weatherRisks", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries"]);
 
 describe("Planterior Firebase ownership contract", () => {
   before(async () => {
@@ -89,7 +89,44 @@ describe("Planterior Firebase ownership contract", () => {
     }
   });
 
-  it("makes idempotency operation documents create-only", async () => {
+  it("requires the transactional server boundary for watering records and schedules", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    await assertFails(
+      setDoc(doc(owner, "users/user-a/wateringRecords/direct-record"), {
+        ...write("user-a"),
+        ...collectionFixture("wateringRecords"),
+      }),
+    );
+    await assertFails(
+      setDoc(doc(owner, "users/user-a/wateringSchedules/direct-schedule"), {
+        ...write("user-a"),
+        ...collectionFixture("wateringSchedules"),
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(server, "users/user-a/wateringRecords/server-record"), {
+        ...write("user-a"),
+        ...collectionFixture("wateringRecords"),
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(server, "users/user-a/wateringSchedules/server-schedule"), {
+        ...write("user-a"),
+        ...collectionFixture("wateringSchedules"),
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(server, "users/user-a/wateringSchedules/server-schedule-without-notification"), {
+        ...write("user-a"),
+        plantId: "plant-a",
+        dueDate: "2026-08-22",
+        zoneId: "Asia/Seoul",
+      }),
+    );
+  });
+
+  it("makes generic and watering operation receipts immutable and schema bound", async () => {
     const owner = env.authenticatedContext("user-a").firestore();
     const server = env.authenticatedContext("service", { server: true }).firestore();
     const operation = doc(server, "users/user-a/operations/op-stable-0001");
@@ -97,6 +134,28 @@ describe("Planterior Firebase ownership contract", () => {
     await assertSucceeds(setDoc(operation, { ...write("user-a", 1, 0, "op-stable-0001"), documentPath: "users/user-a/personalPlants/plant-a", requestHash: "a".repeat(64), updatedAt: ts("2026-08-12T00:00:00Z") }));
     await assertFails(setDoc(operation, write("user-a", 1, 0, "op-stable-0001")));
     await assertFails(setDoc(doc(server, "users/user-a/operations/path-mismatch"), write("user-a", 1, 0, "other-operation")));
+
+    const receipt = {
+      ...write("user-a", 5, 4, "watering-operation-stable"),
+      documentPath: "users/user-a/personalPlants/plant-a",
+      requestHash: "b".repeat(64),
+      wateredDate: "2026-08-12",
+      dueDate: "2026-08-22",
+      recordId: "watering-operation-stable",
+      plantRevision: 5,
+      scheduleRevision: 3,
+      recordedAt: ts("2026-08-12T00:00:00Z"),
+      zoneId: "Asia/Seoul",
+    };
+    const receiptRef = doc(server, "users/user-a/operations/watering-operation-stable");
+    await assertSucceeds(setDoc(receiptRef, receipt));
+    await assertSucceeds(getDoc(doc(owner, "users/user-a/operations/watering-operation-stable")));
+    await assertFails(setDoc(receiptRef, { ...receipt, dueDate: "2026-08-23" }));
+    await assertFails(setDoc(doc(server, "users/user-a/operations/watering-malformed"), {
+      ...receipt,
+      idempotencyKey: "watering-malformed",
+      recordId: "different-record",
+    }));
   });
 
   it("rejects owner spoofing malformed revisions and unstable operation IDs", async () => {
@@ -121,8 +180,11 @@ describe("Planterior Firebase ownership contract", () => {
     const contentAdmin = env.authenticatedContext("content-admin", { contentAdmin: true }).firestore();
     const opsAdmin = env.authenticatedContext("ops-admin", { opsAdmin: true }).firestore();
     const user = env.authenticatedContext("user-a").firestore();
-    await assertSucceeds(setDoc(doc(contentAdmin, "plantContents/public"), { publicationState: "PUBLIC", revision: 1 }));
+    await assertSucceeds(setDoc(doc(contentAdmin, "plantContents/public"), { publicationState: "PUBLIC", revision: 1, wateringIntervalDays: 10 }));
     await assertSucceeds(setDoc(doc(contentAdmin, "plantContents/private"), { publicationState: "DRAFT", revision: 1 }));
+    await assertFails(setDoc(doc(contentAdmin, "plantContents/interval-zero"), { publicationState: "PUBLIC", revision: 1, wateringIntervalDays: 0 }));
+    await assertFails(setDoc(doc(contentAdmin, "plantContents/interval-high"), { publicationState: "PUBLIC", revision: 1, wateringIntervalDays: 366 }));
+    await assertFails(setDoc(doc(contentAdmin, "plantContents/interval-fraction"), { publicationState: "PUBLIC", revision: 1, wateringIntervalDays: 7.5 }));
     await assertSucceeds(getDoc(doc(user, "plantContents/public")));
     await assertFails(getDoc(doc(user, "plantContents/private")));
     const anonymous = env.unauthenticatedContext().firestore();

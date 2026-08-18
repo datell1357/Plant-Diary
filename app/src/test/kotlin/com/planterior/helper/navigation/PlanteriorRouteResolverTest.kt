@@ -129,6 +129,15 @@ class PlanteriorRouteResolverTest {
             ),
             PlanteriorRouteResolver.backStackFor(PlanteriorRoute.PlantDetail("abc")),
         )
+        assertEquals(
+            listOf(
+                PlanteriorRoute.Home,
+                PlanteriorRoute.Collection,
+                PlanteriorRoute.PlantDetail("abc"),
+                PlanteriorRoute.WateringConfirmation("abc"),
+            ),
+            PlanteriorRouteResolver.backStackFor(PlanteriorRoute.WateringConfirmation("abc")),
+        )
     }
 
     @Test
@@ -143,6 +152,7 @@ class PlanteriorRouteResolverTest {
                 PlanteriorRoute.MiniHome,
                 PlanteriorRoute.Notifications,
                 PlanteriorRoute.PlantDetail("abc"),
+                PlanteriorRoute.WateringConfirmation("abc"),
             )
         routes.forEach { route ->
             val stack = PlanteriorRouteResolver.backStackFor(route)

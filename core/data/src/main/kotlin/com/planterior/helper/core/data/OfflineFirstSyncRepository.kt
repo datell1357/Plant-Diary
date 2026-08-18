@@ -71,7 +71,10 @@ class OfflineFirstSyncRepository(
         var applied = 0
         var conflicts = 0
         var failed = 0
-        for (operation in database.syncDao().replayable(accountId.value, TRANSIENT_FAILURE_CODES)) {
+        for (operation in
+            database.syncDao().replayable(accountId.value, TRANSIENT_FAILURE_CODES).filterNot {
+                it.aggregateType == WATERING_COMPLETIONS
+            }) {
             when (
                 val result =
                     gateway.apply(
@@ -109,6 +112,7 @@ class OfflineFirstSyncRepository(
     }
 
     private companion object {
+        const val WATERING_COMPLETIONS = "wateringCompletions"
         val TRANSIENT_FAILURE_CODES =
             setOf(
                 "ABORTED",

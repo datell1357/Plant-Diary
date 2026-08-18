@@ -22,6 +22,8 @@ import androidx.compose.ui.semantics.semantics
 import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.component.PlanteriorScreenScaffold
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.feature.watering.WateringScheduleCard
+import com.planterior.helper.feature.watering.WateringScheduleStatus
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -37,6 +39,7 @@ fun PlantDetailScreen(
     onCancelEdit: () -> Unit,
     modifier: Modifier = Modifier,
     onReconcileEdit: () -> Unit = {},
+    onRecordWatering: (() -> Unit)? = null,
 ) {
     val plant = state.plantOrNull()
     PlanteriorScreenScaffold(
@@ -58,6 +61,8 @@ fun PlantDetailScreen(
                     missing = emptySet(),
                     editor = state.editor,
                     editingAllowed = true,
+                    wateringSchedule = state.wateringSchedule,
+                    onRecordWatering = onRecordWatering,
                     onBeginEditing = onBeginEditing,
                     onLastWateredDate = onLastWateredDate,
                     onLocation = onLocation,
@@ -73,6 +78,8 @@ fun PlantDetailScreen(
                     missing = state.missing,
                     editor = state.editor,
                     editingAllowed = true,
+                    wateringSchedule = state.wateringSchedule,
+                    onRecordWatering = onRecordWatering,
                     noticeTag = PlantDetailTestTags.PARTIAL,
                     noticeTitle = "일부 관리 기준을 준비 중이에요",
                     noticeBody = "확인된 정보만 먼저 보여드려요.",
@@ -91,6 +98,8 @@ fun PlantDetailScreen(
                     missing = CareField.entries.toSet(),
                     editor = state.editor,
                     editingAllowed = state.editingAllowed,
+                    wateringSchedule = state.wateringSchedule,
+                    onRecordWatering = onRecordWatering,
                     noticeTag = PlantDetailTestTags.STALE,
                     noticeTitle = "저장된 개인 기록을 보여드려요",
                     noticeBody =
@@ -114,6 +123,8 @@ fun PlantDetailScreen(
                     missing = emptySet(),
                     editor = state.editor,
                     editingAllowed = true,
+                    wateringSchedule = state.wateringSchedule,
+                    onRecordWatering = onRecordWatering,
                     noticeTag = PlantDetailTestTags.NO_STANDARD,
                     noticeTitle = "표준 관리 정보가 아직 없어요",
                     noticeBody = "직접 입력한 식물도 개인 기록은 계속 관리할 수 있어요.",
@@ -156,6 +167,8 @@ private fun ColumnScope.DetailBody(
     missing: Set<CareField>,
     editor: EditorState,
     editingAllowed: Boolean,
+    wateringSchedule: WateringScheduleStatus,
+    onRecordWatering: (() -> Unit)?,
     onBeginEditing: () -> Unit,
     onLastWateredDate: (String) -> Unit,
     onLocation: (String) -> Unit,
@@ -233,6 +246,10 @@ private fun ColumnScope.DetailBody(
                 )
             }
         }
+        WateringScheduleCard(
+            status = wateringSchedule,
+            onRecordWatering = onRecordWatering,
+        )
         PersonalRecord(
             plant = plant,
             editor = editor,
