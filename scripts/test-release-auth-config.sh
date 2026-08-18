@@ -14,7 +14,7 @@ STORE_PASSWORD="verification-store-password"
 KEY_PASSWORD="$STORE_PASSWORD"
 SEPARATE_STORE_PASSWORD="separate-store-password"
 SEPARATE_KEY_PASSWORD="separate-key-password"
-KEY_ALIAS="verification"
+KEY_ALIAS="planterior-release-key-alias-7f3c2d"
 CERTIFICATE_ALIAS="certificate-only"
 WRONG_SECRET="deliberately-wrong-secret"
 MISSING_ALIAS="missing-private-key-alias"
@@ -91,6 +91,9 @@ assert_redacted() {
         fi
     done
 }
+
+printf 'dependency verification initialized\n' > "$TMP_DIR/non-secret-tool-output.log"
+assert_redacted "$TMP_DIR/non-secret-tool-output.log"
 
 if [[ -f "$LOCAL_PROPERTIES" ]]; then
     cp "$LOCAL_PROPERTIES" "$LOCAL_PROPERTIES_BACKUP"
