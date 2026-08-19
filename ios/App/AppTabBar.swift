@@ -2,6 +2,10 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 struct AppTabBar: View {
+    @ScaledMetric(relativeTo: .caption2)
+    private var tabLabelSize = 11
+    @ScaledMetric(relativeTo: .body)
+    private var tabIconSize = 20
     let selectedTab: AppTab
     let selectTab: (AppTab) -> Void
     let presentCamera: () -> Void
@@ -26,8 +30,16 @@ struct AppTabBar: View {
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: selectedTab == tab ? tab.systemImage + ".fill" : tab.systemImage)
-                    .font(.system(size: 20))
-                Text(tab.title).font(.caption2)
+                    .font(.system(size: min(tabIconSize, 28)))
+                Text(tab.title)
+                    .font(
+                        .system(
+                            size: min(tabLabelSize, 16),
+                            weight: .regular
+                        )
+                    )
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
             .contentShape(Rectangle())

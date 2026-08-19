@@ -963,6 +963,147 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "15" ]; then
+  task_15_simulator_id="${IOS_QA_SIMULATOR_ID:-29F51612-FF7F-4B0C-86ED-AF52AA591546}"
+  task_15_destination="platform=iOS Simulator,id=$task_15_simulator_id"
+  task_15_derived_data="$attempt_dir/DerivedData"
+  task_15_result="$attempt_dir/task-15-ios-app-implementation.xcresult"
+  task_15_home_result="$attempt_dir/task-15-home-regression.xcresult"
+  task_15_attachments="$attempt_dir/task-15-attachments"
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter InventoryPolicyTests
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter ItemPlacementPolicyTests
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_15_destination" \
+    -derivedDataPath "$task_15_derived_data" \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  reboot_task_15_simulator() {
+    simulator_id=$task_15_simulator_id
+    xcrun simctl shutdown "$simulator_id" 2>/dev/null || true
+    xcrun simctl boot "$simulator_id"
+    xcrun simctl bootstatus "$simulator_id" -b
+    xcrun simctl uninstall \
+      "$simulator_id" \
+      com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$simulator_id" \
+      com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+  }
+  reboot_task_15_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_15_destination" \
+    -derivedDataPath "$task_15_derived_data" \
+    -resultBundlePath "$task_15_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/InventoryRepositoryAccountTests \
+    -only-testing:PlanteriorTests/InventoryRepositoryProductionTests \
+    -only-testing:PlanteriorTests/InventoryRepositoryTests \
+    -only-testing:PlanteriorTests/ItemPlacementCoordinatorTests \
+    -only-testing:PlanteriorUITests/InventoryAccountUITests \
+    -only-testing:PlanteriorUITests/InventoryAccessibilityUITests \
+    -only-testing:PlanteriorUITests/InventoryUITests \
+    -only-testing:PlanteriorUITests/MiniHomeUITests/testEditsSavesAndRestoresCommittedRoom
+  reboot_task_15_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_15_destination" \
+    -derivedDataPath "$task_15_derived_data" \
+    -resultBundlePath "$task_15_home_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
+  xcrun xcresulttool export attachments \
+    --path "$task_15_result" \
+    --output-path "$task_15_attachments"
+  copy_task_15_attachment() {
+    marker=$1
+    destination=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        /suggestedHumanReadableName/ {
+          if (index($4, marker "_") == 1) {
+            print directory "/" file
+            exit
+          }
+        }
+      ' marker="$marker" directory="$task_15_attachments" \
+        "$task_15_attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination"
+  }
+  copy_task_15_attachment \
+    task-15-inventory \
+    "$attempt_dir/task-15-ios-app-implementation.png"
+  copy_task_15_attachment \
+    task-15-inventory-ax5 \
+    "$attempt_dir/task-15-ios-app-implementation-ax5.png"
+  copy_task_15_attachment \
+    task-15-shop-pagination-filter-sort \
+    "$attempt_dir/task-15-shop-pagination-filter-sort.json"
+  copy_task_15_attachment \
+    task-15-placement \
+    "$attempt_dir/task-15-placement.json"
+  copy_task_15_attachment \
+    task-15-acquisition-retry \
+    "$attempt_dir/task-15-acquisition-retry.json"
+  copy_task_15_attachment \
+    task-15-account-remount \
+    "$attempt_dir/task-15-account-remount.json"
+  cp \
+    "$repo_root/ios/qa/scenarios/task-15.json" \
+    "$attempt_dir/task-15-manifest.json"
+  python3 - "$attempt_dir/task-15-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 15,
+            "publicCatalog": "passed",
+            "conditionAndDuplicatePolicy": "passed",
+            "paginationFilterSort": "passed",
+            "acquisitionRetry": "passed",
+            "atomicPlacement": "passed",
+            "limits": {"background": 1, "furniture": 10, "decoration": 10},
+            "ownershipPreservedAfterRemoval": True,
+            "accountRemountIsolation": "passed",
+            "productionItemIntegration": "unavailable",
+            "paymentsCurrencyRefunds": "out-of-scope"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  xcrun simctl uninstall \
+    "$task_15_simulator_id" \
+    com.planterior.helper 2>/dev/null || true
+  xcrun simctl uninstall \
+    "$task_15_simulator_id" \
+    com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+  xcrun simctl shutdown "$task_15_simulator_id" 2>/dev/null || true
+  printf 'IOS_TASK_15_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

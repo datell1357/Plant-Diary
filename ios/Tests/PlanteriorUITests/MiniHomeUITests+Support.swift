@@ -71,6 +71,13 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         in app: XCUIApplication
     ) {
         app.buttons["minihome.add-plant"].tap()
+        let firstPlant = app.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH 'minihome.plant.'"
+            )
+        ).firstMatch
+        XCTAssertTrue(firstPlant.waitForExistence(timeout: 5))
+        firstPlant.tap()
         let placement = app.images["minihome.placement.placement-1"]
         XCTAssertTrue(placement.waitForExistence(timeout: 5))
         let canvas = app.otherElements["minihome.editor.canvas"]

@@ -245,7 +245,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(minihome): iOS 미니홈피 공간과 저장 상태 구현`
 
-### [ ] Todo 15 — Inventory, plant/item placement, and warehouse
+### [x] Todo 15 — Inventory, plant/item placement, and warehouse
 
 #### Scope
 

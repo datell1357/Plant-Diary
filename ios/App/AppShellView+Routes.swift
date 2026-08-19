@@ -4,6 +4,12 @@ extension AppShellView {
     func handleQARouteIfPresent() {
         #if DEBUG
             if ProcessInfo.processInfo.environment[
+                "QA_INVENTORY_ROUTE"
+            ] == "1" {
+                navigation.select(.storage)
+                return
+            }
+            if ProcessInfo.processInfo.environment[
                 "QA_MINIHOME_ROUTE"
             ] == "1" {
                 navigation.push(.miniHome)

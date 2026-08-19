@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppShellView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sizeCategory) var sizeCategory
     @EnvironmentObject var auth: AuthRuntime
     @State var navigation = AppNavigationState()
     @State var showsLogin = false
@@ -42,6 +43,7 @@ struct AppShellView: View {
             }
         }
         .background(PlanteriorPalette.canvas.color)
+        .environment(\.sizeCategory, effectiveShellSizeCategory)
         .confirmationDialog(
             "동기화되지 않은 변경을 어떻게 처리할까요?",
             isPresented: Binding(

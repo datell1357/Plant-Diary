@@ -19,6 +19,8 @@ struct AppTabRootView: View {
                 openLegacyDetail: openDetail,
                 openCamera: openCamera
             )
+        } else if tab == .storage {
+            InventoryView()
         } else {
             placeholder
         }

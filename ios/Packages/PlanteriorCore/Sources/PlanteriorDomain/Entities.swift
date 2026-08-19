@@ -102,23 +102,6 @@ public struct RiskGuidanceContent: Codable, Equatable, Sendable {
     public let updatedAt: Instant
 }
 
-public struct ShopItem: Codable, Equatable, Sendable {
-    public let id: ItemID
-    public let name: String
-    public let category: ItemCategory
-    public let assetPath: String
-    public let acquisitionCondition: String?
-    public let publicationState: PublicationState
-    public let revision: Revision
-}
-
-public struct OwnedItem: Codable, Equatable, Sendable {
-    public let itemID: ItemID
-    public let acquiredAt: Instant
-    public let applied: Bool
-    public let revision: Revision
-}
-
 public struct ShareLink: Codable, Equatable, Sendable {
     public let id: ShareLinkID
     public let miniHomeID: MiniHomeID

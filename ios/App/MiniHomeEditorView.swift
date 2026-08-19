@@ -9,6 +9,7 @@ struct MiniHomeEditorView: View {
     @State var errorMessage: String?
     @State var showsUnsavedPrompt = false
     @State var showsConflictPrompt = false
+    @State var showsPlantPicker = false
     @FocusState var isNameFocused: Bool
 
     var body: some View {
@@ -30,8 +31,10 @@ struct MiniHomeEditorView: View {
                         errorMessage: $errorMessage
                     )
                 }
-                PlanteriorPrimaryButton("식물 추가", action: addPlant)
-                    .accessibilityIdentifier("minihome.add-plant")
+                PlanteriorPrimaryButton("식물 추가") {
+                    showsPlantPicker = true
+                }
+                .accessibilityIdentifier("minihome.add-plant")
                 if let errorMessage {
                     Text(errorMessage)
                         .foregroundStyle(
@@ -99,6 +102,20 @@ struct MiniHomeEditorView: View {
                 resolveConflict(.cancel)
             }
             .accessibilityIdentifier("minihome.conflict.cancel")
+        }
+        .sheet(isPresented: $showsPlantPicker) {
+            PlantMiniaturePicker(
+                options: availablePlantOptions,
+                select: { option in
+                    addPlant(option.id)
+                    showsPlantPicker = false
+                },
+                requestRegistration: {
+                    errorMessage =
+                        "도감 탭에서 식물을 먼저 등록해 주세요."
+                    showsPlantPicker = false
+                }
+            )
         }
     }
 }

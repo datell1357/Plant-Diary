@@ -1,0 +1,27 @@
+{
+  "task": 15,
+  "command": "ios/scripts/qa-task.sh 15 --attempt-dir \"$ATTEMPT_DIR\"",
+  "marker": "IOS_TASK_15_QA_OK",
+  "artifacts": [
+    "task-15-ios-app-implementation.png",
+    "task-15-ios-app-implementation-ax5.png",
+    "task-15-shop-pagination-filter-sort.json",
+    "task-15-placement.json",
+    "task-15-acquisition-retry.json",
+    "task-15-account-remount.json",
+    "task-15-ios-app-implementation.json",
+    "task-15-ios-app-implementation.xcresult",
+    "task-15-home-regression.xcresult"
+  ],
+  "coveredBoundaries": [
+    "public catalog filtering and acquisition conditions",
+    "duplicate acquisition and transient retry",
+    "deterministic pagination filter and sort",
+    "unowned apply denial and 1/10/10 placement limits",
+    "atomic apply and remove with ownership preservation",
+    "account remount isolation",
+    "Korean AX5 warehouse controls",
+    "production item integration remains unavailable",
+    "payments currency and refunds remain out of scope"
+  ]
+}
