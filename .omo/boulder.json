@@ -4,13 +4,14 @@
   "works": {
     "ios-app-implementation": {
       "work_id": "ios-app-implementation",
-      "active_plan": "/Users/yeoreum/Documents/Planterior_Helper/.omo/plans/ios-app-implementation.md",
+      "active_plan": "/Users/yeoreum/Documents/Plant Diary/worktree/.omo/plans/ios-app-implementation.md",
       "plan_name": "ios-app-implementation",
       "session_ids": [
-        "senpi:019ff9aa-4b33-7556-93e3-3c89f4f64c3a"
+        "senpi:019fff0b-4c8d-7976-b835-35152e6d17f3",
+        "ulw-loop:plant-diary-ios-remaining-20260819"
       ],
       "status": "active",
-      "worktree_path": "/Users/yeoreum/Documents/Planterior_Helper-worktrees/feat-ios-app"
+      "worktree_path": "/Users/yeoreum/Documents/Plant Diary/worktree"
     }
   }
 }
