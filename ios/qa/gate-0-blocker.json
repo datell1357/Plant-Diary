@@ -1,10 +1,20 @@
 {
   "schemaVersion": 1,
   "gate": "ios-release-prerequisites",
-  "status": "deferred-to-todo-20",
+  "status": "blocked-external-prerequisites",
   "requiredCommand": "./ios/scripts/preflight-release-assets.sh --require-device --require-signing --require-firebase --require-asc",
   "expectedSuccessExit": 0,
   "observedExit": 65,
+  "attemptCount": 3,
+  "lastObservedAt": "2026-08-20T03:25:00Z",
+  "discovery": {
+    "physicalIPhones": 0,
+    "validSigningIdentities": 0,
+    "provisioningProfiles": 0,
+    "candidateReleaseFiles": 0,
+    "firebaseCliAuthenticated": true,
+    "appStoreUploadToolAvailable": true
+  },
   "missingAssets": [
     "IOS_PHYSICAL_UDID",
     "IOS_CODESIGN_IDENTITY",
@@ -27,5 +37,5 @@
     "testflight-install"
   ],
   "approvedScope": "Todos 2-19 may use simulators and protocol fakes.",
-  "resumeWhen": "Todo 20 and final release gates resume when the required command exits 0 without exposing secret values."
+  "resumeWhen": "Connect the registered iPhone and provide the 12 required signing, Firebase, App Store Connect, and APNs values; resume only when the required command exits 0 without exposing secret values."
 }
