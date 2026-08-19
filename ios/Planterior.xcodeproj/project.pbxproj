@@ -8,9 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		20F30EB48D16EB0D8ED2ABAC /* PlanteriorData in Frameworks */ = {isa = PBXBuildFile; productRef = 6468B88AC5EFFEB10259D801 /* PlanteriorData */; };
+		27EFA9CCDB6D7D2D2D20DC55 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 56A154ABA47564E206F50B2A /* GoogleSignIn */; };
 		4D91F40481B50A5D7FCF3C77 /* PlanteriorDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 314328254F85385F20B29003 /* PlanteriorDomain */; };
 		8365ED32867B8F08A764806F /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = F9357D784EBEA979282525C7 /* FirebaseFunctions */; };
-		A1429333B522BF6C4E168BB0 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 56A154ABA47564E206F50B2A /* GoogleSignIn */; };
+		8747E377222429AF90680FDF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 745BE04D962DAAE7D47EABB6 /* PrivacyInfo.xcprivacy */; };
+		A1429333B522BF6C4E168BB0 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = A48B277FB7080F8A4E1428DF /* FirebaseAppCheck */; };
 		A21165099D52C9B58D535A75 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = E390AD4E37980B3BCB1485BE /* FirebaseAuth */; };
 		B720CA209A46BE1AA0416F8C /* PlanteriorDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 00C2324381DFEBC6750D134D /* PlanteriorDesignSystem */; };
 		DCD6D88B6542CFE43BD0E863 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D20CF2752AE65A93E5872F1A /* FirebaseFirestore */; };
@@ -39,6 +41,7 @@
 		1CEDBA63D9DC556371407FFA /* PlanteriorTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlanteriorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Development.xcconfig; sourceTree = "<group>"; };
 		253250BEBBEBB1181FDC9335 /* Planterior.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Planterior.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		745BE04D962DAAE7D47EABB6 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A2689D6191D8484F44416B57 /* PlanteriorCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PlanteriorCore; path = Packages/PlanteriorCore; sourceTree = SOURCE_ROOT; };
 		EF193AF60ED3E04D994EFD57 /* PlanteriorUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PlanteriorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -101,7 +104,8 @@
 				A21165099D52C9B58D535A75 /* FirebaseAuth in Frameworks */,
 				DCD6D88B6542CFE43BD0E863 /* FirebaseFirestore in Frameworks */,
 				8365ED32867B8F08A764806F /* FirebaseFunctions in Frameworks */,
-				A1429333B522BF6C4E168BB0 /* GoogleSignIn in Frameworks */,
+				A1429333B522BF6C4E168BB0 /* FirebaseAppCheck in Frameworks */,
+				27EFA9CCDB6D7D2D2D20DC55 /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,8 +116,8 @@
 			isa = PBXGroup;
 			children = (
 				AC08AAEAC4B847CB21B1E4DF /* App */,
-				0996C63EFD1BC71F5335C2DC /* Config */,
 				319F1832E96D2FCC5B7C4B85 /* Config */,
+				0996C63EFD1BC71F5335C2DC /* Config */,
 				7799E9E668D289BC8812914E /* Packages */,
 				F9FDBC37A02C5BB10CC6DFCA /* Tests/PlanteriorTests */,
 				A167C7BAF36ADA4BA4E6D6D8 /* Tests/PlanteriorUITests */,
@@ -135,6 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				2120DB14E88CEE1F8D22A2E7 /* Development.xcconfig */,
+				745BE04D962DAAE7D47EABB6 /* PrivacyInfo.xcprivacy */,
 				1042639519F329D948698806 /* Release.xcconfig */,
 			);
 			path = Config;
@@ -175,6 +180,7 @@
 				E390AD4E37980B3BCB1485BE /* FirebaseAuth */,
 				D20CF2752AE65A93E5872F1A /* FirebaseFirestore */,
 				F9357D784EBEA979282525C7 /* FirebaseFunctions */,
+				A48B277FB7080F8A4E1428DF /* FirebaseAppCheck */,
 				56A154ABA47564E206F50B2A /* GoogleSignIn */,
 			);
 			productName = Planterior;
@@ -286,6 +292,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8747E377222429AF90680FDF /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -674,6 +681,11 @@
 		6468B88AC5EFFEB10259D801 /* PlanteriorData */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PlanteriorData;
+		};
+		A48B277FB7080F8A4E1428DF /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6B32EF0AAAF3B8D51ADA69D0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
 		};
 		D20CF2752AE65A93E5872F1A /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;

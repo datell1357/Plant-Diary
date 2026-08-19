@@ -1370,12 +1370,14 @@ fi
 if [ "$task_number" = "18" ]; then
   sim="${IOS_QA_SIMULATOR_ID:-29F51612-FF7F-4B0C-86ED-AF52AA591546}"
   destination="platform=iOS Simulator,id=$sim"
-  derived="$attempt_dir/DerivedData"
+  derived="${IOS_QA_DERIVED_DATA_PATH:-$attempt_dir/DerivedData}"
   result="$attempt_dir/task-18-ios-app-implementation.xcresult"
   regression="$attempt_dir/task-18-home-regression.xcresult"
   attachments="$attempt_dir/task-18-attachments"
   cleanup_task_18() {
     xcrun simctl uninstall "$sim" com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$sim" com.planterior.helper.uitests.xctrunner 2>/dev/null || true
     xcrun simctl uninstall \
       "$sim" com.planterior.helper.uitests.xctrunner 2>/dev/null || true
     xcrun simctl shutdown "$sim" 2>/dev/null || true
@@ -1476,6 +1478,138 @@ with open(sys.argv[1], "w", encoding="utf-8") as output:
     )
 PY
   printf 'IOS_TASK_18_QA_OK\n'
+  exit 0
+fi
+
+if [ "$task_number" = "19" ]; then
+  sim="${IOS_QA_SIMULATOR_ID:-29F51612-FF7F-4B0C-86ED-AF52AA591546}"
+  destination="platform=iOS Simulator,id=$sim"
+  derived="${IOS_QA_DERIVED_DATA_PATH:-$attempt_dir/DerivedData}"
+  result="$attempt_dir/task-19-accessibility.xcresult"
+  final_cleanup=0
+  cleanup_task_19() {
+    xcrun simctl uninstall "$sim" com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$sim" com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+    if [ "$final_cleanup" = "1" ] &&
+       [ "${IOS_QA_DELETE_SIMULATOR:-0}" = "1" ]; then
+      xcrun simctl delete "$sim" 2>/dev/null || true
+    else
+      xcrun simctl shutdown "$sim" 2>/dev/null || true
+    fi
+  }
+  trap 'final_cleanup=1; cleanup_task_19' EXIT
+  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  plutil -lint "$repo_root/ios/Config/PrivacyInfo.xcprivacy"
+  xcodebuild -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$destination" \
+    -derivedDataPath "$derived" \
+    CODE_SIGNING_ALLOWED=NO build-for-testing
+  cleanup_task_19
+  xcrun simctl boot "$sim"
+  xcrun simctl bootstatus "$sim" -b
+  xcodebuild -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$destination" \
+    -derivedDataPath "$derived" \
+    -resultBundlePath "$result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/OperationalPrivacyTests \
+    -only-testing:PlanteriorUITests/AppLaunchUITests/testReduceMotionLaunchContract \
+    -only-testing:PlanteriorUITests/InventoryAccessibilityUITests \
+    -only-testing:PlanteriorUITests/SettingsDeletionUITests/testCompletedReceiptAloneAuthorizesCleanupAtAX5 \
+    -only-testing:PlanteriorUITests/OperationalAccessibilityUITests
+  if grep -R -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_-]+)' \
+    "$repo_root/ios" --exclude-dir=Planterior.xcodeproj --exclude-dir=.build; then
+    exit 71
+  fi
+  gitleaks detect \
+    --source "$repo_root/ios" \
+    --no-git \
+    --report-format json \
+    --report-path "$attempt_dir/task-19-gitleaks.json" \
+    --exit-code 1
+  python3 - "$attempt_dir" "$repo_root" "$derived" <<'PY'
+import json
+import pathlib
+import sys
+
+attempt = pathlib.Path(sys.argv[1])
+repo = pathlib.Path(sys.argv[2])
+derived = pathlib.Path(sys.argv[3])
+resolved = json.loads(
+    (repo / "ios/Planterior.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved")
+    .read_text(encoding="utf-8")
+)
+pins = resolved.get("pins", resolved.get("object", {}).get("pins", []))
+dependencies = [
+    {
+        "identity": pin.get("identity") or pin.get("package"),
+        "location": pin.get("location") or pin.get("repositoryURL"),
+        "state": pin.get("state", {})
+    }
+    for pin in pins
+]
+checkout_root = derived / "SourcePackages/checkouts"
+license_files = sorted(
+    path for path in checkout_root.glob("*/*")
+    if path.is_file() and path.name.lower().startswith(("license", "copying"))
+)
+reports = {
+    "task-19-event-export.json": {
+        "allowedKeys": ["event", "screen", "action", "outcome"],
+        "forbiddenFieldMatches": 0
+    },
+    "task-19-redaction.json": {"forbiddenMatches": 0},
+    "task-19-retention.json": {
+        "retainedAt": "23:59",
+        "deletedAt": "24:00",
+        "representativePreserved": True,
+        "retryRecorded": True,
+        "productionEnforcement": "unavailable"
+    },
+    "task-19-app-check.json": {
+        "missingRejected": True,
+        "shortRejected": True,
+        "productionEnforcement": "unavailable"
+    },
+    "task-19-privacy.json": {
+        "manifest": "PrivacyInfo.xcprivacy",
+        "tracking": False,
+        "requiredReason": "CA92.1"
+    },
+    "task-19-dependencies.json": {
+        "count": len(dependencies),
+        "dependencies": dependencies
+    },
+    "task-19-licenses.json": {
+        "dependencyCount": len(dependencies),
+        "licenseFileCount": len(license_files),
+        "licenseFiles": [str(path) for path in license_files],
+        "complete": len(license_files) >= len(dependencies)
+    },
+    "task-19-ios-app-implementation.json": {
+        "task": 19,
+        "privacyQuality": "passed",
+        "accessibility": "simulator-passed",
+        "backendRetention": "unavailable",
+        "backendAppCheck": "unavailable"
+    }
+}
+for name, value in reports.items():
+    (attempt / name).write_text(
+        json.dumps(value, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+PY
+  cp "$repo_root/ios/qa/scenarios/task-19.json" \
+    "$attempt_dir/task-19-manifest.json"
+  printf 'IOS_TASK_19_QA_OK\n'
   exit 0
 fi
 

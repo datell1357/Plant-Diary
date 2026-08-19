@@ -375,7 +375,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(settings): iOS 개인정보와 계정 삭제 흐름 구현`
 
-### [ ] Todo 19 — Observability, accessibility, privacy, and security
+### [x] Todo 19 — Observability, accessibility, privacy, and security
 
 #### Scope
 

@@ -25,5 +25,14 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - run: brew install xcodegen@2.46.0 swiftformat@0.62.1 swiftlint@0.65.0
+      - run: brew install xcodegen@2.46.0 swiftformat@0.62.1 swiftlint@0.65.0 gitleaks
       - run: ./ios/scripts/verify.sh
+      - name: Operational privacy and accessibility gates
+        run: |
+          simulator_id=$(xcrun simctl create "CI iPhone 17" \
+            "com.apple.CoreSimulator.SimDeviceType.iPhone-17" \
+            "com.apple.CoreSimulator.SimRuntime.iOS-26-5")
+          IOS_QA_SIMULATOR_ID="$simulator_id" \
+            IOS_QA_DELETE_SIMULATOR=1 \
+            ./ios/scripts/qa-task.sh 19 \
+            --attempt-dir "$RUNNER_TEMP/todo19"

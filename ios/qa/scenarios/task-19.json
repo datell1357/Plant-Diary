@@ -1,0 +1,22 @@
+{
+  "task": 19,
+  "command": "ios/scripts/qa-task.sh 19 --attempt-dir \"$ATTEMPT_DIR\"",
+  "marker": "IOS_TASK_19_QA_OK",
+  "artifacts": [
+    "task-19-accessibility.xcresult",
+    "task-19-event-export.json",
+    "task-19-redaction.json",
+    "task-19-retention.json",
+    "task-19-app-check.json",
+    "task-19-privacy.json",
+    "task-19-dependencies.json",
+    "task-19-gitleaks.json",
+    "task-19-licenses.json",
+    "task-19-ios-app-implementation.json"
+  ],
+  "productionUnavailable": [
+    "identificationOriginals.cleanup",
+    "identificationOriginalRetention=PT24H",
+    "Firebase App Check enforcement"
+  ]
+}

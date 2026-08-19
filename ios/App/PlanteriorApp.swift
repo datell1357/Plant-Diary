@@ -1,3 +1,4 @@
+import FirebaseAppCheck
 import FirebaseCore
 import Foundation
 import GoogleSignIn
@@ -10,6 +11,15 @@ struct PlanteriorApp: App {
 
     init() {
         if FirebaseConfiguration.isAvailable {
+            #if DEBUG
+                AppCheck.setAppCheckProviderFactory(
+                    AppCheckDebugProviderFactory()
+                )
+            #else
+                AppCheck.setAppCheckProviderFactory(
+                    AppAttestProviderFactory()
+                )
+            #endif
             FirebaseApp.configure()
         }
     }

@@ -37,6 +37,8 @@ targets:
     platform: iOS
     sources:
       - path: App
+      - path: Config/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.planterior.helper
@@ -57,6 +59,8 @@ targets:
         product: FirebaseFirestore
       - package: Firebase
         product: FirebaseFunctions
+      - package: Firebase
+        product: FirebaseAppCheck
       - package: GoogleSignIn
         product: GoogleSignIn
     preBuildScripts:

@@ -76,6 +76,7 @@ struct SettingsView: View {
         .navigationTitle("설정")
         .accessibilityIdentifier("settings.screen")
         .task {
+            AnalyticsRecorder.shared.record(.screenViewed(.settings))
             let settings = await UNUserNotificationCenter.current()
                 .notificationSettings()
             notificationStatus = Self.notificationText(
