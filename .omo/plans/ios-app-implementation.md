@@ -310,7 +310,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(rewards): iOS XP와 꾸미기 마일스톤 구현`
 
-### [ ] Todo 17 — Sharing consistency for images and links
+### [x] Todo 17 — Sharing consistency for images and links
 
 #### Scope
 

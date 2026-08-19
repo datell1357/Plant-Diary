@@ -1,0 +1,30 @@
+{
+  "task": 17,
+  "command": "ios/scripts/qa-task.sh 17 --attempt-dir \"$ATTEMPT_DIR\"",
+  "marker": "IOS_TASK_17_QA_OK",
+  "artifacts": [
+    "task-17-ios-app-implementation.png",
+    "task-17-ios-app-implementation-ax5.png",
+    "task-17-share-image.json",
+    "task-17-share-digest.json",
+    "task-17-share-redaction.json",
+    "task-17-share-link.json",
+    "task-17-share-revoke.json",
+    "task-17-share-expiry.json",
+    "task-17-share-cancel.json",
+    "task-17-ios-app-implementation.json",
+    "task-17-ios-app-implementation.xcresult",
+    "task-17-home-regression.xcresult"
+  ],
+  "coveredBoundaries": [
+    "captured committed revision excludes draft",
+    "fixed deterministic 1200x1200 PNG",
+    "SHA-256 digest and private-field redaction",
+    "offline image and online-only link behavior",
+    "unique token 30-day expiry and idempotent revoke",
+    "immutable snapshot after later edits",
+    "share cancellation is not failure",
+    "production link integration unavailable",
+    "physical external delivery deferred to Todo 20"
+  ]
+}

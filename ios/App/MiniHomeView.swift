@@ -6,6 +6,7 @@ import SwiftUI
 struct MiniHomeView: View {
     @StateObject private var store: MiniHomeStore
     @State private var showsEditor = false
+    @State private var sharePresentation: MiniHomeSharePresentation?
     @Environment(\.sizeCategory) private var sizeCategory
     private let initialDraft: MiniHome?
 
@@ -40,6 +41,14 @@ struct MiniHomeView: View {
                     showsEditor = true
                 }
                 .accessibilityIdentifier("minihome.edit")
+                if let committed = store.committed {
+                    PlanteriorPrimaryButton("미니홈 공유") {
+                        sharePresentation = MiniHomeSharePresentation(
+                            room: committed
+                        )
+                    }
+                    .accessibilityIdentifier("minihome.share")
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
@@ -54,6 +63,12 @@ struct MiniHomeView: View {
         .sheet(isPresented: $showsEditor) {
             NavigationStack {
                 MiniHomeEditorView(store: store)
+            }
+            .environment(\.sizeCategory, effectiveSizeCategory)
+        }
+        .sheet(item: $sharePresentation) { presentation in
+            NavigationStack {
+                MiniHomeShareView(room: presentation.room)
             }
             .environment(\.sizeCategory, effectiveSizeCategory)
         }
@@ -116,6 +131,14 @@ struct MiniHomeView: View {
             revision: revision,
             updatedAt: updatedAt
         )
+    }
+}
+
+private struct MiniHomeSharePresentation: Identifiable {
+    let room: MiniHome
+
+    var id: String {
+        "\(room.id.rawValue)-\(room.revision.rawValue)"
     }
 }
 

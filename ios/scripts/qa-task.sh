@@ -1245,6 +1245,128 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "17" ]; then
+  task_17_simulator_id="${IOS_QA_SIMULATOR_ID:-29F51612-FF7F-4B0C-86ED-AF52AA591546}"
+  task_17_destination="platform=iOS Simulator,id=$task_17_simulator_id"
+  task_17_derived_data="$attempt_dir/DerivedData"
+  task_17_result="$attempt_dir/task-17-ios-app-implementation.xcresult"
+  task_17_home_result="$attempt_dir/task-17-home-regression.xcresult"
+  task_17_attachments="$attempt_dir/task-17-attachments"
+  cleanup_task_17() {
+    xcrun simctl uninstall \
+      "$task_17_simulator_id" \
+      com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$task_17_simulator_id" \
+      com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+    xcrun simctl shutdown "$task_17_simulator_id" 2>/dev/null || true
+  }
+  trap cleanup_task_17 EXIT
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_17_destination" \
+    -derivedDataPath "$task_17_derived_data" \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  reboot_task_17_simulator() {
+    cleanup_task_17
+    xcrun simctl boot "$task_17_simulator_id"
+    xcrun simctl bootstatus "$task_17_simulator_id" -b
+  }
+  reboot_task_17_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_17_destination" \
+    -derivedDataPath "$task_17_derived_data" \
+    -resultBundlePath "$task_17_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/MiniHomeShareRendererTests \
+    -only-testing:PlanteriorTests/ShareRepositoryTests \
+    -only-testing:PlanteriorUITests/ShareUITests
+  reboot_task_17_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_17_destination" \
+    -derivedDataPath "$task_17_derived_data" \
+    -resultBundlePath "$task_17_home_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/MiniHomeUITests/testEditsSavesAndRestoresCommittedRoom \
+    -only-testing:PlanteriorUITests/MiniHomeUITests/testUnsavedDraftNeverAppearsOnHome \
+    -only-testing:PlanteriorUITests/MiniHomeAccessibilityUITests/testEditorControlsRemainReachableAtAX5 \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
+  xcrun xcresulttool export attachments \
+    --path "$task_17_result" \
+    --output-path "$task_17_attachments"
+  copy_task_17_attachment() {
+    marker=$1
+    destination=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        /suggestedHumanReadableName/ {
+          if (index($4, marker "_") == 1) {
+            print directory "/" file
+            exit
+          }
+        }
+      ' marker="$marker" directory="$task_17_attachments" \
+        "$task_17_attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination"
+  }
+  copy_task_17_attachment \
+    task-17-share \
+    "$attempt_dir/task-17-ios-app-implementation.png"
+  copy_task_17_attachment \
+    task-17-share-ax5 \
+    "$attempt_dir/task-17-ios-app-implementation-ax5.png"
+  for artifact in image digest redaction link revoke expiry cancel; do
+    copy_task_17_attachment \
+      "task-17-share-$artifact" \
+      "$attempt_dir/task-17-share-$artifact.json"
+  done
+  cp \
+    "$repo_root/ios/qa/scenarios/task-17.json" \
+    "$attempt_dir/task-17-manifest.json"
+  python3 - "$attempt_dir/task-17-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 17,
+            "committedOnly": True,
+            "fixedImage": "1200x1200 PNG",
+            "offlineImage": "passed",
+            "shareSheetCancel": "passed",
+            "linkLifecycle": "provisional-fake",
+            "productionIntegration": "unavailable",
+            "physicalExternalDelivery": "deferred-to-todo-20",
+            "privateFieldMatches": 0
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_17_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69
