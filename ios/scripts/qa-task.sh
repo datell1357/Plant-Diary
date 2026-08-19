@@ -567,6 +567,149 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "12" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter 'HomeDashboardTests|NotificationCoordinatorTests'
+  task_12_derived_data="$attempt_dir/DerivedData"
+  task_12_result="$attempt_dir/task-12-ios-app-implementation.xcresult"
+  task_12_collection_result="$attempt_dir/task-12-collection-regression.xcresult"
+  task_12_integration_result="$attempt_dir/task-12-notification-integration.xcresult"
+  task_12_attachments="$attempt_dir/task-12-attachments"
+  task_12_destination="platform=iOS Simulator,id=${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_12_destination" \
+    -derivedDataPath "$task_12_derived_data" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  reboot_task_12_simulator() {
+    xcrun simctl shutdown \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      2>/dev/null || true
+    xcrun simctl boot \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      2>/dev/null || true
+    xcrun simctl bootstatus \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      -b
+    xcrun simctl uninstall \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+  }
+  reboot_task_12_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_12_destination" \
+    -derivedDataPath "$task_12_derived_data" \
+    -resultBundlePath "$task_12_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/AppShellTests \
+    -only-testing:PlanteriorTests/LocalNotificationPreferenceStoreTests \
+    -only-testing:PlanteriorTests/LocalNotificationScheduleStoreTests \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests \
+    -skip-testing:PlanteriorUITests/HomeDashboardUITests/testWateringCompletionCancelsPendingNotifications
+  reboot_task_12_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_12_destination" \
+    -derivedDataPath "$task_12_derived_data" \
+    -resultBundlePath "$task_12_collection_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/PlantCollectionUITests/testSearchDetailTimelineAndDeleteConfirmation
+  reboot_task_12_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_12_destination" \
+    -derivedDataPath "$task_12_derived_data" \
+    -resultBundlePath "$task_12_integration_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testWateringCompletionCancelsPendingNotifications
+  xcrun xcresulttool export attachments \
+    --path "$task_12_result" \
+    --output-path "$task_12_attachments"
+  copy_task_12_attachment() {
+    marker=$1
+    destination=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        $0 ~ marker { print directory "/" file; exit }
+      ' marker="$marker" directory="$task_12_attachments" \
+        "$task_12_attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination"
+  }
+  copy_task_12_attachment \
+    task-12-home-dashboard \
+    "$attempt_dir/task-12-ios-app-implementation.png"
+  copy_task_12_attachment \
+    task-12-home-notification \
+    "$attempt_dir/task-12-home-notification.png"
+  copy_task_12_attachment \
+    task-12-home-logged-out \
+    "$attempt_dir/task-12-home-logged-out.png"
+  copy_task_12_attachment \
+    task-12-home-signing-in \
+    "$attempt_dir/task-12-home-signing-in.png"
+  copy_task_12_attachment \
+    task-12-home-notification-denied \
+    "$attempt_dir/task-12-home-notification-denied.png"
+  copy_task_12_attachment \
+    task-12-home-care-variants \
+    "$attempt_dir/task-12-home-care-variants.png"
+  copy_task_12_attachment \
+    task-12-home-ax5 \
+    "$attempt_dir/task-12-home-ax5.png"
+  python3 - "$attempt_dir/task-12-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 12,
+            "authStates": ["logged-out", "signing-in", "authenticated"],
+            "careOrder": ["overdue", "due", "upcoming", "unavailable"],
+            "weatherFailureIsolation": "passed",
+            "miniHomePreview": "committed-fixture",
+            "notificationAuthorization": "passed",
+            "endpointUnavailable": "fail-closed",
+            "dueAndNextDay": "passed",
+            "deduplication": "passed",
+            "completionSuppression": "passed",
+            "deletedRoute": "unavailable-without-metadata",
+            "permissionDenial": "collection-remains-available",
+            "liveAPNs": "deferred-to-todo-20"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_12_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

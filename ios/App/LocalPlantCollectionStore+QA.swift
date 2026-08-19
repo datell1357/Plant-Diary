@@ -21,6 +21,28 @@ extension LocalPlantCollectionStore {
             }
             plants.removeAll()
             healthNotes.removeAll()
+            if ProcessInfo.processInfo.environment[
+                "QA_HOME_CARE_VARIANTS"
+            ] == "1" {
+                plants = [
+                    qaDraft(
+                        name: "지연 식물",
+                        lastWateredOn: try? CalendarDate.parse("2026-07-30")
+                    ),
+                    qaDraft(
+                        name: "오늘 식물",
+                        lastWateredOn: try? CalendarDate.parse("2026-08-01")
+                    ),
+                    qaDraft(
+                        name: "예정 식물",
+                        lastWateredOn: try? CalendarDate.parse("2026-08-10"),
+                        wateringIntervalDays: 5
+                    ),
+                    qaDraft(name: "미설정 식물", lastWateredOn: nil)
+                ]
+                persist()
+                return
+            }
             plants = [
                 qaDraft(
                     name: "몬스테라",
@@ -39,14 +61,15 @@ extension LocalPlantCollectionStore {
 
     private func qaDraft(
         name: String,
-        lastWateredOn: CalendarDate?
+        lastWateredOn: CalendarDate?,
+        wateringIntervalDays: Int = 10
     ) -> PlantRegistrationDraft {
         PlantRegistrationDraft(
             plantID: nil,
             displayName: name,
             representativePhoto: nil,
             lastWateredOn: lastWateredOn,
-            wateringIntervalDays: 10,
+            wateringIntervalDays: wateringIntervalDays,
             registrationMethod: .manual
         )
     }

@@ -140,7 +140,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 ## Remaining implementation
 
-### [ ] Todo 12 — Home dashboard and notification states
+### [x] Todo 12 — Home dashboard and notification states
 
 #### Scope
 

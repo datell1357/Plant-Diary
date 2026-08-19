@@ -98,6 +98,8 @@ struct AppNavigationState {
     var settingsPath: [AppRoute] = []
     private(set) var isCameraPresented = false
     private(set) var pendingAuthenticationRoute: AppRoute?
+    private(set) var pendingAuthenticationAvailability:
+        RouteTargetAvailability?
 
     mutating func select(_ tab: AppTab) {
         selectedTab = tab
@@ -152,6 +154,7 @@ struct AppNavigationState {
 
         guard !route.requiresAuthentication || authentication == .signedIn else {
             pendingAuthenticationRoute = route
+            pendingAuthenticationAvailability = targetAvailability
             return
         }
 
@@ -163,8 +166,17 @@ struct AppNavigationState {
             return
         }
 
+        let resolvedAvailability: RouteTargetAvailability =
+            pendingAuthenticationAvailability == .deleted
+                || targetAvailability == .deleted
+                ? .deleted
+                : .available
         self.pendingAuthenticationRoute = nil
-        open(pendingAuthenticationRoute, targetAvailability: targetAvailability)
+        pendingAuthenticationAvailability = nil
+        open(
+            pendingAuthenticationRoute,
+            targetAvailability: resolvedAvailability
+        )
     }
 
     private mutating func open(

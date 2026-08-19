@@ -86,6 +86,21 @@ struct AppShellTests {
         #expect(deletedNavigation.selectedTab == .home)
         #expect(deletedNavigation.path(for: .home) == [.unavailable])
         #expect(deletedNavigation.pendingAuthenticationRoute == nil)
+
+        var pendingDeletedNavigation = AppNavigationState()
+        pendingDeletedNavigation.handle(
+            .route(.plant(deletedTarget)),
+            authentication: .signedOut,
+            targetAvailability: .deleted
+        )
+        pendingDeletedNavigation.completeAuthentication(
+            targetAvailability: .available
+        )
+
+        #expect(pendingDeletedNavigation.selectedTab == .home)
+        #expect(
+            pendingDeletedNavigation.path(for: .home) == [.unavailable]
+        )
     }
 
     @Test

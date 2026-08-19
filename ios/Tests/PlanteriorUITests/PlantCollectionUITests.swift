@@ -90,7 +90,10 @@ final class PlantCollectionUITests: XCTestCase {
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.textFields["collection.search"].waitForExistence(timeout: 5))
         app.textFields["collection.search"].tap()
-        app.textFields["collection.search"].typeText("몬")
+        app.textFields["collection.search"].typeText("몬\n")
+        XCTAssertTrue(
+            app.keyboards.firstMatch.waitForNonExistence(timeout: 5)
+        )
         XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)

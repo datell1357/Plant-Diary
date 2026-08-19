@@ -33,7 +33,11 @@ struct AppTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(selectedTab == tab ? PlanteriorPalette.accent.color : Color.secondary)
+        .foregroundStyle(
+            selectedTab == tab
+                ? PlanteriorPalette.accent.color
+                : PlanteriorPalette.textSecondary.color
+        )
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
         .accessibilityIdentifier("tab.\(tab.rawValue)")

@@ -65,6 +65,7 @@ extension LocalPlantCollectionStore {
             location: current.location,
             privateMemo: current.privateMemo
         )
+        notificationSchedules.cancel(for: plantID)
         persist()
         return result
     }

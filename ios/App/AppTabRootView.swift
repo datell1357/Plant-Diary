@@ -8,7 +8,9 @@ struct AppTabRootView: View {
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
 
     var body: some View {
-        if tab == .collection {
+        if tab == .home {
+            HomeDashboardView(openCamera: openCamera)
+        } else if tab == .collection {
             PlantCollectionView(
                 openLegacyDetail: openDetail,
                 openCamera: openCamera

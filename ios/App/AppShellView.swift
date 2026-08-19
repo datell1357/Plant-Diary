@@ -3,9 +3,9 @@ import SwiftUI
 
 struct AppShellView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @EnvironmentObject private var auth: AuthRuntime
-    @State private var navigation = AppNavigationState()
-    @State private var showsLogin = false
+    @EnvironmentObject var auth: AuthRuntime
+    @State var navigation = AppNavigationState()
+    @State var showsLogin = false
     @State private var showsOnboarding = OnboardingState.shouldPresent
 
     init() {
@@ -26,7 +26,7 @@ struct AppShellView: View {
                 selectTab: { navigation.select($0) },
                 presentCamera: { navigation.presentCamera() }
             )
-            if !auth.isSignedIn {
+            if authenticationState == .signedOut {
                 Button("로그인하고 동기화하기") {
                     showsLogin = true
                 }
@@ -71,10 +71,15 @@ struct AppShellView: View {
             guard $0.scheme == "planterior" else {
                 return
             }
+            let incomingRoute = AppURLRoute.parse($0)
+            let availability: RouteTargetAvailability =
+                authenticationState == .signedOut
+                    ? .available
+                    : targetAvailability(for: incomingRoute)
             navigation.handle(
-                AppURLRoute.parse($0),
+                incomingRoute,
                 authentication: authenticationState,
-                targetAvailability: .available
+                targetAvailability: availability
             )
             showsLogin = navigation.pendingAuthenticationRoute != nil
         }
@@ -112,11 +117,19 @@ struct AppShellView: View {
             LocalPlantCollectionStore.shared.mount(
                 accountID: auth.accountID?.rawValue
             )
+            LocalNotificationScheduleStore.shared.mount(
+                accountID: auth.accountID?.rawValue
+            )
+            LocalNotificationPreferenceStore.shared.mount(
+                accountID: auth.accountID?.rawValue
+            )
             guard isSignedIn else {
                 navigation = AppNavigationState()
                 return
             }
-            navigation.completeAuthentication(targetAvailability: .available)
+            navigation.completeAuthentication(
+                targetAvailability: pendingTargetAvailability()
+            )
         }
     }
 
@@ -137,37 +150,13 @@ struct AppShellView: View {
             || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
     }
 
-    private var authenticationState: AppAuthenticationState {
+    var authenticationState: AppAuthenticationState {
         #if DEBUG
             if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
                 return .signedIn
             }
         #endif
         return auth.isSignedIn ? .signedIn : .signedOut
-    }
-
-    private func handleQARouteIfPresent() {
-        #if DEBUG
-            if ProcessInfo.processInfo.environment["QA_MANUAL_REGISTRATION"] == "1" {
-                navigation.push(.manualRegistration)
-                return
-            }
-        #endif
-        guard let rawURL = ProcessInfo.processInfo.environment["QA_DEEP_LINK"],
-              let url = URL(string: rawURL)
-        else {
-            return
-        }
-        let availability: RouteTargetAvailability =
-            ProcessInfo.processInfo.environment["QA_TARGET_DELETED"] == "1"
-                ? .deleted
-                : .available
-        navigation.handle(
-            AppURLRoute.parse(url),
-            authentication: authenticationState,
-            targetAvailability: availability
-        )
-        showsLogin = navigation.pendingAuthenticationRoute != nil
     }
 
     @ViewBuilder

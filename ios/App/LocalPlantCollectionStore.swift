@@ -19,7 +19,8 @@ final class LocalPlantCollectionStore: ObservableObject {
     @Published var snapshotState = CollectionViewState.content
     @Published private(set) var saveError: String?
     private var accountID = "signed-out"
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    let notificationSchedules: LocalNotificationScheduleStore
     private var plantsKey: String {
         "collection.\(accountID).plants"
     }
@@ -28,7 +29,12 @@ final class LocalPlantCollectionStore: ObservableObject {
         "collection.\(accountID).health-notes"
     }
 
-    private init() {
+    init(
+        defaults: UserDefaults = .standard,
+        notificationSchedules: LocalNotificationScheduleStore = .shared
+    ) {
+        self.defaults = defaults
+        self.notificationSchedules = notificationSchedules
         #if DEBUG
             if ProcessInfo.processInfo.environment["QA_RESET_COLLECTION"] == "1" {
                 defaults.removeObject(forKey: plantsKey)

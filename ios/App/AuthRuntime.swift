@@ -11,6 +11,7 @@ import UIKit
 
 @MainActor
 final class AuthRuntime: NSObject, ObservableObject {
+    @Published private(set) var isRestoring = true
     @Published private(set) var isSignedIn = false
     @Published private(set) var accountID: AccountID?
     @Published private(set) var cacheSignal: AccountCacheSignal?
@@ -36,6 +37,7 @@ final class AuthRuntime: NSObject, ObservableObject {
     }
 
     func restore() async {
+        defer { isRestoring = false }
         guard FirebaseConfiguration.isAvailable else {
             return
         }

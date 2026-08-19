@@ -1,0 +1,35 @@
+{
+  "task": 12,
+  "surface": "home-dashboard-and-notification-states",
+  "authStates": [
+    "logged-out",
+    "signing-in",
+    "authenticated"
+  ],
+  "careOrdering": [
+    "overdue",
+    "due",
+    "upcoming",
+    "unavailable"
+  ],
+  "weatherFailureIsolation": true,
+  "notificationStates": [
+    "not-determined",
+    "denied",
+    "authorized",
+    "endpoint-unavailable",
+    "endpoint-registered"
+  ],
+  "notificationDeliveries": [
+    "due-day",
+    "next-day",
+    "deduplicated",
+    "completion-suppressed"
+  ],
+  "routes": [
+    "authenticated-plant",
+    "requires-authentication",
+    "deleted-target-unavailable"
+  ],
+  "liveAPNsDeferredToTodo": 20
+}
