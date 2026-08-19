@@ -16,6 +16,7 @@ internal data class RestoredRegistration(
     val session: RegistrationSession?,
     val draft: RegistrationDraft,
     val state: RegistrationUiState,
+    val navigationEvent: RegistrationNavigationEvent?,
 )
 
 internal object RegistrationSavedState {
@@ -29,6 +30,7 @@ internal object RegistrationSavedState {
         session: RegistrationSession?,
         draft: RegistrationDraft,
         state: RegistrationUiState,
+        navigationEvent: RegistrationNavigationEvent?,
     ) {
         handle?.set(
             KEY,
@@ -37,6 +39,7 @@ internal object RegistrationSavedState {
                 putString("zone", session?.zoneId?.id)
                 putBundle("draft", draft.bundle())
                 putBundle("ui", state.bundle())
+                putBundle("navigation", navigationEvent.bundle())
             },
         )
     }
@@ -51,9 +54,27 @@ internal object RegistrationSavedState {
                 )
             }
         val state = getBundle("ui")?.ui(draft) ?: RegistrationUiState.Editing(draft)
-        return RestoredRegistration(session, draft, state)
+        return RestoredRegistration(session, draft, state, getBundle("navigation")?.navigation())
     }
 }
+
+private fun RegistrationNavigationEvent?.bundle(): Bundle? =
+    this?.let { event ->
+        Bundle().apply {
+            putString("identity", event.identity)
+            putString("owner", event.ownerAccountId.value)
+            putString("plant", event.plantId.value)
+            putString("kind", event.kind.name)
+        }
+    }
+
+private fun Bundle.navigation() =
+    RegistrationNavigationEvent(
+        identity = requireNotNull(getString("identity")),
+        ownerAccountId = AccountId(requireNotNull(getString("owner"))),
+        plantId = PersonalPlantId(requireNotNull(getString("plant"))),
+        kind = RegistrationNavigationKind.valueOf(requireNotNull(getString("kind"))),
+    )
 
 private fun RegistrationDraft.bundle() =
     Bundle().apply {

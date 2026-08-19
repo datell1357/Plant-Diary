@@ -24,7 +24,6 @@ import androidx.navigation.NavController
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.planterior.helper.core.database.CachedMiniHomeEntity
 import com.planterior.helper.core.database.CachedPlantEntity
 import com.planterior.helper.core.database.CachedWateringScheduleEntity
@@ -35,8 +34,11 @@ import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.MIGRATION_4_5
 import com.planterior.helper.core.database.MIGRATION_5_6
 import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.feature.auth.ACCOUNT_SCREEN_TAG
+import com.planterior.helper.feature.collection.CollectionTestTags
 import com.planterior.helper.feature.home.HomeTestTags
 import com.planterior.helper.feature.home.HomeUiState
+import com.planterior.helper.feature.watering.WateringNotificationSettingsTestTags
 import com.planterior.helper.home.SESSION_LOGGED_OUT
 import com.planterior.helper.home.SESSION_RESTORING
 import com.planterior.helper.home.SESSION_SIGNED_IN
@@ -72,7 +74,9 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class HomeMainActivityTest {
-    @get:Rule(order = 0) val composeRule = createAndroidComposeRule<MainActivity>()
+    @get:Rule(order = 0) val localNetworkPermission = Api37LocalNetworkPermissionRule()
+    @get:Rule(order = 1) val homeSession = DebugHomeSessionRule(SESSION_LOGGED_OUT)
+    @get:Rule(order = 2) val composeRule = createAndroidComposeRule<MainActivity>()
 
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
@@ -81,14 +85,6 @@ class HomeMainActivityTest {
 
     @Before
     fun setUp() {
-        if (android.os.Build.VERSION.SDK_INT >= 37) {
-            InstrumentationRegistry.getInstrumentation()
-                .uiAutomation
-                .grantRuntimePermission(
-                    context.packageName,
-                    "android.permission.ACCESS_LOCAL_NETWORK",
-                )
-        }
         // 앞서 돌은 테스트가 남긴 계정 데이터와 시나리오를 지워 항상 같은 지점에서 시작하게 한다.
         setDebugHomeSession(context, "")
         setDebugHomeScenario(context, "")
@@ -219,6 +215,8 @@ class HomeMainActivityTest {
         val previousComposeRootCallback = ViewRootForTest.onViewCreatedCallback
         val composeRootAttachListeners =
             IdentityHashMap<ViewRootForTest, android.view.View.OnAttachStateChangeListener>()
+        val navigationListeners =
+            IdentityHashMap<MainActivity, NavController.OnDestinationChangedListener>()
         lateinit var composeRootCallback: (ViewRootForTest) -> Unit
         return LeasedExactEventRegistration(
             receiver = receiver,
@@ -228,6 +226,8 @@ class HomeMainActivityTest {
                 val composeRoots =
                     java.util.Collections.newSetFromMap(IdentityHashMap<ViewRootForTest, Boolean>())
                 val resumedActivities =
+                    java.util.Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+                val homeActivities =
                     java.util.Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
                 val emittedActivities =
                     java.util.Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
@@ -244,6 +244,7 @@ class HomeMainActivityTest {
                                 state == null ||
                                     composeRoot == null ||
                                     activity !in resumedActivities ||
+                                    activity !in homeActivities ||
                                     !emittedActivities.add(activity)
                             ) {
                                 null
@@ -294,6 +295,25 @@ class HomeMainActivityTest {
                             savedInstanceState: Bundle?,
                         ) {
                             if (activity !is MainActivity || activity === previousActivity) return
+                            val controller = activity.navigationController
+                            val navigationListener =
+                                NavController.OnDestinationChangedListener { current, _, _ ->
+                                    synchronized(readinessLock) {
+                                        if (
+                                            current.currentBackStackEntry.toPlanteriorRoute() ==
+                                                PlanteriorRoute.Home
+                                        ) {
+                                            homeActivities += activity
+                                        } else {
+                                            homeActivities -= activity
+                                        }
+                                    }
+                                    dispatchIfReady(activity)
+                                }
+                            synchronized(readinessLock) {
+                                navigationListeners[activity] = navigationListener
+                            }
+                            controller.addOnDestinationChangedListener(navigationListener)
                             activity.lifecycleScope.launch {
                                 val state = activity.homeViewModel.state.first(expectedState)
                                 synchronized(readinessLock) { restoredStates[activity] = state }
@@ -329,6 +349,11 @@ class HomeMainActivityTest {
                 }
                 composeRootAttachListeners.forEach { (root, listener) ->
                     root.view.removeOnAttachStateChangeListener(listener)
+                }
+                composeRule.runOnIdle {
+                    navigationListeners.forEach { (activity, listener) ->
+                        activity.navigationController.removeOnDestinationChangedListener(listener)
+                    }
                 }
             },
         )
@@ -544,7 +569,7 @@ class HomeMainActivityTest {
         navigateTo(PlanteriorRoute.Notifications) {
             composeRule.onNodeWithTag(HomeTestTags.NOTIFICATION).performClick()
         }
-        composeRule.onNodeWithText("알림").assertIsDisplayed()
+        composeRule.onNodeWithTag(WateringNotificationSettingsTestTags.SCREEN).assertIsDisplayed()
         pressBack()
 
         navigateTo(PlanteriorRoute.Camera) {
@@ -556,12 +581,12 @@ class HomeMainActivityTest {
         navigateTo(PlanteriorRoute.Collection) {
             composeRule.onNodeWithContentDescription("도감").performClick()
         }
-        composeRule.onNodeWithText("도감").assertIsDisplayed()
+        composeRule.onNodeWithTag(CollectionTestTags.SCREEN).assertIsDisplayed()
 
         navigateTo(PlanteriorRoute.Settings) {
             composeRule.onNodeWithContentDescription("설정").performClick()
         }
-        composeRule.onNodeWithText("설정").assertIsDisplayed()
+        composeRule.onNodeWithTag(ACCOUNT_SCREEN_TAG).assertIsDisplayed()
 
         navigateTo(PlanteriorRoute.Home) {
             composeRule.onNodeWithContentDescription("홈").performClick()
@@ -578,7 +603,7 @@ class HomeMainActivityTest {
                 "planterior://collection/plant/../../etc/passwd",
                 "planterior://unknown",
                 "https://evil.example.com/planterior://home",
-                "planterior://collection/plant/" + "a".repeat(65),
+                "planterior://collection/plant/" + "a".repeat(129),
             )
 
         hostile.forEach { uri ->

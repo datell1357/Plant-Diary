@@ -8,7 +8,7 @@ object DebugNotificationInjector {
 
     fun injectIfRequested(context: Context, intent: Intent): Boolean {
         val plantId = intent.getStringExtra(EXTRA_PLANT_ID) ?: return false
-        if (!plantId.matches(Regex("^[A-Za-z0-9_-]{1,64}$"))) return false
+        if (!plantId.matches(Regex("^[A-Za-z0-9_-]{1,128}$"))) return false
         return WateringNotificationRenderer.post(
             context,
             "planterior://collection/plant/$plantId",

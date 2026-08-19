@@ -29,6 +29,7 @@ import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import java.time.format.DateTimeFormatter
 
 object WateringTestTags {
+    const val SCREEN = "watering-confirmation:screen"
     const val SCHEDULE = "watering:schedule"
     const val UNAVAILABLE = "watering:unavailable"
     const val UPCOMING = "watering:upcoming"
@@ -110,7 +111,10 @@ fun WateringConfirmationScreen(
             is WateringConfirmationUiState.Unavailable -> state.snapshot.displayName
             else -> "물 주기 완료"
         }
-    PlanteriorScreenScaffold(title = title, modifier = modifier) {
+    PlanteriorScreenScaffold(
+        title = title,
+        modifier = modifier.testTag(WateringTestTags.SCREEN),
+    ) {
         TextButton(
             onClick = onBack,
             modifier =

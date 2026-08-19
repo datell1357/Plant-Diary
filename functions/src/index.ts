@@ -1,5 +1,5 @@
 import { getApps, initializeApp } from "firebase-admin/app";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { defineSecret } from "firebase-functions/params";
@@ -29,6 +29,21 @@ import {
 import { executePlantIdentification, PlantIdentificationError } from "./plant-identification.js";
 import { WateringError, executeWateringCompletion } from "./watering.js";
 import {
+  executeRefreshWeather,
+  executeSearchWeatherRegions,
+  executeSetLocationConsent,
+  executeSetManualWeatherRegion,
+  executeUpdateWeatherAlerts,
+} from "./weather-service.js";
+import {
+  FirestoreWeatherStore,
+  OpenWeatherProvider,
+  deliverPendingWeatherAlerts,
+  executeScheduledWeatherRefresh,
+  runConfiguredWeatherRefreshScan,
+} from "./weather-runtime.js";
+import { WeatherConsentConflictError, WeatherError } from "./weather.js";
+import {
   FirebaseWateringPushSender,
   FirestoreWateringDeliveryStore,
   NotificationOpenError,
@@ -44,7 +59,10 @@ const notificationSettingsStore = new FirestoreNotificationSettingsStore(firesto
 const wateringDeliveryStore = new FirestoreWateringDeliveryStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
 const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
+const appleAbuseHashKey = defineSecret("APPLE_ABUSE_HASH_KEY");
 const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
+const openWeatherApiKey = defineSecret("OPENWEATHER_API_KEY");
+const weatherStore = new FirestoreWeatherStore(firestore);
 
 function requiredEnvironment(name: "APPLE_CLIENT_ID" | "APPLE_REDIRECT_URI" | "APPLE_TEAM_ID" | "APPLE_KEY_ID"): string {
   const value = process.env[name];
@@ -67,11 +85,12 @@ function appleHttpsError(error: unknown): never {
     case "already-exists": throw new HttpsError("already-exists", error.message);
     case "failed-precondition": throw new HttpsError("failed-precondition", error.message);
     case "unauthenticated": throw new HttpsError("unauthenticated", error.message);
+    case "resource-exhausted": throw new HttpsError("resource-exhausted", error.message);
     case "unavailable": throw new HttpsError("unavailable", error.message);
   }
 }
 
-export const applyRevisionedOwnerWrite = onCall(async (request) => {
+export const applyRevisionedOwnerWrite = onCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeOwnerMutation(request.auth === undefined ? null : { uid: request.auth.uid }, request.data, store);
   } catch (error: unknown) {
@@ -82,7 +101,7 @@ export const applyRevisionedOwnerWrite = onCall(async (request) => {
 
 export { executeOwnerMutation, executeServerStateWrite } from "./contracts.js";
 
-export const completeWatering = onCall(async (request) => {
+export const completeWatering = onCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeWateringCompletion(
       request.auth === undefined ? null : { uid: request.auth.uid },
@@ -216,20 +235,152 @@ export const deliverDueWateringNotifications = onSchedule(
   },
 );
 
-export const beginAppleSignIn = onCall(async (request) => {
-  try {
-    return await executeBeginAppleSignIn(
-      request.data,
-      appleStore,
-      appleConfig(),
-      new Date(),
-      () => randomUUID().replaceAll("-", ""),
-    );
-  } catch (error: unknown) {
-    return appleHttpsError(error);
-  }
-});
+function weatherHttpsError(error: unknown): never {
+  if (!(error instanceof WeatherError)) throw error;
+  throw new HttpsError(
+    error.code,
+    error.message,
+    error instanceof WeatherConsentConflictError
+      ? {
+          commandGeneration: error.commandGeneration,
+          granted: error.granted,
+          conflict: true,
+        }
+      : undefined,
+  );
+}
 
+export const searchWeatherRegions = onCall(
+  { enforceAppCheck: true, secrets: [openWeatherApiKey] },
+  async (request) => {
+    try {
+      return await executeSearchWeatherRegions(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        new OpenWeatherProvider(openWeatherApiKey.value()),
+      );
+    } catch (error: unknown) {
+      return weatherHttpsError(error);
+    }
+  },
+);
+
+export const setWeatherLocationConsent = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeSetLocationConsent(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        weatherStore,
+      );
+    } catch (error: unknown) {
+      return weatherHttpsError(error);
+    }
+  },
+);
+
+export const setManualWeatherRegion = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeSetManualWeatherRegion(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        weatherStore,
+      );
+    } catch (error: unknown) {
+      return weatherHttpsError(error);
+    }
+  },
+);
+
+export const updateWeatherAlerts = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeUpdateWeatherAlerts(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        weatherStore,
+      );
+    } catch (error: unknown) {
+      return weatherHttpsError(error);
+    }
+  },
+);
+
+export const refreshWeather = onCall(
+  { enforceAppCheck: true, secrets: [openWeatherApiKey], timeoutSeconds: 30 },
+  async (request) => {
+    try {
+      const result = await executeRefreshWeather(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        weatherStore,
+        new OpenWeatherProvider(openWeatherApiKey.value()),
+      );
+      return result;
+    } catch (error: unknown) {
+      return weatherHttpsError(error);
+    }
+  },
+);
+
+export const deliverWeatherAlertOutbox = onSchedule(
+  { schedule: "every 5 minutes", timeZone: "UTC", timeoutSeconds: 240 },
+  async () => {
+    await deliverPendingWeatherAlerts(firestore, getMessaging());
+  },
+);
+
+export const refreshConfiguredWeather = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    timeZone: "UTC",
+    timeoutSeconds: 540,
+    secrets: [openWeatherApiKey],
+  },
+  async () => {
+    const provider = new OpenWeatherProvider(openWeatherApiKey.value());
+    await runConfiguredWeatherRefreshScan(firestore, async (ownerUid, signal) => {
+      await executeScheduledWeatherRefresh(ownerUid, weatherStore, provider, signal);
+    });
+  },
+);
+
+export const beginAppleSignIn = onCall(
+  { enforceAppCheck: true, secrets: [appleAbuseHashKey] },
+  async (request) => {
+    try {
+      const appId = request.app?.appId;
+      const ip = request.rawRequest.ip;
+      const hashKey = appleAbuseHashKey.value();
+      if (
+        typeof appId !== "string" || appId.length < 3 || appId.length > 256 ||
+        typeof ip !== "string" || ip.length < 2 || ip.length > 128 ||
+        hashKey.length < 32
+      ) {
+        throw new AppleAuthError("failed-precondition", "Apple session admission is unavailable");
+      }
+      const abuseKeyHash = createHmac("sha256", hashKey).update(appId).update("\0").update(ip).digest("hex");
+      return await executeBeginAppleSignIn(
+        request.data,
+        appleStore,
+        appleConfig(),
+        abuseKeyHash,
+        new Date(),
+        () => randomUUID().replaceAll("-", ""),
+      );
+    } catch (error: unknown) {
+      return appleHttpsError(error);
+    }
+  },
+);
+
+// Apple posts this OAuth redirect from its server, so it cannot carry the app's App Check token.
+// The callback is not callable: strict state lookup, TTL, one-time code attachment, and deny-all
+// Firestore rules are its authentication boundary.
 export const appleOAuthCallback = onRequest(async (request, response) => {
   try {
     const result = await executeAppleCallback(request.body, appleStore, new Date());
@@ -243,7 +394,7 @@ export const appleOAuthCallback = onRequest(async (request, response) => {
   }
 });
 
-export const completeAppleSignIn = onCall({ secrets: [applePrivateKey] }, async (request) => {
+export const completeAppleSignIn = onCall({ enforceAppCheck: true, secrets: [applePrivateKey] }, async (request) => {
   try {
     const exchange = new VerifiedAppleTokenExchange({
       ...appleConfig(),
@@ -256,6 +407,13 @@ export const completeAppleSignIn = onCall({ secrets: [applePrivateKey] }, async 
     return appleHttpsError(error);
   }
 });
+
+export const cleanupExpiredAppleAuthSessions = onSchedule(
+  { schedule: "every 15 minutes", timeZone: "UTC", timeoutSeconds: 120 },
+  async () => {
+    await appleStore.cleanupExpired(new Date());
+  },
+);
 
 export const identifyPlant = onCall({ enforceAppCheck: true, secrets: [plantIdApiKey] }, async (request) => {
   try {

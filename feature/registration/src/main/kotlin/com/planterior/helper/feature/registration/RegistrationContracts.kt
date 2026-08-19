@@ -28,6 +28,34 @@ data class ExistingPersonalPlant(val id: PersonalPlantId, val displayName: Strin
 
 data class RegistrationSession(val accountId: AccountId, val zoneId: ZoneId)
 
+enum class RegistrationNavigationKind {
+    OPEN_EXISTING,
+    REGISTRATION_COMPLETED,
+}
+
+data class RegistrationNavigationEvent(
+    val identity: String,
+    val ownerAccountId: AccountId,
+    val plantId: PersonalPlantId,
+    val kind: RegistrationNavigationKind,
+)
+
+sealed interface RegistrationAuthOwnership {
+    data object Restoring : RegistrationAuthOwnership
+
+    data object Unknown : RegistrationAuthOwnership
+
+    data object SignedOut : RegistrationAuthOwnership
+
+    /** Explicitly disables owner enforcement for previews and deterministic debug fixtures. */
+    data object Unmanaged : RegistrationAuthOwnership
+
+    data class Authenticated(val accountId: AccountId) : RegistrationAuthOwnership
+}
+
+@JvmInline
+value class RegistrationNavigationCollector internal constructor(internal val generation: Long)
+
 sealed interface RepresentativePhoto {
     val extension: String
     val contentType: String

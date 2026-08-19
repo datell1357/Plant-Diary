@@ -47,6 +47,7 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 
 object WateringNotificationSettingsTestTags {
+    const val SCREEN = "watering-notifications:screen"
     const val PERMISSION_GUIDANCE = "watering-notifications:permission-guidance"
     const val DEFAULT_TIME = "watering-notifications:default-time"
     const val SAVE = "watering-notifications:save"
@@ -119,7 +120,10 @@ fun WateringNotificationSettingsScreen(
     onSave: () -> Unit,
     onRetryLoad: () -> Unit,
 ) {
-    PlanteriorScreenScaffold(title = "물 주기 알림") {
+    PlanteriorScreenScaffold(
+        title = "물 주기 알림",
+        modifier = Modifier.testTag(WateringNotificationSettingsTestTags.SCREEN),
+    ) {
         TextButton(onClick = onBack, modifier = Modifier.minimumAction()) { Text("홈으로 돌아가기") }
         Column(
             modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),

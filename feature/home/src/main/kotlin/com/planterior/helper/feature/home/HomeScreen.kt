@@ -120,6 +120,7 @@ fun HomeScreen(
     onOpenCollection: () -> Unit,
     onOpenPlant: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenWeather: () -> Unit = {},
     strings: HomeStrings = HomeStrings.Korean,
     bottomBar: @Composable () -> Unit = {},
 ) {
@@ -156,6 +157,7 @@ fun HomeScreen(
                         onOpenMiniHome = onOpenMiniHome,
                         onOpenCollection = onOpenCollection,
                         onOpenPlant = onOpenPlant,
+                        onOpenWeather = onOpenWeather,
                     )
                 is HomeUiState.Error -> ErrorHome(state, strings, onNotifications)
             }
@@ -280,6 +282,7 @@ private fun ContentHome(
     onOpenMiniHome: () -> Unit,
     onOpenCollection: () -> Unit,
     onOpenPlant: (String) -> Unit,
+    onOpenWeather: () -> Unit,
 ) {
     GreetingRow(
         name = state.greetingName,
@@ -289,7 +292,7 @@ private fun ContentHome(
     )
     MiniHomePreview(state.miniHome, strings, onOpenMiniHome)
     DegradationNotices(state.weather, state.sync, strings)
-    WeatherRiskBanner(state.weather)
+    WeatherRiskBanner(state.weather, onOpenWeather)
     CareSection(
         items = state.careItems,
         dueTodayCount = state.dueTodayCount,
@@ -507,7 +510,7 @@ private fun StaleNotice(sync: HomeSyncState.Stale, strings: HomeStrings) {
 
 /** Figma `main-content`의 노란 경고 배너. 우선순위가 가장 높은 위험 하나만 그린다. */
 @Composable
-private fun WeatherRiskBanner(weather: HomeWeatherState) {
+private fun WeatherRiskBanner(weather: HomeWeatherState, onOpenWeather: () -> Unit) {
     val risk = (weather as? HomeWeatherState.Available)?.topRisk ?: return
     Notice(
         text = risk.message,
@@ -515,6 +518,7 @@ private fun WeatherRiskBanner(weather: HomeWeatherState) {
         container = MaterialTheme.colorScheme.errorContainer,
         border = PlanteriorTheme.warningBorder,
         content = MaterialTheme.colorScheme.onErrorContainer,
+        onClick = onOpenWeather,
     )
 }
 
@@ -525,6 +529,7 @@ private fun Notice(
     container: Color,
     border: Color,
     content: Color,
+    onClick: (() -> Unit)? = null,
 ) {
     val shape = RoundedCornerShape(PlanteriorRadius.Medium)
     Text(
@@ -535,6 +540,7 @@ private fun Notice(
             Modifier.fillMaxWidth()
                 .background(container, shape)
                 .border(PlanteriorBorderWidth, border, shape)
+                .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
                 .padding(PlanteriorTheme.spacing.extraLarge)
                 .testTag(tag),
     )

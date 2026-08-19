@@ -187,7 +187,7 @@ class OutboxWateringRepository(
     ): WateringCompletionResult =
         try {
             val cachedPlant =
-                database.cacheDao().plantBlocking(request.accountId.value, request.plantId.value)
+                database.cacheDao().plant(request.accountId.value, request.plantId.value)
                     ?: return WateringCompletionResult.Failed(
                         WateringCompletionFailure.DATABASE_UNAVAILABLE
                     )

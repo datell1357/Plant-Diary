@@ -44,7 +44,6 @@ class CollectionRepositoryTest {
                     ApplicationProvider.getApplicationContext<Context>(),
                     PlanteriorDatabase::class.java,
                 )
-                .allowMainThreadQueries()
                 .build()
     }
 
@@ -69,8 +68,7 @@ class CollectionRepositoryTest {
                 database.cacheDao().plants("account-a").map { it.plantId },
             )
             assertTrue(
-                requireNotNull(database.cacheDao().plantBlocking("account-a", "plant-a"))
-                    .detailsComplete
+                requireNotNull(database.cacheDao().plant("account-a", "plant-a")).detailsComplete
             )
             assertEquals(
                 listOf("foreign"),
@@ -133,6 +131,20 @@ class CollectionRepositoryTest {
                 .loadCollection()
 
         assertEquals(CollectionLoad.Failed, result)
+    }
+
+    @Test
+    fun `production Room config loads collection detail from a main coroutine`() = runTest {
+        val result =
+            repository(
+                    FakeRemote(
+                        detail = RemotePlantLookup.Found(remotePlant()),
+                        content = publicContent(),
+                    )
+                )
+                .loadDetail(PersonalPlantId("plant-a"))
+
+        assertTrue(result is DetailLoad.Fresh)
     }
 
     @Test
@@ -324,7 +336,7 @@ class CollectionRepositoryTest {
             afterSymptoms.afterSymptoms = { afterSymptoms.activeAccount = AccountId("account-b") }
             assertEquals(DetailLoad.Forbidden, switched(afterSymptoms))
 
-            assertEquals(null, database.cacheDao().plantBlocking("account-a", "plant-a"))
+            assertEquals(null, database.cacheDao().plant("account-a", "plant-a"))
         }
 
     @Test
@@ -391,7 +403,7 @@ class CollectionRepositoryTest {
                 Json.parseToJsonElement(gateway.commands.first().draftPayload).jsonObject.keys,
             )
             assertEquals(0, database.syncDao().pending("account-a").size)
-            val cached = database.cacheDao().plantBlocking("account-a", "plant-a")
+            val cached = database.cacheDao().plant("account-a", "plant-a")
             assertEquals("거실", cached?.location)
             assertEquals("잎을 돌려줌", cached?.note)
         }
@@ -458,6 +470,20 @@ class CollectionRepositoryTest {
         assertTrue(gateway.commands.isEmpty())
         assertTrue(database.syncDao().pending("account-a").isEmpty())
     }
+
+    @Test
+    fun `database shutdown is surfaced instead of running a detail query on a closed Room`() =
+        runTest {
+            database.close()
+
+            try {
+                repository(FakeRemote(detail = RemotePlantLookup.Found(remotePlant())))
+                    .loadDetail(PersonalPlantId("plant-a"))
+                fail("IllegalStateException expected")
+            } catch (_: IllegalStateException) {
+                assertFalse(database.isOpen)
+            }
+        }
 
     @Test
     fun `repository preserves cancellation from read and write boundaries`() = runTest {

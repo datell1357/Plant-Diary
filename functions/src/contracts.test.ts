@@ -74,6 +74,26 @@ test("auth spoof malformed operation and revision conflict are typed errors", as
   );
 });
 
+test("generic owner callable cannot overwrite the generation-protected location consent", async () => {
+  const store = new FakeStore();
+  await assert.rejects(
+    () => executeOwnerMutation(
+      { uid: "user-a" },
+      {
+        expectedOwnerUid: "user-a",
+        collection: "consents",
+        documentId: "location",
+        mutationType: "CREATE",
+        expectedRevision: 0,
+        idempotencyKey: "operation-consent-1",
+        payload: { type: "LOCATION", granted: true, recordedAt: "2026-08-12T00:00:00Z" },
+      },
+      store,
+    ),
+    (error: unknown) => error instanceof ContractError && error.code === "invalid-argument",
+  );
+});
+
 test("generic owner callable rejects notification settings so only the transactional callable can write them", async () => {
   const store = new FakeStore();
   await assert.rejects(
@@ -256,10 +276,10 @@ test("server-only delivery weather deletion and item writes validate state", asy
   const store = new FakeStore();
   const commands = [
     { collection: "notificationDeliveries", documentId: "delivery-a", payload: { plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: "2026-08-12T00:00:00Z", deliveredAt: "2026-08-12T00:01:00Z", deduplicationKey: "user-a:plant-a:2026-08-12:0" } },
-    { collection: "weatherRisks", documentId: "risk-a", payload: { plantId: "plant-a", snapshotId: "snapshot-a", type: "DRY", detectedAt: "2026-08-12T00:00:00Z", active: true } },
+    { collection: "weatherRisks", documentId: "risk-a", payload: { plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", detectedAt: "2026-08-12T00:00:00Z", observedAt: "2026-08-12T00:00:00Z", active: true, transition: 1, deliveredTransition: null } },
     { collection: "deletionRequests", documentId: "deletion-a", payload: { status: "COMPLETED", requestedAt: "2026-08-01T00:00:00Z", scheduledFor: "2026-08-08T00:00:00Z", completedAt: "2026-08-08T00:01:00Z" } },
     { collection: "ownedItems", documentId: "owned-a", payload: { itemId: "item-a", acquiredAt: "2026-08-12T00:00:00Z", applied: false } },
-    { collection: "weatherSnapshots", documentId: "snapshot-a", payload: { regionCode: "11B10101", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: "2026-08-12T00:00:00Z", expiresAt: "2026-08-12T01:00:00Z" } },
+    { collection: "weatherSnapshots", documentId: "snapshot-a", payload: { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: "2026-08-12T00:00:00Z", expiresAt: "2026-08-12T03:00:00Z", zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"] } },
     { collection: "shareLinks", documentId: "share-a", payload: { miniHomeId: "home-a", sourceRevision: 2, snapshotPath: "share-images/user-a/share-a/share.png", createdAt: "2026-08-12T00:00:00Z", expiresAt: "2026-09-12T00:00:00Z", revokedAt: null } },
   ] as const;
   for (const command of commands) await executeServerStateWrite({ trusted: true }, "user-a", command, store);
@@ -268,6 +288,30 @@ test("server-only delivery weather deletion and item writes validate state", asy
   await assert.rejects(() => executeServerStateWrite({ trusted: true }, "user-a", { ...commands[1], payload: { ...commands[1].payload, type: "FORGED" } }, store), ContractError);
   await assert.rejects(
     () => executeServerStateWrite({ trusted: true }, "user-a", { ...commands[5], payload: { ...commands[5].payload, expiresAt: "2026-08-01T00:00:00Z" } }, store),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeServerStateWrite(
+      { trusted: true },
+      "user-a",
+      { ...commands[4], payload: { ...commands[4].payload, unavailablePlantIds: ["bad/id"] } },
+      store,
+    ),
+    ContractError,
+  );
+  await assert.rejects(
+    () => executeServerStateWrite(
+      { trusted: true },
+      "user-a",
+      {
+        ...commands[4],
+        payload: {
+          ...commands[4].payload,
+          unavailablePlantIds: Array.from({ length: 201 }, (_, index) => `plant-${index}`),
+        },
+      },
+      store,
+    ),
     ContractError,
   );
 });

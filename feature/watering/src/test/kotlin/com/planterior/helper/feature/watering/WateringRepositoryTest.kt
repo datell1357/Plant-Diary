@@ -16,11 +16,14 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -42,7 +45,6 @@ class WateringRepositoryTest {
                     ApplicationProvider.getApplicationContext<Context>(),
                     PlanteriorDatabase::class.java,
                 )
-                .allowMainThreadQueries()
                 .build()
     }
 
@@ -54,6 +56,20 @@ class WateringRepositoryTest {
             "878509f1e1dc72768fbe28201271defe254cbea7c5400122ad09dedd24a9045b",
             WateringRequestHash.calculate(request()),
         )
+    }
+
+    @Test
+    fun `production Room config reconciles successful watering from a main coroutine`() = runTest {
+        database.cacheDao().upsertPlant(cachedPlant())
+        val result =
+            repository(
+                    FakeRemote(receipt = WateringReceiptLookup.Found(receipt())),
+                    RecordingGateway(RemoteMutationResult.Applied(5)),
+                )
+                .complete(request())
+
+        assertEquals(WateringCompletionResult.Completed(receipt()), result)
+        assertTrue(database.syncDao().pending("account-a").isEmpty())
     }
 
     @Test
@@ -71,7 +87,7 @@ class WateringRepositoryTest {
             WateringCompletionResult.Failed(WateringCompletionFailure.REMOTE_WRITE_FAILED),
             repository.complete(request),
         )
-        assertEquals(oldPlant, database.cacheDao().plantBlocking("account-a", "plant-a"))
+        assertEquals(oldPlant, database.cacheDao().plant("account-a", "plant-a"))
         assertEquals(oldSchedule, database.cacheDao().schedule("account-a", "plant-a"))
         assertEquals(1, database.syncDao().pending("account-a").size)
 
@@ -81,7 +97,7 @@ class WateringRepositoryTest {
         assertEquals(1, gateway.commands.map { it.operationId }.distinct().size)
         assertEquals(
             "2026-08-12",
-            database.cacheDao().plantBlocking("account-a", "plant-a")?.lastWateredDate,
+            database.cacheDao().plant("account-a", "plant-a")?.lastWateredDate,
         )
         assertEquals("2026-08-22", database.cacheDao().schedule("account-a", "plant-a")?.dueDate)
         assertTrue(database.syncDao().pending("account-a").isEmpty())
@@ -218,13 +234,62 @@ class WateringRepositoryTest {
             assertEquals(WateringCompletionResult.Forbidden, after)
             assertEquals(
                 "2026-08-01",
-                database.cacheDao().plantBlocking("account-a", "plant-a")?.lastWateredDate,
+                database.cacheDao().plant("account-a", "plant-a")?.lastWateredDate,
             )
             assertEquals(
                 "2026-08-11",
                 database.cacheDao().schedule("account-a", "plant-a")?.dueDate,
             )
         }
+
+    @Test
+    fun `cancellation during server receipt reconciliation keeps local outbox and cache intact`() =
+        runTest {
+            database.cacheDao().upsertPlant(cachedPlant())
+            database.cacheDao().upsertSchedule(cachedSchedule())
+            val receiptEntered = CompletableDeferred<Unit>()
+            val remote = FakeRemote(receipt = WateringReceiptLookup.Found(receipt()))
+            remote.afterReceipt = {
+                receiptEntered.complete(Unit)
+                CompletableDeferred<Unit>().await()
+            }
+            val completion = CompletableDeferred<Throwable?>()
+            val job = launch {
+                repository(remote, RecordingGateway(RemoteMutationResult.Applied(5)))
+                    .complete(request())
+            }
+            job.invokeOnCompletion(completion::complete)
+
+            receiptEntered.await()
+            val cancellation = CancellationException("confirmation left during reconcile")
+            job.cancel(cancellation)
+
+            assertSame(cancellation, completion.await())
+            assertEquals(
+                "2026-08-01",
+                database.cacheDao().plant("account-a", "plant-a")?.lastWateredDate,
+            )
+            assertEquals(
+                listOf("watering-operation-stable"),
+                database.syncDao().pending("account-a").map { it.operationId },
+            )
+        }
+
+    @Test
+    fun `server success followed by database shutdown propagates Room cancellation`() = runTest {
+        database.cacheDao().upsertPlant(cachedPlant())
+        val gateway = RecordingGateway(RemoteMutationResult.Applied(5))
+        val remote = FakeRemote(receipt = WateringReceiptLookup.Found(receipt()))
+        remote.afterReceipt = { database.close() }
+
+        try {
+            repository(remote, gateway).complete(request())
+            fail("CancellationException expected")
+        } catch (_: CancellationException) {
+            assertEquals(1, gateway.commands.size)
+            assertFalse(database.isOpen)
+        }
+    }
 
     @Test
     fun `repository preserves cancellation at callable and receipt boundaries`() = runTest {
@@ -351,7 +416,7 @@ class WateringRepositoryTest {
         private val receiptFailure: Throwable? = null,
     ) : WateringRemoteDataSource {
         var activeAccount = activeAccount
-        var afterReceipt: () -> Unit = {}
+        var afterReceipt: suspend () -> Unit = {}
         val receiptOperations = mutableListOf<String>()
 
         override fun activeAccount() = activeAccount

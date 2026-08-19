@@ -228,19 +228,18 @@ class PlanteriorDatabaseTest {
             )
             assertEquals(
                 "몬몬이",
-                migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.displayName,
+                migrated.cacheDao().plant("account-a", "plant-a1")?.displayName,
             )
             assertEquals(
                 "MANUAL",
-                migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.registrationMethod,
+                migrated.cacheDao().plant("account-a", "plant-a1")?.registrationMethod,
             )
-            assertNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.location)
-            assertNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.note)
-            assertNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1")?.lastWateredDate)
+            assertNull(migrated.cacheDao().plant("account-a", "plant-a1")?.location)
+            assertNull(migrated.cacheDao().plant("account-a", "plant-a1")?.note)
+            assertNull(migrated.cacheDao().plant("account-a", "plant-a1")?.lastWateredDate)
             assertFalse(
                 "v4 rows did not contain complete detail fields",
-                requireNotNull(migrated.cacheDao().plantBlocking("account-a", "plant-a1"))
-                    .detailsComplete,
+                requireNotNull(migrated.cacheDao().plant("account-a", "plant-a1")).detailsComplete,
             )
             assertEquals(
                 listOf("plant-b1"),
@@ -438,7 +437,7 @@ class PlanteriorDatabaseTest {
     }
 
     @Test
-    fun `migration one to two preserves rows and adds account partition`() {
+    fun `migration one to two preserves rows and adds account partition`() = runTest {
         database.close()
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = File(context.getDatabasePath("migration.db").path)
@@ -482,7 +481,7 @@ class PlanteriorDatabaseTest {
                 .build()
         assertEquals(
             "Legacy",
-            migrated.cacheDao().plantBlocking(AccountId.LEGACY.value, "legacy-plant")?.displayName,
+            migrated.cacheDao().plant(AccountId.LEGACY.value, "legacy-plant")?.displayName,
         )
         migrated.close()
         assertTrue(file.delete())

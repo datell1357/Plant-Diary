@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.flowOf
  * 릴리스 소스 세트에는 아무것도 하지 않는 같은 이름의 구현만 있어 이 코드는 출시 아티팩트에 들어가지 않는다. 제어 범위는 **세션과 날씨뿐**이며 식물·미니홈피·동기화
  * 데이터는 계속 실제 Room 캐시에서 읽는다. 그래야 계측 테스트가 진짜 저장된 데이터를 검증할 수 있다.
  */
-fun debugHomeWeatherSource(context: Context): HomeWeatherSource = HomeWeatherSource {
+fun debugHomeWeatherSource(
+    context: Context,
+    fallback: HomeWeatherSource,
+): HomeWeatherSource = HomeWeatherSource {
     when (weatherScenario(context)) {
         WEATHER_FAILURE -> Result.failure(IllegalStateException("QA weather provider failure"))
         WEATHER_RISK ->
@@ -44,7 +47,7 @@ fun debugHomeWeatherSource(context: Context): HomeWeatherSource = HomeWeatherSou
                 )
             )
         // 시나리오를 지정하지 않으면 아직 지역이 없다는 뜻이며 실패가 아니다.
-        else -> Result.success(null)
+        else -> fallback.current()
     }
 }
 

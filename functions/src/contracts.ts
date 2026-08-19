@@ -148,6 +148,24 @@ function opaqueField(value: Readonly<Record<string, unknown>>, field: string): s
   return candidate;
 }
 
+function opaqueArrayField(
+  value: Readonly<Record<string, unknown>>,
+  field: string,
+  maximum: number,
+): readonly string[] {
+  const candidate = value[field];
+  if (!Array.isArray(candidate) || candidate.length > maximum) {
+    throw new ContractError("invalid-argument", `${field} must be a bounded array`);
+  }
+  const identifiers = candidate.filter((item): item is string =>
+    typeof item === "string" && opaqueId.test(item)
+  );
+  if (identifiers.length !== candidate.length || new Set(identifiers).size !== identifiers.length) {
+    throw new ContractError("invalid-argument", `${field} must contain unique path-safe identifiers`);
+  }
+  return identifiers;
+}
+
 function localDate(value: Readonly<Record<string, unknown>>, field: string, nullable = false): string | null {
   const candidate = value[field];
   if (nullable && (candidate === null || candidate === undefined)) return null;
@@ -306,6 +324,9 @@ async function validateOwnerPayload(
       return;
     }
     case "consents":
+      if (documentId === "location") {
+        throw new ContractError("invalid-argument", "Location consent uses its dedicated command");
+      }
       exactFields(payload, ["type", "granted", "recordedAt"]);
       oneOf(stringField(payload, "type"), ["IDENTIFICATION_PHOTO_PROCESSING", "LOCATION", "ANALYTICS"] as const, "type");
       booleanField(payload, "granted");
@@ -343,8 +364,9 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       return;
     }
     case "weatherSnapshots": {
-      exactFields(payload, ["regionCode", "temperatureCelsius", "humidityPercent", "precipitationMillimeters", "observedAt", "expiresAt"]);
+      exactFields(payload, ["regionCode", "regionName", "temperatureCelsius", "humidityPercent", "precipitationMillimeters", "observedAt", "expiresAt", "zoneId", "stale", "unavailablePlantIds"]);
       stringField(payload, "regionCode");
+      stringField(payload, "regionName");
       numberField(payload, "temperatureCelsius");
       const humidity = integerField(payload, "humidityPercent");
       const precipitation = numberField(payload, "precipitationMillimeters");
@@ -352,16 +374,24 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       const observed = isoInstant(payload, "observedAt");
       const expires = isoInstant(payload, "expiresAt");
       if (observed !== null && expires !== null && expires <= observed) throw new ContractError("invalid-argument", "expiresAt must follow observedAt");
+      zoneId(payload, "zoneId");
+      booleanField(payload, "stale");
+      opaqueArrayField(payload, "unavailablePlantIds", 200);
       return;
     }
     case "weatherRisks":
-      exactFields(payload, ["plantId", "snapshotId", "type", "detectedAt", "active"], ["action"]);
+      exactFields(payload, ["plantId", "plantName", "snapshotId", "type", "reason", "detectedAt", "observedAt", "active", "transition", "deliveredTransition"], ["action"]);
       opaqueField(payload, "plantId");
+      stringField(payload, "plantName");
       opaqueField(payload, "snapshotId");
-      oneOf(stringField(payload, "type"), ["HIGH_TEMPERATURE", "LOW_TEMPERATURE", "DRY", "OVERWATERED"] as const, "type");
+      oneOf(stringField(payload, "type"), ["HIGH_TEMPERATURE", "LOW_TEMPERATURE", "DRY", "OVERHUMID"] as const, "type");
+      stringField(payload, "reason");
       nullableStringField(payload, "action");
       isoInstant(payload, "detectedAt");
+      isoInstant(payload, "observedAt");
       booleanField(payload, "active");
+      if (integerField(payload, "transition") < 0) throw new ContractError("invalid-argument", "transition must not be negative");
+      if (payload.deliveredTransition !== null && integerField(payload, "deliveredTransition") < 0) throw new ContractError("invalid-argument", "deliveredTransition must not be negative");
       return;
     case "deletionRequests": {
       exactFields(payload, ["status", "requestedAt", "scheduledFor", "completedAt"]);

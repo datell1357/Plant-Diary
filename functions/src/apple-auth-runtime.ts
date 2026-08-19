@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, errors, importPKCS8, jwtVerify, SignJWT } from "jose";
-import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import { FieldPath, Timestamp, type Firestore } from "firebase-admin/firestore";
 import {
   AppleAuthError,
   type AppleOAuthConfig,
@@ -16,10 +16,12 @@ function sessionFromData(id: string, data: Readonly<Record<string, unknown>>): A
   const createdAt = data.createdAt;
   const expiresAt = data.expiresAt;
   const usedAt = data.usedAt;
+  const abuseKeyHash = data.abuseKeyHash;
   if (
     typeof stateHash !== "string" || typeof nonceHash !== "string" || typeof codeChallenge !== "string" ||
     (authorizationCode !== null && typeof authorizationCode !== "string") || !(createdAt instanceof Timestamp) ||
-    !(expiresAt instanceof Timestamp) || (usedAt !== null && !(usedAt instanceof Timestamp))
+    !(expiresAt instanceof Timestamp) || (usedAt !== null && !(usedAt instanceof Timestamp)) ||
+    typeof abuseKeyHash !== "string" || !/^[a-f0-9]{64}$/.test(abuseKeyHash)
   ) throw new AppleAuthError("failed-precondition", "stored Apple session is malformed");
   return {
     id,
@@ -30,17 +32,62 @@ function sessionFromData(id: string, data: Readonly<Record<string, unknown>>): A
     createdAt: createdAt.toDate(),
     expiresAt: expiresAt.toDate(),
     usedAt: usedAt === null ? null : usedAt.toDate(),
+    abuseKeyHash,
   };
 }
+
+export const APPLE_SESSION_RATE_LIMIT = 10;
+export const APPLE_SESSION_RATE_WINDOW_MILLIS = 10 * 60 * 1000;
+export const APPLE_SESSION_CLEANUP_LIMIT = 200;
 
 export class FirestoreAppleSessionStore implements AppleSessionStore {
   constructor(private readonly firestore: Firestore) {}
 
   async create(session: AppleOAuthSession): Promise<void> {
-    await this.firestore.doc(`appleAuthSessions/${session.id}`).create({
-      ...session,
-      createdAt: Timestamp.fromDate(session.createdAt),
-      expiresAt: Timestamp.fromDate(session.expiresAt),
+    const sessionReference = this.firestore.doc(`appleAuthSessions/${session.id}`);
+    const rateReference = this.firestore.doc(`appleAuthRateLimits/${session.abuseKeyHash}`);
+    await this.firestore.runTransaction(async (transaction) => {
+      const [existingSession, rateDocument] = await Promise.all([
+        transaction.get(sessionReference),
+        transaction.get(rateReference),
+      ]);
+      if (existingSession.exists) {
+        throw new AppleAuthError("already-exists", "Apple session could not be created");
+      }
+      const now = session.createdAt;
+      const rate = rateDocument.data();
+      let windowStartedAt = now;
+      let count = 0;
+      if (rateDocument.exists) {
+        const storedStart = rate?.windowStartedAt;
+        const storedCount = rate?.count;
+        if (
+          !(storedStart instanceof Timestamp) ||
+          typeof storedCount !== "number" ||
+          !Number.isSafeInteger(storedCount) ||
+          storedCount < 0
+        ) {
+          throw new AppleAuthError("failed-precondition", "Apple session admission is unavailable");
+        }
+        const elapsed = now.getTime() - storedStart.toMillis();
+        if (elapsed >= 0 && elapsed < APPLE_SESSION_RATE_WINDOW_MILLIS) {
+          windowStartedAt = storedStart.toDate();
+          count = storedCount;
+        }
+      }
+      if (count >= APPLE_SESSION_RATE_LIMIT) {
+        throw new AppleAuthError("resource-exhausted", "Apple sign-in is temporarily limited");
+      }
+      transaction.create(sessionReference, {
+        ...session,
+        createdAt: Timestamp.fromDate(session.createdAt),
+        expiresAt: Timestamp.fromDate(session.expiresAt),
+      });
+      transaction.set(rateReference, {
+        windowStartedAt: Timestamp.fromDate(windowStartedAt),
+        count: count + 1,
+        expiresAt: Timestamp.fromMillis(windowStartedAt.getTime() + APPLE_SESSION_RATE_WINDOW_MILLIS),
+      });
     });
   }
 
@@ -50,13 +97,14 @@ export class FirestoreAppleSessionStore implements AppleSessionStore {
     return document === undefined ? null : sessionFromData(document.id, document.data());
   }
 
-  async attachCode(id: string, code: string): Promise<void> {
+  async attachCode(id: string, code: string, at: Date): Promise<void> {
     const reference = this.firestore.doc(`appleAuthSessions/${id}`);
     await this.firestore.runTransaction(async (transaction) => {
       const document = await transaction.get(reference);
       if (!document.exists) throw new AppleAuthError("not-found", "Apple session was not found");
       const session = sessionFromData(document.id, document.data() ?? {});
       if (session.authorizationCode !== null || session.usedAt !== null) throw new AppleAuthError("already-exists", "Apple callback was already used");
+      if (session.expiresAt <= at) throw new AppleAuthError("failed-precondition", "Apple session expired");
       transaction.update(reference, { authorizationCode: code });
     });
   }
@@ -73,6 +121,32 @@ export class FirestoreAppleSessionStore implements AppleSessionStore {
       }
       transaction.update(reference, { usedAt: Timestamp.fromDate(at) });
       return session;
+    });
+  }
+
+  async cleanupExpired(at: Date, limit: number = APPLE_SESSION_CLEANUP_LIMIT): Promise<Readonly<{
+    sessions: number;
+    rateLimits: number;
+  }>> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > APPLE_SESSION_CLEANUP_LIMIT) {
+      throw new AppleAuthError("failed-precondition", "Apple cleanup limit is invalid");
+    }
+    const sessions = await this.cleanupCollection("appleAuthSessions", at, limit);
+    const rateLimits = await this.cleanupCollection("appleAuthRateLimits", at, limit);
+    return { sessions, rateLimits };
+  }
+
+  private async cleanupCollection(collection: string, at: Date, limit: number): Promise<number> {
+    const query = this.firestore
+      .collection(collection)
+      .where("expiresAt", "<=", Timestamp.fromDate(at))
+      .orderBy("expiresAt", "asc")
+      .orderBy(FieldPath.documentId(), "asc")
+      .limit(limit);
+    return this.firestore.runTransaction(async (transaction) => {
+      const expired = await transaction.get(query);
+      for (const document of expired.docs) transaction.delete(document.ref);
+      return expired.size;
     });
   }
 }

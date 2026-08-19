@@ -57,6 +57,12 @@ sealed interface PlanteriorRoute {
     /** 알림 목록. 홈 상단 종 버튼이 연다. */
     @Serializable data object Notifications : Authenticated
 
+    /** 현재 날씨와 모든 등록 식물의 날씨 위험 안내. */
+    @Serializable data object Weather : Authenticated
+
+    /** 날씨 알림이 가리키는 식물별 위험 상세. */
+    @Serializable data class WeatherRisk(val plantId: String) : Authenticated
+
     /**
      * 식물 상세.
      *

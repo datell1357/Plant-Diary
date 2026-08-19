@@ -70,7 +70,7 @@ class FirebaseCollectionRepository(
 
     override suspend fun loadDetail(plantId: PersonalPlantId): DetailLoad {
         val account = activeAccountOrNull() ?: return DetailLoad.Forbidden
-        val cached = database.cacheDao().plantBlocking(account.value, plantId.value)
+        val cached = database.cacheDao().plant(account.value, plantId.value)
         if (!isActive(account)) return DetailLoad.Forbidden
         val accountZone =
             try {

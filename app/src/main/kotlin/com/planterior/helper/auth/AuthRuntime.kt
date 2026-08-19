@@ -1,22 +1,8 @@
 package com.planterior.helper.auth
 
 import androidx.activity.ComponentActivity
-import androidx.core.net.toUri
-import androidx.room.Room
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.functions.FirebaseFunctions
-import com.google.firebase.storage.FirebaseStorage
 import com.planterior.helper.BuildConfig
-import com.planterior.helper.FirebaseRuntime
-import com.planterior.helper.core.data.FirebaseRemoteMutationGateway
-import com.planterior.helper.core.data.OfflineFirstSyncRepository
-import com.planterior.helper.core.database.MIGRATION_1_2
-import com.planterior.helper.core.database.MIGRATION_2_3
-import com.planterior.helper.core.database.MIGRATION_3_4
-import com.planterior.helper.core.database.MIGRATION_4_5
-import com.planterior.helper.core.database.MIGRATION_5_6
-import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.PlanteriorApplication
 import com.planterior.helper.feature.auth.AccountProfileStore
 import com.planterior.helper.feature.auth.AccountSessionCache
 import com.planterior.helper.feature.auth.AccountSynchronizer
@@ -42,10 +28,6 @@ import com.planterior.helper.feature.auth.debugAccountSyncRemote
 import com.planterior.helper.feature.auth.debugAuthProvider
 import com.planterior.helper.feature.auth.prepareDebugAuth
 import com.planterior.helper.feature.collection.CollectionRepository
-import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
-import com.planterior.helper.feature.collection.FirebaseCollectionRemoteDataSource
-import com.planterior.helper.feature.collection.FirebaseCollectionRepository
-import com.planterior.helper.feature.collection.FirebasePlantThumbnailLoader
 import com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader
 import com.planterior.helper.feature.collection.PlantThumbnailLoader
 import com.planterior.helper.feature.home.HomeMiniHomePreview
@@ -54,14 +36,11 @@ import com.planterior.helper.feature.home.HomeRepository
 import com.planterior.helper.feature.home.HomeSession
 import com.planterior.helper.feature.home.HomeSyncStatus
 import com.planterior.helper.feature.home.HomeWeather
-import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
-import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
-import com.planterior.helper.feature.watering.FirebaseWateringNotificationSettingsRepository
-import com.planterior.helper.feature.watering.FirebaseWateringRemoteDataSource
-import com.planterior.helper.feature.watering.OutboxWateringRepository
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringRepository
+import com.planterior.helper.feature.weather.WeatherPermissionCapabilityStore
+import com.planterior.helper.feature.weather.WeatherRepository
 import com.planterior.helper.home.CachedHomeRepository
 import com.planterior.helper.home.debugHomeSessions
 import com.planterior.helper.home.debugHomeWeatherSource
@@ -71,8 +50,8 @@ import com.planterior.helper.notification.NotificationEndpointGateway
 import com.planterior.helper.notification.NotificationTokenStore
 import com.planterior.helper.notification.NotificationWorkScheduler
 import com.planterior.helper.notification.SystemNotificationOwnerDataCanceller
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
+import com.planterior.helper.registration.debugRegistrationRepository
+import com.planterior.helper.weather.WeatherHomeSource
 import java.net.URI
 
 class AuthRuntime
@@ -80,86 +59,41 @@ private constructor(
     val coordinator: AuthCoordinator,
     private val apple: AppleWebAuthProvider?,
     val hasSession: Boolean,
+    val forcedHomeSession: Boolean,
+    private val closeAction: () -> Unit,
     /** 홈 대시보드가 읽는 저장소. 인증 상태와 같은 수명을 가진다. */
     val homeRepository: HomeRepository,
     val registrationRepository: RegistrationRepository?,
     val collectionRepository: CollectionRepository?,
     val wateringRepository: WateringRepository?,
     val wateringNotificationSettingsRepository: WateringNotificationSettingsRepository?,
+    val weatherRepository: WeatherRepository?,
+    val weatherPermissionCapabilities: WeatherPermissionCapabilityStore?,
     val collectionThumbnailLoader: PlantThumbnailLoader,
 ) {
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
     suspend fun handleAppleCallback(uri: URI): Boolean = apple?.handleCallback(uri) ?: false
 
-    companion object {
-        /** 에뮬레이터 연결을 이미 지정했는지. Firebase SDK가 재설정을 허용하지 않아 직접 추적한다. */
-        private val emulatorsConnected = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun close() {
+        if (closed.compareAndSet(false, true)) closeAction()
+    }
 
+    companion object {
         fun create(activity: ComponentActivity): AuthRuntime {
             prepareDebugAuth(activity)
-            val app = FirebaseRuntime.initialize(activity) ?: return unavailable()
-            val auth = FirebaseAuth.getInstance(app)
-            val firestore = FirebaseFirestore.getInstance(app)
-            val functions = FirebaseFunctions.getInstance(app)
-            val storage = FirebaseStorage.getInstance(app)
-            // 에뮬레이터 연결은 프로세스당 한 번만 지정할 수 있다. Activity가 다시 만들어질 때마다 호출하면 화면 회전이나
-            // 프로세스 복원에서 그대로 크래시난다.
-            if (BuildConfig.DEBUG && emulatorsConnected.compareAndSet(false, true)) {
-                auth.useEmulator("10.0.2.2", 9099)
-                firestore.useEmulator("10.0.2.2", 8080)
-                functions.useEmulator("10.0.2.2", 5001)
-                storage.useEmulator("10.0.2.2", 9199)
-            }
-            val database =
-                Room.databaseBuilder(activity, PlanteriorDatabase::class.java, "planterior.db")
-                    .addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                    )
-                    .build()
-            val mutationGateway = FirebaseRemoteMutationGateway(functions)
-            val repository = OfflineFirstSyncRepository(database, mutationGateway)
-            val registrationRepository =
-                FirebaseRegistrationRepository(
-                    database,
-                    FirebaseRegistrationRemoteDataSource(
-                        auth,
-                        firestore,
-                        storage,
-                    ) { photo ->
-                        val maximum = 20 * 1024 * 1024
-                        activity.contentResolver.openInputStream(photo.privateUri.toUri()).use {
-                            input ->
-                            val bytes = requireNotNull(input).readBounded(maximum)
-                            require(bytes.isNotEmpty() && bytes.size <= maximum)
-                            bytes
-                        }
-                    },
-                    mutationGateway,
-                )
-            val collectionRepository =
-                FirebaseCollectionRepository(
-                    database,
-                    FirebaseCollectionRemoteDataSource(auth, firestore),
-                    mutationGateway,
-                )
-            val wateringRepository =
-                OutboxWateringRepository(
-                    database,
-                    CollectionWateringPreparationSource(collectionRepository),
-                    FirebaseWateringRemoteDataSource(auth, firestore),
-                    mutationGateway,
-                )
+            val application = activity.application
+            val shared =
+                if (application is PlanteriorApplication) application.repositoryRuntimeOrNull()
+                else AuthRepositoryRuntime.create(activity.applicationContext)
+            if (shared == null) return unavailable()
+            val closesSharedRuntime = application !is PlanteriorApplication
             val apple =
                 AppleWebAuthProvider(
-                    FirebaseAppleCallable(functions),
+                    FirebaseAppleCallable(shared.functions),
                     ActivityWebAuthorizationLauncher(activity),
                 )
-            val identity = FirebaseIdentityAdapter(auth)
-            val notificationEndpointGateway = FirebaseNotificationEndpointGateway(functions)
-            val notificationTokenStore = NotificationTokenStore(activity)
+            val identity = FirebaseIdentityAdapter(shared.auth)
             val coordinator =
                 AuthCoordinator(
                     mapOf(
@@ -174,23 +108,25 @@ private constructor(
                         AuthProvider.APPLE to debugAuthProvider(activity, apple),
                     ),
                     identity,
-                    FirestoreAccountProfileStore(functions),
-                    RoomAccountSessionCache(repository),
+                    FirestoreAccountProfileStore(shared.functions),
+                    RoomAccountSessionCache(shared.syncRepository),
                     FirestoreAccountSynchronizer(
                         debugAccountSyncRemote(
                             activity,
-                            FirestoreAccountSyncRemote(firestore),
+                            FirestoreAccountSyncRemote(shared.firestore),
                         ),
-                        database,
-                        outbox = repository,
+                        shared.database,
+                        outbox = shared.syncRepository,
                     ),
                     beforeSignOut =
                         notificationEndpointRevocationAction(
-                            notificationTokenStore,
-                            notificationEndpointGateway,
+                            NotificationTokenStore(activity.applicationContext),
+                            FirebaseNotificationEndpointGateway(shared.functions),
                         ) {
                             NotificationWorkScheduler(
-                                    androidx.work.WorkManager.getInstance(activity)
+                                    androidx.work.WorkManager.getInstance(
+                                        activity.applicationContext
+                                    )
                                 )
                                 .cancelTokenRegistration()
                         },
@@ -206,18 +142,24 @@ private constructor(
                         )
                     },
                 )
+            val forcedSessions = debugHomeSessions(activity)
             return AuthRuntime(
                 coordinator,
                 apple,
                 identity.current() != null,
+                forcedSessions != null,
+                if (closesSharedRuntime) shared::close else ({}),
                 // 데이터는 항상 실제 캐시에서 읽는다. 디버그 QA는 세션과 날씨만 고정할 수 있다.
-                debugHomeSessions(activity).let { forcedSessions ->
+                run {
                     var forcedUid: String? = null
                     val repository =
                         CachedHomeRepository(
-                            database,
+                            shared.database,
                             coordinator.state,
-                            debugHomeWeatherSource(activity),
+                            debugHomeWeatherSource(
+                                activity.applicationContext,
+                                WeatherHomeSource(shared.auth, shared.weatherRepository),
+                            ),
                             activeAccountUid = {
                                 forcedUid
                                     ?: (coordinator.state.value as? AuthUiState.Authenticated)
@@ -231,11 +173,16 @@ private constructor(
                             forcedUid = uid
                         }
                 },
-                registrationRepository,
-                collectionRepository,
-                wateringRepository,
-                FirebaseWateringNotificationSettingsRepository(auth, firestore, functions),
-                FirebasePlantThumbnailLoader(storage),
+                debugRegistrationRepository(
+                    activity.applicationContext,
+                    shared.registrationRepository,
+                ),
+                shared.collectionRepository,
+                shared.wateringRepository,
+                shared.wateringNotificationSettingsRepository,
+                shared.weatherRepository,
+                shared.weatherPermissionCapabilities,
+                shared.collectionThumbnailLoader,
             )
         }
 
@@ -295,8 +242,12 @@ private constructor(
                 coordinator,
                 null,
                 false,
+                false,
+                {},
                 // 구성이 없으면 로그인할 수 없으므로 홈은 항상 로그아웃 상태로 머무른다.
                 UnavailableHomeRepository,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -346,20 +297,6 @@ private class ForcedSessionHomeRepository(
                 emit(session)
             }
         }
-}
-
-private fun InputStream.readBounded(maximum: Int): ByteArray {
-    val output = ByteArrayOutputStream()
-    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-    var total = 0
-    while (true) {
-        val count = read(buffer)
-        if (count < 0) break
-        total += count
-        require(total <= maximum) { "Representative photo is too large" }
-        output.write(buffer, 0, count)
-    }
-    return output.toByteArray()
 }
 
 private object UnavailableHomeRepository : HomeRepository {

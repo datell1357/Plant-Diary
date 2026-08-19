@@ -24,6 +24,7 @@ import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 
 object CollectionTestTags {
+    const val SCREEN = "collection:screen"
     const val LOADING = "collection:loading"
     const val CONTENT = "collection:content"
     const val ITEM = "collection:item"
@@ -42,6 +43,7 @@ object CollectionTestTags {
 }
 
 object PlantDetailTestTags {
+    const val SCREEN = "plant-detail:screen"
     const val LOADING = "plant-detail:loading"
     const val PARTIAL = "plant-detail:partial"
     const val STALE = "plant-detail:stale"

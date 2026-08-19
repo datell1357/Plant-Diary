@@ -86,10 +86,15 @@ fun AuthAccountScreen(
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
     onNotificationSettings: () -> Unit = {},
+    onWeatherSettings: () -> Unit = {},
     logoutLabel: String = "로그아웃",
     bottomBar: @Composable () -> Unit = {},
 ) {
-    PlanteriorScreenScaffold(title = "설정", modifier = modifier, bottomBar = bottomBar) {
+    PlanteriorScreenScaffold(
+        title = "설정",
+        modifier = modifier.testTag(ACCOUNT_SCREEN_TAG),
+        bottomBar = bottomBar,
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.large),
@@ -146,6 +151,12 @@ fun AuthAccountScreen(
                 Text("물 주기 알림 설정")
             }
             OutlinedButton(
+                onClick = onWeatherSettings,
+                modifier = Modifier.fillMaxWidth().testTag("account-weather-settings"),
+            ) {
+                Text("날씨 지역 및 주의 알림")
+            }
+            OutlinedButton(
                 onClick = onLogout,
                 modifier = Modifier.fillMaxWidth().testTag("account-logout"),
             ) {
@@ -154,6 +165,8 @@ fun AuthAccountScreen(
         }
     }
 }
+
+const val ACCOUNT_SCREEN_TAG = "account-screen"
 
 private fun AuthProvider.displayName(): String =
     when (this) {

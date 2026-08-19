@@ -2,6 +2,7 @@ package com.planterior.helper.feature.registration
 
 import android.icu.text.BreakIterator
 import androidx.lifecycle.SavedStateHandle
+import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.RegistrationMethod
@@ -22,7 +23,7 @@ class RegistrationController(
     private val idFactory: () -> PersonalPlantId = {
         PersonalPlantId("plant-${UUID.randomUUID().toString().replace("-", "")}")
     },
-    private val onOpenExisting: (PersonalPlantId) -> Unit = {},
+    private val navigationIdentityFactory: () -> String = { UUID.randomUUID().toString() },
     private val savedStateHandle: SavedStateHandle? = null,
 ) {
     private val restored = RegistrationSavedState.restore(savedStateHandle)
@@ -42,6 +43,11 @@ class RegistrationController(
     private val _state =
         MutableStateFlow(restored?.state ?: RegistrationUiState.Editing(currentDraft))
     val state: StateFlow<RegistrationUiState> = _state.asStateFlow()
+    private val _navigationEvent = MutableStateFlow(restored?.navigationEvent)
+    val navigationEvent: StateFlow<RegistrationNavigationEvent?> = _navigationEvent.asStateFlow()
+    private val navigationLock = Any()
+    private var navigationCollectorGeneration = 0L
+    private var activeNavigationCollector: RegistrationNavigationCollector? = null
     private var searchGeneration = 0L
 
     init {
@@ -183,7 +189,68 @@ class RegistrationController(
         save(normalized, loaded, RegistrationCheckpoint.NotStarted)
     }
 
-    fun openExisting(id: PersonalPlantId) = onOpenExisting(id)
+    fun openExisting(id: PersonalPlantId) {
+        val duplicate = _state.value as? RegistrationUiState.DuplicateFound ?: return
+        if (duplicate.existing.none { it.id == id }) return
+        val owner = session?.accountId ?: return
+        enqueueNavigation(id, owner, RegistrationNavigationKind.OPEN_EXISTING)
+    }
+
+    fun attachNavigationCollector(): RegistrationNavigationCollector =
+        synchronized(navigationLock) {
+            RegistrationNavigationCollector(++navigationCollectorGeneration).also {
+                activeNavigationCollector = it
+            }
+        }
+
+    fun detachNavigationCollector(collector: RegistrationNavigationCollector) {
+        synchronized(navigationLock) {
+            if (activeNavigationCollector == collector) activeNavigationCollector = null
+        }
+    }
+
+    fun dispatchNavigationEvent(
+        collector: RegistrationNavigationCollector,
+        identity: String,
+        authOwnership: RegistrationAuthOwnership,
+        navigate: (RegistrationNavigationEvent) -> Unit,
+    ): Boolean =
+        synchronized(navigationLock) {
+            if (activeNavigationCollector != collector) return@synchronized false
+            val event = _navigationEvent.value
+            if (event == null || event.identity != identity) return@synchronized false
+            when (authOwnership) {
+                RegistrationAuthOwnership.Restoring,
+                RegistrationAuthOwnership.Unknown -> return@synchronized false
+                RegistrationAuthOwnership.SignedOut -> {
+                    _navigationEvent.value = null
+                    saveState()
+                    return@synchronized false
+                }
+                RegistrationAuthOwnership.Unmanaged -> Unit
+                is RegistrationAuthOwnership.Authenticated ->
+                    if (event.ownerAccountId != authOwnership.accountId) {
+                        _navigationEvent.value = null
+                        saveState()
+                        return@synchronized false
+                    }
+            }
+            navigate(event)
+            _navigationEvent.value = null
+            saveState()
+            true
+        }
+
+    fun cancelNavigationEvents() {
+        synchronized(navigationLock) {
+            navigationCollectorGeneration += 1
+            activeNavigationCollector = null
+            if (_navigationEvent.value != null) {
+                _navigationEvent.value = null
+                saveState()
+            }
+        }
+    }
 
     /**
      * State-only helper retained for controller tests; the production duplicate cancel exits the
@@ -273,8 +340,14 @@ class RegistrationController(
                 RegistrationAttempt.Failed(RegistrationFailure.DATABASE_UNAVAILABLE, checkpoint)
             }
         when (result) {
-            is RegistrationAttempt.Completed ->
-                setState(RegistrationUiState.Completed(result.plant))
+            is RegistrationAttempt.Completed -> {
+                _state.value = RegistrationUiState.Completed(result.plant)
+                enqueueNavigation(
+                    result.plant.id,
+                    submission.accountId,
+                    RegistrationNavigationKind.REGISTRATION_COMPLETED,
+                )
+            }
             is RegistrationAttempt.Failed ->
                 setState(
                     RegistrationUiState.SaveFailed(
@@ -283,6 +356,24 @@ class RegistrationController(
                         result.failure,
                     )
                 )
+        }
+    }
+
+    private fun enqueueNavigation(
+        plantId: PersonalPlantId,
+        ownerAccountId: AccountId,
+        kind: RegistrationNavigationKind,
+    ) {
+        synchronized(navigationLock) {
+            if (_navigationEvent.value != null) return
+            _navigationEvent.value =
+                RegistrationNavigationEvent(
+                    identity = navigationIdentityFactory().also { require(it.isNotBlank()) },
+                    ownerAccountId = ownerAccountId,
+                    plantId = plantId,
+                    kind = kind,
+                )
+            saveState()
         }
     }
 
@@ -312,7 +403,13 @@ class RegistrationController(
     }
 
     private fun saveState() {
-        RegistrationSavedState.save(savedStateHandle, session, currentDraft, _state.value)
+        RegistrationSavedState.save(
+            savedStateHandle,
+            session,
+            currentDraft,
+            _state.value,
+            _navigationEvent.value,
+        )
     }
 
     private fun validate(

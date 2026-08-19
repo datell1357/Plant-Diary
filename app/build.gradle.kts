@@ -340,6 +340,7 @@ dependencies {
     implementation(project(":feature:identify"))
     implementation(project(":feature:registration"))
     implementation(project(":feature:watering"))
+    implementation(project(":feature:weather"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.fragment.ktx)

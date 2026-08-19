@@ -42,7 +42,11 @@ fun CollectionScreen(
     bottomBar: @Composable () -> Unit = {},
     thumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
 ) {
-    PlanteriorScreenScaffold(title = "나의 식물 도감", modifier = modifier, bottomBar = bottomBar) {
+    PlanteriorScreenScaffold(
+        title = "나의 식물 도감",
+        modifier = modifier.testTag(CollectionTestTags.SCREEN),
+        bottomBar = bottomBar,
+    ) {
         when (state) {
             CollectionUiState.Loading -> LoadingState(CollectionTestTags.LOADING)
             is CollectionUiState.Content -> {

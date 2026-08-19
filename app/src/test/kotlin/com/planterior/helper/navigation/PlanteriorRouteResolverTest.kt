@@ -47,6 +47,48 @@ class PlanteriorRouteResolverTest {
     }
 
     @Test
+    fun `weather notification deep link builds weather and plant detail back stack`() {
+        val route = PlanteriorRoute.WeatherRisk("plant-abc_123")
+        assertEquals(
+            route,
+            PlanteriorRouteResolver.resolve("planterior://weather/plant/plant-abc_123"),
+        )
+        assertEquals(
+            listOf(PlanteriorRoute.Home, PlanteriorRoute.Weather, route),
+            PlanteriorRouteResolver.backStackFor(route),
+        )
+        assertEquals(
+            PlanteriorRoute.Home,
+            PlanteriorRouteResolver.resolve("planterior://weather/plant/deleted/extra"),
+        )
+    }
+
+    @Test
+    fun `weather collection and watering ids share opaque boundaries through 128 characters`() {
+        listOf(1, 64, 65, 128).forEach { length ->
+            val id = "a".repeat(length)
+            assertEquals(
+                PlanteriorRoute.WeatherRisk(id),
+                PlanteriorRouteResolver.resolve("planterior://weather/plant/$id"),
+            )
+            assertEquals(
+                PlanteriorRoute.PlantDetail(id),
+                PlanteriorRouteResolver.resolve("planterior://collection/plant/$id"),
+            )
+            assertEquals(
+                PlanteriorRoute.WateringConfirmation(id),
+                PlanteriorRouteResolver.resolve("planterior://collection/plant/$id/watering"),
+            )
+        }
+        listOf("a".repeat(129), "bad/id", "bad.id", "id with space").forEach { id ->
+            assertEquals(
+                PlanteriorRoute.Home,
+                PlanteriorRouteResolver.resolve("planterior://weather/plant/$id"),
+            )
+        }
+    }
+
+    @Test
     fun `plant detail deep link keeps the opaque identifier`() {
         assertEquals(
             PlanteriorRoute.PlantDetail("plant-abc_123"),
@@ -67,7 +109,7 @@ class PlanteriorRouteResolverTest {
                 "planterior://collection/plant/",
                 "planterior://collection/plant/../../etc/passwd",
                 "planterior://collection/plant/id with space",
-                "planterior://collection/plant/" + "a".repeat(65),
+                "planterior://collection/plant/" + "a".repeat(129),
                 "https://evil.example.com/planterior://home",
                 "javascript:alert(1)",
                 "intent://home#Intent;scheme=planterior;end",
@@ -151,6 +193,8 @@ class PlanteriorRouteResolverTest {
                 PlanteriorRoute.Camera,
                 PlanteriorRoute.MiniHome,
                 PlanteriorRoute.Notifications,
+                PlanteriorRoute.Weather,
+                PlanteriorRoute.WeatherRisk("abc"),
                 PlanteriorRoute.PlantDetail("abc"),
                 PlanteriorRoute.WateringConfirmation("abc"),
             )

@@ -60,6 +60,7 @@ class RegistrationNavigationTest {
                 PlanteriorNavHost(
                     navController = navController,
                     startRoute = PlanteriorRoute.Camera,
+                    authRouteGuardEnabled = false,
                     registrationRepository = CompletingRegistrationRepository,
                 )
             }

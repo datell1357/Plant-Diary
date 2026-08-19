@@ -21,6 +21,7 @@ import com.planterior.helper.R
 import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
+import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
@@ -37,6 +38,7 @@ import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
 import com.planterior.helper.feature.identify.IdentificationRoute
+import com.planterior.helper.feature.registration.RegistrationAuthOwnership
 import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRoute
@@ -45,6 +47,10 @@ import com.planterior.helper.feature.watering.WateringConfirmationRoute
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRoute
 import com.planterior.helper.feature.watering.WateringRepository
+import com.planterior.helper.feature.weather.WeatherLocationGateway
+import com.planterior.helper.feature.weather.WeatherPermissionCapabilityStore
+import com.planterior.helper.feature.weather.WeatherRepository
+import com.planterior.helper.feature.weather.WeatherRoute
 import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.identify.photoIdentificationHandoff
 import com.planterior.helper.ui.PlaceholderScreen
@@ -77,15 +83,21 @@ fun PlanteriorNavHost(
     startRoute: PlanteriorRoute,
     modifier: Modifier = Modifier,
     authCoordinator: AuthCoordinator? = null,
+    authRouteGuardEnabled: Boolean = true,
+    signedOutReturnRoute: String? = null,
     homeViewModel: HomeViewModel? = null,
     registrationRepository: RegistrationRepository? = null,
     collectionRepository: CollectionRepository? = null,
     wateringRepository: WateringRepository? = null,
     wateringNotificationSettingsRepository: WateringNotificationSettingsRepository? = null,
+    weatherRepository: WeatherRepository? = null,
+    weatherLocationGateway: WeatherLocationGateway? = null,
+    weatherPermissionCapabilities: WeatherPermissionCapabilityStore? = null,
     notificationPermissionGranted: Boolean = true,
     canRequestNotificationPermission: Boolean = false,
     onRequestNotificationPermission: () -> Unit = {},
     onOpenNotificationSettings: () -> Unit = {},
+    onOpenLocationSettings: () -> Unit = {},
     collectionThumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
     clock: Clock = Clock.systemDefaultZone(),
 ) {
@@ -93,13 +105,37 @@ fun PlanteriorNavHost(
     val currentRoute = backStackEntry.toPlanteriorRoute()
     val liveAuthState by
         authCoordinator?.state?.collectAsState() ?: remember { mutableStateOf<AuthUiState?>(null) }
-    LaunchedEffect(currentRoute, liveAuthState, authCoordinator) {
+    val registrationAuthOwnership =
+        registrationAuthOwnership(
+            authState = liveAuthState,
+            coordinatorAvailable = authCoordinator != null,
+            enforcementEnabled = authRouteGuardEnabled,
+        )
+    LaunchedEffect(
+        currentRoute,
+        liveAuthState,
+        authCoordinator,
+        authRouteGuardEnabled,
+        signedOutReturnRoute,
+    ) {
         val requested = currentRoute ?: return@LaunchedEffect
-        if (authCoordinator == null || liveAuthState !is AuthUiState.SignedOut) {
+        if (
+            !authRouteGuardEnabled ||
+                authCoordinator == null ||
+                liveAuthState !is AuthUiState.SignedOut
+        ) {
             return@LaunchedEffect
         }
-        val guarded = AuthRouteGuard.destination(requested, authenticated = false)
+        val guarded =
+            if (requested is PlanteriorRoute.Authenticated && signedOutReturnRoute != null) {
+                PlanteriorRoute.Login(signedOutReturnRoute)
+            } else {
+                AuthRouteGuard.destination(requested, authenticated = false)
+            }
         if (guarded == requested) return@LaunchedEffect
+        if (navController.currentBackStackEntry.toPlanteriorRoute() != requested) {
+            return@LaunchedEffect
+        }
         navController.navigate(guarded) {
             backStackEntry?.destination?.id?.let { popUpTo(it) { inclusive = true } }
             launchSingleTop = true
@@ -198,6 +234,7 @@ fun PlanteriorNavHost(
                 onOpenPlant = { plantId ->
                     navController.navigate(PlanteriorRoute.PlantDetail(plantId))
                 },
+                onOpenWeather = { navController.navigate(PlanteriorRoute.Weather) },
                 bottomBar = bottomBar,
             )
         }
@@ -258,6 +295,7 @@ fun PlanteriorNavHost(
                     onNotificationSettings = {
                         navController.navigate(PlanteriorRoute.Notifications)
                     },
+                    onWeatherSettings = { navController.navigate(PlanteriorRoute.Weather) },
                     logoutLabel = stringResource(R.string.action_logout),
                     bottomBar = bottomBar,
                 )
@@ -360,12 +398,13 @@ fun PlanteriorNavHost(
                     },
                     onCompleted = {
                         registrationHandoff.clear()
-                        registrationNavigation.registrationCompleted(it.id)
+                        registrationNavigation.registrationCompleted(it)
                     },
                     onCancel = {
                         registrationHandoff.clear()
                         navController.popBackStack()
                     },
+                    authOwnership = registrationAuthOwnership,
                 )
             }
         }
@@ -389,6 +428,58 @@ fun PlanteriorNavHost(
                     onRequestPermission = onRequestNotificationPermission,
                     onOpenSystemSettings = onOpenNotificationSettings,
                     onBack = { navController.popBackStack() },
+                )
+            }
+        }
+        composable<PlanteriorRoute.Weather> {
+            if (weatherRepository == null || weatherLocationGateway == null) {
+                PlaceholderScreen(
+                    title = "날씨 관리",
+                    description = "날씨 관리 기능을 준비하지 못했어요.",
+                )
+            } else {
+                WeatherRoute(
+                    repository = weatherRepository,
+                    locationGateway = weatherLocationGateway,
+                    permissionCapabilities = weatherPermissionCapabilities,
+                    notificationPermissionGranted = notificationPermissionGranted,
+                    canRequestNotificationPermission = canRequestNotificationPermission,
+                    onRequestNotificationPermission = onRequestNotificationPermission,
+                    onOpenNotificationSettings = onOpenNotificationSettings,
+                    onBack = { navController.popBackStack() },
+                    onOpenPlant = { plantId ->
+                        navController.navigate(PlanteriorRoute.PlantDetail(plantId))
+                    },
+                    onOpenLocationSettings = onOpenLocationSettings,
+                    onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
+                    clock = clock,
+                )
+            }
+        }
+        composable<PlanteriorRoute.WeatherRisk> { entry ->
+            val route = entry.toRoute<PlanteriorRoute.WeatherRisk>()
+            if (weatherRepository == null || weatherLocationGateway == null) {
+                PlaceholderScreen(
+                    title = "날씨 위험 안내",
+                    description = "날씨 위험 정보를 준비하지 못했어요.",
+                )
+            } else {
+                WeatherRoute(
+                    repository = weatherRepository,
+                    locationGateway = weatherLocationGateway,
+                    permissionCapabilities = weatherPermissionCapabilities,
+                    notificationPermissionGranted = notificationPermissionGranted,
+                    canRequestNotificationPermission = canRequestNotificationPermission,
+                    onRequestNotificationPermission = onRequestNotificationPermission,
+                    onOpenNotificationSettings = onOpenNotificationSettings,
+                    onBack = { navController.popBackStack() },
+                    onOpenPlant = { plantId ->
+                        navController.navigate(PlanteriorRoute.PlantDetail(plantId))
+                    },
+                    onOpenLocationSettings = onOpenLocationSettings,
+                    onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
+                    focusedPlantId = route.plantId,
+                    clock = clock,
                 )
             }
         }
@@ -449,6 +540,27 @@ fun PlanteriorNavHost(
                 )
             }
         }
+    }
+}
+
+internal fun registrationAuthOwnership(
+    authState: AuthUiState?,
+    coordinatorAvailable: Boolean,
+    enforcementEnabled: Boolean,
+): RegistrationAuthOwnership {
+    if (!enforcementEnabled) return RegistrationAuthOwnership.Unmanaged
+    if (!coordinatorAvailable) return RegistrationAuthOwnership.Unknown
+    return when (authState) {
+        AuthUiState.Restoring -> RegistrationAuthOwnership.Restoring
+        is AuthUiState.SignedOut -> RegistrationAuthOwnership.SignedOut
+        is AuthUiState.Authenticated ->
+            RegistrationAuthOwnership.Authenticated(AccountId(authState.account.uid))
+        null,
+        is AuthUiState.SigningIn,
+        is AuthUiState.LinkConsentRequired,
+        is AuthUiState.ReauthenticationRequired,
+        is AuthUiState.LinkConflict,
+        is AuthUiState.LinkFailure -> RegistrationAuthOwnership.Unknown
     }
 }
 

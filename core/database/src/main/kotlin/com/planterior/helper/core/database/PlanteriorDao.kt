@@ -26,7 +26,7 @@ interface CacheDao {
     suspend fun plants(accountId: String): List<CachedPlantEntity>
 
     @Query("SELECT * FROM cached_plants WHERE accountId = :accountId AND plantId = :plantId")
-    fun plantBlocking(accountId: String, plantId: String): CachedPlantEntity?
+    suspend fun plant(accountId: String, plantId: String): CachedPlantEntity?
 
     @Query(
         "SELECT * FROM cached_watering_schedules WHERE accountId = :accountId AND scheduleId = :scheduleId"

@@ -7,6 +7,7 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +55,11 @@ class HomeViewModel(
     /** 홈을 다시 불러온다. 화면 복귀와 사용자의 새로고침 모두 이 경로를 쓴다. */
     fun refresh() {
         refreshTicks.value += 1
+    }
+
+    /** Activity가 직접 만든 인스턴스의 scope를 해당 Activity 수명과 함께 종료한다. */
+    fun close() {
+        viewModelScope.cancel()
     }
 
     private suspend fun load(session: HomeSession): HomeUiState {

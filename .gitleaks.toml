@@ -1,0 +1,15 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Known non-secret test fixtures and deterministic operation identifiers"
+targetRules = ["generic-api-key"]
+stopwords = [
+  "secret-1234567890abcdef",
+  "secret-a-1234567890",
+  "secret-b-1234567890",
+  "notification-defaults-v1",
+  "operation_12345678",
+  "ios-plan-c002-v1",
+  "ios-plan-c003-v1",
+]

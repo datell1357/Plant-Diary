@@ -9,8 +9,8 @@ object PlanteriorRouteResolver {
     /** 앱이 수신하는 딥링크 scheme. */
     const val SCHEME: String = "planterior"
 
-    /** 개인 식물 ID로 허용하는 최대 길이. Firestore 문서 ID 상한과 같다. */
-    private const val MAX_PLANT_ID_LENGTH = 64
+    /** 개인 식물 경로에서 공유하는 opaque ID 최대 길이. */
+    private const val MAX_PLANT_ID_LENGTH = 128
 
     private val PLANT_ID_PATTERN = Regex("^[A-Za-z0-9_-]{1,$MAX_PLANT_ID_LENGTH}$")
 
@@ -33,6 +33,7 @@ object PlanteriorRouteResolver {
             "registration" -> PlanteriorRoute.Registration
             "minihome" -> PlanteriorRoute.MiniHome
             "notifications" -> PlanteriorRoute.Notifications
+            "weather" -> resolveWeather(segments)
             else -> PlanteriorRoute.Home
         }
     }
@@ -71,6 +72,8 @@ object PlanteriorRouteResolver {
                     PlanteriorRoute.PlantDetail(route.plantId),
                     route,
                 )
+            is PlanteriorRoute.WeatherRisk ->
+                listOf(PlanteriorRoute.Home, PlanteriorRoute.Weather, route)
             else -> listOf(PlanteriorRoute.Home, route)
         }
 
@@ -84,6 +87,14 @@ object PlanteriorRouteResolver {
                 segments[2] == "watering" &&
                 PLANT_ID_PATTERN.matches(segments[1]) ->
                 PlanteriorRoute.WateringConfirmation(segments[1])
+            else -> PlanteriorRoute.Home
+        }
+
+    private fun resolveWeather(segments: List<String>): PlanteriorRoute =
+        when {
+            segments.isEmpty() -> PlanteriorRoute.Weather
+            segments.size == 2 && segments[0] == "plant" && PLANT_ID_PATTERN.matches(segments[1]) ->
+                PlanteriorRoute.WeatherRisk(segments[1])
             else -> PlanteriorRoute.Home
         }
 

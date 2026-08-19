@@ -1,0 +1,158 @@
+package com.planterior.helper.auth
+
+import android.content.Context
+import androidx.core.net.toUri
+import androidx.room.Room
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.storage.FirebaseStorage
+import com.planterior.helper.BuildConfig
+import com.planterior.helper.FirebaseRuntime
+import com.planterior.helper.core.data.FirebaseRemoteMutationGateway
+import com.planterior.helper.core.data.OfflineFirstSyncRepository
+import com.planterior.helper.core.database.MIGRATION_1_2
+import com.planterior.helper.core.database.MIGRATION_2_3
+import com.planterior.helper.core.database.MIGRATION_3_4
+import com.planterior.helper.core.database.MIGRATION_4_5
+import com.planterior.helper.core.database.MIGRATION_5_6
+import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
+import com.planterior.helper.feature.collection.FirebaseCollectionRemoteDataSource
+import com.planterior.helper.feature.collection.FirebaseCollectionRepository
+import com.planterior.helper.feature.collection.FirebasePlantThumbnailLoader
+import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
+import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
+import com.planterior.helper.feature.watering.FirebaseWateringNotificationSettingsRepository
+import com.planterior.helper.feature.watering.FirebaseWateringRemoteDataSource
+import com.planterior.helper.feature.watering.OutboxWateringRepository
+import com.planterior.helper.feature.weather.FirebaseWeatherRepository
+import com.planterior.helper.weather.SharedPreferencesWeatherPermissionCapabilityStore
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** Process-owned Room and repository graph. It holds only the application context. */
+internal class AuthRepositoryRuntime
+private constructor(
+    val auth: FirebaseAuth,
+    val firestore: FirebaseFirestore,
+    val functions: FirebaseFunctions,
+    val storage: FirebaseStorage,
+    val database: PlanteriorDatabase,
+    val syncRepository: OfflineFirstSyncRepository,
+    val registrationRepository: FirebaseRegistrationRepository,
+    val collectionRepository: FirebaseCollectionRepository,
+    val wateringRepository: OutboxWateringRepository,
+    val wateringNotificationSettingsRepository: FirebaseWateringNotificationSettingsRepository,
+    val weatherRepository: FirebaseWeatherRepository,
+    val weatherPermissionCapabilities: SharedPreferencesWeatherPermissionCapabilityStore,
+    val collectionThumbnailLoader: FirebasePlantThumbnailLoader,
+) : AutoCloseable {
+    private val closed = AtomicBoolean(false)
+
+    val isDatabaseOpen: Boolean
+        get() = database.isOpen
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) database.close()
+    }
+
+    companion object {
+        private val emulatorsConnected = AtomicBoolean(false)
+
+        fun create(context: Context): AuthRepositoryRuntime? {
+            val applicationContext = context.applicationContext
+            val app = FirebaseRuntime.initialize(applicationContext) ?: return null
+            val auth = FirebaseAuth.getInstance(app)
+            val firestore = FirebaseFirestore.getInstance(app)
+            val functions = FirebaseFunctions.getInstance(app)
+            val storage = FirebaseStorage.getInstance(app)
+            if (BuildConfig.DEBUG && emulatorsConnected.compareAndSet(false, true)) {
+                auth.useEmulator("10.0.2.2", 9099)
+                firestore.useEmulator("10.0.2.2", 8080)
+                functions.useEmulator("10.0.2.2", 5001)
+                storage.useEmulator("10.0.2.2", 9199)
+            }
+            val database =
+                Room.databaseBuilder(
+                        applicationContext,
+                        PlanteriorDatabase::class.java,
+                        "planterior.db",
+                    )
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                    )
+                    .build()
+            return try {
+                val mutationGateway = FirebaseRemoteMutationGateway(functions)
+                val syncRepository = OfflineFirstSyncRepository(database, mutationGateway)
+                val registrationRepository =
+                    FirebaseRegistrationRepository(
+                        database,
+                        FirebaseRegistrationRemoteDataSource(auth, firestore, storage) { photo ->
+                            val maximum = 20 * 1024 * 1024
+                            applicationContext.contentResolver
+                                .openInputStream(photo.privateUri.toUri())
+                                .use { input ->
+                                    val bytes = requireNotNull(input).readBounded(maximum)
+                                    require(bytes.isNotEmpty() && bytes.size <= maximum)
+                                    bytes
+                                }
+                        },
+                        mutationGateway,
+                    )
+                val collectionRepository =
+                    FirebaseCollectionRepository(
+                        database,
+                        FirebaseCollectionRemoteDataSource(auth, firestore),
+                        mutationGateway,
+                    )
+                val wateringRepository =
+                    OutboxWateringRepository(
+                        database,
+                        CollectionWateringPreparationSource(collectionRepository),
+                        FirebaseWateringRemoteDataSource(auth, firestore),
+                        mutationGateway,
+                    )
+                val weatherRepository = FirebaseWeatherRepository(auth, firestore, functions)
+                AuthRepositoryRuntime(
+                    auth,
+                    firestore,
+                    functions,
+                    storage,
+                    database,
+                    syncRepository,
+                    registrationRepository,
+                    collectionRepository,
+                    wateringRepository,
+                    FirebaseWateringNotificationSettingsRepository(auth, firestore, functions),
+                    weatherRepository,
+                    SharedPreferencesWeatherPermissionCapabilityStore(applicationContext),
+                    FirebasePlantThumbnailLoader(storage),
+                )
+            } catch (error: Throwable) {
+                database.close()
+                throw error
+            }
+        }
+    }
+}
+
+private fun InputStream.readBounded(maximum: Int): ByteArray {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0
+    while (true) {
+        val count = read(buffer)
+        if (count < 0) break
+        total += count
+        require(total <= maximum) { "Representative photo is too large" }
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
+}

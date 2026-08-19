@@ -80,9 +80,7 @@ class AccountSynchronizerPersistenceTest {
             )
             assertEquals("local draft", database.syncDao().pending(account).single().draftPayload)
             assertEquals(SyncStatus.SUCCESS, summary.records.getValue(SyncDomain.PLANTS).status)
-            assertTrue(
-                requireNotNull(database.cacheDao().plantBlocking(account, "remote")).detailsComplete
-            )
+            assertTrue(requireNotNull(database.cacheDao().plant(account, "remote")).detailsComplete)
         }
 
     @Test
@@ -108,7 +106,7 @@ class AccountSynchronizerPersistenceTest {
 
         synchronizer.sync(account)
 
-        assertNotNull(database.cacheDao().plantBlocking(account, "conflicted"))
+        assertNotNull(database.cacheDao().plant(account, "conflicted"))
         assertEquals("CONFLICT", database.syncDao().pending(account).single().state)
     }
 
@@ -189,7 +187,7 @@ class AccountSynchronizerPersistenceTest {
             assertTrue(database.syncDao().pending(account).isEmpty())
             assertEquals(
                 "서버 식물",
-                database.cacheDao().plantBlocking(account, "plant-a")?.displayName,
+                database.cacheDao().plant(account, "plant-a")?.displayName,
             )
             assertEquals(SyncStatus.SUCCESS, summary.records.getValue(SyncDomain.PLANTS).status)
         }
@@ -247,7 +245,7 @@ class AccountSynchronizerPersistenceTest {
 
         cache.clearVisible(account)
 
-        assertNotNull(database.cacheDao().plantBlocking(account, "draft"))
+        assertNotNull(database.cacheDao().plant(account, "draft"))
         assertEquals("recoverable", database.syncDao().pending(account).single().draftPayload)
     }
 

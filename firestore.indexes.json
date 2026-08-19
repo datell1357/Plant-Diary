@@ -4,13 +4,20 @@
     { "collectionGroup": "wateringSchedules", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "notificationCandidateActive", "order": "ASCENDING" }, { "fieldPath": "nextNotificationAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
     { "collectionGroup": "notificationDeliveryClaims", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "state", "order": "ASCENDING" }, { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
     { "collectionGroup": "weatherRisks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "detectedAt", "order": "DESCENDING" } ] },
+    { "collectionGroup": "weatherAlerts", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "weatherAlerts", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "leaseExpiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
     { "collectionGroup": "placements", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "miniHomeId", "order": "ASCENDING" }, { "fieldPath": "zIndex", "order": "ASCENDING" } ] },
     { "collectionGroup": "ownedItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "applied", "order": "ASCENDING" }, { "fieldPath": "acquiredAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "shareLinks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "revokedAt", "order": "ASCENDING" }, { "fieldPath": "expiresAt", "order": "ASCENDING" } ] },
     { "collectionGroup": "notificationDeliveries", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "scheduledFor", "order": "ASCENDING" } ] },
     { "collectionGroup": "plantContents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" } ] },
     { "collectionGroup": "riskContents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "plantContentId", "order": "ASCENDING" } ] },
-    { "collectionGroup": "shopItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "category", "order": "ASCENDING" } ] }
+    { "collectionGroup": "shopItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "category", "order": "ASCENDING" } ] },
+    { "collectionGroup": "appleAuthSessions", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "appleAuthRateLimits", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    { "collectionGroup": "appleAuthSessions", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "appleAuthRateLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+  ]
 }

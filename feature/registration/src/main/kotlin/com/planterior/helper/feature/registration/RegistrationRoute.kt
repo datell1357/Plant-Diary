@@ -3,18 +3,22 @@ package com.planterior.helper.feature.registration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.planterior.helper.core.model.PersonalPlant
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.camera.ContentResolverPhotoUriReader
 import com.planterior.helper.feature.camera.PhotoPreparationException
@@ -26,15 +30,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private class RegistrationViewModel(val controller: RegistrationController) : ViewModel()
+internal class RegistrationViewModel(val controller: RegistrationController) : ViewModel() {
+    override fun onCleared() {
+        controller.cancelNavigationEvents()
+    }
+}
 
 @Composable
 fun RegistrationRoute(
     seed: RegistrationSeed,
     repository: RegistrationRepository,
     onOpenExisting: (PersonalPlantId) -> Unit,
-    onCompleted: (PersonalPlant) -> Unit,
+    onCompleted: (PersonalPlantId) -> Unit,
     onCancel: () -> Unit,
+    authOwnership: RegistrationAuthOwnership = RegistrationAuthOwnership.Unknown,
 ) {
     val model =
         viewModel<RegistrationViewModel>(
@@ -46,7 +55,6 @@ fun RegistrationRoute(
                             RegistrationController(
                                 seed,
                                 repository,
-                                onOpenExisting = onOpenExisting,
                                 savedStateHandle = createSavedStateHandle(),
                             )
                         )
@@ -55,8 +63,16 @@ fun RegistrationRoute(
         )
     val controller = model.controller
     val state by controller.state.collectAsState()
+    val navigationEvent by controller.navigationEvent.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOpenExisting by rememberUpdatedState(onOpenExisting)
+    val currentCompleted by rememberUpdatedState(onCompleted)
+    val collector = remember(controller) { controller.attachNavigationCollector() }
+    DisposableEffect(controller, collector) {
+        onDispose { controller.detachNavigationCollector(collector) }
+    }
     val photoPreparer =
         remember(context) {
             PhotoPreparer(
@@ -85,8 +101,27 @@ fun RegistrationRoute(
             }
         }
     LaunchedEffect(controller) { controller.start() }
-    LaunchedEffect(state) {
-        (state as? RegistrationUiState.Completed)?.plant?.let(onCompleted)
+    LaunchedEffect(
+        controller,
+        collector,
+        navigationEvent?.identity,
+        lifecycleOwner,
+        authOwnership,
+    ) {
+        val pending = navigationEvent ?: return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            controller.dispatchNavigationEvent(
+                collector,
+                pending.identity,
+                authOwnership,
+            ) { event ->
+                when (event.kind) {
+                    RegistrationNavigationKind.OPEN_EXISTING -> currentOpenExisting(event.plantId)
+                    RegistrationNavigationKind.REGISTRATION_COMPLETED ->
+                        currentCompleted(event.plantId)
+                }
+            }
+        }
     }
     val requestId = (seed as? RegistrationSeed.Identified)?.requestId
     RegistrationScreen(

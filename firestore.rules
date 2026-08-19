@@ -45,13 +45,13 @@ service cloud.firestore {
         && request.resource.data.revision == resource.data.revision + 1;
     }
     function approvedCollection(collection) {
-      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'notificationHistory', 'identificationRequests'];
+      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'notificationHistory', 'identificationRequests'];
     }
     function ownerWritable(collection) {
       return collection in ['miniHomes', 'placements', 'consents', 'identificationRequests'];
     }
     function serverWritable(collection) {
-      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries', 'notificationHistory'];
+      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries', 'notificationHistory'];
     }
     function validPersonalPlant() {
       return validEntityKeys(['displayName', 'registrationMethod'], ['contentId', 'representativePhotoPath', 'location', 'note', 'lastWateredDate'])
@@ -78,15 +78,26 @@ service cloud.firestore {
           && validOpaqueId(request.resource.data.plantId)
           && request.resource.data.enabled is bool
           && (request.resource.data.timeOverride == null || validTime(request.resource.data.timeOverride)))
+        || (collection == 'weatherSettings'
+          && validEntityKeys(['globalAlertsEnabled'], ['manualRegion', 'deviceRegion', 'lastRefreshAt'])
+          && request.resource.data.globalAlertsEnabled is bool
+          && (!request.resource.data.keys().hasAny(['manualRegion']) || request.resource.data.manualRegion is map)
+          && (!request.resource.data.keys().hasAny(['deviceRegion']) || request.resource.data.deviceRegion is map)
+          && (!request.resource.data.keys().hasAny(['lastRefreshAt']) || request.resource.data.lastRefreshAt is timestamp))
+        || (collection == 'weatherPlantSettings'
+          && validEntityKeys(['plantId', 'enabled'], [])
+          && validOpaqueId(request.resource.data.plantId) && request.resource.data.enabled is bool)
         || (collection == 'miniHomes' && validEntityKeys(['name'], []) && request.resource.data.name is string)
         || (collection == 'placements'
           && validEntityKeys(['normalizedX', 'normalizedY', 'zIndex'], ['plantId', 'itemId'])
           && request.resource.data.normalizedX is number && request.resource.data.normalizedX >= 0 && request.resource.data.normalizedX <= 1
           && request.resource.data.normalizedY is number && request.resource.data.normalizedY >= 0 && request.resource.data.normalizedY <= 1 && request.resource.data.zIndex is int)
         || (collection == 'consents'
-          && validEntityKeys(['type', 'granted', 'recordedAt'], [])
+          && validEntityKeys(['type', 'granted', 'recordedAt'], ['commandGeneration', 'legacyRecovery'])
           && request.resource.data.type in ['IDENTIFICATION_PHOTO_PROCESSING', 'LOCATION', 'ANALYTICS']
-          && request.resource.data.granted is bool && request.resource.data.recordedAt is timestamp)
+          && request.resource.data.granted is bool && request.resource.data.recordedAt is timestamp
+          && (!request.resource.data.keys().hasAny(['commandGeneration']) || (request.resource.data.commandGeneration is int && request.resource.data.commandGeneration >= 1 && request.resource.data.commandGeneration <= 9007199254740991))
+          && (!request.resource.data.keys().hasAny(['legacyRecovery']) || (request.resource.data.legacyRecovery is bool && request.resource.data.type == 'LOCATION')))
         || (collection == 'identificationRequests'
           && validEntityKeys(['temporaryOriginalPath', 'createdAt', 'expiresAt'], [])
           && request.resource.data.temporaryOriginalPath is string && request.resource.data.createdAt is timestamp
@@ -136,16 +147,23 @@ service cloud.firestore {
       return (collection == 'notificationDeliveries' && validDelivery())
         || (collection == 'notificationHistory' && validNotificationHistory())
         || (collection == 'weatherSnapshots'
-          && validEntityKeys(['regionCode', 'temperatureCelsius', 'humidityPercent', 'precipitationMillimeters', 'observedAt', 'expiresAt'], [])
-          && request.resource.data.regionCode is string && request.resource.data.temperatureCelsius is number
+          && validEntityKeys(['regionCode', 'regionName', 'temperatureCelsius', 'humidityPercent', 'precipitationMillimeters', 'observedAt', 'expiresAt', 'zoneId', 'stale', 'unavailablePlantIds'], [])
+          && request.resource.data.regionCode is string && request.resource.data.regionName is string
+          && request.resource.data.temperatureCelsius is number
           && request.resource.data.humidityPercent is int && request.resource.data.humidityPercent >= 0 && request.resource.data.humidityPercent <= 100
           && request.resource.data.precipitationMillimeters is number && request.resource.data.precipitationMillimeters >= 0
-          && request.resource.data.observedAt is timestamp && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.resource.data.observedAt)
+          && request.resource.data.observedAt is timestamp && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.resource.data.observedAt
+          && request.resource.data.zoneId is string && request.resource.data.stale is bool
+          && request.resource.data.unavailablePlantIds is list
+          && request.resource.data.unavailablePlantIds.size() <= 200)
         || (collection == 'weatherRisks'
-          && validEntityKeys(['plantId', 'snapshotId', 'type', 'detectedAt', 'active'], ['action'])
+          && validEntityKeys(['plantId', 'plantName', 'snapshotId', 'type', 'reason', 'detectedAt', 'observedAt', 'active', 'transition', 'deliveredTransition'], ['action'])
           && validOpaqueId(request.resource.data.plantId) && validOpaqueId(request.resource.data.snapshotId)
-          && request.resource.data.type in ['HIGH_TEMPERATURE', 'LOW_TEMPERATURE', 'DRY', 'OVERWATERED']
-          && request.resource.data.detectedAt is timestamp && request.resource.data.active is bool)
+          && request.resource.data.plantName is string && request.resource.data.reason is string
+          && request.resource.data.type in ['HIGH_TEMPERATURE', 'LOW_TEMPERATURE', 'DRY', 'OVERHUMID']
+          && request.resource.data.detectedAt is timestamp && request.resource.data.observedAt is timestamp
+          && request.resource.data.active is bool && request.resource.data.transition is int && request.resource.data.transition >= 0
+          && (request.resource.data.deliveredTransition == null || request.resource.data.deliveredTransition is int))
         || (collection == 'deletionRequests' && validDeletion())
         || (collection == 'ownedItems'
           && validEntityKeys(['itemId', 'acquiredAt', 'applied'], [])
@@ -209,6 +227,12 @@ service cloud.firestore {
         && (request.resource.data.revokedAt == null || request.resource.data.revokedAt is timestamp);
     }
 
+    match /appleAuthSessions/{sessionId} {
+      allow read, write: if false;
+    }
+    match /appleAuthRateLimits/{rateKey} {
+      allow read, write: if false;
+    }
     match /notificationDeliveryClaims/{claimId} {
       allow read, write: if false;
     }
@@ -230,14 +254,22 @@ service cloud.firestore {
     }
     match /users/{uid}/{collection}/{documentId} {
       allow read: if approvedCollection(collection) && owns(uid);
-      allow create: if ownerWritable(collection) && owns(uid) && validCreate(uid) && validOwnerEntity(collection);
-      allow update: if ownerWritable(collection) && owns(uid) && validUpdate(uid) && validOwnerEntity(collection);
+      allow create: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && validCreate(uid) && validOwnerEntity(collection);
+      allow update: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && validUpdate(uid) && validOwnerEntity(collection);
+      allow create: if collection == 'consents' && documentId == 'location' && trustedServer() && validCreate(uid) && validOwnerEntity(collection);
+      allow update: if collection == 'consents' && documentId == 'location' && trustedServer() && validUpdate(uid) && validOwnerEntity(collection);
       allow create: if serverWritable(collection) && trustedServer() && validCreate(uid)
-        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings'] && validOwnerEntity(collection)));
+        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings'] && validOwnerEntity(collection)));
       allow update: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && validUpdate(uid)
-        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings'] && validOwnerEntity(collection)));
-      allow delete: if ownerWritable(collection) && owns(uid) && resource.data.ownerUid == uid;
+        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings'] && validOwnerEntity(collection)));
+      allow delete: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && resource.data.ownerUid == uid;
+      allow delete: if collection == 'consents' && documentId == 'location' && trustedServer() && resource.data.ownerUid == uid;
       allow delete: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && resource.data.ownerUid == uid;
+    }
+    match /users/{uid}/weatherAlerts/{alertId} {
+      allow read: if owns(uid);
+      allow create, update: if trustedServer() && request.resource.data.ownerUid == uid;
+      allow delete: if trustedServer() && resource.data.ownerUid == uid;
     }
     match /plantContents/{documentId} {
       allow read: if contentAdmin() || publicDocument();

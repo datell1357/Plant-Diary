@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.work.WorkManager
 import com.google.firebase.auth.FirebaseAuth
@@ -41,14 +42,38 @@ class PlanteriorMessagingService : FirebaseMessagingService() {
                 ownerUid = ownerUid,
                 currentOwnerUid = { FirebaseAuth.getInstance().currentUser?.uid },
             ) {
-                WateringNotificationRenderer.post(
-                    context = this@PlanteriorMessagingService,
-                    route = route,
-                    title = title,
-                    body = body,
-                    notificationId =
-                        message.data["dueDate"].orEmpty().hashCode() xor route.hashCode(),
-                )
+                val weatherRiskType =
+                    if (message.data["type"] == "WEATHER_RISK") {
+                        message.data["riskType"] ?: return@postIfCurrent false
+                    } else {
+                        null
+                    }
+                if (weatherRiskType != null) {
+                    val alertId = message.data["alertId"] ?: return@postIfCurrent false
+                    val riskId = message.data["riskId"] ?: return@postIfCurrent false
+                    val transition =
+                        message.data["transition"]?.toIntOrNull() ?: return@postIfCurrent false
+                    if (riskId.isBlank() || transition < 1) return@postIfCurrent false
+                    val plantName = message.data["plantName"] ?: return@postIfCurrent false
+                    if (!isKnownWeatherRiskType(weatherRiskType)) return@postIfCurrent false
+                    WeatherNotificationRenderer.post(
+                        context = this@PlanteriorMessagingService,
+                        route = route,
+                        title = weatherNotificationTitle(plantName, weatherRiskType),
+                        body = body,
+                        alertId = alertId,
+                    )
+                } else {
+                    val notificationId =
+                        message.data["dueDate"].orEmpty().hashCode() xor route.hashCode()
+                    WateringNotificationRenderer.post(
+                        context = this@PlanteriorMessagingService,
+                        route = route,
+                        title = title,
+                        body = body,
+                        notificationId = notificationId,
+                    )
+                }
             }
         }
     }
@@ -76,39 +101,155 @@ object WateringNotificationRenderer {
         body: String,
         notificationId: Int,
     ): Boolean {
-        if (
-            Build.VERSION.SDK_INT >= 33 &&
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return false
-        }
-        val intent =
-            Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-                data = route.toUri()
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-        val pendingIntent =
-            PendingIntent.getActivity(
-                context,
-                notificationId,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-        val notification =
-            NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_watering)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
-                .build()
-        NotificationManagerCompat.from(context).notify(notificationId, notification)
-        return true
+        val deliveryId = route.toUri().getQueryParameter("deliveryId")
+        val deepLinkIdentity = "watering:${deliveryId ?: "$notificationId:$route"}"
+        return postNotification(
+            context,
+            CHANNEL_ID,
+            route,
+            title,
+            body,
+            notificationId,
+            deepLinkIdentity = deepLinkIdentity,
+        )
     }
+}
+
+internal fun weatherNotificationTitle(plantName: String, riskType: String): String =
+    "$plantName ${weatherRiskTypeLabel(riskType)}"
+
+private fun isKnownWeatherRiskType(riskType: String): Boolean =
+    riskType in setOf("HIGH_TEMPERATURE", "LOW_TEMPERATURE", "DRY", "OVERHUMID")
+
+private fun weatherRiskTypeLabel(riskType: String): String =
+    when (riskType) {
+        "HIGH_TEMPERATURE" -> "고온 주의"
+        "LOW_TEMPERATURE" -> "저온 주의"
+        "DRY" -> "건조 주의"
+        "OVERHUMID" -> "과습 주의"
+        else -> "날씨 주의"
+    }
+
+object WeatherNotificationRenderer {
+    const val CHANNEL_ID = "plant-weather-alerts"
+
+    fun createChannel(context: Context) {
+        context
+            .getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(
+                NotificationChannel(
+                        CHANNEL_ID,
+                        "날씨 주의 알림",
+                        NotificationManager.IMPORTANCE_HIGH,
+                    )
+                    .apply { description = "등록 식물의 고온·저온·건조·과습 위험을 알려 드려요." }
+            )
+    }
+
+    fun post(
+        context: Context,
+        route: String,
+        title: String,
+        body: String,
+        alertId: String,
+    ): Boolean {
+        val notificationId = WeatherNotificationIdentityRegistry(context).platformId(alertId)
+        return postNotification(
+            context,
+            CHANNEL_ID,
+            route,
+            title,
+            body,
+            notificationId,
+            deepLinkIdentity = "weather:$alertId",
+            notificationTag = "weather:$alertId",
+        )
+    }
+}
+
+internal class WeatherNotificationIdentityRegistry(context: Context) {
+    private val preferences =
+        context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    fun platformId(immutableAlertId: String): Int {
+        require(immutableAlertId.matches(VALID_IDENTITY))
+        synchronized(lock) {
+            val identityKey = "identity.$immutableAlertId"
+            if (preferences.contains(identityKey)) {
+                return preferences.getInt(identityKey, 0)
+            }
+            var candidate = immutableAlertId.hashCode()
+            while (true) {
+                val platformKey = "platform.$candidate"
+                val occupant = preferences.getString(platformKey, null)
+                if (occupant == null || occupant == immutableAlertId) {
+                    preferences.edit(commit = true) {
+                        putInt(identityKey, candidate)
+                        putString(platformKey, immutableAlertId)
+                    }
+                    return candidate
+                }
+                candidate += 1
+            }
+        }
+    }
+
+    private companion object {
+        const val PREFERENCES = "weather-notification-identities"
+        val VALID_IDENTITY = Regex("^[A-Za-z0-9_-]{1,128}$")
+        val lock = Any()
+    }
+}
+
+private fun postNotification(
+    context: Context,
+    channelId: String,
+    route: String,
+    title: String,
+    body: String,
+    notificationId: Int,
+    intentAction: String = Intent.ACTION_VIEW,
+    deepLinkIdentity: String,
+    notificationTag: String? = null,
+): Boolean {
+    if (
+        Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return false
+    }
+    val intent =
+        Intent(context, MainActivity::class.java).apply {
+            action = intentAction
+            data = route.toUri()
+            identifier = "planterior-notification:$deepLinkIdentity"
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+    val pendingIntent =
+        PendingIntent.getActivity(
+            context,
+            notificationId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    val notification =
+        NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_stat_watering)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+    val manager = NotificationManagerCompat.from(context)
+    if (notificationTag == null) {
+        manager.notify(notificationId, notification)
+    } else {
+        manager.notify(notificationTag, notificationId, notification)
+    }
+    return true
 }

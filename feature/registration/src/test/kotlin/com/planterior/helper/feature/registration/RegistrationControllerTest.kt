@@ -137,13 +137,12 @@ class RegistrationControllerTest {
     fun `duplicate offers open add another and cancel without accidental writes`() = runTest {
         val existing = ExistingPersonalPlant(PersonalPlantId("existing-plant"), "기존 몬스테라")
         val repository = FakeRegistrationRepository(duplicates = listOf(existing))
-        val opened = mutableListOf<PersonalPlantId>()
         val controller =
             RegistrationController(
                 RegistrationSeed.Manual,
                 repository,
                 clock,
-                onOpenExisting = opened::add,
+                navigationIdentityFactory = { "existing-event" },
             )
         controller.start()
         controller.selectContent(candidate)
@@ -155,7 +154,15 @@ class RegistrationControllerTest {
         assertEquals(0, repository.saved.size)
 
         controller.openExisting(existing.id)
-        assertEquals(listOf(existing.id), opened)
+        assertEquals(
+            RegistrationNavigationEvent(
+                identity = "existing-event",
+                ownerAccountId = AccountId("account-a"),
+                plantId = existing.id,
+                kind = RegistrationNavigationKind.OPEN_EXISTING,
+            ),
+            controller.navigationEvent.value,
+        )
         assertEquals(0, repository.saved.size)
 
         controller.cancelDuplicate()

@@ -33,10 +33,16 @@ import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.PersonalPlantId
 
 object RegistrationTestTags {
+    const val SCREEN = "registration.screen"
     const val NAME = "registration.name"
     const val SEARCH = "registration.search"
+    const val SEARCH_ACTION = "registration.search-action"
     const val SUBMIT = "registration.submit"
     const val SAVED = "registration.saved"
+
+    fun content(contentId: String) = "registration.content:$contentId"
+
+    fun existing(plantId: String) = "registration.existing:$plantId"
 }
 
 @Composable
@@ -56,7 +62,10 @@ fun RegistrationScreen(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    PlanteriorScreenScaffold(title = stringResource(R.string.registration_title)) {
+    PlanteriorScreenScaffold(
+        title = stringResource(R.string.registration_title),
+        modifier = Modifier.testTag(RegistrationTestTags.SCREEN),
+    ) {
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.large),
@@ -96,7 +105,11 @@ fun RegistrationScreen(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     state.existing.forEach { existing ->
-                        PlanteriorCard(onClick = { onOpenExisting(existing.id) }) {
+                        PlanteriorCard(
+                            onClick = { onOpenExisting(existing.id) },
+                            modifier =
+                                Modifier.testTag(RegistrationTestTags.existing(existing.id.value)),
+                        ) {
                             Text(existing.displayName)
                             Text(stringResource(R.string.registration_open_existing))
                         }
@@ -204,7 +217,7 @@ private fun EditingContent(
         )
         OutlinedButton(
             onClick = { onSearch(searchQuery) },
-            modifier = Modifier.heightIn(min = 48.dp),
+            modifier = Modifier.heightIn(min = 48.dp).testTag(RegistrationTestTags.SEARCH_ACTION),
         ) {
             Text(stringResource(R.string.registration_search_action))
         }
@@ -216,7 +229,12 @@ private fun EditingContent(
         RegistrationSearchState.Idle -> Unit
         is RegistrationSearchState.Results ->
             search.items.forEach { item ->
-                PlanteriorCard(onClick = { onSelectContent(item) }) { Text(item.name) }
+                PlanteriorCard(
+                    onClick = { onSelectContent(item) },
+                    modifier = Modifier.testTag(RegistrationTestTags.content(item.id.value)),
+                ) {
+                    Text(item.name)
+                }
             }
     }
     OutlinedTextField(

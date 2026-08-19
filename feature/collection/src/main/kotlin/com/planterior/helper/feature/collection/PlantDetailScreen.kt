@@ -45,7 +45,7 @@ fun PlantDetailScreen(
     val plant = state.plantOrNull()
     PlanteriorScreenScaffold(
         title = plant?.displayName ?: "식물 관리 정보",
-        modifier = modifier,
+        modifier = modifier.testTag(PlantDetailTestTags.SCREEN),
     ) {
         TextButton(
             onClick = onBack,

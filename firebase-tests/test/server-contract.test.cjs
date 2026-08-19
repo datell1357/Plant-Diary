@@ -48,6 +48,53 @@ describe("strict server-derived Firebase contract", () => {
     });
   });
 
+  it("declares the bounded weather outbox lease recovery index", () => {
+    const indexes = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../../firestore.indexes.json"), "utf8"),
+    );
+    const recoveryIndex = indexes.indexes.find(
+      (index) => index.collectionGroup === "weatherAlerts"
+        && index.fields.some((field) => field.fieldPath === "leaseExpiresAt"),
+    );
+    assert.deepEqual(recoveryIndex, {
+      collectionGroup: "weatherAlerts",
+      queryScope: "COLLECTION_GROUP",
+      fields: [
+        { fieldPath: "status", order: "ASCENDING" },
+        { fieldPath: "leaseExpiresAt", order: "ASCENDING" },
+        { fieldPath: "__name__", order: "ASCENDING" },
+      ],
+    });
+  });
+
+  it("declares bounded Apple session and abuse-control cleanup indexes", () => {
+    const indexes = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../../firestore.indexes.json"), "utf8"),
+    );
+    for (const collectionGroup of ["appleAuthSessions", "appleAuthRateLimits"]) {
+      assert.deepEqual(
+        indexes.fieldOverrides.find((field) => field.collectionGroup === collectionGroup),
+        {
+          collectionGroup,
+          fieldPath: "expiresAt",
+          ttl: true,
+          indexes: [],
+        },
+      );
+      assert.deepEqual(
+        indexes.indexes.find((index) => index.collectionGroup === collectionGroup),
+        {
+          collectionGroup,
+          queryScope: "COLLECTION",
+          fields: [
+            { fieldPath: "expiresAt", order: "ASCENDING" },
+            { fieldPath: "__name__", order: "ASCENDING" },
+          ],
+        },
+      );
+    }
+  });
+
   it("declares the bounded watering due-candidate composite index", () => {
     const indexes = JSON.parse(
       fs.readFileSync(path.resolve(__dirname, "../../firestore.indexes.json"), "utf8"),
@@ -76,6 +123,28 @@ describe("strict server-derived Firebase contract", () => {
   beforeEach(async () => env.clearFirestore());
   after(async () => { if (env) await env.cleanup(); });
 
+  it("denies all direct Apple session and abuse-control access", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const anonymous = env.unauthenticatedContext().firestore();
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "appleAuthSessions/session-a"), {
+        expiresAt: ts("2026-08-12T00:10:00Z"),
+      });
+      await setDoc(doc(admin.firestore(), "appleAuthRateLimits/rate-a"), {
+        count: 1,
+        expiresAt: ts("2026-08-12T00:10:00Z"),
+      });
+    });
+    for (const firestore of [owner, anonymous]) {
+      await assertFails(getDoc(doc(firestore, "appleAuthSessions/session-a")));
+      await assertFails(getDoc(doc(firestore, "appleAuthRateLimits/rate-a")));
+      await assertFails(setDoc(doc(firestore, "appleAuthSessions/forged"), {
+        authorizationCode: "secret",
+      }));
+      await assertFails(setDoc(doc(firestore, "appleAuthRateLimits/forged"), { count: 0 }));
+    }
+  });
+
   it("keeps delivery claims and recovery cursors isolated from clients", async () => {
     const owner = env.authenticatedContext("user-a").firestore();
     await env.withSecurityRulesDisabled(async (admin) => {
@@ -86,6 +155,9 @@ describe("strict server-derived Firebase contract", () => {
       });
       await setDoc(doc(admin.firestore(), "notificationRuntime/wateringClaimRecovery"), {
         documentPath: "notificationDeliveryClaims/claim-a",
+      });
+      await setDoc(doc(admin.firestore(), "notificationRuntime/weatherRefreshCursor"), {
+        documentPath: "users/user-a/weatherSettings/current",
       });
     });
     await assertFails(getDoc(doc(owner, "notificationDeliveryClaims/claim-a")));
@@ -100,8 +172,12 @@ describe("strict server-derived Firebase contract", () => {
       expiresAt: ts("2026-08-12T00:10:00Z"),
     }));
     await assertFails(getDoc(doc(owner, "notificationRuntime/wateringClaimRecovery")));
+    await assertFails(getDoc(doc(owner, "notificationRuntime/weatherRefreshCursor")));
     await assertFails(setDoc(doc(owner, "notificationRuntime/wateringClaimRecovery"), {
       documentPath: "notificationDeliveryClaims/claim-b",
+    }));
+    await assertFails(setDoc(doc(owner, "notificationRuntime/weatherRefreshCursor"), {
+      documentPath: "users/user-b/weatherSettings/current",
     }));
   });
 
@@ -110,7 +186,7 @@ describe("strict server-derived Firebase contract", () => {
     const server = env.authenticatedContext("service", { server: true }).firestore();
     const fixtures = {
       notificationDeliveries: { ...write("user-a"), plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: ts("2026-08-12T00:00:00Z"), deliveredAt: ts("2026-08-12T00:01:00Z"), deduplicationKey: "user-a:plant-a:2026-08-12:0" },
-      weatherRisks: { ...write("user-a"), plantId: "plant-a", snapshotId: "snapshot-a", type: "DRY", action: "mist", detectedAt: ts("2026-08-12T00:00:00Z"), active: true },
+      weatherRisks: { ...write("user-a"), plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", action: "mist", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null },
       deletionRequests: { ...write("user-a"), status: "COMPLETED", requestedAt: ts("2026-08-01T00:00:00Z"), scheduledFor: ts("2026-08-08T00:00:00Z"), completedAt: ts("2026-08-08T00:01:00Z") },
       ownedItems: { ...write("user-a"), itemId: "item-a", acquiredAt: ts("2026-08-12T00:00:00Z"), applied: true },
     };

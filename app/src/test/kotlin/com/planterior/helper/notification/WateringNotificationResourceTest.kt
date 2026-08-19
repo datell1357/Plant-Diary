@@ -23,7 +23,7 @@ class WateringNotificationResourceTest {
 
         WateringNotificationRenderer.post(
             context,
-            "planterior://collection/plant/plant-a/watering",
+            "planterior://collection/plant/plant-a?deliveryId=123e4567-e89b-12d3-a456-426614174000",
             "물 줄 시간이에요",
             "몬스테라 물 주기를 확인해 주세요.",
             42,
@@ -34,5 +34,9 @@ class WateringNotificationResourceTest {
                 .allNotifications
                 .single()
         assertEquals(R.drawable.ic_stat_watering, notification.smallIcon.resId)
+        assertEquals(
+            "planterior-notification:watering:123e4567-e89b-12d3-a456-426614174000",
+            Shadows.shadowOf(notification.contentIntent).savedIntent.identifier,
+        )
     }
 }

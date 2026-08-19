@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter, once } from "node:events";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -288,6 +289,8 @@ test("concurrent settings edits from one revision produce one typed conflict", a
   const app = initializeApp({ projectId }, "notification-settings-conflict-emulator");
   const firestore = getFirestore(app);
   const store = new FirestoreNotificationSettingsStore(firestore);
+  let releaseBlockedTransaction = () => {};
+  let releaseCompetingTransaction = () => {};
 
   try {
     await clear(firestore);
@@ -303,7 +306,11 @@ test("concurrent settings edits from one revision produce one typed conflict", a
       { expectedOwnerUid: "user-a" },
       store,
     );
-    const command = (defaultTime: string, enabled: boolean) =>
+    const command = (
+      targetStore: FirestoreNotificationSettingsStore,
+      defaultTime: string,
+      enabled: boolean,
+    ) =>
       executeUpdateWateringNotificationSettings(
         { uid: "user-a" },
         {
@@ -314,25 +321,62 @@ test("concurrent settings edits from one revision produce one typed conflict", a
           globalEnabled: true,
           plants: [{ plantId: "plant-a", enabled, timeOverride: null }],
         },
-        store,
+        targetStore,
       );
+    const transactionEvents = new EventEmitter();
+    const blockedTransactionRelease = new Promise<void>((resolve) => {
+      releaseBlockedTransaction = resolve;
+    });
+    const competingTransactionRelease = new Promise<void>((resolve) => {
+      releaseCompetingTransaction = resolve;
+    });
+    const blockedStore = new FirestoreNotificationSettingsStore(firestore, {
+      beforeWateringSettingsCommit: async () => {
+        transactionEvents.emit("first-read-complete");
+        await blockedTransactionRelease;
+      },
+    });
+    const competingStore = new FirestoreNotificationSettingsStore(firestore, {
+      beforeWateringSettingsTransaction: async () => {
+        transactionEvents.emit("competing-call-started");
+        await competingTransactionRelease;
+      },
+    });
+    const firstRead = once(transactionEvents, "first-read-complete", {
+      signal: AbortSignal.timeout(30_000),
+    });
+    const blockedResult = command(blockedStore, "08:00", false).then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    await firstRead;
+    const competingCallStarted = once(transactionEvents, "competing-call-started", {
+      signal: AbortSignal.timeout(30_000),
+    });
+    const competingResult = command(competingStore, "10:00", true).then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    await competingCallStarted;
 
-    const results = await Promise.allSettled([
-      command("08:00", false),
-      command("10:00", true),
-    ]);
+    releaseBlockedTransaction();
+    assert.equal((await blockedResult).status, "fulfilled");
+    releaseCompetingTransaction();
+    const rejected = await competingResult;
 
-    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
-    const rejected = results.find((result) => result.status === "rejected");
+    assert.equal(rejected.status, "rejected");
     assert.equal(
-      rejected?.status === "rejected" && rejected.reason?.code,
+      rejected.status === "rejected" && (rejected.reason as { code?: string }).code,
       "aborted",
     );
     const settings = await firestore.doc("users/user-a/notificationSettings/watering").get();
     const preference = await firestore.doc("users/user-a/notificationPlantSettings/plant-a").get();
     assert.equal(settings.get("revision"), 2);
-    assert.equal(preference.get("enabled"), settings.get("defaultTime") === "10:00");
+    assert.equal(settings.get("defaultTime"), "08:00");
+    assert.equal(preference.get("enabled"), false);
   } finally {
+    releaseBlockedTransaction();
+    releaseCompetingTransaction();
     await clear(firestore);
     await deleteApp(app);
   }

@@ -242,8 +242,16 @@ export async function executeUpdateWateringNotificationSettings(
   return { updated: true, revision };
 }
 
+export type FirestoreNotificationSettingsStoreHooks = Readonly<{
+  beforeWateringSettingsTransaction?: () => Promise<void>;
+  beforeWateringSettingsCommit?: () => Promise<void>;
+}>;
+
 export class FirestoreNotificationSettingsStore implements NotificationSettingsStore {
-  constructor(private readonly firestore: Firestore) {}
+  constructor(
+    private readonly firestore: Firestore,
+    private readonly hooks: FirestoreNotificationSettingsStoreHooks = {},
+  ) {}
 
   async registerEndpoint(command: NotificationEndpointCommand): Promise<void> {
     await this.firestore.runTransaction(async (transaction) => {
@@ -462,6 +470,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
   }
 
   async updateWateringSettings(command: WateringNotificationSettingsCommand): Promise<number> {
+    await this.hooks.beforeWateringSettingsTransaction?.();
     return this.firestore.runTransaction(async (transaction) => {
       const accountRef = this.firestore.doc(`users/${command.ownerUid}`);
       const settingsRef = this.firestore.doc(`users/${command.ownerUid}/notificationSettings/watering`);
@@ -515,6 +524,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
         .slice(0, 32);
       const idempotencyKey = `notification-${operationSuffix}`;
       const updatedAt = FieldValue.serverTimestamp();
+      await this.hooks.beforeWateringSettingsCommit?.();
       transaction.set(
         settingsRef,
         {

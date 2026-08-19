@@ -64,7 +64,7 @@ class RegistrationRepositoryTest {
                 (failed as RegistrationAttempt.Failed).failure,
             )
             assertEquals(1, database.syncDao().pending("account-a").size)
-            assertNull(database.cacheDao().plantBlocking("account-a", "plant-stable"))
+            assertNull(database.cacheDao().plant("account-a", "plant-stable"))
 
             val completed = repository.register(pending, failed.checkpoint)
             assertNotNull((completed as RegistrationAttempt.Completed).plant)
@@ -73,7 +73,7 @@ class RegistrationRepositoryTest {
                 gateway.commands.map(RemoteMutationCommand::operationId).distinct().size,
             )
             assertTrue(
-                requireNotNull(database.cacheDao().plantBlocking("account-a", "plant-stable"))
+                requireNotNull(database.cacheDao().plant("account-a", "plant-stable"))
                     .detailsComplete
             )
             assertEquals(listOf("CREATE"), gateway.commands.map { it.mutationType }.distinct())

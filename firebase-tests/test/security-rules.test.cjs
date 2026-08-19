@@ -15,8 +15,10 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "wateringRecords") return { plantId: "plant-a", wateredDate: "2026-08-12", recordedAt: ts("2026-08-12T00:00:00Z") };
   if (collectionName === "notificationSettings") return { wateringEnabled: true, weatherEnabled: true, defaultTime: "09:00", zoneId: "Asia/Seoul" };
   if (collectionName === "notificationPlantSettings") return { plantId: "plant-a", enabled: true, timeOverride: "09:00" };
-  if (collectionName === "weatherSnapshots") return { regionCode: "11B10101", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-12T01:00:00Z") };
-  if (collectionName === "weatherRisks") return { plantId: "plant-a", snapshotId: "snapshot-a", type: "DRY", detectedAt: ts("2026-08-12T00:00:00Z"), active: true };
+  if (collectionName === "weatherSettings") return { globalAlertsEnabled: true };
+  if (collectionName === "weatherPlantSettings") return { plantId: "plant-a", enabled: true };
+  if (collectionName === "weatherSnapshots") return { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-12T03:00:00Z"), zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"] };
+  if (collectionName === "weatherRisks") return { plantId: "plant-a", plantName: "몬스테라", snapshotId: "current", type: "DRY", reason: "건조해요", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null };
   if (collectionName === "miniHomes") return { name: "우리 집" };
   if (collectionName === "placements") return { normalizedX: 0.5, normalizedY: 0.5, zIndex: 1 };
   if (collectionName === "ownedItems") return { itemId: "item-a", acquiredAt: ts("2026-08-12T00:00:00Z"), applied: false };
@@ -28,7 +30,7 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "identificationRequests") return { temporaryOriginalPath: "identification-originals/user-a/request-a/original.webp", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-13T00:00:00Z") };
   throw new Error(`Missing fixture for ${collectionName}`);
 };
-const serverCollections = new Set(["wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings", "weatherSnapshots", "weatherRisks", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries", "notificationHistory"]);
+const serverCollections = new Set(["wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings", "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries", "notificationHistory"]);
 
 describe("Planterior Firebase ownership contract", () => {
   before(async () => {
@@ -70,7 +72,7 @@ describe("Planterior Firebase ownership contract", () => {
   it("enforces owner isolation for every approved user subcollection", async () => {
     const collections = [
       "personalPlants", "wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings",
-      "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems",
+      "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems",
       "shareLinks", "consents", "deletionRequests", "notificationDeliveries", "notificationHistory", "identificationRequests"
     ];
     const owner = env.authenticatedContext("user-a").firestore();
@@ -93,6 +95,76 @@ describe("Planterior Firebase ownership contract", () => {
       await assertFails(setDoc(doc(foreign, path), { ...write("user-b"), ...collectionFixture(collectionName) }));
       await assertFails(getDoc(doc(anonymous, path)));
     }
+  });
+
+  it("keeps the generation-protected location consent command server-owned", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const reference = doc(owner, "users/user-a/consents/location");
+    const consent = {
+      ...write("user-a"),
+      type: "LOCATION",
+      granted: true,
+      commandGeneration: 1,
+      recordedAt: ts("2026-08-12T00:00:00Z"),
+    };
+
+    await assertFails(setDoc(reference, consent));
+    await assertFails(setDoc(reference, {
+      ...consent,
+      commandGeneration: Number.MAX_SAFE_INTEGER,
+    }));
+    await assertSucceeds(setDoc(doc(server, "users/user-a/consents/location"), consent));
+    await assertSucceeds(setDoc(doc(server, "users/user-a/consents/location"), {
+      ...consent,
+      ...write("user-a", 2, 1, "weather-consent-legacy-recovery"),
+      granted: false,
+      legacyRecovery: true,
+    }));
+    await assertFails(updateDoc(reference, {
+      granted: true,
+      commandGeneration: Number.MAX_SAFE_INTEGER,
+    }));
+    await assertFails(updateDoc(reference, { granted: false }));
+    await assertFails(deleteDoc(reference));
+    await assertFails(setDoc(doc(owner, "users/user-a/consents/analytics"), {
+      ...write("user-a"),
+      type: "ANALYTICS",
+      granted: false,
+      recordedAt: ts("2026-08-12T00:00:00Z"),
+      legacyRecovery: true,
+    }));
+    await assertSucceeds(getDoc(reference));
+  });
+
+  it("bounds authoritative unavailable weather criteria ids", async () => {
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const reference = doc(server, "users/user-a/weatherSnapshots/current");
+    const valid = { ...write("user-a"), ...collectionFixture("weatherSnapshots") };
+
+    await assertSucceeds(setDoc(reference, valid));
+    await assertFails(setDoc(reference, { ...valid, revision: 2, expectedRevision: 1, unavailablePlantIds: "plant-a" }));
+    await assertFails(setDoc(reference, {
+      ...valid,
+      revision: 2,
+      expectedRevision: 1,
+      unavailablePlantIds: Array.from({ length: 201 }, (_, index) => `plant-${index}`),
+    }));
+  });
+
+  it("keeps weather alert delivery server-owned and owner-readable", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const foreign = env.authenticatedContext("user-b").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const alert = {
+      ownerUid: "user-a", plantId: "plant-a", plantName: "몬스테라", riskId: "plant-a_DRY",
+      riskType: "DRY", transition: 1, action: "분무해 주세요", status: "PENDING",
+      createdAt: ts("2026-08-12T00:00:00Z"), updatedAt: ts("2026-08-12T00:00:00Z"),
+    };
+    await assertFails(setDoc(doc(owner, "users/user-a/weatherAlerts/alert-a"), alert));
+    await assertSucceeds(setDoc(doc(server, "users/user-a/weatherAlerts/alert-a"), alert));
+    await assertSucceeds(getDoc(doc(owner, "users/user-a/weatherAlerts/alert-a")));
+    await assertFails(getDoc(doc(foreign, "users/user-a/weatherAlerts/alert-a")));
   });
 
   it("requires the transactional server boundary for watering records schedules and notification settings", async () => {
