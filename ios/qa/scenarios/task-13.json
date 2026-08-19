@@ -1,0 +1,24 @@
+{
+  "task": 13,
+  "surface": "weather-region-risk-and-alerts",
+  "locationAuthorization": [
+    "not-determined",
+    "denied",
+    "reduced",
+    "full",
+    "revoked"
+  ],
+  "manualRegionPrecedence": true,
+  "revokeStopsLocationCalls": true,
+  "risks": [
+    "HIGH_TEMPERATURE",
+    "LOW_TEMPERATURE",
+    "DRY",
+    "OVERWATERED"
+  ],
+  "strictBoundaries": true,
+  "staleAfterSeconds": 10800,
+  "staleAlertsSuppressed": true,
+  "safeToRiskEpisodeDedupe": true,
+  "liveWeatherAndAPNsDeferredToTodo": 20
+}

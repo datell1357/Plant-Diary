@@ -9,7 +9,9 @@ struct HomeDashboardView: View {
     @EnvironmentObject var auth: AuthRuntime
     @ObservedObject var collection = LocalPlantCollectionStore.shared
     @StateObject var store = HomeDashboardStore()
+    @StateObject var weatherRuntime = WeatherRuntime()
     @State var notificationState = NotificationRuntimeState.initial
+    @State var showsRegionSettings = false
     let calendar = PlantCareCalendar()
 
     var body: some View {
@@ -19,6 +21,7 @@ struct HomeDashboardView: View {
                 if authenticationState == .authenticated {
                     miniHomeSection
                     weatherSection
+                        .id("home.weather.section")
                     careSection
                     notificationSection
                     syncSection
@@ -30,16 +33,46 @@ struct HomeDashboardView: View {
         .environment(\.sizeCategory, effectiveSizeCategory)
         .navigationTitle("홈")
         .task {
+            remountAccount(accountScopeID)
             collection.loadQAFixtureIfNeeded()
             miniHomeRepository.seedQAIfNeeded()
             notificationState = await NotificationRuntimeState.current()
+            await weatherRuntime.refresh(plants: collection.weatherPlantIDs)
             reload()
         }
         .onChange(of: collection.plants) {
+            Task { await refreshWeather() }
+        }
+        .onChange(of: auth.accountID?.rawValue) {
+            remountAccount(accountScopeID)
+            Task { await refreshWeather() }
+        }
+        .onChange(of: weatherRuntime.homeState) {
             reload()
         }
-        .onChange(of: auth.accountID?.rawValue) { _, accountID in
-            remountAccount(accountID)
+        .onChange(of: weatherRuntime.authorization) {
+            Task { await refreshWeather() }
+        }
+        .onChange(of: weatherRuntime.locationRegionCode) {
+            Task { await refreshWeather() }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .weatherAlertPreferencesDidChange
+            )
+        ) { _ in
+            weatherRuntime.reconcileAlerts(
+                plants: collection.weatherPlantIDs
+            )
+        }
+        .sheet(isPresented: $showsRegionSettings) {
+            RegionSettingsView(
+                weather: weatherRuntime,
+                dismiss: {
+                    showsRegionSettings = false
+                    Task { await refreshWeather() }
+                }
+            )
         }
     }
 
@@ -82,32 +115,6 @@ struct HomeDashboardView: View {
                                 .foregroundStyle(statusColor(item.status))
                         }
                     }
-                }
-            }
-        }
-    }
-
-    private var weatherSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("날씨 기반 안내")
-                .font(PlanteriorTypography.sectionTitle)
-            PlanteriorCard {
-                switch store.snapshot.weather {
-                case let .content(summary):
-                    Text(summary)
-                        .accessibilityIdentifier("home.weather.content")
-                case .loading:
-                    ProgressView("날씨를 불러오는 중")
-                        .accessibilityIdentifier("home.weather.loading")
-                case .failed:
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("날씨 정보를 불러오지 못했어요.")
-                            .accessibilityIdentifier("home.weather.failed")
-                        Text("돌봄 일정은 계속 사용할 수 있어요.")
-                    }
-                case .unavailable:
-                    Text("지역을 설정하면 날씨 안내가 표시돼요.")
-                        .accessibilityIdentifier("home.weather.unavailable")
                 }
             }
         }

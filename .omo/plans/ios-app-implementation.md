@@ -178,7 +178,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(home): iOS 홈 대시보드와 알림 상태 구현`
 
-### [ ] Todo 13 — Weather, regional risk, and alerts
+### [x] Todo 13 — Weather, regional risk, and alerts
 
 #### Scope
 

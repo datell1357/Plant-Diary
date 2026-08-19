@@ -84,6 +84,7 @@ struct AppShellView: View {
             showsLogin = navigation.pendingAuthenticationRoute != nil
         }
         .task {
+            mountAccountStores()
             handleQARouteIfPresent()
         }
         .sheet(
@@ -115,13 +116,16 @@ struct AppShellView: View {
         }
         .onChange(of: auth.isSignedIn) { _, isSignedIn in
             LocalPlantCollectionStore.shared.mount(
-                accountID: auth.accountID?.rawValue
+                accountID: accountScopeID
             )
             LocalNotificationScheduleStore.shared.mount(
-                accountID: auth.accountID?.rawValue
+                accountID: accountScopeID
             )
             LocalNotificationPreferenceStore.shared.mount(
-                accountID: auth.accountID?.rawValue
+                accountID: accountScopeID
+            )
+            LocalWeatherAlertStore.shared.mount(
+                accountID: accountScopeID
             )
             guard isSignedIn else {
                 navigation = AppNavigationState()

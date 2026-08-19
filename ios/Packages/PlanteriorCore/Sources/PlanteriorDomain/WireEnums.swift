@@ -2,6 +2,7 @@ public protocol WireEnum:
     RawRepresentable,
     Codable,
     CaseIterable,
+    Hashable,
     Sendable
     where RawValue == String {}
 

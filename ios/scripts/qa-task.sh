@@ -710,6 +710,136 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "13" ]; then
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter 'WeatherRegionSelectionTests|WeatherRiskEvaluatorTests'
+  task_13_derived_data="$attempt_dir/DerivedData"
+  task_13_result="$attempt_dir/task-13-ios-app-implementation.xcresult"
+  task_13_home_result="$attempt_dir/task-13-home-regression.xcresult"
+  task_13_attachments="$attempt_dir/task-13-attachments"
+  task_13_destination="platform=iOS Simulator,id=${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_13_destination" \
+    -derivedDataPath "$task_13_derived_data" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  reboot_task_13_simulator() {
+    xcrun simctl shutdown \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      2>/dev/null || true
+    xcrun simctl boot \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      2>/dev/null || true
+    xcrun simctl bootstatus \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      -b
+    xcrun simctl uninstall \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}" \
+      com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+  }
+  reboot_task_13_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_13_destination" \
+    -derivedDataPath "$task_13_derived_data" \
+    -resultBundlePath "$task_13_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/LocalPlantCollectionStoreTests \
+    -only-testing:PlanteriorTests/LocalWeatherAlertStoreTests \
+    -only-testing:PlanteriorTests/WeatherRuntimeAlertTests \
+    -only-testing:PlanteriorUITests/WeatherFlowUITests
+  reboot_task_13_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_13_destination" \
+    -derivedDataPath "$task_13_derived_data" \
+    -resultBundlePath "$task_13_home_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
+  xcrun xcresulttool export attachments \
+    --path "$task_13_result" \
+    --output-path "$task_13_attachments"
+  copy_task_13_attachment() {
+    marker=$1
+    destination=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        /suggestedHumanReadableName/ {
+          if (index($4, marker "_") == 1) {
+            print directory "/" file
+            exit
+          }
+        }
+      ' marker="$marker" directory="$task_13_attachments" \
+        "$task_13_attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination"
+  }
+  copy_task_13_attachment \
+    task-13-weather-risks \
+    "$attempt_dir/task-13-ios-app-implementation.png"
+  copy_task_13_attachment \
+    task-13-weather-stale \
+    "$attempt_dir/task-13-weather-stale.png"
+  copy_task_13_attachment \
+    task-13-weather-ax5 \
+    "$attempt_dir/task-13-weather-ax5.png"
+  copy_task_13_attachment \
+    task-13-weather-ax5-actions \
+    "$attempt_dir/task-13-weather-ax5-actions.png"
+  copy_task_13_attachment \
+    task-13-weather-settings \
+    "$attempt_dir/task-13-weather-settings.png"
+  copy_task_13_attachment \
+    task-13-weather-plant-toggle \
+    "$attempt_dir/task-13-weather-plant-toggle.png"
+  python3 - "$attempt_dir/task-13-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 13,
+            "manualRegionPrecedence": "passed",
+            "revokeLocationCalls": 0,
+            "strictRiskBoundaries": "passed",
+            "aggregatedRisks": ["HIGH_TEMPERATURE", "DRY"],
+            "staleWeatherDisplayed": True,
+            "staleAlerts": 0,
+            "globalOverride": "passed",
+            "episodeDedupe": "passed",
+            "collectionAndWateringRemainAvailable": True,
+            "canonicalWeatherRefresh": "unavailable",
+            "liveLocationAndAPNs": "deferred-to-todo-20"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_13_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

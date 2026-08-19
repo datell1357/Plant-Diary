@@ -5,6 +5,17 @@ import PlanteriorDomain
 import SwiftUI
 
 extension HomeDashboardView {
+    var accountScopeID: String? {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment[
+                "QA_AUTHENTICATED"
+            ] == "1" {
+                return "qa-account"
+            }
+        #endif
+        return auth.accountID?.rawValue
+    }
+
     var effectiveSizeCategory: ContentSizeCategory {
         #if DEBUG
             if ProcessInfo.processInfo.environment[
@@ -63,6 +74,14 @@ extension HomeDashboardView {
         LocalNotificationScheduleStore.shared.mount(
             accountID: accountID
         )
+        LocalWeatherAlertStore.shared.mount(accountID: accountID)
+        weatherRuntime.prepareForAccountRemount()
+        weatherRuntime.reloadAlertPreferences()
+        reload()
+    }
+
+    func refreshWeather() async {
+        await weatherRuntime.refresh(plants: collection.weatherPlantIDs)
         reload()
     }
 
@@ -85,16 +104,7 @@ extension HomeDashboardView {
     }
 
     var weatherState: HomeWeatherState {
-        #if DEBUG
-            switch ProcessInfo.processInfo.environment["QA_HOME_WEATHER_STATE"] {
-            case "failed": return .failed
-            case "loading": return .loading
-            case "content": return .content(summary: "맑음 · 돌봄 위험 없음")
-            default: return .unavailable
-            }
-        #else
-            return .unavailable
-        #endif
+        weatherRuntime.homeState
     }
 
     func statusText(_ status: HomeCareStatus) -> String {

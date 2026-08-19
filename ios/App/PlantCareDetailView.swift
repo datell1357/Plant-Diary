@@ -8,16 +8,17 @@ struct PlantCareDetailView: View {
     let plantCalendar = PlantCareCalendar()
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var collection = LocalPlantCollectionStore.shared
-    @State private var nickname = ""
+    @State var nickname = ""
     @State private var healthNote = ""
     @State private var notes: [String] = []
-    @State private var location = ""
-    @State private var privateMemo = ""
+    @State var location = ""
+    @State var privateMemo = ""
     @State var lastWateredOn: Date?
     @State var wateringIntervalDays = 10
     @State var wateringFeedback: WateringFeedback?
+    @State var weatherAlertsEnabled = true
     @State private var showsDeleteConfirmation = false
-    @State private var saveError: String?
+    @State var saveError: String?
 
     var body: some View {
         Form {
@@ -61,6 +62,7 @@ struct PlantCareDetailView: View {
                     in: 1 ... 30
                 )
                 .accessibilityIdentifier("watering.interval")
+                weatherAlertToggle
                 wateringScheduleContent
                 Button(wateringButtonTitle) {
                     recordWateredToday()
@@ -137,6 +139,10 @@ struct PlantCareDetailView: View {
             privateMemo = collection.plants[index].privateMemo ?? ""
             notes = collection.healthNotes[index] ?? []
             wateringIntervalDays = collection.wateringIntervalDays(at: index)
+            if let plantID = collection.weatherPlantID(at: index) {
+                weatherAlertsEnabled = LocalWeatherAlertStore.shared
+                    .plantEnabled(for: plantID)
+            }
             lastWateredOn = collection.plants[index].lastWateredOn.flatMap(date)
             #if DEBUG
                 let draftDate = ProcessInfo.processInfo.environment[
@@ -158,41 +164,6 @@ struct PlantCareDetailView: View {
             .accessibilityIdentifier("plant.detail.delete-confirm")
             Button("취소") {}
                 .accessibilityIdentifier("plant.detail.delete-cancel")
-        }
-    }
-
-    private var trimmedNickname: String {
-        nickname.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func persistEdits() {
-        guard let todayCalendarDate else {
-            saveError = "현재 날짜를 확인하지 못했어요."
-            return
-        }
-        do {
-            try collection.update(
-                at: index,
-                edits: PlantCareEdits(
-                    displayName: trimmedNickname,
-                    location: location.isEmpty ? nil : location,
-                    note: privateMemo.isEmpty ? nil : privateMemo,
-                    lastWateredOn: calendarDate,
-                    wateringIntervalDays: wateringIntervalDays
-                ),
-                today: todayCalendarDate
-            )
-            saveError = nil
-        } catch PlantCareValidationError.invalidLocation {
-            saveError = "위치는 50자 이하로 입력해 주세요."
-        } catch PlantCareValidationError.invalidMemo {
-            saveError = "비공개 메모는 1000자 이하로 입력해 주세요."
-        } catch WateringScheduleError.futureLastWateredDate {
-            saveError = "마지막 물 주기일은 오늘 이후로 설정할 수 없어요."
-        } catch WateringScheduleError.invalidInterval {
-            saveError = "물 주기 간격은 하루 이상이어야 해요."
-        } catch {
-            saveError = "변경사항을 저장하지 못했어요."
         }
     }
 }

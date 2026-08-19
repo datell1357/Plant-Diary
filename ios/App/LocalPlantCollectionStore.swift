@@ -14,6 +14,7 @@ struct PlantCareEdits {
 final class LocalPlantCollectionStore: ObservableObject {
     static let shared = LocalPlantCollectionStore()
     @Published var plants: [PlantRegistrationDraft] = []
+    @Published private(set) var weatherPlantIDs: [PersonalPlantID] = []
     @Published var healthNotes: [Int: [String]] = [:]
     @Published private(set) var scrollAnchor: Int?
     @Published var snapshotState = CollectionViewState.content
@@ -29,6 +30,10 @@ final class LocalPlantCollectionStore: ObservableObject {
         "collection.\(accountID).health-notes"
     }
 
+    private var weatherPlantIDsKey: String {
+        "collection.\(accountID).weather-plant-ids"
+    }
+
     init(
         defaults: UserDefaults = .standard,
         notificationSchedules: LocalNotificationScheduleStore = .shared
@@ -39,6 +44,7 @@ final class LocalPlantCollectionStore: ObservableObject {
             if ProcessInfo.processInfo.environment["QA_RESET_COLLECTION"] == "1" {
                 defaults.removeObject(forKey: plantsKey)
                 defaults.removeObject(forKey: notesKey)
+                defaults.removeObject(forKey: weatherPlantIDsKey)
             }
         #endif
         restore()
@@ -51,6 +57,7 @@ final class LocalPlantCollectionStore: ObservableObject {
 
     private func restore() {
         plants = []
+        weatherPlantIDs = []
         healthNotes = [:]
         scrollAnchor = nil
         if let data = defaults.data(forKey: plantsKey) {
@@ -65,11 +72,29 @@ final class LocalPlantCollectionStore: ObservableObject {
                 from: data
             )) ?? [:]
         }
+        let rawIDs = defaults.stringArray(forKey: weatherPlantIDsKey) ?? []
+        weatherPlantIDs = rawIDs.compactMap {
+            try? PersonalPlantID.parse($0)
+        }
+        while weatherPlantIDs.count < plants.count {
+            let rawValue = "local_\(UUID().uuidString)"
+            if let plantID = try? PersonalPlantID.parse(rawValue) {
+                weatherPlantIDs.append(plantID)
+            }
+        }
+        if weatherPlantIDs.count > plants.count {
+            weatherPlantIDs = Array(weatherPlantIDs.prefix(plants.count))
+        }
+        persist()
         restoreScrollAnchor()
     }
 
     func save(_ draft: PlantRegistrationDraft) {
         plants.append(draft)
+        let rawValue = "local_\(UUID().uuidString)"
+        if let plantID = try? PersonalPlantID.parse(rawValue) {
+            weatherPlantIDs.append(plantID)
+        }
         persist()
     }
 
@@ -86,6 +111,7 @@ final class LocalPlantCollectionStore: ObservableObject {
             return
         }
         plants.remove(at: index)
+        weatherPlantIDs.remove(at: index)
         healthNotes[index] = nil
         defaults.set(true, forKey: "collection.\(accountID).tombstone.\(index)")
         persist()
@@ -157,22 +183,6 @@ final class LocalPlantCollectionStore: ObservableObject {
         )
     }
 
-    private func personalPlant(at index: Int) throws -> PersonalPlant {
-        let draft = plants[index]
-        return try PersonalPlant(
-            id: PersonalPlantID.parse("local-\(index)"),
-            displayName: draft.displayName,
-            contentID: draft.plantID,
-            registrationMethod: draft.registrationMethod,
-            representativePhotoPath: nil,
-            location: draft.location,
-            note: draft.privateMemo,
-            lastWateredDate: draft.lastWateredOn,
-            revision: Revision.parse(0),
-            updatedAt: Instant.parse("2026-08-14T00:00:00Z")
-        )
-    }
-
     func persist() {
         defaults.set(
             try? JSONEncoder().encode(plants),
@@ -182,17 +192,9 @@ final class LocalPlantCollectionStore: ObservableObject {
             try? JSONEncoder().encode(healthNotes),
             forKey: notesKey
         )
+        defaults.set(
+            weatherPlantIDs.map(\.rawValue),
+            forKey: weatherPlantIDsKey
+        )
     }
-}
-
-enum CollectionViewState: String {
-    case loading
-    case content
-    case error
-    case partial
-    case stale
-}
-
-enum CollectionSaveError: Error {
-    case failed
 }
