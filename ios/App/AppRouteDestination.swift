@@ -9,6 +9,8 @@ struct AppRouteDestination: View {
         switch route {
         case .miniHome:
             MiniHomeView(accountID: accountScopeID)
+        case .tabDetail(.settings):
+            MilestoneProgressView()
         case .identificationDraft:
             IdentificationFlowView()
         case .manualRegistration:

@@ -92,6 +92,7 @@ struct BackendContractTests {
             "plantIdentification.submit", "weather.refreshCanonicalSnapshot",
             "notifications.registerEndpoint", "notifications.dispatchWatering",
             "notifications.dispatchWeatherRisk", "items.acquire", "items.setApplied",
+            "progression.submitApprovedEvent", "progression.claimReward",
             "shares.create", "shares.revoke", "shares.resolveImage", "deletion.previewScope",
             "deletion.request", "deletion.cancel", "deletion.executeScheduled",
             "identificationOriginals.cleanup"

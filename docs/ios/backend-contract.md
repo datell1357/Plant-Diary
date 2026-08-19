@@ -41,7 +41,8 @@ metadata, temporal representation, direct-write receipts, and public-share Stora
 
 Plant identification, canonical weather refresh, notification registration/delivery, item
 acquisition/application, share create/revoke/image resolution, deletion preview/request/cancel/job,
-and identification cleanup have `integrationStatus: unavailable`.
+progression approved-event submission/reward claim, and identification cleanup have
+`integrationStatus: unavailable`.
 
 The 24-hour identification retention, 3-hour weather staleness, 30-day share lifetime, and 7-day
 deletion grace policies are also unavailable until server enforcement exists.

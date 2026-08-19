@@ -37,6 +37,12 @@ extension InventoryView {
     }
 
     var metConditions: Set<String> {
-        collection.plants.isEmpty ? [] : ["registered-plant"]
+        var conditions: Set<String> = collection.plants.isEmpty
+            ? []
+            : ["registered-plant"]
+        progression.snapshot?.earnedMilestoneIDs.forEach {
+            conditions.insert($0.rawValue)
+        }
+        return conditions
     }
 }

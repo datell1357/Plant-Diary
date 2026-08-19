@@ -278,7 +278,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(shop): iOS 아이템 창고와 미니홈피 배치 구현`
 
-### [ ] Todo 16 — XP and customization milestones
+### [x] Todo 16 — XP and customization milestones
 
 #### Scope
 

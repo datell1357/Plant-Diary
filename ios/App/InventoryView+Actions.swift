@@ -91,4 +91,9 @@ extension InventoryView {
         #endif
         return auth.accountID?.rawValue
     }
+
+    var progressionAccountID: AccountID? {
+        guard let accountScopeID else { return nil }
+        return try? AccountID.parse(accountScopeID)
+    }
 }

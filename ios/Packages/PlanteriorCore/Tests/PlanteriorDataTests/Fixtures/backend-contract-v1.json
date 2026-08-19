@@ -59,6 +59,8 @@
     {"id":"notifications.dispatchWeatherRisk","integrationStatus":"unavailable"},
     {"id":"items.acquire","integrationStatus":"unavailable"},
     {"id":"items.setApplied","integrationStatus":"unavailable"},
+    {"id":"progression.submitApprovedEvent","integrationStatus":"unavailable"},
+    {"id":"progression.claimReward","integrationStatus":"unavailable"},
     {"id":"shares.create","integrationStatus":"unavailable"},
     {"id":"shares.revoke","integrationStatus":"unavailable"},
     {"id":"shares.resolveImage","integrationStatus":"unavailable"},

@@ -9,6 +9,7 @@ struct InventoryView: View {
     @Environment(\.sizeCategory) var sizeCategory
     @StateObject var repository: InventoryRepository
     @StateObject var collection = LocalPlantCollectionStore()
+    @StateObject var progression: MilestoneRepository
     @State var mode: InventoryMode
     @State var category: ItemCategory?
     @State var sortDescending = false
@@ -19,6 +20,8 @@ struct InventoryView: View {
 
     init() {
         let now = Self.runtimeInstant()
+        let allowsProgression =
+            MilestoneProgressView.allowsLocalAuthoritativeService
         self.now = now
         _mode = State(initialValue: Self.initialMode)
         _repository = StateObject(
@@ -26,6 +29,12 @@ struct InventoryView: View {
                 now: now,
                 allowsLocalAcquisition: Self.allowsLocalAcquisition,
                 failFirstAcquisition: Self.failsFirstAcquisition
+            )
+        )
+        _progression = StateObject(
+            wrappedValue: MilestoneRepository(
+                now: now,
+                allowsLocalAuthoritativeService: allowsProgression
             )
         )
     }
@@ -93,6 +102,8 @@ struct InventoryView: View {
             repository.mount(accountID: accountScopeID)
             collection.mount(accountID: accountScopeID)
             collection.loadQAFixtureIfNeeded()
+            progression.mount(accountID: progressionAccountID)
+            progression.seedQAIfNeeded()
             HomeCommittedMiniHomeRepository(accountID: accountScopeID)
                 .seedQAIfNeeded()
             repository.seedQAIfNeeded()

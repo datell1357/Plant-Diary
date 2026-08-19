@@ -33,7 +33,7 @@ struct AppShellView: View {
                 }
                 .frame(minHeight: PlanteriorControl.minimumTarget)
                 .accessibilityIdentifier("auth.open")
-            } else if navigation.selectedTab == .settings {
+            } else if showsSettingsRootControls {
                 syncStatus
                 Button("로그아웃") {
                     auth.pendingLogout = true

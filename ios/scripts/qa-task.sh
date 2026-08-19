@@ -1104,6 +1104,147 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "16" ]; then
+  task_16_simulator_id="${IOS_QA_SIMULATOR_ID:-29F51612-FF7F-4B0C-86ED-AF52AA591546}"
+  task_16_destination="platform=iOS Simulator,id=$task_16_simulator_id"
+  task_16_derived_data="$attempt_dir/DerivedData"
+  task_16_result="$attempt_dir/task-16-ios-app-implementation.xcresult"
+  task_16_home_result="$attempt_dir/task-16-home-regression.xcresult"
+  task_16_attachments="$attempt_dir/task-16-attachments"
+  cleanup_task_16() {
+    xcrun simctl uninstall \
+      "$task_16_simulator_id" \
+      com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$task_16_simulator_id" \
+      com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+    xcrun simctl shutdown "$task_16_simulator_id" 2>/dev/null || true
+  }
+  trap cleanup_task_16 EXIT
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_16_destination" \
+    -derivedDataPath "$task_16_derived_data" \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  reboot_task_16_simulator() {
+    cleanup_task_16
+    xcrun simctl boot "$task_16_simulator_id"
+    xcrun simctl bootstatus "$task_16_simulator_id" -b
+  }
+  reboot_task_16_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_16_destination" \
+    -derivedDataPath "$task_16_derived_data" \
+    -resultBundlePath "$task_16_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/ProgressionProductionTests \
+    -only-testing:PlanteriorTests/ProgressionProjectionTests \
+    -only-testing:PlanteriorTests/ProgressionRepositoryTests \
+    -only-testing:PlanteriorUITests/ProgressionAccessibilityUITests \
+    -only-testing:PlanteriorUITests/ProgressionUITests \
+    -only-testing:PlanteriorUITests/PlantRegistrationUITests/testRegistrationPersistsLocalGregorianWateringDate \
+    -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringDueCompletionUpdatesNextDate \
+    -only-testing:PlanteriorUITests/MiniHomeUITests/testEditsSavesAndRestoresCommittedRoom
+  reboot_task_16_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_16_destination" \
+    -derivedDataPath "$task_16_derived_data" \
+    -resultBundlePath "$task_16_home_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
+  xcrun xcresulttool export attachments \
+    --path "$task_16_result" \
+    --output-path "$task_16_attachments"
+  copy_task_16_attachment() {
+    marker=$1
+    destination=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        /suggestedHumanReadableName/ {
+          if (index($4, marker "_") == 1) {
+            print directory "/" file
+            exit
+          }
+        }
+      ' marker="$marker" directory="$task_16_attachments" \
+        "$task_16_attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination"
+  }
+  copy_task_16_attachment \
+    task-16-progress \
+    "$attempt_dir/task-16-ios-app-implementation.png"
+  copy_task_16_attachment \
+    task-16-progress-ax5 \
+    "$attempt_dir/task-16-ios-app-implementation-ax5.png"
+  copy_task_16_attachment \
+    task-16-progress-ax5-actions \
+    "$attempt_dir/task-16-ios-app-implementation-ax5-actions.png"
+  copy_task_16_attachment \
+    task-16-progress-data \
+    "$attempt_dir/task-16-progress.json"
+  copy_task_16_attachment \
+    task-16-duplicate-counts \
+    "$attempt_dir/task-16-duplicate-counts.json"
+  copy_task_16_attachment \
+    task-16-reconciliation \
+    "$attempt_dir/task-16-reconciliation.json"
+  copy_task_16_attachment \
+    task-16-claim \
+    "$attempt_dir/task-16-claim.json"
+  copy_task_16_attachment \
+    task-16-offline \
+    "$attempt_dir/task-16-offline.json"
+  cp \
+    "$repo_root/ios/qa/scenarios/task-16.json" \
+    "$attempt_dir/task-16-manifest.json"
+  python3 - "$attempt_dir/task-16-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 16,
+            "approvedEventLedger": "passed",
+            "duplicateReceipts": "passed",
+            "outOfOrderEvents": "passed",
+            "multipleThresholds": "passed",
+            "earnedClaimedStates": "passed",
+            "offlineProjection": "pending-only",
+            "accountIsolation": "passed",
+            "unpublishedRewards": "hidden-and-denied",
+            "foreignOwner": "denied",
+            "productionIntegration": "unavailable",
+            "sharingAwardSource": "deferred-to-todo-17",
+            "clientOnlyAward": False
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_16_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69

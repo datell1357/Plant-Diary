@@ -55,6 +55,8 @@ public enum ConsentTag: Sendable {}
 public enum DeletionRequestTag: Sendable {}
 public enum NotificationDeliveryTag: Sendable {}
 public enum IdentificationRequestTag: Sendable {}
+public enum MilestoneTag: Sendable {}
+public enum RewardTag: Sendable {}
 
 public typealias AccountID = OpaqueID<AccountTag>
 public typealias PersonalPlantID = OpaqueID<PersonalPlantTag>
@@ -71,6 +73,8 @@ public typealias ConsentID = OpaqueID<ConsentTag>
 public typealias DeletionRequestID = OpaqueID<DeletionRequestTag>
 public typealias NotificationDeliveryID = OpaqueID<NotificationDeliveryTag>
 public typealias IdentificationRequestID = OpaqueID<IdentificationRequestTag>
+public typealias MilestoneID = OpaqueID<MilestoneTag>
+public typealias RewardID = OpaqueID<RewardTag>
 
 public struct OperationID: Codable, Hashable, Sendable {
     public let rawValue: String
@@ -102,6 +106,7 @@ public struct OperationID: Codable, Hashable, Sendable {
 
 public struct Revision: Codable, Hashable, Sendable {
     public static let maximumWireValue: UInt64 = 9_007_199_254_740_991
+    public static let zero = Revision(validated: 0)
     public let rawValue: UInt64
 
     private init(validated value: UInt64) {

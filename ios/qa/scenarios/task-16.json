@@ -1,0 +1,30 @@
+{
+  "task": 16,
+  "command": "ios/scripts/qa-task.sh 16 --attempt-dir \"$ATTEMPT_DIR\"",
+  "marker": "IOS_TASK_16_QA_OK",
+  "artifacts": [
+    "task-16-ios-app-implementation.png",
+    "task-16-ios-app-implementation-ax5.png",
+    "task-16-ios-app-implementation-ax5-actions.png",
+    "task-16-progress.json",
+    "task-16-duplicate-counts.json",
+    "task-16-reconciliation.json",
+    "task-16-claim.json",
+    "task-16-offline.json",
+    "task-16-ios-app-implementation.json",
+    "task-16-ios-app-implementation.xcresult",
+    "task-16-home-regression.xcresult"
+  ],
+  "coveredBoundaries": [
+    "approved registration watering and mini-home events",
+    "exact and multiple threshold crossings",
+    "duplicate and out-of-order receipts",
+    "current earned and claimed states",
+    "account-scoped persistence and reconciliation",
+    "unpublished and foreign-owner denial",
+    "already-claimed idempotency",
+    "pending-only offline projection",
+    "sharing award source deferred to Todo 17",
+    "production progression integration unavailable"
+  ]
+}
