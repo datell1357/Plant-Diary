@@ -20,6 +20,8 @@ const paths = [
   "users/user-a",
   "users/user-a/personalPlants/plant-a",
   "users/user-a/wateringSchedules/plant-a",
+  "users/user-a/notificationSettings/watering",
+  "users/user-a/notificationPlantSettings/plant-a",
   "users/user-a/wateringRecords/watering-operation-stable",
   "users/user-a/operations/watering-operation-stable",
   "plantContents/species-a",
@@ -51,7 +53,14 @@ test("emulator transaction writes one immutable receipt and duplicate ignores mu
     assert.equal(plant.get("revision"), 5);
     assert.equal(schedule.get("dueDate"), "2026-08-22");
     assert.equal(schedule.get("revision"), 3);
-    assert.equal(schedule.get("reminderTime"), "09:00");
+    assert.equal(schedule.get("reminderTime"), undefined);
+    assert.equal(schedule.get("enabled"), undefined);
+    assert.equal(schedule.get("notificationCandidateActive"), true);
+    assert.ok(schedule.get("nextNotificationAt") instanceof Timestamp);
+    assert.equal(
+      (await firestore.doc("users/user-a/notificationPlantSettings/plant-a").get()).get("timeOverride"),
+      "09:00",
+    );
     assert.equal(record.get("wateredDate"), "2026-08-12");
     assert.ok(record.get("recordedAt") instanceof Timestamp);
     assert.deepEqual(
@@ -129,6 +138,8 @@ test("first completion creates an authoritative due schedule without notificatio
     assert.equal(schedule.get("revision"), 1);
     assert.equal(schedule.get("reminderTime"), undefined);
     assert.equal(schedule.get("enabled"), undefined);
+    assert.equal(schedule.get("notificationCandidateActive"), false);
+    assert.equal(schedule.get("nextNotificationAt"), undefined);
   } finally {
     await clear(firestore);
     await deleteApp(app);
@@ -208,6 +219,20 @@ async function seed(
     updatedAt: Timestamp.fromDate(new Date("2026-08-01T00:00:00Z")),
   });
   if (withSchedule) {
+    await firestore.doc("users/user-a/notificationSettings/watering").set({
+      ownerUid: "user-a",
+      wateringEnabled: true,
+      defaultTime: "08:30",
+      zoneId: "Asia/Seoul",
+      revision: 1,
+    });
+    await firestore.doc("users/user-a/notificationPlantSettings/plant-a").set({
+      ownerUid: "user-a",
+      plantId: "plant-a",
+      enabled: true,
+      timeOverride: "09:00",
+      revision: 1,
+    });
     await firestore.doc("users/user-a/wateringSchedules/plant-a").set({
       ownerUid: "user-a",
       plantId: "plant-a",

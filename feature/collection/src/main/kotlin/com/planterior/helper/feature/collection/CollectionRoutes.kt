@@ -61,6 +61,7 @@ fun PlantDetailRoute(
     plantId: PersonalPlantId,
     repository: CollectionRepository,
     onBack: () -> Unit,
+    onNotificationSettings: () -> Unit = {},
     clock: Clock = Clock.systemDefaultZone(),
     onRecordWatering: (() -> Unit)? = null,
     refreshAfterWatering: String? = null,
@@ -116,5 +117,6 @@ fun PlantDetailRoute(
         onCancelEdit = controller::cancelEdit,
         onReconcileEdit = { scope.launch { controller.reconcileFailedEdit() } },
         onRecordWatering = onRecordWatering,
+        onNotificationSettings = onNotificationSettings,
     )
 }

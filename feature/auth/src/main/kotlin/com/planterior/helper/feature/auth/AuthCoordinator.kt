@@ -1,8 +1,14 @@
 package com.planterior.helper.feature.auth
 
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class AuthCoordinator(
     private val providers: Map<AuthProvider, AuthProviderAdapter>,
@@ -10,11 +16,17 @@ class AuthCoordinator(
     private val profiles: AccountProfileStore,
     private val cache: AccountSessionCache,
     private val synchronizer: AccountSynchronizer,
+    private val beforeSignOut: suspend (String) -> Unit = {},
+    private val beforeAuthRemoval: suspend (String) -> Unit = {},
+    private val authTransition: suspend (String?, suspend () -> Unit) -> Unit = { _, action ->
+        action()
+    },
 ) {
     private val mutableState = MutableStateFlow<AuthUiState>(AuthUiState.Restoring)
     val state: StateFlow<AuthUiState> = mutableState.asStateFlow()
     private var generation = 0L
     private var activeRequest: Pair<Long, AuthProviderAdapter>? = null
+    private val authTransitionMutex = Mutex()
 
     suspend fun restore() {
         val account = identity.current()
@@ -27,6 +39,7 @@ class AuthCoordinator(
 
     suspend fun signIn(provider: AuthProvider, returnRoute: String?) {
         val requestId = ++generation
+        val requestJob = currentCoroutineContext()[Job]
         val adapter = providers.getValue(provider)
         activeRequest = requestId to adapter
         mutableState.value = AuthUiState.SigningIn(provider)
@@ -38,12 +51,41 @@ class AuthCoordinator(
                 mutableState.value = AuthUiState.SignedOut(AuthFailure.Cancelled)
             is ProviderOutcome.Failed -> mutableState.value = AuthUiState.SignedOut(outcome.failure)
             is ProviderOutcome.Proof -> {
-                val previous = identity.current()?.uid
                 val proof = ProviderProof(provider, outcome.token, outcome.rawNonce)
+                var previousAccount: AuthAccount? = null
+                var signedInAccount: AuthAccount? = null
                 try {
-                    val account = identity.signIn(proof)
+                    authTransitionMutex.withLock {
+                        if (requestId != generation) return@withLock
+                        previousAccount = identity.current()
+                        val ownerToRemove = previousAccount?.uid
+                        if (ownerToRemove != null) {
+                            beforeSignOut(ownerToRemove)
+                            if (requestId != generation) return@withLock
+                        }
+                        authTransition(ownerToRemove) transition@{
+                            if (requestId != generation) return@transition
+                            if (ownerToRemove != null) {
+                                beforeAuthRemoval(ownerToRemove)
+                                if (requestId != generation) return@transition
+                                cache.clearVisible(ownerToRemove)
+                                if (requestId != generation) return@transition
+                                cache.activate(null)
+                                if (requestId != generation) return@transition
+                                identity.signOut()
+                                if (requestId != generation) return@transition
+                            }
+                            if (requestId != generation) return@transition
+                            signedInAccount =
+                                completeOwnedIdentitySignIn(proof, requestId, requestJob)
+                        }
+                    }
                     if (requestId != generation) return
-                    establishSession(account, returnRoute, previous)
+                    establishSession(
+                        requireNotNull(signedInAccount),
+                        returnRoute,
+                        previousUid = null,
+                    )
                 } catch (error: AuthGatewayException) {
                     if (requestId == generation)
                         mutableState.value = AuthUiState.SignedOut(error.failure)
@@ -52,11 +94,44 @@ class AuthCoordinator(
                     // 취소만 그대로 전파해 구조적 동시성을 지킨다.
                     throw cancellation
                 } catch (_: Exception) {
-                    if (requestId == generation)
-                        mutableState.value = AuthUiState.SignedOut(AuthFailure.Unknown)
+                    if (requestId == generation) {
+                        mutableState.value =
+                            previousAccount?.let {
+                                AuthUiState.Authenticated(it, lastKnownOrEmpty(it.uid))
+                            } ?: AuthUiState.SignedOut(AuthFailure.Unknown)
+                    }
                 }
             }
         }
+    }
+
+    private suspend fun completeOwnedIdentitySignIn(
+        proof: ProviderProof,
+        requestId: Long,
+        requestJob: Job?,
+    ): AuthAccount? {
+        var exchangedAccount: AuthAccount? = null
+        return try {
+            withContext(NonCancellable) {
+                val account = identity.signIn(proof)
+                exchangedAccount = account
+                if (requestId == generation && requestJob?.isActive != false) {
+                    account
+                } else {
+                    rollbackIdentityIfCurrent(account)
+                    null
+                }
+            }
+        } catch (cancellation: kotlinx.coroutines.CancellationException) {
+            withContext(NonCancellable) {
+                exchangedAccount?.let { rollbackIdentityIfCurrent(it) }
+            }
+            throw cancellation
+        }
+    }
+
+    private suspend fun rollbackIdentityIfCurrent(account: AuthAccount) {
+        if (identity.current()?.uid == account.uid) identity.signOut()
     }
 
     fun cancelSignIn() {
@@ -154,15 +229,28 @@ class AuthCoordinator(
 
     private suspend fun lastSync(account: AuthAccount) = synchronizer.lastKnown(account.uid)
 
-    suspend fun logout() {
+    suspend fun logout(): Boolean {
         generation += 1
         activeRequest?.let { it.second.cancel(it.first) }
         activeRequest = null
-        val uid = identity.current()?.uid
-        cache.clearVisible(uid)
-        cache.activate(null)
-        identity.signOut()
-        mutableState.value = AuthUiState.SignedOut()
+        return authTransitionMutex.withLock {
+            val uid = identity.current()?.uid
+            try {
+                if (uid != null) beforeSignOut(uid)
+                authTransition(uid) {
+                    if (uid != null) beforeAuthRemoval(uid)
+                    cache.clearVisible(uid)
+                    cache.activate(null)
+                    identity.signOut()
+                    mutableState.value = AuthUiState.SignedOut()
+                }
+                true
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                false
+            }
+        }
     }
 
     private suspend fun establishSession(

@@ -40,6 +40,7 @@ fun PlantDetailScreen(
     modifier: Modifier = Modifier,
     onReconcileEdit: () -> Unit = {},
     onRecordWatering: (() -> Unit)? = null,
+    onNotificationSettings: () -> Unit = {},
 ) {
     val plant = state.plantOrNull()
     PlanteriorScreenScaffold(
@@ -63,6 +64,7 @@ fun PlantDetailScreen(
                     editingAllowed = true,
                     wateringSchedule = state.wateringSchedule,
                     onRecordWatering = onRecordWatering,
+                    onNotificationSettings = onNotificationSettings,
                     onBeginEditing = onBeginEditing,
                     onLastWateredDate = onLastWateredDate,
                     onLocation = onLocation,
@@ -80,6 +82,7 @@ fun PlantDetailScreen(
                     editingAllowed = true,
                     wateringSchedule = state.wateringSchedule,
                     onRecordWatering = onRecordWatering,
+                    onNotificationSettings = onNotificationSettings,
                     noticeTag = PlantDetailTestTags.PARTIAL,
                     noticeTitle = "일부 관리 기준을 준비 중이에요",
                     noticeBody = "확인된 정보만 먼저 보여드려요.",
@@ -100,6 +103,7 @@ fun PlantDetailScreen(
                     editingAllowed = state.editingAllowed,
                     wateringSchedule = state.wateringSchedule,
                     onRecordWatering = onRecordWatering,
+                    onNotificationSettings = onNotificationSettings,
                     noticeTag = PlantDetailTestTags.STALE,
                     noticeTitle = "저장된 개인 기록을 보여드려요",
                     noticeBody =
@@ -125,6 +129,7 @@ fun PlantDetailScreen(
                     editingAllowed = true,
                     wateringSchedule = state.wateringSchedule,
                     onRecordWatering = onRecordWatering,
+                    onNotificationSettings = onNotificationSettings,
                     noticeTag = PlantDetailTestTags.NO_STANDARD,
                     noticeTitle = "표준 관리 정보가 아직 없어요",
                     noticeBody = "직접 입력한 식물도 개인 기록은 계속 관리할 수 있어요.",
@@ -169,6 +174,7 @@ private fun ColumnScope.DetailBody(
     editingAllowed: Boolean,
     wateringSchedule: WateringScheduleStatus,
     onRecordWatering: (() -> Unit)?,
+    onNotificationSettings: () -> Unit,
     onBeginEditing: () -> Unit,
     onLastWateredDate: (String) -> Unit,
     onLocation: (String) -> Unit,
@@ -185,6 +191,12 @@ private fun ColumnScope.DetailBody(
         verticalArrangement =
             androidx.compose.foundation.layout.Arrangement.spacedBy(PlanteriorTheme.spacing.large),
     ) {
+        TextButton(
+            onClick = onNotificationSettings,
+            modifier = Modifier.fillMaxWidth().testTag(PlantDetailTestTags.NOTIFICATION_SETTINGS),
+        ) {
+            Text("물 주기 알림 설정")
+        }
         if (noticeTag != null) StatusCard(noticeTag, noticeTitle, noticeBody)
         if (guidance != null) {
             CareCard(

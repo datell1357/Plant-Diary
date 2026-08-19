@@ -302,6 +302,65 @@ class AuthCoordinatorTest {
     }
 
     @Test
+    fun `failed endpoint cleanup keeps authentication so logout can recover before account switch`() =
+        runTest {
+            val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
+            var attempts = 0
+            var cancellations = 0
+            val coordinator =
+                coordinator(
+                    identity = identity,
+                    beforeSignOut = {
+                        attempts += 1
+                        if (attempts == 1) error("unregister unavailable")
+                    },
+                    beforeAuthRemoval = { cancellations += 1 },
+                )
+            coordinator.restore()
+
+            assertEquals(false, coordinator.logout())
+            assertTrue(coordinator.state.value is AuthUiState.Authenticated)
+            assertEquals("account-a", identity.current()?.uid)
+            assertEquals(0, identity.signOutCalls)
+            assertEquals(0, cancellations)
+
+            assertEquals(true, coordinator.logout())
+            assertTrue(coordinator.state.value is AuthUiState.SignedOut)
+            assertNull(identity.current())
+            assertEquals(2, attempts)
+            assertEquals(1, identity.signOutCalls)
+            assertEquals(1, cancellations)
+        }
+
+    @Test
+    fun `account switch cancels former owner notifications after revocation and before auth removal`() =
+        runTest {
+            val google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("token-b"))
+            val identity =
+                FakeIdentity(
+                    mapOf("token-b" to account("account-b", AuthProvider.GOOGLE)),
+                    account("account-a", AuthProvider.GOOGLE),
+                )
+            val events = mutableListOf<String>()
+            val coordinator =
+                coordinator(
+                    google = google,
+                    identity = identity,
+                    beforeSignOut = { events += "revoke:$it" },
+                    beforeAuthRemoval = { events += "cancel:$it" },
+                )
+
+            coordinator.signIn(AuthProvider.GOOGLE, null)
+
+            assertEquals(listOf("revoke:account-a", "cancel:account-a"), events)
+            assertEquals(
+                "account-b",
+                (coordinator.state.value as AuthUiState.Authenticated).account.uid,
+            )
+            assertEquals(1, identity.signOutCalls)
+        }
+
+    @Test
     fun `logout and A to B to A clear visible cache while preserving scoped drafts`() = runTest {
         val identity =
             FakeIdentity(
@@ -333,8 +392,12 @@ class AuthCoordinatorTest {
                 "clear:null",
                 "activate:account-a",
                 "clear:account-a",
+                "activate:null",
+                "clear:null",
                 "activate:account-b",
                 "clear:account-b",
+                "activate:null",
+                "clear:null",
                 "activate:account-a",
                 "clear:account-a",
                 "activate:null",
@@ -343,6 +406,280 @@ class AuthCoordinatorTest {
         )
         assertEquals(mapOf("account-a" to 1, "account-b" to 2), cache.drafts)
         assertNull(identity.current())
+    }
+
+    @Test
+    fun `sign-in superseded during revocation cannot mutate auth or cache after the winner starts`() =
+        runTest {
+            val revocationStarted = CompletableDeferred<Unit>()
+            val releaseRevocation = CompletableDeferred<Unit>()
+            var revocations = 0
+            val identity =
+                FakeIdentity(
+                    mapOf(
+                        "a" to account("account-a", AuthProvider.GOOGLE),
+                        "b" to account("account-b", AuthProvider.APPLE),
+                    ),
+                    account("account-old", AuthProvider.GOOGLE),
+                )
+            val cache = RecordingAccountCache()
+            val coordinator =
+                coordinator(
+                    google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                    apple = FakeProvider(AuthProvider.APPLE, ProviderOutcome.Proof("b", "nonce")),
+                    identity = identity,
+                    cache = cache,
+                    beforeSignOut = {
+                        revocations += 1
+                        if (revocations == 1) {
+                            revocationStarted.complete(Unit)
+                            releaseRevocation.await()
+                        }
+                    },
+                )
+
+            val losing = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+            revocationStarted.await()
+            val winning = async { coordinator.signIn(AuthProvider.APPLE, null) }
+            testScheduler.advanceUntilIdle()
+            releaseRevocation.complete(Unit)
+            losing.await()
+            winning.await()
+
+            assertEquals("account-b", identity.current()?.uid)
+            assertEquals(listOf("b"), identity.signInProofs.map { it.token })
+            assertEquals(1, identity.signOutCalls)
+            assertEquals(
+                listOf("clear:account-old", "activate:null", "clear:null", "activate:account-b"),
+                cache.events,
+            )
+        }
+
+    @Test
+    fun `sign-in superseded during former-owner cleanup leaves cache owned by the winner`() =
+        runTest {
+            val cleanupStarted = CompletableDeferred<Unit>()
+            val releaseCleanup = CompletableDeferred<Unit>()
+            var cleanups = 0
+            val identity =
+                FakeIdentity(
+                    mapOf(
+                        "a" to account("account-a", AuthProvider.GOOGLE),
+                        "b" to account("account-b", AuthProvider.APPLE),
+                    ),
+                    account("account-old", AuthProvider.GOOGLE),
+                )
+            val cache = RecordingAccountCache()
+            val coordinator =
+                coordinator(
+                    google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                    apple = FakeProvider(AuthProvider.APPLE, ProviderOutcome.Proof("b", "nonce")),
+                    identity = identity,
+                    cache = cache,
+                    beforeAuthRemoval = {
+                        cleanups += 1
+                        if (cleanups == 1) {
+                            cleanupStarted.complete(Unit)
+                            releaseCleanup.await()
+                        }
+                    },
+                )
+
+            val losing = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+            cleanupStarted.await()
+            val winning = async { coordinator.signIn(AuthProvider.APPLE, null) }
+            testScheduler.advanceUntilIdle()
+            releaseCleanup.complete(Unit)
+            losing.await()
+            winning.await()
+
+            assertEquals("account-b", identity.current()?.uid)
+            assertEquals(listOf("b"), identity.signInProofs.map { it.token })
+            assertEquals(1, identity.signOutCalls)
+            assertEquals(
+                listOf("clear:account-old", "activate:null", "clear:null", "activate:account-b"),
+                cache.events,
+            )
+        }
+
+    @Test
+    fun `cancel during identity exchange rolls back a late Firebase success`() = runTest {
+        val identity =
+            ControlledSignInIdentity(
+                mapOf("a" to account("account-a", AuthProvider.GOOGLE)),
+                controlledToken = "a",
+            )
+        val coordinator =
+            coordinator(
+                google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                identity = identity,
+            )
+        val signingIn = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+        identity.started.await()
+
+        coordinator.cancelSignIn()
+        identity.allowMutation.complete(Unit)
+        identity.mutated.await()
+        identity.allowReturn.complete(Unit)
+        signingIn.await()
+
+        assertNull(identity.current())
+        assertEquals(listOf("account-a"), identity.signedOutUids)
+        assertEquals(
+            AuthFailure.Cancelled,
+            (coordinator.state.value as AuthUiState.SignedOut).failure,
+        )
+    }
+
+    @Test
+    fun `coroutine cancellation during identity exchange rolls back after Firebase completes`() =
+        runTest {
+            val identity =
+                ControlledSignInIdentity(
+                    mapOf("a" to account("account-a", AuthProvider.GOOGLE)),
+                    controlledToken = "a",
+                )
+            val coordinator =
+                coordinator(
+                    google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                    identity = identity,
+                )
+            val signingIn = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+            identity.started.await()
+
+            signingIn.cancel()
+            identity.allowMutation.complete(Unit)
+            identity.mutated.await()
+            identity.allowReturn.complete(Unit)
+            signingIn.join()
+
+            assertNull(identity.current())
+            assertEquals(listOf("account-a"), identity.signedOutUids)
+        }
+
+    @Test
+    fun `cancel after Firebase mutation but before response removes the hidden identity`() =
+        runTest {
+            val identity =
+                ControlledSignInIdentity(
+                    mapOf("a" to account("account-a", AuthProvider.GOOGLE)),
+                    controlledToken = "a",
+                )
+            val coordinator =
+                coordinator(
+                    google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                    identity = identity,
+                )
+            val signingIn = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+            identity.started.await()
+            identity.allowMutation.complete(Unit)
+            identity.mutated.await()
+            assertEquals("account-a", identity.current()?.uid)
+
+            coordinator.cancelSignIn()
+            identity.allowReturn.complete(Unit)
+            signingIn.await()
+
+            assertNull(identity.current())
+            assertEquals(listOf("account-a"), identity.signedOutUids)
+        }
+
+    @Test
+    fun `superseded identity exchange rolls back before the winning sign-in mutates auth`() =
+        runTest {
+            val identity =
+                ControlledSignInIdentity(
+                    mapOf(
+                        "a" to account("account-a", AuthProvider.GOOGLE),
+                        "b" to account("account-b", AuthProvider.APPLE),
+                    ),
+                    controlledToken = "a",
+                )
+            val coordinator =
+                coordinator(
+                    google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                    apple = FakeProvider(AuthProvider.APPLE, ProviderOutcome.Proof("b", "nonce")),
+                    identity = identity,
+                )
+            val stale = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+            identity.started.await()
+            val winner = async { coordinator.signIn(AuthProvider.APPLE, null) }
+
+            identity.allowMutation.complete(Unit)
+            identity.mutated.await()
+            identity.allowReturn.complete(Unit)
+            stale.await()
+            winner.await()
+
+            assertEquals("account-b", identity.current()?.uid)
+            assertEquals(listOf("account-a"), identity.signedOutUids)
+            assertEquals(
+                "account-b",
+                (coordinator.state.value as AuthUiState.Authenticated).account.uid,
+            )
+        }
+
+    @Test
+    fun `cancelled identity exchange rolls back before a newer sign-in wins`() = runTest {
+        val identity =
+            ControlledSignInIdentity(
+                mapOf(
+                    "a" to account("account-a", AuthProvider.GOOGLE),
+                    "b" to account("account-b", AuthProvider.APPLE),
+                ),
+                controlledToken = "a",
+            )
+        val coordinator =
+            coordinator(
+                google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                apple = FakeProvider(AuthProvider.APPLE, ProviderOutcome.Proof("b", "nonce")),
+                identity = identity,
+            )
+        val cancelled = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+        identity.started.await()
+        coordinator.cancelSignIn()
+        val winner = async { coordinator.signIn(AuthProvider.APPLE, null) }
+
+        identity.allowMutation.complete(Unit)
+        identity.mutated.await()
+        identity.allowReturn.complete(Unit)
+        cancelled.await()
+        winner.await()
+
+        assertEquals("account-b", identity.current()?.uid)
+        assertEquals(listOf("a", "b"), identity.signInProofs.map(ProviderProof::token))
+        assertEquals(listOf("account-a"), identity.signedOutUids)
+        assertEquals(
+            "account-b",
+            (coordinator.state.value as AuthUiState.Authenticated).account.uid,
+        )
+    }
+
+    @Test
+    fun `stale rollback never signs out an identity it does not own`() = runTest {
+        val accountB = account("account-b", AuthProvider.APPLE)
+        val identity =
+            ControlledSignInIdentity(
+                mapOf("a" to account("account-a", AuthProvider.GOOGLE)),
+                controlledToken = "a",
+            )
+        val coordinator =
+            coordinator(
+                google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("a")),
+                identity = identity,
+            )
+        val cancelled = async { coordinator.signIn(AuthProvider.GOOGLE, null) }
+        identity.started.await()
+        identity.allowMutation.complete(Unit)
+        identity.mutated.await()
+        coordinator.cancelSignIn()
+        identity.replaceCurrent(accountB)
+
+        identity.allowReturn.complete(Unit)
+        cancelled.await()
+
+        assertEquals("account-b", identity.current()?.uid)
+        assertTrue(identity.signedOutUids.isEmpty())
     }
 
     @Test
@@ -399,10 +736,12 @@ class AuthCoordinatorTest {
     private fun coordinator(
         google: AuthProviderAdapter = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Cancelled),
         apple: AuthProviderAdapter = FakeProvider(AuthProvider.APPLE, ProviderOutcome.Cancelled),
-        identity: FakeIdentity = FakeIdentity(emptyMap()),
+        identity: FirebaseIdentityGateway = FakeIdentity(emptyMap()),
         profile: AccountProfileStore = RecordingProfileStore(),
         cache: RecordingAccountCache = RecordingAccountCache(),
         synchronizer: AccountSynchronizer = FakeSynchronizer(SyncSummary.EMPTY),
+        beforeSignOut: suspend (String) -> Unit = {},
+        beforeAuthRemoval: suspend (String) -> Unit = {},
     ) =
         AuthCoordinator(
             mapOf(AuthProvider.GOOGLE to google, AuthProvider.APPLE to apple),
@@ -410,6 +749,8 @@ class AuthCoordinatorTest {
             profile,
             cache,
             synchronizer,
+            beforeSignOut,
+            beforeAuthRemoval,
         )
 
     private fun account(uid: String, provider: AuthProvider) =
@@ -458,6 +799,49 @@ class AuthCoordinatorTest {
         override fun cancel(requestId: Long) = Unit
     }
 
+    private class ControlledSignInIdentity(
+        private val accounts: Map<String, AuthAccount>,
+        private val controlledToken: String,
+    ) : FirebaseIdentityGateway {
+        val started = CompletableDeferred<Unit>()
+        val allowMutation = CompletableDeferred<Unit>()
+        val mutated = CompletableDeferred<Unit>()
+        val allowReturn = CompletableDeferred<Unit>()
+        val signInProofs = mutableListOf<ProviderProof>()
+        val signedOutUids = mutableListOf<String>()
+        private var currentAccount: AuthAccount? = null
+
+        override fun current() = currentAccount
+
+        override suspend fun signIn(proof: ProviderProof): AuthAccount {
+            signInProofs += proof
+            val account = accounts.getValue(proof.token)
+            if (proof.token != controlledToken) {
+                currentAccount = account
+                return account
+            }
+            started.complete(Unit)
+            allowMutation.await()
+            currentAccount = account
+            mutated.complete(Unit)
+            allowReturn.await()
+            return account
+        }
+
+        fun replaceCurrent(account: AuthAccount) {
+            currentAccount = account
+        }
+
+        override suspend fun reauthenticate(proof: ProviderProof) = error("not used")
+
+        override suspend fun link(proof: ProviderProof) = error("not used")
+
+        override suspend fun signOut() {
+            currentAccount?.uid?.let(signedOutUids::add)
+            currentAccount = null
+        }
+    }
+
     private class FakeIdentity(
         private val accounts: Map<String, AuthAccount>,
         private var currentAccount: AuthAccount? = null,
@@ -467,13 +851,16 @@ class AuthCoordinatorTest {
         var reauthenticateCalls = 0
         var reauthenticatedProof: ProviderProof? = null
         var lastProof: ProviderProof? = null
+        val signInProofs = mutableListOf<ProviderProof>()
         var linkFailure: AuthFailure? = null
+        var signOutCalls = 0
 
         override fun current() = currentAccount
 
         override suspend fun signIn(proof: ProviderProof): AuthAccount {
             signInCalls += 1
             lastProof = proof
+            signInProofs += proof
             return accounts.getValue(proof.token).also { currentAccount = it }
         }
 
@@ -491,6 +878,7 @@ class AuthCoordinatorTest {
         }
 
         override suspend fun signOut() {
+            signOutCalls += 1
             currentAccount = null
         }
     }

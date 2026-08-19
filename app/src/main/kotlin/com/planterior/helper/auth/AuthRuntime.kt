@@ -3,13 +3,12 @@ package com.planterior.helper.auth
 import androidx.activity.ComponentActivity
 import androidx.core.net.toUri
 import androidx.room.Room
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.planterior.helper.BuildConfig
+import com.planterior.helper.FirebaseRuntime
 import com.planterior.helper.core.data.FirebaseRemoteMutationGateway
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
 import com.planterior.helper.core.database.MIGRATION_1_2
@@ -58,12 +57,20 @@ import com.planterior.helper.feature.home.HomeWeather
 import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
 import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
+import com.planterior.helper.feature.watering.FirebaseWateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.FirebaseWateringRemoteDataSource
 import com.planterior.helper.feature.watering.OutboxWateringRepository
+import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.home.CachedHomeRepository
 import com.planterior.helper.home.debugHomeSessions
 import com.planterior.helper.home.debugHomeWeatherSource
+import com.planterior.helper.notification.FirebaseNotificationEndpointGateway
+import com.planterior.helper.notification.NotificationAccountTransitionGate
+import com.planterior.helper.notification.NotificationEndpointGateway
+import com.planterior.helper.notification.NotificationTokenStore
+import com.planterior.helper.notification.NotificationWorkScheduler
+import com.planterior.helper.notification.SystemNotificationOwnerDataCanceller
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.URI
@@ -78,6 +85,7 @@ private constructor(
     val registrationRepository: RegistrationRepository?,
     val collectionRepository: CollectionRepository?,
     val wateringRepository: WateringRepository?,
+    val wateringNotificationSettingsRepository: WateringNotificationSettingsRepository?,
     val collectionThumbnailLoader: PlantThumbnailLoader,
 ) {
     suspend fun handleAppleCallback(uri: URI): Boolean = apple?.handleCallback(uri) ?: false
@@ -88,23 +96,7 @@ private constructor(
 
         fun create(activity: ComponentActivity): AuthRuntime {
             prepareDebugAuth(activity)
-            if (
-                BuildConfig.FIREBASE_PROJECT_ID.isBlank() ||
-                    BuildConfig.FIREBASE_APP_ID.isBlank() ||
-                    BuildConfig.FIREBASE_API_KEY.isBlank()
-            ) {
-                return unavailable()
-            }
-            val app =
-                FirebaseApp.getApps(activity).firstOrNull()
-                    ?: FirebaseApp.initializeApp(
-                        activity,
-                        FirebaseOptions.Builder()
-                            .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
-                            .setApplicationId(BuildConfig.FIREBASE_APP_ID)
-                            .setApiKey(BuildConfig.FIREBASE_API_KEY)
-                            .build(),
-                    )
+            val app = FirebaseRuntime.initialize(activity) ?: return unavailable()
             val auth = FirebaseAuth.getInstance(app)
             val firestore = FirebaseFirestore.getInstance(app)
             val functions = FirebaseFunctions.getInstance(app)
@@ -166,6 +158,8 @@ private constructor(
                     ActivityWebAuthorizationLauncher(activity),
                 )
             val identity = FirebaseIdentityAdapter(auth)
+            val notificationEndpointGateway = FirebaseNotificationEndpointGateway(functions)
+            val notificationTokenStore = NotificationTokenStore(activity)
             val coordinator =
                 AuthCoordinator(
                     mapOf(
@@ -180,7 +174,7 @@ private constructor(
                         AuthProvider.APPLE to debugAuthProvider(activity, apple),
                     ),
                     identity,
-                    FirestoreAccountProfileStore(firestore),
+                    FirestoreAccountProfileStore(functions),
                     RoomAccountSessionCache(repository),
                     FirestoreAccountSynchronizer(
                         debugAccountSyncRemote(
@@ -190,6 +184,27 @@ private constructor(
                         database,
                         outbox = repository,
                     ),
+                    beforeSignOut =
+                        notificationEndpointRevocationAction(
+                            notificationTokenStore,
+                            notificationEndpointGateway,
+                        ) {
+                            NotificationWorkScheduler(
+                                    androidx.work.WorkManager.getInstance(activity)
+                                )
+                                .cancelTokenRegistration()
+                        },
+                    authTransition = { ownerUid, action ->
+                        NotificationAccountTransitionGate.transition(
+                            cancelFormerOwnerNotifications = {
+                                if (ownerUid != null) {
+                                    SystemNotificationOwnerDataCanceller(activity)
+                                        .cancelFormerOwnerNotifications()
+                                }
+                            },
+                            action = action,
+                        )
+                    },
                 )
             return AuthRuntime(
                 coordinator,
@@ -219,6 +234,7 @@ private constructor(
                 registrationRepository,
                 collectionRepository,
                 wateringRepository,
+                FirebaseWateringNotificationSettingsRepository(auth, firestore, functions),
                 FirebasePlantThumbnailLoader(storage),
             )
         }
@@ -284,9 +300,26 @@ private constructor(
                 null,
                 null,
                 null,
+                null,
                 PlaceholderPlantThumbnailLoader,
             )
         }
+    }
+}
+
+internal fun notificationEndpointRevocationAction(
+    tokenStore: NotificationTokenStore,
+    gateway: NotificationEndpointGateway,
+    cancelTokenRegistration: suspend () -> Unit,
+): suspend (String) -> Unit = { uid ->
+    cancelTokenRegistration()
+    tokenStore.unresolvedRegistrationFor(uid)?.let { registration ->
+        gateway.register(registration)
+        tokenStore.markRegistered(registration)
+    }
+    tokenStore.beginLogoutUnregistration(uid)?.let { unregistration ->
+        val result = gateway.unregister(unregistration)
+        tokenStore.markUnregistered(unregistration, result)
     }
 }
 

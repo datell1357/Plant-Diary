@@ -34,7 +34,7 @@ object AuthRouteGuard {
             PlanteriorRoute.Notifications -> "planterior://notifications"
             is PlanteriorRoute.PlantDetail -> "planterior://collection/plant/${route.plantId}"
             is PlanteriorRoute.WateringConfirmation ->
-                "planterior://collection/plant/${route.plantId}"
+                "planterior://collection/plant/${route.plantId}/watering"
             is PlanteriorRoute.Login -> "planterior://home"
         }
 }

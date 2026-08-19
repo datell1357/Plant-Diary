@@ -94,3 +94,126 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
     await deleteApp(app);
   }
 });
+
+test("registration and manual last-watered edits create and reschedule the authoritative watering schedule", async () => {
+  const app = initializeApp({ projectId }, "functions-schedule-mutation-emulator");
+  const firestore = getFirestore(app);
+  const store = new FirestoreMutationStore(firestore);
+  const paths = [
+    "users/user-a",
+    "users/user-a/personalPlants/scheduled-plant",
+    "users/user-a/wateringSchedules/scheduled-plant",
+    "users/user-a/notificationSettings/watering",
+    "users/user-a/notificationPlantSettings/scheduled-plant",
+    "users/user-a/operations/schedule-create-0001",
+    "users/user-a/operations/schedule-update-0002",
+    "plantContents/species-scheduled",
+  ];
+
+  try {
+    await Promise.all(paths.map((path) => firestore.doc(path).delete()));
+    await firestore.doc("users/user-a").set({ ownerUid: "user-a", zoneId: "Asia/Seoul" });
+    await firestore.doc("plantContents/species-scheduled").set({
+      publicationState: "PUBLIC",
+      wateringIntervalDays: 10,
+    });
+    await firestore.doc("users/user-a/notificationSettings/watering").set({
+      ownerUid: "user-a",
+      wateringEnabled: true,
+      defaultTime: "09:00",
+      zoneId: "Asia/Seoul",
+      revision: 1,
+    });
+    await firestore.doc("users/user-a/notificationPlantSettings/scheduled-plant").set({
+      ownerUid: "user-a",
+      plantId: "scheduled-plant",
+      enabled: true,
+      timeOverride: null,
+      revision: 1,
+    });
+    const create = {
+      expectedOwnerUid: "user-a",
+      collection: "personalPlants",
+      documentId: "scheduled-plant",
+      mutationType: "CREATE",
+      expectedRevision: 0,
+      idempotencyKey: "schedule-create-0001",
+      payload: {
+        displayName: "몬스테라",
+        registrationMethod: "MANUAL",
+        contentId: "species-scheduled",
+        lastWateredDate: "2026-08-01",
+      },
+    };
+
+    await executeOwnerMutation({ uid: "user-a" }, create, store);
+    let schedule = await firestore.doc("users/user-a/wateringSchedules/scheduled-plant").get();
+    assert.equal(schedule.get("dueDate"), "2026-08-11");
+    assert.equal(schedule.get("ownerUid"), "user-a");
+    assert.equal(schedule.get("notificationCandidateActive"), true);
+    assert.ok(schedule.get("nextNotificationAt") instanceof Timestamp);
+
+    await executeOwnerMutation(
+      { uid: "user-a" },
+      {
+        ...create,
+        mutationType: "UPDATE",
+        expectedRevision: 1,
+        idempotencyKey: "schedule-update-0002",
+        payload: { lastWateredDate: "2026-08-05" },
+      },
+      store,
+    );
+    schedule = await firestore.doc("users/user-a/wateringSchedules/scheduled-plant").get();
+    assert.equal(schedule.get("dueDate"), "2026-08-15");
+    assert.equal(schedule.get("revision"), 2);
+  } finally {
+    await Promise.all(paths.map((path) => firestore.doc(path).delete()));
+    await deleteApp(app);
+  }
+});
+
+test("server-backed account limit accepts 200 plants and rejects the 201st", async () => {
+  const app = initializeApp({ projectId }, "personal-plant-limit-emulator");
+  const firestore = getFirestore(app);
+  const store = new FirestoreMutationStore(firestore);
+  const plants = firestore.collection("users/limit-user/personalPlants");
+
+  try {
+    const batch = firestore.batch();
+    for (let index = 0; index < 200; index += 1) {
+      batch.set(plants.doc(`plant-${index}`), {
+        ownerUid: "limit-user",
+        displayName: `Plant ${index}`,
+        registrationMethod: "MANUAL",
+        revision: 1,
+      });
+    }
+    await batch.commit();
+
+    await assert.rejects(
+      () => executeOwnerMutation(
+        { uid: "limit-user" },
+        {
+          expectedOwnerUid: "limit-user",
+          collection: "personalPlants",
+          documentId: "plant-200",
+          mutationType: "CREATE",
+          expectedRevision: 0,
+          idempotencyKey: "operation-limit-0201",
+          payload: { displayName: "One too many", registrationMethod: "MANUAL" },
+        },
+        store,
+      ),
+      (error: unknown) =>
+        error instanceof ContractError && error.code === "resource-exhausted",
+    );
+    assert.equal((await plants.get()).size, 200);
+  } finally {
+    const documents = await plants.get();
+    await Promise.all(documents.docs.map((document) => document.ref.delete()));
+    const operations = await firestore.collection("users/limit-user/operations").get();
+    await Promise.all(operations.docs.map((document) => document.ref.delete()));
+    await deleteApp(app);
+  }
+});

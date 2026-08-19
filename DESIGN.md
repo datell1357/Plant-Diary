@@ -107,6 +107,26 @@ Inter의 한글 글리프 대체 결과와 맞도록 `FontFamily.SansSerif`를 �
 - loader는 원본 bytes 상한, 축소 decode, 메모리 cache를 책임진다.
 - loading, loaded, failed, no-photo 상태를 서로 다른 semantics로 노출하며 실패는 no-photo와 구분되는 대체 이미지로 마무리한다.
 
+### `WateringNotificationSettingsScreen`
+
+- 기존 `PlanteriorScreenScaffold`와 `PlanteriorCard`를 조합해 전역 기본 시간, OS 권한 상태, 식물별 활성화·시간 override를 한 세로 스크롤에 표시한다.
+- 시간 선택은 48dp 이상의 명시적 버튼으로 열고, 식물별 override가 없으면 `기본 시간 사용`을 표시한다.
+- Android 13+ 알림 권한은 최초 미요청 상태에서 `알림 허용`만, 요청 후 거부 상태에서 `기기 설정`만 보여 준다. 경고 카드는 일정 조회·물 주기 완료 컨트롤을 비활성화하지 않는다.
+- 저장 중에는 전역·식물별 draft 전체를 읽기 전용으로 잠그고, 비활성화된 저장 버튼에 progress와 `저장 중, 편집 잠김` 상태를 함께 노출한다. 전송 snapshot과 화면 값이 달라지지 않게 하는 의도적 full-draft lock이며, 실패하면 서버 확정본과 exact draft를 함께 보존해 같은 값으로 재시도한다.
+- 설정 저장은 서버 revision을 비교하고 응답의 authoritative committed revision을 채택한다. 다른 기기나 timezone/profile 트랜잭션이 먼저 끝나 `ABORTED` 또는 `FAILED_PRECONDITION`이 발생하면 stale draft를 재전송하지 않고 최신 설정을 다시 읽어 충돌 안내를 표시한다.
+- 편집 draft와 저장 실패 draft는 `SavedStateHandle`에 보존한다. route 재생성은 retained state를 다시 load로 덮지 않으며, 명시적 새로고침이나 충돌 reconciliation만 서버 확정본으로 교체한다.
+- 계정당 개인 식물은 서버 트랜잭션에서 최대 200개로 제한한다. 따라서 전체 식물 알림 설정 저장은 유효한 계정에서 항상 500-write Firestore 경계 안에 머문다.
+
+### Watering notification lifecycle
+
+- 알림 탭은 완료 화면이 아니라 식물 상세로 이동한다. 상세에서 식물명, 최근 물 준 날, 다음 예정일과 물 주기 행동을 함께 제공하며 삭제된 식물은 도감으로 바로 이동할 수 있다.
+- 서버는 endpoint token을 노출하지 않는 owner-scoped `notificationHistory`에 append-only `SENT`/`FAILED` 결과와 확인 시각을 기록한다. 인증된 탭 확인은 전용 App Check callable만 `destinationOpened`와 `openedAt`을 한 번 추가한다.
+- installation 소유권은 서버에 hash로 저장한 secret과 정확히 1씩 증가하는 generation으로 증명한다. 미확정 unregister는 같은 generation을 재사용하고, 계정 이전은 이전 소유자의 `UNREGISTERED` 경계에서만 가능하며 성공 시 secret을 회전한다.
+- pre-send 검증은 endpoint owner 문서에 10분 send lease를 원자적으로 기록한다. unregister와 token rotation은 활성 lease 동안 재시도되고, 9분 함수 timeout 뒤에는 lease가 만료되어 중단된 실행이 FCM을 재개할 수 없다.
+- delivery claim은 `CLAIMED` -> `AUTHORIZED_PRE_SEND` -> `SEND_MAY_HAVE_OCCURRED`로 전이한다. authorization에는 schedule/settings/plant preference revision과 유효 timezone/time을 함께 고정한다. FCM 직전 transaction은 이 version과 활성 상태, endpoint owner/version 및 send lease를 다시 함께 확인하고 하나라도 바뀌면 claim/lease만 회수해 history나 최신 schedule을 건드리지 않는다. terminal history는 항상 확정하되 schedule은 같은 revision이면 고정한 값으로, revision이 바뀌었으면 트랜잭션 안의 최신 설정으로 다음 시각을 다시 계산하며 비활성화·삭제된 schedule은 건드리지 않는다. active schedule query와 독립된 전역 orphan recovery는 `state/expiresAt/__name__` index와 durable cursor로 한 번에 지정된 page만 처리한다. 만료된 pre-send claim은 회수하고 send 경계를 지난 claim과 legacy `SENDING`은 `DELIVERED_AMBIGUOUS`로 종결하며, 계정이 삭제됐거나 claim identity가 잘못됐으면 history 경로를 만들지 않고 폐기한다. 탭 시 history가 아직 없으면 callable이 owner와 delivery ID로 claim 하나만 transaction 안에서 직접 확인한다. live claim은 재시도하고, 만료된 pre-send는 전송 이력을 만들지 않으며, 만료된 post-send/legacy claim은 전역 recovery page 순서와 무관하게 ambiguous history 생성과 OPENED 확인을 같은 transaction에서 끝낸다. 초기 not-found는 30분 동안 계정별 terminal absence로 저장하지 않는다.
+- 계정 timezone/profile과 notification settings 및 모든 watering candidate는 전용 trusted callable의 한 Firestore transaction에서 함께 변경한다. 사용자 클라이언트는 account root를 직접 수정할 수 없다.
+- 로그아웃과 명시적 계정 전환은 endpoint revocation 성공 뒤 기존 owner의 시스템 알림을 모두 취소한 다음 Firebase auth를 제거한다.
+
 ### 아이콘
 
 - `PlanteriorIcons`의 24x24 viewport, 2dp round stroke 아이콘을 우선 사용한다.
@@ -120,7 +140,7 @@ Inter의 한글 글리프 대체 결과와 맞도록 `FontFamily.SansSerif`를 �
 - route에는 불투명 ID만 전달하고 사진 bytes, 사용자 ID, 메모 같은 개인정보를 넣지 않는다.
 - loading, empty, error, denied, stale 상태를 빈 화면으로 두지 않는다.
 - 실패 상태에는 재시도와 가능한 대체 경로를 함께 제공한다.
-- 저장 실패 편집본은 exact retry를 위해 읽기 전용 snapshot으로 고정한다. revision conflict와 outbox mismatch는 같은 요청을 반복하지 않고 서버 확정본 reload로 reconciliation한다.
+- 저장 시작부터 완료까지 편집 draft를 exact request snapshot으로 고정한다. 저장 실패 편집본도 exact retry를 위해 유지하며, revision conflict와 outbox mismatch는 같은 요청을 반복하지 않고 서버 확정본 reload로 reconciliation한다.
 - stale 목록은 마지막 성공 시각과 사용자가 즉시 실행할 수 있는 retry를 함께 표시한다.
 - 카메라·위치·알림 권한 거부 시 설정 이동 또는 직접 입력 등 핵심 목적을 달성할 다른 경로를 보여 준다.
 - 사진 처리, 위치, 알림과 개인정보 관련 행동은 실행 전에 목적과 보관 범위를 명시한다.
@@ -136,6 +156,7 @@ Inter의 한글 글리프 대체 결과와 맞도록 `FontFamily.SansSerif`를 �
 - 일반 본문은 WCAG 2.1 기준 4.5:1 이상의 대비를 유지한다.
 - 경고 본문은 `onErrorContainer`를 사용한다. `error` 색은 경고 배경 위 본문색으로 사용하지 않는다.
 - 비동기 상태 전환은 재구성이나 Activity 재생성 뒤에도 같은 사용자 선택을 복원해야 한다.
+- 알림 권한 거부 안내는 `권한이 없어도 앱에서 예정일을 확인하고 완료할 수 있음`을 텍스트로 명시하고, 권한 CTA와 핵심 관리 행동을 독립적으로 유지한다.
 
 ## 8. 새 화면을 추가하는 순서
 

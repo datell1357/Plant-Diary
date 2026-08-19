@@ -8,10 +8,8 @@ import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.OAuthProvider
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
 import java.time.ZoneId
-import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -84,29 +82,33 @@ class FirebaseIdentityAdapter(private val auth: FirebaseAuth) : FirebaseIdentity
         }
 }
 
-class FirestoreAccountProfileStore(private val firestore: FirebaseFirestore) : AccountProfileStore {
+fun interface AccountProfileCallable {
+    suspend fun call(data: Map<String, Any?>)
+}
+
+class FirestoreAccountProfileStore
+internal constructor(
+    private val callable: AccountProfileCallable,
+    private val accountZone: () -> ZoneId,
+) : AccountProfileStore {
+    constructor(
+        functions: FirebaseFunctions
+    ) : this(
+        AccountProfileCallable { data ->
+            functions.getHttpsCallable("updateAccountProfile").call(data).await()
+        },
+        ZoneId::systemDefault,
+    )
+
     override suspend fun upsert(account: AuthAccount) {
-        firestore
-            .runTransaction { transaction ->
-                val reference = firestore.document("users/${account.uid}")
-                val existing = transaction.get(reference)
-                val previousRevision =
-                    if (existing.exists()) existing.getLong("revision") ?: 0L else 0L
-                transaction.set(
-                    reference,
-                    mapOf(
-                        "ownerUid" to account.uid,
-                        "displayName" to account.displayName,
-                        "zoneId" to ZoneId.systemDefault().id,
-                        "providers" to account.providers.map { it.name }.sorted(),
-                        "revision" to previousRevision + 1,
-                        "expectedRevision" to previousRevision,
-                        "idempotencyKey" to UUID.randomUUID().toString().replace("-", ""),
-                        "updatedAt" to FieldValue.serverTimestamp(),
-                    ),
-                )
-            }
-            .await()
+        callable.call(
+            mapOf(
+                "expectedOwnerUid" to account.uid,
+                "displayName" to account.displayName,
+                "providers" to account.providers.map { it.name }.sorted(),
+                "zoneId" to accountZone().id,
+            )
+        )
     }
 }
 

@@ -74,6 +74,26 @@ test("auth spoof malformed operation and revision conflict are typed errors", as
   );
 });
 
+test("generic owner callable rejects notification settings so only the transactional callable can write them", async () => {
+  const store = new FakeStore();
+  await assert.rejects(
+    () => executeOwnerMutation(
+      { uid: "user-a" },
+      {
+        expectedOwnerUid: "user-a",
+        collection: "notificationSettings",
+        documentId: "watering",
+        mutationType: "UPDATE",
+        expectedRevision: 1,
+        idempotencyKey: "operation-settings-1",
+        payload: { wateringEnabled: false },
+      },
+      store,
+    ),
+    (error: unknown) => error instanceof ContractError && error.code === "invalid-argument",
+  );
+});
+
 test("owner callable rejects impossible dates enums and unknown sensitive fields", async () => {
   const store = new FakeStore();
   const schedule = {
@@ -235,7 +255,7 @@ test("personal plant content links must resolve to public content", async () => 
 test("server-only delivery weather deletion and item writes validate state", async () => {
   const store = new FakeStore();
   const commands = [
-    { collection: "notificationDeliveries", documentId: "delivery-a", payload: { status: "SENT", scheduledFor: "2026-08-12T00:00:00Z", deliveredAt: "2026-08-12T00:01:00Z", deduplicationKey: "delivery-0001" } },
+    { collection: "notificationDeliveries", documentId: "delivery-a", payload: { plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: "2026-08-12T00:00:00Z", deliveredAt: "2026-08-12T00:01:00Z", deduplicationKey: "user-a:plant-a:2026-08-12:0" } },
     { collection: "weatherRisks", documentId: "risk-a", payload: { plantId: "plant-a", snapshotId: "snapshot-a", type: "DRY", detectedAt: "2026-08-12T00:00:00Z", active: true } },
     { collection: "deletionRequests", documentId: "deletion-a", payload: { status: "COMPLETED", requestedAt: "2026-08-01T00:00:00Z", scheduledFor: "2026-08-08T00:00:00Z", completedAt: "2026-08-08T00:01:00Z" } },
     { collection: "ownedItems", documentId: "owned-a", payload: { itemId: "item-a", acquiredAt: "2026-08-12T00:00:00Z", applied: false } },

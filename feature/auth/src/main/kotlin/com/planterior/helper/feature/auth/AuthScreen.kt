@@ -85,6 +85,7 @@ fun AuthAccountScreen(
     onLink: (AuthProvider, Boolean) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
+    onNotificationSettings: () -> Unit = {},
     logoutLabel: String = "로그아웃",
     bottomBar: @Composable () -> Unit = {},
 ) {
@@ -137,6 +138,12 @@ fun AuthAccountScreen(
                 is AuthUiState.SigningIn -> AuthProgress("로그인 수단을 연결하고 있어요")
                 AuthUiState.Restoring -> AuthProgress("계정을 확인하고 있어요")
                 is AuthUiState.SignedOut -> AuthNotice("로그인된 계정이 없어요.")
+            }
+            OutlinedButton(
+                onClick = onNotificationSettings,
+                modifier = Modifier.fillMaxWidth().testTag("account-notification-settings"),
+            ) {
+                Text("물 주기 알림 설정")
             }
             OutlinedButton(
                 onClick = onLogout,

@@ -1,5 +1,7 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { ContractError, type MutationResult, type MutationStore, type OwnerMutationCommand, type ServerStateCommand } from "./contracts.js";
+import { localDateTimeToInstant } from "./notification-settings.js";
+import { addLocalDays } from "./watering.js";
 
 function timestampPayload(payload: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
   return Object.fromEntries(Object.entries(payload).map(([key, value]) => {
@@ -46,7 +48,100 @@ export class FirestoreMutationStore implements MutationStore {
         (command.mutationType === "UPDATE" && !document.exists)
       ) return { kind: "conflict", actualRevision };
       const revision = actualRevision + 1;
+      if (command.collection === "personalPlants" && command.mutationType === "CREATE") {
+        const plants = await transaction.get(
+          this.firestore.collection(`users/${command.ownerUid}/personalPlants`).limit(200),
+        );
+        if (plants.size >= 200) {
+          throw new ContractError("resource-exhausted", "An account can contain at most 200 plants");
+        }
+      }
       const write = { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() };
+      if (command.collection === "personalPlants" && "lastWateredDate" in command.payload) {
+        const scheduleRef = this.firestore.doc(
+          `users/${command.ownerUid}/wateringSchedules/${command.documentId}`,
+        );
+        const accountRef = this.firestore.doc(`users/${command.ownerUid}`);
+        const settingsRef = this.firestore.doc(
+          `users/${command.ownerUid}/notificationSettings/watering`,
+        );
+        const preferenceRef = this.firestore.doc(
+          `users/${command.ownerUid}/notificationPlantSettings/${command.documentId}`,
+        );
+        const contentId =
+          typeof command.payload.contentId === "string"
+            ? command.payload.contentId
+            : document.get("contentId");
+        const [schedule, account, settings, preference, content] = await Promise.all([
+          transaction.get(scheduleRef),
+          transaction.get(accountRef),
+          transaction.get(settingsRef),
+          transaction.get(preferenceRef),
+          typeof contentId === "string"
+            ? transaction.get(this.firestore.doc(`plantContents/${contentId}`))
+            : Promise.resolve(null),
+        ]);
+        const lastWateredDate = command.payload.lastWateredDate;
+        const interval = content?.get("wateringIntervalDays");
+        if (
+          typeof lastWateredDate === "string" &&
+          content?.exists === true &&
+          content.get("publicationState") === "PUBLIC" &&
+          typeof interval === "number" &&
+          Number.isSafeInteger(interval) &&
+          interval >= 1 &&
+          interval <= 365
+        ) {
+          const zoneId = account.get("zoneId");
+          if (typeof zoneId !== "string") {
+            throw new ContractError("invalid-argument", "Account timezone is unavailable");
+          }
+          const scheduleRevision = schedule.exists ? schedule.get("revision") : 0;
+          if (
+            typeof scheduleRevision !== "number" ||
+            !Number.isSafeInteger(scheduleRevision) ||
+            scheduleRevision < 0
+          ) {
+            throw new ContractError("invalid-argument", "Watering schedule revision is malformed");
+          }
+          const dueDate = addLocalDays(lastWateredDate, interval);
+          const defaultTime = settings.get("defaultTime");
+          const timeOverride = preference.get("timeOverride");
+          const active =
+            settings.exists &&
+            settings.get("wateringEnabled") === true &&
+            (!preference.exists || preference.get("enabled") !== false) &&
+            typeof defaultTime === "string";
+          transaction.set(
+            scheduleRef,
+            {
+              ownerUid: command.ownerUid,
+              plantId: command.documentId,
+              dueDate,
+              zoneId,
+              notificationCandidateActive: active,
+              ...(active
+                ? {
+                    nextNotificationAt: Timestamp.fromDate(
+                      localDateTimeToInstant(
+                        dueDate,
+                        typeof timeOverride === "string" ? timeOverride : (defaultTime as string),
+                        zoneId,
+                      ),
+                    ),
+                  }
+                : {}),
+              revision: scheduleRevision + 1,
+              expectedRevision: scheduleRevision,
+              idempotencyKey: command.idempotencyKey,
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: false },
+          );
+        } else if (schedule.exists) {
+          transaction.delete(scheduleRef);
+        }
+      }
       if (command.mutationType === "UPDATE") transaction.set(documentRef, write, { merge: true });
       else transaction.create(documentRef, write);
       transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, requestHash: command.requestHash, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });

@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test lib/**/*.test.js",
-    "test:emulator": "export METADATA_SERVER_DETECTION=none && npm run build && node --test lib/**/*.emulator-spec.js"
+    "test:emulator": "export METADATA_SERVER_DETECTION=none && npm run build && node --test --test-concurrency=1 lib/**/*.emulator-spec.js"
   },
   "dependencies": {
     "firebase-admin": "14.2.0",

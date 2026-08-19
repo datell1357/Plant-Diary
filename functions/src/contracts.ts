@@ -5,7 +5,6 @@ export type ServerContext = Readonly<{ trusted: boolean }>;
 
 export type OwnerCollection =
   | "personalPlants"
-  | "notificationSettings"
   | "miniHomes"
   | "placements"
   | "consents"
@@ -56,7 +55,8 @@ export interface MutationStore {
 export type ContractErrorCode =
   | "unauthenticated"
   | "permission-denied"
-  | "invalid-argument";
+  | "invalid-argument"
+  | "resource-exhausted";
 
 export class ContractError extends Error {
   constructor(readonly code: ContractErrorCode, message: string) {
@@ -203,7 +203,6 @@ function oneOf<T extends string>(candidate: string, allowed: readonly T[], field
 function ownerCollection(value: string): OwnerCollection {
   switch (value) {
     case "personalPlants":
-    case "notificationSettings":
     case "miniHomes":
     case "placements":
     case "consents":
@@ -289,13 +288,6 @@ async function validateOwnerPayload(
       await validateLastWateredDate(payload, ownerUid, store);
       return;
     }
-    case "notificationSettings":
-      exactFields(payload, ["wateringEnabled", "weatherEnabled", "defaultTime", "zoneId"]);
-      booleanField(payload, "wateringEnabled");
-      booleanField(payload, "weatherEnabled");
-      localTime(payload, "defaultTime");
-      zoneId(payload, "zoneId");
-      return;
     case "miniHomes":
       exactFields(payload, ["name"]);
       stringField(payload, "name");
@@ -333,14 +325,20 @@ async function validateOwnerPayload(
 function validateServerPayload(collection: ServerCollection, payload: Readonly<Record<string, unknown>>): void {
   switch (collection) {
     case "notificationDeliveries": {
-      exactFields(payload, ["status", "scheduledFor", "deliveredAt", "deduplicationKey"], ["plantId"]);
-      const plantId = nullableStringField(payload, "plantId");
-      if (plantId !== null) opaqueField(payload, "plantId");
-      const status = oneOf(stringField(payload, "status"), ["PENDING", "SENT", "OPENED", "FAILED"] as const, "status");
+      exactFields(
+        payload,
+        ["plantId", "dueDate", "attempt", "status", "scheduledFor", "deliveredAt", "deduplicationKey"],
+        ["endpointResults"],
+      );
+      opaqueField(payload, "plantId");
+      localDate(payload, "dueDate");
+      const attempt = integerField(payload, "attempt");
+      if (attempt !== 0 && attempt !== 1) throw new ContractError("invalid-argument", "attempt must be zero or one");
+      oneOf(stringField(payload, "status"), ["SENT"] as const, "status");
       const scheduled = isoInstant(payload, "scheduledFor");
       const delivered = isoInstant(payload, "deliveredAt", true);
       stringField(payload, "deduplicationKey");
-      if ((status === "SENT" || status === "OPENED") && delivered === null) throw new ContractError("invalid-argument", "deliveredAt is required");
+      if (delivered === null) throw new ContractError("invalid-argument", "deliveredAt is required");
       if (scheduled !== null && delivered !== null && delivered < scheduled) throw new ContractError("invalid-argument", "deliveredAt precedes scheduledFor");
       return;
     }

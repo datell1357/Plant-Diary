@@ -9,6 +9,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
 import com.planterior.helper.core.database.PlanteriorDatabase
 import java.security.MessageDigest
 import java.util.UUID
@@ -128,7 +129,7 @@ class AuthDebugHarnessTest {
                     AuthProvider.APPLE to StaticProvider(AuthProvider.APPLE, outcome(appleProof)),
                 ),
                 identity,
-                FirestoreAccountProfileStore(firestore),
+                FirestoreAccountProfileStore(FirebaseFunctions.getInstance()),
                 cache,
                 FirestoreAccountSynchronizer(partialRemote, database),
             )
@@ -185,7 +186,7 @@ class AuthDebugHarnessTest {
                     ),
             ),
             identity,
-            FirestoreAccountProfileStore(firestore),
+            FirestoreAccountProfileStore(FirebaseFunctions.getInstance()),
             RecordingCache(),
             AccountSynchronizer { SyncSummary(SyncDomain.entries.toSet(), emptyMap()) },
         )

@@ -1,13 +1,25 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { randomUUID } from "node:crypto";
 import { getFirestore } from "firebase-admin/firestore";
+import { getMessaging } from "firebase-admin/messaging";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeCompleteAppleSignIn } from "./apple-auth.js";
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
 import { FirestoreWateringCompletionStore } from "./firestore-watering-store.js";
+import {
+  FirestoreNotificationSettingsStore,
+  NotificationSettingsError,
+  executeEnsureWateringNotificationSettings,
+  executeReconcileWateringNotificationTimezone,
+  executeRegisterNotificationEndpoint,
+  executeUnregisterNotificationEndpoint,
+  executeUpdateAccountProfile,
+  executeUpdateWateringNotificationSettings,
+} from "./notification-settings.js";
 import {
   FirestoreIdentificationRequestStore,
   IdentificationRuntimeError,
@@ -16,11 +28,20 @@ import {
 } from "./plant-identification-runtime.js";
 import { executePlantIdentification, PlantIdentificationError } from "./plant-identification.js";
 import { WateringError, executeWateringCompletion } from "./watering.js";
+import {
+  FirebaseWateringPushSender,
+  FirestoreWateringDeliveryStore,
+  NotificationOpenError,
+  executeConfirmNotificationOpened,
+  runWateringDeliveryScan,
+} from "./watering-notifications.js";
 
 if (getApps().length === 0) initializeApp();
 const firestore = getFirestore();
 const store = new FirestoreMutationStore(firestore);
 const wateringStore = new FirestoreWateringCompletionStore(firestore);
+const notificationSettingsStore = new FirestoreNotificationSettingsStore(firestore);
+const wateringDeliveryStore = new FirestoreWateringDeliveryStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
 const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
 const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
@@ -73,6 +94,127 @@ export const completeWatering = onCall(async (request) => {
     throw error;
   }
 });
+
+function notificationHttpsError(error: unknown): never {
+  if (!(error instanceof NotificationSettingsError)) throw error;
+  throw new HttpsError(error.code, error.message);
+}
+
+export const registerNotificationEndpoint = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeRegisterNotificationEndpoint(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        notificationSettingsStore,
+      );
+    } catch (error: unknown) {
+      return notificationHttpsError(error);
+    }
+  },
+);
+
+export const unregisterNotificationEndpoint = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeUnregisterNotificationEndpoint(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        notificationSettingsStore,
+      );
+    } catch (error: unknown) {
+      return notificationHttpsError(error);
+    }
+  },
+);
+
+export const ensureWateringNotificationSettings = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeEnsureWateringNotificationSettings(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        notificationSettingsStore,
+      );
+    } catch (error: unknown) {
+      return notificationHttpsError(error);
+    }
+  },
+);
+
+export const updateAccountProfile = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeUpdateAccountProfile(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        notificationSettingsStore,
+      );
+    } catch (error: unknown) {
+      return notificationHttpsError(error);
+    }
+  },
+);
+
+export const reconcileWateringNotificationTimezone = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeReconcileWateringNotificationTimezone(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        notificationSettingsStore,
+      );
+    } catch (error: unknown) {
+      return notificationHttpsError(error);
+    }
+  },
+);
+
+export const updateWateringNotificationSettings = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeUpdateWateringNotificationSettings(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        notificationSettingsStore,
+      );
+    } catch (error: unknown) {
+      return notificationHttpsError(error);
+    }
+  },
+);
+
+export const confirmNotificationOpened = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeConfirmNotificationOpened(
+        firestore,
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+      );
+    } catch (error: unknown) {
+      if (error instanceof NotificationOpenError) throw new HttpsError(error.code, error.message);
+      throw error;
+    }
+  },
+);
+
+export const deliverDueWateringNotifications = onSchedule(
+  { schedule: "every 15 minutes", timeZone: "UTC", timeoutSeconds: 540 },
+  async () => {
+    await runWateringDeliveryScan(
+      wateringDeliveryStore,
+      new FirebaseWateringPushSender(getMessaging()),
+    );
+  },
+);
 
 export const beginAppleSignIn = onCall(async (request) => {
   try {

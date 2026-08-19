@@ -3,7 +3,16 @@ import type { Server } from "node:http";
 import test from "node:test";
 import { getAppCheck } from "firebase-admin/app-check";
 import express from "express";
-import { identifyPlant } from "./index.js";
+import {
+  confirmNotificationOpened,
+  ensureWateringNotificationSettings,
+  identifyPlant,
+  reconcileWateringNotificationTimezone,
+  registerNotificationEndpoint,
+  unregisterNotificationEndpoint,
+  updateAccountProfile,
+  updateWateringNotificationSettings,
+} from "./index.js";
 
 declare global {
   namespace Express {
@@ -13,10 +22,18 @@ declare global {
   }
 }
 
-async function invokeIdentifyPlant(appCheckToken?: string): Promise<Response> {
+type CallableHandler = (
+  request: Parameters<typeof identifyPlant>[0],
+  response: Parameters<typeof identifyPlant>[1],
+) => void | Promise<void>;
+
+async function invokeCallable(
+  handler: CallableHandler,
+  appCheckToken?: string,
+): Promise<Response> {
   const app = express();
   app.use(express.json());
-  app.post("/", (request, response) => identifyPlant(request, response));
+  app.post("/", (request, response) => handler(request, response));
   const server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address();
@@ -43,13 +60,32 @@ async function closeServer(server: Server): Promise<void> {
 
 test("compiled identifyPlant endpoint rejects a request with missing App Check", async () => {
   // Given / When
-  const response = await invokeIdentifyPlant();
+  const response = await invokeCallable(identifyPlant);
 
   // Then
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), {
     error: { message: "Unauthenticated", status: "UNAUTHENTICATED" },
   });
+});
+
+test("compiled notification mutation endpoints reject requests with missing App Check", async () => {
+  const endpoints: CallableHandler[] = [
+    (request, response) => confirmNotificationOpened(request, response),
+    (request, response) => registerNotificationEndpoint(request, response),
+    (request, response) => unregisterNotificationEndpoint(request, response),
+    (request, response) => ensureWateringNotificationSettings(request, response),
+    (request, response) => reconcileWateringNotificationTimezone(request, response),
+    (request, response) => updateAccountProfile(request, response),
+    (request, response) => updateWateringNotificationSettings(request, response),
+  ];
+  for (const endpoint of endpoints) {
+    const response = await invokeCallable(endpoint);
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+      error: { message: "Unauthenticated", status: "UNAUTHENTICATED" },
+    });
+  }
 });
 
 test("compiled identifyPlant endpoint rejects a request with invalid App Check", async () => {
@@ -62,7 +98,7 @@ test("compiled identifyPlant endpoint rejects a request with invalid App Check",
 
   try {
     // When
-    const response = await invokeIdentifyPlant("invalid.fixture.token");
+    const response = await invokeCallable(identifyPlant, "invalid.fixture.token");
 
     // Then
     assert.equal(response.status, 401);

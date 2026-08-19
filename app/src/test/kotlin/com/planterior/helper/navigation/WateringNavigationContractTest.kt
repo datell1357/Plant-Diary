@@ -22,16 +22,21 @@ import com.planterior.helper.feature.collection.PlantCareGuidance
 import com.planterior.helper.feature.collection.PlantDetail
 import com.planterior.helper.feature.collection.PlantDetailTestTags
 import com.planterior.helper.feature.collection.PlantEditRequest
+import com.planterior.helper.feature.watering.GlobalWateringReminder
+import com.planterior.helper.feature.watering.PlantWateringReminder
 import com.planterior.helper.feature.watering.WateringCompletionReceipt
 import com.planterior.helper.feature.watering.WateringCompletionRequest
 import com.planterior.helper.feature.watering.WateringCompletionResult
 import com.planterior.helper.feature.watering.WateringLoad
+import com.planterior.helper.feature.watering.WateringNotificationSettings
+import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringPlantSnapshot
 import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.feature.watering.WateringTestTags
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -58,6 +63,16 @@ class WateringNavigationContractTest {
 
         composeRule.onNodeWithTag(WateringTestTags.DONE).performClick()
         assertRefreshedDetail()
+    }
+
+    @Test
+    fun `plant detail notification settings entry opens production notifications route`() {
+        launch()
+
+        composeRule.onNodeWithTag(PlantDetailTestTags.NOTIFICATION_SETTINGS).performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(PlanteriorRoute.Notifications, currentRoute())
     }
 
     @Test
@@ -89,6 +104,7 @@ class WateringNavigationContractTest {
                     startRoute = PlanteriorRoute.PlantDetail("plant-a"),
                     collectionRepository = collection,
                     wateringRepository = watering,
+                    wateringNotificationSettingsRepository = FakeNotificationSettingsRepository,
                     clock =
                         Clock.fixed(
                             Instant.parse("2026-08-11T00:00:00Z"),
@@ -162,6 +178,28 @@ class WateringNavigationContractTest {
                 )
             )
         }
+    }
+
+    private object FakeNotificationSettingsRepository : WateringNotificationSettingsRepository {
+        override suspend fun load() =
+            WateringNotificationSettings(
+                GlobalWateringReminder(
+                    enabled = true,
+                    defaultTime = LocalTime.of(9, 0),
+                    zoneId = ZoneId.of("Asia/Seoul"),
+                ),
+                listOf(
+                    PlantWateringReminder(
+                        PersonalPlantId("plant-a"),
+                        enabled = true,
+                        timeOverride = null,
+                        displayName = "몬스테라",
+                    )
+                ),
+            )
+
+        override suspend fun save(settings: WateringNotificationSettings) =
+            com.planterior.helper.feature.watering.WateringSettingsSaveResult.Saved(settings)
     }
 
     private class FakeCollectionRepository : CollectionRepository {

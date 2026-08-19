@@ -19,6 +19,8 @@ object FirestoreContract {
         WATERING_RECORDS("wateringRecords"),
         WATERING_SCHEDULES("wateringSchedules"),
         NOTIFICATION_SETTINGS("notificationSettings"),
+        NOTIFICATION_PLANT_SETTINGS("notificationPlantSettings"),
+        NOTIFICATION_HISTORY("notificationHistory"),
         WEATHER_SNAPSHOTS("weatherSnapshots"),
         WEATHER_RISKS("weatherRisks"),
         MINI_HOMES("miniHomes"),
@@ -96,17 +98,17 @@ data class PersonalPlantDto(
 ) : RevisionedWriteDto
 
 data class WateringScheduleDto(
-    override val ownerUid: String,
+    val ownerUid: String,
     val plantId: String,
     val dueDate: String,
-    val reminderTime: String,
     val zoneId: String,
-    val enabled: Boolean,
-    override val revision: Long,
-    override val expectedRevision: Long,
-    override val idempotencyKey: String,
-    override val updatedAt: String,
-) : RevisionedWriteDto
+    val notificationCandidateActive: Boolean,
+    val nextNotificationAt: Timestamp?,
+    val revision: Long,
+    val expectedRevision: Long,
+    val idempotencyKey: String,
+    val updatedAt: Timestamp,
+)
 
 data class WateringRecordDto(
     override val ownerUid: String,
@@ -229,18 +231,73 @@ data class DeletionRequestDto(
     override val updatedAt: String,
 ) : RevisionedWriteDto
 
+enum class NotificationDeliveryStatus {
+    SENT
+}
+
 data class NotificationDeliveryDto(
-    override val ownerUid: String,
-    val plantId: String?,
-    val scheduledFor: String,
-    val deliveredAt: String?,
-    val status: String,
+    val ownerUid: String,
+    val plantId: String,
+    val dueDate: String,
+    val attempt: Int,
+    val scheduledFor: Timestamp,
+    val deliveredAt: Timestamp,
+    val status: NotificationDeliveryStatus,
     val deduplicationKey: String,
-    override val revision: Long,
-    override val expectedRevision: Long,
-    override val idempotencyKey: String,
-    override val updatedAt: String,
-) : RevisionedWriteDto
+    val revision: Long,
+    val expectedRevision: Long,
+    val idempotencyKey: String,
+    val updatedAt: Timestamp,
+)
+
+enum class NotificationHistoryStatus {
+    SENT,
+    FAILED,
+    DELIVERED_AMBIGUOUS,
+}
+
+data class NotificationHistoryDto(
+    val ownerUid: String,
+    val plantId: String,
+    val dueDate: String,
+    val attempt: Int,
+    val status: NotificationHistoryStatus,
+    val deliveryConfirmedAt: Timestamp?,
+    val failedAt: Timestamp?,
+    val ambiguousAt: Timestamp?,
+    val destinationOpened: Boolean,
+    val openedAt: Timestamp?,
+    val failureKind: String?,
+    val deduplicationKey: String,
+    val revision: Long,
+    val expectedRevision: Long,
+    val idempotencyKey: String,
+    val updatedAt: Timestamp,
+) {
+    init {
+        when (status) {
+            NotificationHistoryStatus.SENT ->
+                require(deliveryConfirmedAt != null || openedAt != null)
+            NotificationHistoryStatus.FAILED -> require(failedAt != null)
+            NotificationHistoryStatus.DELIVERED_AMBIGUOUS ->
+                require(deliveryConfirmedAt != null && ambiguousAt != null)
+        }
+        if (destinationOpened) {
+            require(status == NotificationHistoryStatus.SENT && openedAt != null)
+        }
+    }
+}
+
+data class NotificationPlantSettingDto(
+    val ownerUid: String,
+    val plantId: String,
+    val enabled: Boolean,
+    val timeOverride: String?,
+    val revision: Long,
+    val expectedRevision: Long,
+    val idempotencyKey: String,
+    val updatedAt: Timestamp,
+)
 
 data class PlantContentDto(
     val name: String,

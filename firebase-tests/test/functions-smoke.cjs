@@ -20,6 +20,7 @@ async function main() {
   const mutationPayload = {
     collection: "personalPlants",
     documentId: "callable-plant",
+    mutationType: "CREATE",
     expectedRevision: 0,
     idempotencyKey: "operation-callable-0001",
     payload: { displayName: "몬스테라", registrationMethod: "MANUAL" },

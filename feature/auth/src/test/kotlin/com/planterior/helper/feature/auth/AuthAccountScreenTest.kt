@@ -36,6 +36,26 @@ class AuthAccountScreenTest {
     }
 
     @Test
+    fun `settings exposes watering notification settings entry`() {
+        var opens = 0
+        compose.setContent {
+            AuthAccountScreen(
+                state =
+                    AuthUiState.Authenticated(
+                        AuthAccount("account-a", null, "A", setOf(AuthProvider.GOOGLE)),
+                        SyncSummary.EMPTY,
+                    ),
+                onLink = { _, _ -> },
+                onLogout = {},
+                onNotificationSettings = { opens += 1 },
+            )
+        }
+
+        compose.onNodeWithTag("account-notification-settings").performClick()
+        assertEquals(1, opens)
+    }
+
+    @Test
     fun `collision explains takeover prevention and has no takeover action`() {
         compose.setContent {
             AuthAccountScreen(

@@ -228,6 +228,27 @@ class WateringScreenTest {
         assertEquals(0, confirms)
     }
 
+    @Test
+    fun `deleted notification target renders safe not found with collection return action`() {
+        var backs = 0
+        composeRule.setContent {
+            com.planterior.helper.core.designsystem.theme.PlanteriorTheme {
+                WateringConfirmationScreen(
+                    state = WateringConfirmationUiState.NotFound,
+                    onBack = { backs++ },
+                    onWateredDate = {},
+                    onConfirm = {},
+                    onRetry = {},
+                    onDone = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("식물을 찾을 수 없어요").assertIsDisplayed()
+        composeRule.onNodeWithText("식물 관리로 돌아가기").performClick()
+        assertEquals(1, backs)
+    }
+
     private fun snapshot() =
         WateringPlantSnapshot(
             AccountId("account-a"),

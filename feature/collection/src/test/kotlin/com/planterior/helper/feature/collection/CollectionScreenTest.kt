@@ -176,6 +176,22 @@ class CollectionScreenTest {
     }
 
     @Test
+    fun `plant detail exposes watering notification settings entry`() {
+        var opens = 0
+        showDetail(
+            PlantDetailUiState.Content(detail(), EditorState.from(detail().plant)),
+            onNotificationSettings = { opens += 1 },
+        )
+
+        composeRule
+            .onNodeWithTag(PlantDetailTestTags.NOTIFICATION_SETTINGS)
+            .performScrollTo()
+            .performClick()
+
+        assertEquals(1, opens)
+    }
+
+    @Test
     fun `partial stale and no standard content are explicit without fake care cards`() {
         val state =
             mutableStateOf<PlantDetailUiState>(
@@ -593,6 +609,7 @@ class CollectionScreenTest {
         onLocation: (String) -> Unit = {},
         onPrivateNote: (String) -> Unit = {},
         onSave: () -> Unit = {},
+        onNotificationSettings: () -> Unit = {},
     ) {
         composeRule.setContent {
             com.planterior.helper.core.designsystem.theme.PlanteriorTheme {
@@ -606,6 +623,7 @@ class CollectionScreenTest {
                     onPrivateNote = onPrivateNote,
                     onSave = onSave,
                     onCancelEdit = {},
+                    onNotificationSettings = onNotificationSettings,
                 )
             }
         }

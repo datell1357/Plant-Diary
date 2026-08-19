@@ -1,5 +1,6 @@
-import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import type { MutationResult } from "./contracts.js";
+import { localDateTimeToInstant } from "./notification-settings.js";
 import {
   WateringError,
   addLocalDays,
@@ -19,6 +20,12 @@ export class FirestoreWateringCompletionStore implements WateringCompletionStore
       );
       const scheduleRef = this.firestore.doc(
         `users/${command.ownerUid}/wateringSchedules/${command.plantId}`,
+      );
+      const settingsRef = this.firestore.doc(
+        `users/${command.ownerUid}/notificationSettings/watering`,
+      );
+      const preferenceRef = this.firestore.doc(
+        `users/${command.ownerUid}/notificationPlantSettings/${command.plantId}`,
       );
       const recordRef = this.firestore.doc(
         `users/${command.ownerUid}/wateringRecords/${command.idempotencyKey}`,
@@ -81,7 +88,11 @@ export class FirestoreWateringCompletionStore implements WateringCompletionStore
       ) {
         throw new WateringError("failed-precondition", "Published watering interval is unavailable");
       }
-      const schedule = await transaction.get(scheduleRef);
+      const [schedule, notificationSettings, notificationPreference] = await Promise.all([
+        transaction.get(scheduleRef),
+        transaction.get(settingsRef),
+        transaction.get(preferenceRef),
+      ]);
       const scheduleRevision = schedule.exists ? schedule.get("revision") : 0;
       if (typeof scheduleRevision !== "number" || !Number.isSafeInteger(scheduleRevision) || scheduleRevision < 0) {
         throw new WateringError("failed-precondition", "Watering schedule revision is malformed");
@@ -91,15 +102,13 @@ export class FirestoreWateringCompletionStore implements WateringCompletionStore
       const nextPlantRevision = plantRevision + 1;
       const nextScheduleRevision = scheduleRevision + 1;
       const serverTimestamp = FieldValue.serverTimestamp();
-      const schedulePreferences =
-        schedule.exists &&
-        typeof schedule.get("reminderTime") === "string" &&
-        typeof schedule.get("enabled") === "boolean"
-          ? {
-              reminderTime: schedule.get("reminderTime") as string,
-              enabled: schedule.get("enabled") as boolean,
-            }
-          : {};
+      const defaultTime = notificationSettings.get("defaultTime");
+      const timeOverride = notificationPreference.get("timeOverride");
+      const notificationCandidateActive =
+        notificationSettings.exists &&
+        notificationSettings.get("wateringEnabled") === true &&
+        (!notificationPreference.exists || notificationPreference.get("enabled") !== false) &&
+        typeof defaultTime === "string";
 
       transaction.set(
         plantRef,
@@ -127,7 +136,18 @@ export class FirestoreWateringCompletionStore implements WateringCompletionStore
         plantId: command.plantId,
         dueDate,
         zoneId,
-        ...schedulePreferences,
+        notificationCandidateActive,
+        ...(notificationCandidateActive
+          ? {
+              nextNotificationAt: Timestamp.fromDate(
+                localDateTimeToInstant(
+                  dueDate,
+                  typeof timeOverride === "string" ? timeOverride : (defaultTime as string),
+                  zoneId,
+                ),
+              ),
+            }
+          : {}),
         revision: nextScheduleRevision,
         expectedRevision: scheduleRevision,
         idempotencyKey: command.idempotencyKey,

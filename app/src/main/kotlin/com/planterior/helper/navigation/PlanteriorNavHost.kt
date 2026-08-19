@@ -42,6 +42,8 @@ import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRoute
 import com.planterior.helper.feature.registration.RegistrationSeed
 import com.planterior.helper.feature.watering.WateringConfirmationRoute
+import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
+import com.planterior.helper.feature.watering.WateringNotificationSettingsRoute
 import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.identify.photoIdentificationHandoff
@@ -79,6 +81,11 @@ fun PlanteriorNavHost(
     registrationRepository: RegistrationRepository? = null,
     collectionRepository: CollectionRepository? = null,
     wateringRepository: WateringRepository? = null,
+    wateringNotificationSettingsRepository: WateringNotificationSettingsRepository? = null,
+    notificationPermissionGranted: Boolean = true,
+    canRequestNotificationPermission: Boolean = false,
+    onRequestNotificationPermission: () -> Unit = {},
+    onOpenNotificationSettings: () -> Unit = {},
     collectionThumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
     clock: Clock = Clock.systemDefaultZone(),
 ) {
@@ -131,10 +138,9 @@ fun PlanteriorNavHost(
                     title = stringResource(R.string.screen_login),
                     description = stringResource(R.string.screen_login_description),
                     onPrimaryAction = {
-                        val target = PlanteriorRouteResolver.resolveReturnRoute(route.returnRoute)
-                        navController.navigate(target) {
-                            popUpTo<PlanteriorRoute.Login> { inclusive = true }
-                        }
+                        navController.replaceWithNotificationStack(
+                            NotificationTapRouter.resumeAfterLogin(route.returnRoute)
+                        )
                     },
                     primaryActionLabel = stringResource(R.string.action_continue),
                 )
@@ -143,13 +149,11 @@ fun PlanteriorNavHost(
                 val scope = rememberCoroutineScope()
                 LaunchedEffect(state) {
                     val authenticated = state as? AuthUiState.Authenticated ?: return@LaunchedEffect
-                    val target =
-                        PlanteriorRouteResolver.resolveReturnRoute(
+                    navController.replaceWithNotificationStack(
+                        NotificationTapRouter.resumeAfterLogin(
                             authenticated.returnRoute ?: route.returnRoute
                         )
-                    navController.navigate(target) {
-                        popUpTo<PlanteriorRoute.Login> { inclusive = true }
-                    }
+                    )
                 }
                 AuthScreen(
                     state = state,
@@ -244,11 +248,15 @@ fun PlanteriorNavHost(
                     },
                     onLogout = {
                         scope.launch {
-                            authCoordinator.logout()
-                            navController.navigate(PlanteriorRoute.Login()) {
-                                popUpTo(navController.graph.id) { inclusive = true }
+                            if (authCoordinator.logout()) {
+                                navController.navigate(PlanteriorRoute.Login()) {
+                                    popUpTo(navController.graph.id) { inclusive = true }
+                                }
                             }
                         }
+                    },
+                    onNotificationSettings = {
+                        navController.navigate(PlanteriorRoute.Notifications)
                     },
                     logoutLabel = stringResource(R.string.action_logout),
                     bottomBar = bottomBar,
@@ -368,10 +376,21 @@ fun PlanteriorNavHost(
             )
         }
         composable<PlanteriorRoute.Notifications> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_notifications),
-                description = stringResource(R.string.screen_notifications_description),
-            )
+            if (wateringNotificationSettingsRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_notifications),
+                    description = stringResource(R.string.screen_notifications_description),
+                )
+            } else {
+                WateringNotificationSettingsRoute(
+                    repository = wateringNotificationSettingsRepository,
+                    notificationPermissionGranted = notificationPermissionGranted,
+                    canRequestNotificationPermission = canRequestNotificationPermission,
+                    onRequestPermission = onRequestNotificationPermission,
+                    onOpenSystemSettings = onOpenNotificationSettings,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable<PlanteriorRoute.PlantDetail> { entry ->
             val route = entry.toRoute<PlanteriorRoute.PlantDetail>()
@@ -389,6 +408,9 @@ fun PlanteriorNavHost(
                     plantId = PersonalPlantId(route.plantId),
                     repository = collectionRepository,
                     onBack = { navController.popBackStack() },
+                    onNotificationSettings = {
+                        navController.navigate(PlanteriorRoute.Notifications)
+                    },
                     clock = clock,
                     onRecordWatering =
                         wateringRepository?.let {

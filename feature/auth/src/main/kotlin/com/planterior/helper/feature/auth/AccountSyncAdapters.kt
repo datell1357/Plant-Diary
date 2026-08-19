@@ -82,28 +82,34 @@ class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : Acc
                 )
             }
 
-    override suspend fun wateringSchedules(accountUid: String): List<RemoteWateringSchedule> =
-        firestore
-            .collection("users/$accountUid/wateringSchedules")
-            .get()
-            .await()
-            .documents
-            .mapNotNull { document ->
-                val plantId = document.getString("plantId") ?: return@mapNotNull null
-                val dueDate = document.getString("dueDate") ?: return@mapNotNull null
-                val reminderTime = document.getString("reminderTime")
-                val zoneId = document.getString("zoneId") ?: return@mapNotNull null
-                RemoteWateringSchedule(
-                    document.id,
-                    plantId,
-                    dueDate,
-                    reminderTime,
-                    zoneId,
-                    document.getLong("revision") ?: 0L,
-                    document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
-                    document.getBoolean("enabled"),
-                )
-            }
+    override suspend fun wateringSchedules(accountUid: String): List<RemoteWateringSchedule> {
+        val account = firestore.document("users/$accountUid").get().await()
+        val zoneId = requireNotNull(account.getString("zoneId"))
+        val schedules =
+            firestore.collection("users/$accountUid/wateringSchedules").get().await().documents
+        val preferences =
+            firestore
+                .collection("users/$accountUid/notificationPlantSettings")
+                .get()
+                .await()
+                .documents
+                .associateBy { it.id }
+        return schedules.mapNotNull { document ->
+            val plantId = document.getString("plantId") ?: return@mapNotNull null
+            val dueDate = document.getString("dueDate") ?: return@mapNotNull null
+            val preference = preferences[plantId]
+            RemoteWateringSchedule(
+                document.id,
+                plantId,
+                dueDate,
+                preference?.getString("timeOverride"),
+                zoneId,
+                document.getLong("revision") ?: 0L,
+                document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+                preference?.getBoolean("enabled"),
+            )
+        }
+    }
 
     override suspend fun miniHome(accountUid: String): RemoteMiniHome? =
         firestore

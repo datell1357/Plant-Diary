@@ -79,6 +79,11 @@ object PlanteriorRouteResolver {
             segments.isEmpty() -> PlanteriorRoute.Collection
             segments.size == 2 && segments[0] == "plant" && PLANT_ID_PATTERN.matches(segments[1]) ->
                 PlanteriorRoute.PlantDetail(segments[1])
+            segments.size == 3 &&
+                segments[0] == "plant" &&
+                segments[2] == "watering" &&
+                PLANT_ID_PATTERN.matches(segments[1]) ->
+                PlanteriorRoute.WateringConfirmation(segments[1])
             else -> PlanteriorRoute.Home
         }
 
