@@ -14,6 +14,11 @@ extension AppShellView {
             ] == "AX5" {
                 return .accessibilityExtraExtraExtraLarge
             }
+            if ProcessInfo.processInfo.environment[
+                "QA_SETTINGS_SIZE_CATEGORY"
+            ] == "AX5" {
+                return .accessibilityExtraExtraExtraLarge
+            }
         #endif
         return sizeCategory
     }

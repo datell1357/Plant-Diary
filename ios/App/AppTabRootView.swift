@@ -21,6 +21,8 @@ struct AppTabRootView: View {
             )
         } else if tab == .storage {
             InventoryView()
+        } else if tab == .settings {
+            SettingsView(openMilestones: openDetail)
         } else {
             placeholder
         }

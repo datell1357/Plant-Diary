@@ -341,7 +341,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(share): iOS 미니홈피 이미지와 링크 공유 구현`
 
-### [ ] Todo 18 — Settings, policy, consent, and account deletion
+### [x] Todo 18 — Settings, policy, consent, and account deletion
 
 #### Scope
 

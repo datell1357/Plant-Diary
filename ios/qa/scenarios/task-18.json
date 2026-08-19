@@ -1,0 +1,27 @@
+{
+  "task": 18,
+  "command": "ios/scripts/qa-task.sh 18 --attempt-dir \"$ATTEMPT_DIR\"",
+  "marker": "IOS_TASK_18_QA_OK",
+  "artifacts": [
+    "task-18-ios-app-implementation.png",
+    "task-18-ios-app-implementation-ax5.png",
+    "task-18-deletion.png",
+    "task-18-settings.json",
+    "task-18-deletion.json",
+    "task-18-deletion-completed.json",
+    "task-18-ios-app-implementation.json",
+    "task-18-ios-app-implementation.xcresult",
+    "task-18-home-regression.xcresult"
+  ],
+  "coveredBoundaries": [
+    "permission and sync status",
+    "privacy disclosures",
+    "server-calculated scope fake",
+    "recent reauthentication and final confirmation",
+    "exact seven-day grace and cancellation",
+    "idempotent request",
+    "partial failure distinct from completed",
+    "cleanup only after completed receipt",
+    "production deletion unavailable"
+  ]
+}

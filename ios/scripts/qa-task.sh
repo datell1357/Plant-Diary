@@ -1367,6 +1367,118 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "18" ]; then
+  sim="${IOS_QA_SIMULATOR_ID:-29F51612-FF7F-4B0C-86ED-AF52AA591546}"
+  destination="platform=iOS Simulator,id=$sim"
+  derived="$attempt_dir/DerivedData"
+  result="$attempt_dir/task-18-ios-app-implementation.xcresult"
+  regression="$attempt_dir/task-18-home-regression.xcresult"
+  attachments="$attempt_dir/task-18-attachments"
+  cleanup_task_18() {
+    xcrun simctl uninstall "$sim" com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$sim" com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+    xcrun simctl shutdown "$sim" 2>/dev/null || true
+  }
+  trap cleanup_task_18 EXIT
+  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  xcodebuild -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$destination" \
+    -derivedDataPath "$derived" \
+    CODE_SIGNING_ALLOWED=NO build-for-testing
+  cleanup_task_18
+  xcrun simctl boot "$sim"
+  xcrun simctl bootstatus "$sim" -b
+  xcodebuild -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$destination" \
+    -derivedDataPath "$derived" \
+    -resultBundlePath "$result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/SettingsDeletionUITests
+  cleanup_task_18
+  xcrun simctl boot "$sim"
+  xcrun simctl bootstatus "$sim" -b
+  xcodebuild -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$destination" \
+    -derivedDataPath "$derived" \
+    -resultBundlePath "$regression" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather \
+    -only-testing:PlanteriorUITests/WeatherFlowUITests/testRegionSettingsDisclosesPurposeAndSavesManualRegion \
+    -only-testing:PlanteriorUITests/ProgressionUITests/testApprovedDuplicateClaimAndOfflineReconcile
+  xcrun xcresulttool export attachments \
+    --path "$result" --output-path "$attachments"
+  copy_task_18_attachment() {
+    marker=$1
+    destination_path=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        /suggestedHumanReadableName/ {
+          if (index($4, marker "_") == 1) {
+            print directory "/" file
+            exit
+          }
+        }
+      ' marker="$marker" directory="$attachments" \
+        "$attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination_path"
+  }
+  copy_task_18_attachment \
+    task-18-settings \
+    "$attempt_dir/task-18-ios-app-implementation.png"
+  copy_task_18_attachment \
+    task-18-deletion-ax5 \
+    "$attempt_dir/task-18-ios-app-implementation-ax5.png"
+  copy_task_18_attachment \
+    task-18-deletion \
+    "$attempt_dir/task-18-deletion.png"
+  copy_task_18_attachment \
+    task-18-settings-data \
+    "$attempt_dir/task-18-settings.json"
+  copy_task_18_attachment \
+    task-18-deletion-data \
+    "$attempt_dir/task-18-deletion.json"
+  copy_task_18_attachment \
+    task-18-deletion-completed-data \
+    "$attempt_dir/task-18-deletion-completed.json"
+  cp "$repo_root/ios/qa/scenarios/task-18.json" \
+    "$attempt_dir/task-18-manifest.json"
+  python3 - "$attempt_dir/task-18-ios-app-implementation.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 18,
+            "settings": "passed",
+            "policy": "passed",
+            "deletionStateMachine": "passed",
+            "cleanupOnlyAfterCompleted": True,
+            "productionIntegration": "unavailable",
+            "liveDeletion": "deferred-until-backend-contract"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_18_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69
