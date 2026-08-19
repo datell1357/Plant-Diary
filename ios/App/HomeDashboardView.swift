@@ -5,6 +5,7 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     let openCamera: () -> Void
+    let openMiniHome: () -> Void
     @Environment(\.sizeCategory) var sizeCategory
     @EnvironmentObject var auth: AuthRuntime
     @ObservedObject var collection = LocalPlantCollectionStore.shared
@@ -12,6 +13,8 @@ struct HomeDashboardView: View {
     @StateObject var weatherRuntime = WeatherRuntime()
     @State var notificationState = NotificationRuntimeState.initial
     @State var showsRegionSettings = false
+    @State var isInitialLoadComplete = false
+    @State var pendingMiniHomeOpen = false
     let calendar = PlantCareCalendar()
 
     var body: some View {
@@ -27,6 +30,7 @@ struct HomeDashboardView: View {
                     syncSection
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
         }
         .background(PlanteriorPalette.canvas.color)
@@ -38,6 +42,14 @@ struct HomeDashboardView: View {
             miniHomeRepository.seedQAIfNeeded()
             notificationState = await NotificationRuntimeState.current()
             await weatherRuntime.refresh(plants: collection.weatherPlantIDs)
+            reload()
+            isInitialLoadComplete = true
+            if pendingMiniHomeOpen {
+                pendingMiniHomeOpen = false
+                openMiniHome()
+            }
+        }
+        .onAppear {
             reload()
         }
         .onChange(of: collection.plants) {
@@ -65,6 +77,13 @@ struct HomeDashboardView: View {
                 plants: collection.weatherPlantIDs
             )
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .miniHomeCommittedDidChange
+            )
+        ) { _ in
+            reload()
+        }
         .sheet(isPresented: $showsRegionSettings) {
             RegionSettingsView(
                 weather: weatherRuntime,
@@ -73,20 +92,6 @@ struct HomeDashboardView: View {
                     Task { await refreshWeather() }
                 }
             )
-        }
-    }
-
-    private var miniHomeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("나의 미니홈")
-                .font(PlanteriorTypography.sectionTitle)
-            PlanteriorCard {
-                Text(
-                    store.miniHome.map { "\($0.name) · 저장됨" }
-                        ?? "아직 저장된 미니홈이 없어요."
-                )
-                .accessibilityIdentifier("home.minhome.preview")
-            }
         }
     }
 

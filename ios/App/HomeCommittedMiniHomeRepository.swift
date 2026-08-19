@@ -22,7 +22,21 @@ struct HomeCommittedMiniHomeRepository {
 
     func seedQAIfNeeded(processInfo: ProcessInfo = .processInfo) {
         #if DEBUG
+            if let resetToken = processInfo.environment[
+                "QA_MINIHOME_RESET_TOKEN"
+            ], defaults.string(
+                forKey: "qa.minihome.reset-token"
+            ) != resetToken {
+                defaults.removeObject(forKey: key)
+                defaults.set(
+                    resetToken,
+                    forKey: "qa.minihome.reset-token"
+                )
+            }
             guard processInfo.environment["QA_HOME_FIXTURE"] == "1" else {
+                return
+            }
+            guard defaults.data(forKey: key) == nil else {
                 return
             }
             guard

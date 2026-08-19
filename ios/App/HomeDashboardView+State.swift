@@ -87,7 +87,7 @@ extension HomeDashboardView {
 
     var miniHomeRepository: HomeCommittedMiniHomeRepository {
         HomeCommittedMiniHomeRepository(
-            accountID: auth.accountID?.rawValue
+            accountID: accountScopeID
         )
     }
 

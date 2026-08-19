@@ -93,37 +93,6 @@ public struct NotificationSetting: Codable, Equatable, Sendable {
     public let revision: Revision
 }
 
-public struct MiniHome: Codable, Equatable, Sendable {
-    public let id: MiniHomeID
-    public let name: String
-    public let placements: [MiniHomePlacement]
-    public let revision: Revision
-    public let updatedAt: Instant
-
-    public init(
-        id: MiniHomeID,
-        name: String,
-        placements: [MiniHomePlacement],
-        revision: Revision,
-        updatedAt: Instant
-    ) {
-        self.id = id
-        self.name = name
-        self.placements = placements
-        self.revision = revision
-        self.updatedAt = updatedAt
-    }
-}
-
-public struct MiniHomePlacement: Codable, Equatable, Sendable {
-    public let id: PlacementID
-    public let plantID: PersonalPlantID?
-    public let itemID: ItemID?
-    public let normalizedX: Double
-    public let normalizedY: Double
-    public let zIndex: Int
-}
-
 public struct RiskGuidanceContent: Codable, Equatable, Sendable {
     public let id: String
     public let type: RiskType

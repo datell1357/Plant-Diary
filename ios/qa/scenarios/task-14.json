@@ -1,0 +1,26 @@
+{
+  "task": 14,
+  "name": "mini-home-editor-and-conflict",
+  "command": "ios/scripts/qa-task.sh 14 --attempt-dir <attempt-dir>",
+  "marker": "IOS_TASK_14_QA_OK",
+  "artifacts": [
+    "task-14-ios-app-implementation.png",
+    "task-14-ios-app-implementation-ax5.png",
+    "task-14-mini-home-geometry.json",
+    "task-14-mini-home-conflict.json",
+    "task-14-home-committed-only.json",
+    "task-14-ios-app-implementation.json",
+    "task-14-ios-app-implementation.xcresult",
+    "task-14-home-regression.xcresult"
+  ],
+  "coveredBoundaries": [
+    "normalized geometry and edge clamping",
+    "deterministic placement z-order",
+    "explicit save and relaunch persistence",
+    "failed save preserves committed room and draft",
+    "unsaved cancel and discard choices",
+    "two-device revision conflict cancel and explicit reapply",
+    "Home reads only committed mini-home state",
+    "Korean AX5 editor controls remain reachable"
+  ]
+}

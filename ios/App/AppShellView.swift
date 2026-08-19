@@ -178,7 +178,8 @@ struct AppShellView: View {
             AppTabRootView(
                 tab: tab,
                 openDetail: { navigation.push(.tabDetail(tab)) },
-                openCamera: { navigation.presentCamera() }
+                openCamera: { navigation.presentCamera() },
+                openMiniHome: { navigation.push(.miniHome) }
             )
             .navigationDestination(for: AppRoute.self) { route in
                 AppRouteDestination(route: route)

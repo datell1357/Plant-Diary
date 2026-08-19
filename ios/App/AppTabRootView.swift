@@ -5,11 +5,15 @@ struct AppTabRootView: View {
     let tab: AppTab
     let openDetail: () -> Void
     let openCamera: () -> Void
+    let openMiniHome: () -> Void
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
 
     var body: some View {
         if tab == .home {
-            HomeDashboardView(openCamera: openCamera)
+            HomeDashboardView(
+                openCamera: openCamera,
+                openMiniHome: openMiniHome
+            )
         } else if tab == .collection {
             PlantCollectionView(
                 openLegacyDetail: openDetail,

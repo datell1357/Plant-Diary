@@ -16,7 +16,9 @@ final class HomeDashboardUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["home.greeting"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["home.care.row.0"].exists)
-        XCTAssertTrue(app.staticTexts["home.minhome.preview"].exists)
+        let miniHome = app.staticTexts["home.minhome.label"]
+        XCTAssertTrue(miniHome.exists)
+        XCTAssertEqual(miniHome.label, "초록 방 · 저장됨")
         XCTAssertTrue(app.staticTexts["home.weather.failed"].exists)
         XCTAssertTrue(app.staticTexts["home.notification.status"].exists)
         attachScreenshot(named: "task-12-home-dashboard")

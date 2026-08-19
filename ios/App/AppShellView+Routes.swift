@@ -3,6 +3,12 @@ import Foundation
 extension AppShellView {
     func handleQARouteIfPresent() {
         #if DEBUG
+            if ProcessInfo.processInfo.environment[
+                "QA_MINIHOME_ROUTE"
+            ] == "1" {
+                navigation.push(.miniHome)
+                return
+            }
             if ProcessInfo.processInfo.environment["QA_MANUAL_REGISTRATION"] == "1" {
                 navigation.push(.manualRegistration)
                 return

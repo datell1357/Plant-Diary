@@ -214,7 +214,7 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 `feat(weather): iOS 날씨 기반 식물 위험 안내 구현`
 
-### [ ] Todo 14 — Mini-home committed room state
+### [x] Todo 14 — Mini-home committed room state
 
 #### Scope
 

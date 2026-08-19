@@ -840,6 +840,129 @@ PY
   exit 0
 fi
 
+if [ "$task_number" = "14" ]; then
+  task_14_simulator_id="${IOS_QA_SIMULATOR_ID:-E51558B4-A5AF-4EAF-901F-AAA4173D21A4}"
+  task_14_destination="platform=iOS Simulator,id=$task_14_simulator_id"
+  task_14_derived_data="$attempt_dir/DerivedData"
+  task_14_result="$attempt_dir/task-14-ios-app-implementation.xcresult"
+  task_14_home_result="$attempt_dir/task-14-home-regression.xcresult"
+  task_14_attachments="$attempt_dir/task-14-attachments"
+  swift test \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore" \
+    --filter MiniHomeGeometryTests
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_14_destination" \
+    -derivedDataPath "$task_14_derived_data" \
+    CODE_SIGNING_ALLOWED=NO \
+    build-for-testing
+  reboot_task_14_simulator() {
+    simulator_id=$task_14_simulator_id
+    xcrun simctl shutdown "$simulator_id" 2>/dev/null || true
+    xcrun simctl boot "$simulator_id"
+    xcrun simctl bootstatus "$simulator_id" -b
+    xcrun simctl uninstall \
+      "$simulator_id" \
+      com.planterior.helper 2>/dev/null || true
+    xcrun simctl uninstall \
+      "$simulator_id" \
+      com.planterior.helper.uitests.xctrunner 2>/dev/null || true
+  }
+  reboot_task_14_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_14_destination" \
+    -derivedDataPath "$task_14_derived_data" \
+    -resultBundlePath "$task_14_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorTests/MiniHomeStoreTests \
+    -only-testing:PlanteriorUITests/MiniHomeAccessibilityUITests \
+    -only-testing:PlanteriorUITests/MiniHomeConflictUITests \
+    -only-testing:PlanteriorUITests/MiniHomeUITests
+  reboot_task_14_simulator
+  xcodebuild \
+    -quiet \
+    -project "$repo_root/ios/Planterior.xcodeproj" \
+    -scheme Planterior \
+    -destination "$task_14_destination" \
+    -derivedDataPath "$task_14_derived_data" \
+    -resultBundlePath "$task_14_home_result" \
+    -parallel-testing-enabled NO \
+    CODE_SIGNING_ALLOWED=NO \
+    test-without-building \
+    -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
+  xcrun xcresulttool export attachments \
+    --path "$task_14_result" \
+    --output-path "$task_14_attachments"
+  copy_task_14_attachment() {
+    marker=$1
+    destination=$2
+    attachment=$(
+      awk -F '"' '
+        /exportedFileName/ { file = $4 }
+        /suggestedHumanReadableName/ {
+          if (index($4, marker "_") == 1) {
+            print directory "/" file
+            exit
+          }
+        }
+      ' marker="$marker" directory="$task_14_attachments" \
+        "$task_14_attachments/manifest.json"
+    )
+    test -n "$attachment"
+    cp "$attachment" "$destination"
+  }
+  copy_task_14_attachment \
+    task-14-room \
+    "$attempt_dir/task-14-ios-app-implementation.png"
+  copy_task_14_attachment \
+    task-14-room-ax5 \
+    "$attempt_dir/task-14-ios-app-implementation-ax5.png"
+  copy_task_14_attachment \
+    task-14-mini-home-geometry \
+    "$attempt_dir/task-14-mini-home-geometry.json"
+  copy_task_14_attachment \
+    task-14-mini-home-conflict \
+    "$attempt_dir/task-14-mini-home-conflict.json"
+  copy_task_14_attachment \
+    task-14-home-committed-only \
+    "$attempt_dir/task-14-home-committed-only.json"
+  cp \
+    "$repo_root/ios/qa/scenarios/task-14.json" \
+    "$attempt_dir/task-14-manifest.json"
+  python3 - "$attempt_dir/task-14-ios-app-implementation.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(
+        {
+            "task": 14,
+            "normalizedGeometry": "passed",
+            "dragClamp": "passed",
+            "deterministicZOrder": "passed",
+            "explicitSave": "passed",
+            "relaunchPersistence": "passed",
+            "failedSavePreservesDraft": True,
+            "homeReadsCommittedOnly": True,
+            "conflictCancelPreservesDraft": True,
+            "conflictReapply": "passed"
+        },
+        output,
+        ensure_ascii=False,
+        indent=2
+    )
+PY
+  printf 'IOS_TASK_14_QA_OK\n'
+  exit 0
+fi
+
 if [ "$task_number" != "1" ]; then
   printf 'IOS_QA_TASK_NOT_IMPLEMENTED task=%s\n' "$task_number" >&2
   exit 69
