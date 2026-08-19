@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "gate": "ios-release-prerequisites",
-  "status": "blocked-external-prerequisites",
+  "status": "superseded-by-simulator-only-policy",
   "requiredCommand": "./ios/scripts/preflight-release-assets.sh --require-device --require-signing --require-firebase --require-asc",
   "expectedSuccessExit": 0,
   "observedExit": 65,
@@ -37,5 +37,5 @@
     "testflight-install"
   ],
   "approvedScope": "Todos 2-19 may use simulators and protocol fakes.",
-  "resumeWhen": "Connect the registered iPhone and provide the 12 required signing, Firebase, App Store Connect, and APNs values; resume only when the required command exits 0 without exposing secret values."
+  "resumeWhen": "Physical-device and TestFlight gates resume only after the user completes Apple Developer enrollment. Current app testing proceeds on simulators with Firebase."
 }

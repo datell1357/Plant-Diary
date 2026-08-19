@@ -413,83 +413,49 @@ draft preview before save. Completed by `52cf75d`, `07805ab`, and `b4d56ab`.
 
 ## Release gates
 
-### [ ] Todo 20 — Gate 0 physical-device and release verification
+### [x] Todo 20 — Firebase-connected simulator verification
 
 #### Entry gate
 
-The full preflight command must exit `0`. Missing assets create a blocked
-checkpoint, never a partial pass.
+The Firebase project and iOS app for `com.planterior.helper` must exist, and
+the downloaded development configuration must be available locally without
+being committed.
 
 #### Scope
 
-- Re-diff the pinned Android contract against the final shared backend
-- Require every release integration used by the app to be available
-- Verify enforcement for 24-hour cleanup, three-hour weather staleness,
-  30-day links, and seven-day deletion grace
-- Install a signed build on the registered physical iPhone
-- Exercise real Apple/Google auth, camera, PhotosPicker, location grant/revoke,
-  share sheet, Firebase dev/prod configuration, and APNs foreground/background/
-  terminated delivery and action
-- Run happy and failure journeys for offline, 429/500, stale, deleted target,
-  conflict, unsaved room, expired share, and partial deletion
-- Produce a signed Release archive/export with correct entitlements,
-  provisioning, and privacy manifest
+- Create the Firebase project through the logged-in Aside browser session
+- Register the iOS app with bundle ID `com.planterior.helper`
+- Store Firebase setup notes under `~/Documents/Plant Diary/docs`
+- Keep downloaded Firebase configuration and credentials out of Git
+- Configure a Debug simulator build with the downloaded Firebase plist
+- Launch the app in an iPhone simulator and verify Firebase initialization
+- Re-run the complete simulator test, quality, privacy, and secret-scan gates
 
 #### Verification
 
-```sh
-./ios/scripts/qa-task.sh 20 \
-  --attempt-dir "$ATTEMPT_DIR" \
-  --device "$IOS_PHYSICAL_UDID"
-```
-
-Evidence must include physical UDID, signing identity, real auth observations,
-APNs delivery/action IDs, camera/location/share outcomes, archive/export
-receipts, entitlements, provisioning, backend availability, and secret scan.
+Evidence must include the Firebase project/app identifiers, sanitized plist
+validation, simulator build/launch output, Firebase initialization observation,
+full simulator test results, and a zero-finding secret scan.
 
 #### Commit
 
-`test(release): iOS Gate 0 실기기 검증 완료`
+`test(firebase): iOS 시뮬레이터 연동 검증 완료`
 
-### [ ] Todo 21 — TestFlight and final release checklist
+## Deferred release work
 
-#### Entry gate
-
-Todo 20 must be complete with no substituted evidence.
-
-#### Scope
-
-- Validate archive/export and upload through App Store Connect credentials
-- Confirm TestFlight processing and internal availability
-- Install the TestFlight build on the registered iPhone
-- Relaunch and repeat real Apple/Google login, APNs, camera, PhotosPicker,
-  location, sharing, sync, offline/reconnect, and account-deletion checks
-- Verify launch time, crash-free startup, review metadata, privacy labels,
-  support/privacy URLs, beta notes, and internal tester checklist
-- Record final repository, backend contract, version/build, archive, upload,
-  install, and release evidence
-
-#### Verification
-
-- App Store Connect upload receipt
-- Processed build and internal-testing availability
-- TestFlight install and launch receipt
-- Physical-device smoke-test manifest
-- Final full test/quality/security rerun
-- No placeholder, unsigned, simulator, or fake evidence
-
-#### Commit
-
-`test(release): iOS TestFlight 출시 체크리스트 완료`
+Apple Developer enrollment, physical-device signing/APNs verification,
+archive/export, App Store Connect upload, and TestFlight installation are
+explicitly deferred until the user enrolls. They are not current app-testing
+completion gates; all current app testing is simulator-only.
 
 ## Final verification
 
-After Todo 21:
+After Todo 20:
 
 1. Re-run the complete iOS verification suite.
 2. Re-run backend contract parity against the final shared backend.
-3. Run final code, security, and hands-on physical-device reviews.
+3. Run final code, security, and simulator hands-on reviews.
 4. Confirm every Todo has canonical, non-empty, tree-bound evidence.
 5. Confirm `HEAD == origin/feat/ios-app`.
 6. Confirm no Android-owned or secret file is tracked.
-7. Mark the plan complete only when Todo 20 and Todo 21 real-world gates pass.
+7. Mark the active plan complete when Todo 20 Firebase simulator gates pass.
