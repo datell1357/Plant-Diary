@@ -4,56 +4,34 @@ import PlanteriorData
 import PlanteriorDesignSystem
 import SwiftUI
 
+/// Figma `plant-capture-flow-board` steps 1–2 (figma-analysis §6.11). Step 1 is
+/// the black camera chrome, step 2 the photo review. Steps 3–4 are owned by
+/// `IdentificationFlowView`, which this view hands off to on consent.
 struct CameraActionView: View {
     let dismiss: () -> Void
     let complete: () -> Void
     let manualRegistration: () -> Void
-    @State private var pickerItem: PhotosPickerItem?
-    @State private var draft: NormalizedPhoto?
-    @State private var errorMessage: String?
-    @State private var showsCamera = false
-    @State private var showsAcknowledgement = false
-    @State private var cameraDenied = false
+    @State var pickerItem: PhotosPickerItem?
+    @State var draft: NormalizedPhoto?
+    @State var errorMessage: String?
+    @State var showsCamera = false
+    @State var showsLibrary = false
+    @State var showsAcknowledgement = false
+    @State var cameraDenied = false
     private let consent = PhotoConsentCoordinator(transfer: IdentificationDraftStore.shared)
 
     var body: some View {
-        VStack(spacing: 20) {
-            if let draft {
-                Image(uiImage: UIImage(data: draft.data) ?? UIImage())
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 260)
-                    .accessibilityIdentifier("photo.review")
-                Text("이 사진을 식물 식별에 사용할까요?")
-                    .font(PlanteriorTypography.body)
-                actionButtons
+        Group {
+            if draft == nil {
+                cameraSurface
             } else {
-                sourceButtons
+                photoReviewSurface
             }
-            errorView
-            if cameraDenied {
-                Button("설정 열기") {
-                    guard let url = URL(string: UIApplication.openSettingsURLString) else {
-                        return
-                    }
-                    UIApplication.shared.open(url)
-                }
-                .accessibilityIdentifier("photo.settings")
-            }
-            Button("직접 등록") {
-                manualRegistration()
-            }
-            .accessibilityIdentifier("photo.manual")
-            Button("닫기", action: dismiss)
-                .accessibilityIdentifier("camera.dismiss")
         }
-        .padding(24)
-        .presentationDetents([.large])
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camera.sheet")
         .task {
             loadQAFixtureIfPresent()
         }
+        .photosPicker(isPresented: $showsLibrary, selection: $pickerItem, matching: .images)
         .onChange(of: pickerItem) { _, item in
             guard let item else {
                 return
@@ -87,60 +65,40 @@ struct CameraActionView: View {
         }
     }
 
-    private var sourceButtons: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "camera.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .accessibilityHidden(true)
-            Text("식물 사진 추가")
-                .font(PlanteriorTypography.screenTitle)
-            PlanteriorPrimaryButton("카메라로 촬영") {
-                requestCamera()
-            }
-            .accessibilityIdentifier("photo.camera")
-            PhotosPicker(selection: $pickerItem, matching: .images) {
-                Text("사진 선택")
-                    .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("photo.library")
+    var libraryControl: some View {
+        Button {
+            showsLibrary = true
+        } label: {
+            captureControlLabel(systemImage: "photo.on.rectangle", title: "사진 보관함")
         }
+        .accessibilityLabel("사진 보관함")
+        .accessibilityIdentifier("capture.library")
     }
 
-    @ViewBuilder
-    private var errorView: some View {
-        if let errorMessage {
-            Text(errorMessage)
-                .foregroundStyle(.red)
-                .accessibilityIdentifier("photo.error")
-        }
-    }
-
-    private var actionButtons: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Button("다시 촬영") {
-                    requestCamera()
-                }
-                .accessibilityIdentifier("photo.retake")
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Text("다시 선택")
-                }
-                .accessibilityIdentifier("photo.replace")
-            }
-            PlanteriorPrimaryButton("이 사진 사용") {
-                showsAcknowledgement = true
-            }
-            .accessibilityIdentifier("photo.acknowledge")
-        }
-    }
-
-    private func requestCamera() {
-        if ProcessInfo.processInfo.environment["QA_CAMERA_DENIED"] == "1" {
-            showDenied()
+    func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
             return
         }
+        UIApplication.shared.open(url)
+    }
+
+    /// Returns from review to the camera step without discarding permission or
+    /// consent state.
+    func discardDraft() {
+        draft = nil
+        pickerItem = nil
+        errorMessage = nil
+    }
+
+    /// The shutter and the switch control invoke the real capture stack. The app
+    /// never draws a substitute camera: on denial it surfaces recovery instead.
+    func requestCamera() {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_CAMERA_DENIED"] == "1" {
+                showDenied()
+                return
+            }
+        #endif
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             showsCamera = true
@@ -159,7 +117,7 @@ struct CameraActionView: View {
 
     private func showDenied() {
         cameraDenied = true
-        errorMessage = "카메라를 사용할 수 없어요. 설정을 확인하거나 사진 선택 또는 직접 등록을 이용하세요."
+        errorMessage = "카메라를 사용할 수 없어요. 설정을 확인하거나 사진 보관함 또는 직접 등록을 이용하세요."
     }
 
     private func load(_ item: PhotosPickerItem) async {
@@ -188,13 +146,17 @@ struct CameraActionView: View {
     }
 
     private func loadQAFixtureIfPresent() {
-        switch ProcessInfo.processInfo.environment["QA_PHOTO_FIXTURE"] {
-        case "valid":
-            review(PhotoQAFixture.data)
-        case "corrupt":
-            review(Data("corrupt".utf8))
-        default:
-            break
-        }
+        #if DEBUG
+            switch ProcessInfo.processInfo.environment["QA_PHOTO_FIXTURE"] {
+            case "valid":
+                let fixture = UIImage(named: FigmaAsset.capturePhoto.resourceName)?
+                    .pngData() ?? PhotoQAFixture.data
+                review(fixture)
+            case "corrupt":
+                review(Data("corrupt".utf8))
+            default:
+                break
+            }
+        #endif
     }
 }

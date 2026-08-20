@@ -1,0 +1,200 @@
+import XCTest
+
+@MainActor
+final class CaptureFlowUITests: XCTestCase {
+    func testCameraCaptureRendersFigmaBlackChromeWithShutterControls() {
+        let app = XCUIApplication()
+        launchCapture(app)
+        openCamera(app)
+        let surface = app.otherElements["capture.camera"]
+        XCTAssertTrue(surface.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["capture.close"].exists)
+        XCTAssertEqual(app.buttons["capture.close"].label, "촬영 닫기")
+        let hint = app.staticTexts["capture.hint"]
+        XCTAssertTrue(hint.exists)
+        XCTAssertEqual(hint.label, "식물을 초점에 맞춰주세요")
+        let viewport = app.images["capture.viewport"]
+        XCTAssertTrue(viewport.exists, "the viewfinder must render a real image layer")
+        XCTAssertGreaterThanOrEqual(
+            viewport.frame.width.rounded(),
+            300
+        )
+        XCTAssertTrue(app.buttons["capture.library"].exists)
+        XCTAssertEqual(app.buttons["capture.library"].label, "사진 보관함")
+        XCTAssertTrue(app.buttons["capture.switch"].exists)
+        let shutter = app.buttons["capture.shutter"]
+        XCTAssertTrue(shutter.exists)
+        XCTAssertEqual(shutter.label, "촬영")
+        XCTAssertGreaterThanOrEqual(
+            shutter.frame.height.rounded(),
+            64,
+            "§6.11 shutter is a 72pt circle inside an 80pt ring"
+        )
+        XCTAssertFalse(app.staticTexts["capture.result.species"].exists)
+        assertMinimumTargets(
+            app,
+            identifiers: ["capture.close", "capture.library", "capture.switch", "capture.shutter"]
+        )
+    }
+
+    func testCameraDeniedPermissionKeepsNativeRecoveryPaths() {
+        let app = XCUIApplication()
+        launchCapture(app, environment: ["QA_CAMERA_DENIED": "1"])
+        openCamera(app)
+        XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 10))
+        app.buttons["capture.shutter"].tap()
+        let recovery = app.staticTexts["capture.error"]
+        XCTAssertTrue(recovery.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["capture.settings"].exists)
+        XCTAssertTrue(app.buttons["capture.library"].exists)
+        XCTAssertFalse(app.otherElements["capture.fake-camera"].exists)
+    }
+
+    func testPhotoReviewRendersChosenPhotoWithIdentifyAndRetakeActions() {
+        let app = XCUIApplication()
+        launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
+        openCamera(app)
+        let review = app.otherElements["capture.photo-review"]
+        XCTAssertTrue(review.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["capture.review.title"].exists)
+        XCTAssertEqual(app.staticTexts["capture.review.title"].label, "사진 확인")
+        XCTAssertTrue(app.buttons["capture.review.back"].exists)
+        XCTAssertTrue(app.images["photo.review"].exists, "review renders the chosen photo")
+        XCTAssertTrue(app.staticTexts["capture.review.caption"].exists)
+        let identify = app.buttons["photo.acknowledge"]
+        let retake = app.buttons["photo.retake"]
+        XCTAssertTrue(identify.exists)
+        XCTAssertEqual(identify.label, "🌿 이 사진으로 식별하기")
+        XCTAssertTrue(retake.exists)
+        XCTAssertEqual(retake.label, "다시 촬영")
+        XCTAssertLessThan(identify.frame.minY, retake.frame.minY)
+        XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
+        XCTAssertTrue(app.buttons["photo.manual"].exists)
+        assertMinimumTargets(app, identifiers: ["photo.acknowledge", "photo.retake"])
+    }
+
+    func testPhotoReviewPreservesConsentAcknowledgementAndDenial() {
+        let app = XCUIApplication()
+        launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
+        openCamera(app)
+        XCTAssertTrue(app.images["photo.review"].waitForExistence(timeout: 10))
+        app.buttons["photo.acknowledge"].tap()
+        let consent = app.alerts["사진 처리 안내"]
+        XCTAssertTrue(consent.waitForExistence(timeout: 5))
+        consent.buttons["취소"].tap()
+        XCTAssertTrue(app.otherElements["capture.photo-review"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.otherElements["capture.identifying"].exists)
+    }
+
+    func testIdentifyingKeepsPhotoContextWithSemanticProgress() {
+        let app = XCUIApplication()
+        launchCapture(
+            app,
+            environment: ["QA_PHOTO_FIXTURE": "valid", "QA_IDENTIFICATION_STATE": "pending"]
+        )
+        submitReviewedPhoto(app)
+        let identifying = app.otherElements["capture.identifying"]
+        XCTAssertTrue(identifying.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.images["capture.identifying.backdrop"].exists)
+        let headline = app.staticTexts["identification.pending"]
+        XCTAssertTrue(headline.exists)
+        XCTAssertEqual(headline.label, "AI가 식물을 분석하고 있어요...")
+        XCTAssertTrue(app.staticTexts["capture.identifying.hint"].exists)
+        let progress = app.otherElements["capture.identifying.progress"]
+        XCTAssertTrue(progress.exists, "progress must be a semantic element, not decoration")
+        XCTAssertEqual(progress.value as? String, "분석 중")
+    }
+
+    func testIdentifyingUnderReduceMotionKeepsStateWithoutSubstituteAnimation() {
+        let app = XCUIApplication()
+        launchCapture(
+            app,
+            environment: [
+                "QA_PHOTO_FIXTURE": "valid",
+                "QA_IDENTIFICATION_STATE": "pending",
+                "QA_REDUCE_MOTION": "1"
+            ]
+        )
+        submitReviewedPhoto(app)
+        XCTAssertTrue(app.otherElements["capture.identifying"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["identification.pending"].exists)
+        XCTAssertTrue(app.otherElements["capture.identifying.progress.static"].exists)
+        XCTAssertFalse(app.otherElements["capture.identifying.progress.animated"].exists)
+    }
+
+    func testIdentificationResultShowsConfidenceSpeciesAndAlternates() {
+        let app = XCUIApplication()
+        launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
+        submitReviewedPhoto(app)
+        let result = app.otherElements["capture.identification-result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["capture.result.title"].exists)
+        XCTAssertEqual(app.staticTexts["capture.result.title"].label, "식별 결과")
+        XCTAssertTrue(app.images["capture.result.hero"].exists)
+        let confidence = app.descendants(matching: .any)["capture.result.confidence"]
+        XCTAssertTrue(confidence.exists)
+        XCTAssertEqual(confidence.label, "신뢰도 92%", "the top candidate scores 0.92")
+        XCTAssertTrue(app.staticTexts["capture.result.species"].exists)
+        XCTAssertTrue(app.staticTexts["capture.result.binomial"].exists)
+        XCTAssertTrue(app.staticTexts["capture.result.alternates.header"].exists)
+        XCTAssertEqual(app.staticTexts["capture.result.alternates.header"].label, "다른 후보")
+        XCTAssertTrue(app.buttons["identification.candidate.1"].exists)
+        XCTAssertEqual(app.buttons["identification.candidate.1"].label, "후보 2 신뢰도 80%")
+        let register = app.buttons["capture.result.register"]
+        XCTAssertTrue(register.exists)
+        XCTAssertEqual(register.label, "이 식물로 등록하기")
+        assertMinimumTargets(app, identifiers: ["capture.result.register"])
+    }
+
+    func testIdentificationResultSelectionHandsOffToRegistration() {
+        let app = XCUIApplication()
+        launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
+        submitReviewedPhoto(app)
+        XCTAssertTrue(
+            app.otherElements["capture.identification-result"].waitForExistence(timeout: 15)
+        )
+        app.buttons["identification.candidate.1"].tap()
+        app.buttons["capture.result.register"].tap()
+        XCTAssertTrue(app.navigationBars["식물 등록"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["registration.submit"].exists)
+    }
+}
+
+extension CaptureFlowUITests {
+    func launchCapture(
+        _ app: XCUIApplication,
+        environment: [String: String] = [:]
+    ) {
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        for (key, value) in environment {
+            app.launchEnvironment[key] = value
+        }
+        app.launch()
+    }
+
+    func openCamera(_ app: XCUIApplication) {
+        let fab = app.buttons["tab.camera"]
+        XCTAssertTrue(fab.waitForExistence(timeout: 10))
+        fab.tap()
+    }
+
+    func submitReviewedPhoto(_ app: XCUIApplication) {
+        openCamera(app)
+        XCTAssertTrue(app.images["photo.review"].waitForExistence(timeout: 10))
+        app.buttons["photo.acknowledge"].tap()
+        app.alerts["사진 처리 안내"].buttons["동의하고 계속"].tap()
+    }
+
+    func assertMinimumTargets(_ app: XCUIApplication, identifiers: [String]) {
+        for identifier in identifiers {
+            let control = app.buttons[identifier]
+            XCTAssertTrue(control.exists, "\(identifier) should exist")
+            XCTAssertGreaterThanOrEqual(
+                control.frame.height.rounded(),
+                44,
+                "\(identifier) must keep a 44pt target"
+            )
+        }
+    }
+}

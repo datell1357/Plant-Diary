@@ -3,83 +3,104 @@ import PlanteriorDesignSystem
 import PlanteriorDomain
 import SwiftUI
 
+/// Figma `plant-capture-flow-board` steps 3–4 (figma-analysis §6.11): the AI
+/// identifying state and the identification result. Empty, failure, and retry
+/// remain first-class states rather than dead ends.
 struct IdentificationFlowView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var state = IdentificationState.pending
-    @State private var selectedCandidate: IdentificationCandidate?
-    @State private var showsRegistration = false
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State var state = IdentificationState.pending
+    @State var selectedCandidate: IdentificationCandidate?
+    @State var showsRegistration = false
+    @State var showsManualRegistration = false
+    @State var submittedPhoto: Data?
     @State private var failureRetryCount = 0
     private let coordinator = PlantIdentificationCoordinator(
         service: LocalPlantIdentificationService()
     )
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("사진 분석 결과")
-                .font(PlanteriorTypography.screenTitle)
-            stateContent
-            NavigationLink(
-                "직접 입력",
-                destination: PlantRegistrationView()
-            )
-            .accessibilityIdentifier("identification.manual")
-        }
-        .padding(24)
-        .navigationDestination(isPresented: $showsRegistration) {
-            PlantRegistrationView(
-                method: .identified,
-                candidate: selectedCandidate
-            )
-        }
-        .task { await identifyDraft() }
+        stateContent
+            // The whole flow owns its own Figma chrome, so the bar stays hidden
+            // for every state. Toggling it per state animates the navigation bar
+            // in and out mid-transition, which never settles into idle.
+            .navigationBarBackButtonHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showsRegistration) {
+                PlantRegistrationView(
+                    method: .identified,
+                    candidate: selectedCandidate
+                )
+            }
+            .navigationDestination(isPresented: $showsManualRegistration) {
+                PlantRegistrationView()
+            }
+            .task { await identifyDraft() }
+    }
+
+    var effectiveReduceMotion: Bool {
+        reduceMotion
+            || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
     }
 
     @ViewBuilder
     private var stateContent: some View {
         switch state {
-        case .awaitingPhoto:
-            Text("사진을 다시 선택해 주세요.")
         case .pending:
-            ProgressView("식물을 찾고 있어요")
-                .accessibilityIdentifier("identification.pending")
+            identifyingSurface
         case let .candidates(candidates):
-            candidateList(candidates)
+            resultSurface(candidates)
+        case .awaitingPhoto:
+            fallbackState(
+                message: "사진을 다시 선택해 주세요.",
+                identifier: nil
+            )
         case .noCandidates:
-            Text("비슷한 식물을 찾지 못했어요.")
-                .accessibilityIdentifier("identification.empty")
-            Button("다른 사진 선택") { dismiss() }
-                .accessibilityIdentifier("identification.replace")
-        case .failed:
-            Text("식별에 실패했어요.")
-                .accessibilityIdentifier("identification.failed")
-            Button("다시 시도") {
-                failureRetryCount += 1
-                Task { await identifyDraft() }
+            fallbackState(
+                message: "비슷한 식물을 찾지 못했어요.",
+                identifier: "identification.empty"
+            ) {
+                PlanteriorSecondaryButton("다른 사진 선택") { dismiss() }
+                    .accessibilityIdentifier("identification.replace")
             }
-            .accessibilityIdentifier("identification.retry")
+        case .failed:
+            fallbackState(
+                message: "식별에 실패했어요.",
+                identifier: "identification.failed"
+            ) {
+                PlanteriorSecondaryButton("다시 시도") {
+                    failureRetryCount += 1
+                    Task { await identifyDraft() }
+                }
+                .accessibilityIdentifier("identification.retry")
+            }
         }
     }
 
-    @MainActor
-    private func candidateList(
-        _ candidates: IdentificationCandidates
+    private func fallbackState(
+        message: String,
+        identifier: String?,
+        @ViewBuilder actions: () -> some View = { EmptyView() }
     ) -> some View {
-        VStack(spacing: 12) {
-            Text("가장 비슷한 식물을 선택해 주세요.")
-            ForEach(candidates.items.indices, id: \.self) { index in
-                Button(
-                    "후보 \(index + 1) \(Int(candidates.items[index].score * 100))%"
-                ) {
-                    selectedCandidate = candidates.items[index]
-                }
-                .accessibilityIdentifier("identification.candidate.\(index)")
-            }
-            PlanteriorPrimaryButton("선택 확인") {
-                showsRegistration = selectedCandidate != nil
-            }
-            .disabled(selectedCandidate == nil)
-            .accessibilityIdentifier("identification.confirm")
+        VStack(spacing: PlanteriorSpacing.large) {
+            Text(message)
+                .font(PlanteriorTypography.body)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier(identifier ?? "identification.state")
+            actions()
+            NavigationLink("직접 입력", destination: PlantRegistrationView())
+                .accessibilityIdentifier("identification.manual")
+            // The navigation bar is hidden for this flow, so every terminal
+            // state keeps its own way back.
+            Button("돌아가기") { dismiss() }
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .accessibilityIdentifier("identification.back")
         }
+        .padding(PlanteriorSpacing.huge)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PlanteriorPalette.canvas.color)
     }
 
     @MainActor
@@ -88,6 +109,7 @@ struct IdentificationFlowView: View {
             state = .awaitingPhoto
             return
         }
+        submittedPhoto = draft.data
         #if DEBUG
             switch ProcessInfo.processInfo.environment["QA_IDENTIFICATION_STATE"] {
             case "empty":

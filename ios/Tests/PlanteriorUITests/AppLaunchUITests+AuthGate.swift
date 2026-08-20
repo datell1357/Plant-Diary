@@ -26,7 +26,7 @@ extension AppLaunchUITests {
                 app.buttons["auth.apple"].waitForExistence(timeout: 5),
                 "\(identifier) should present the login sheet"
             )
-            XCTAssertFalse(app.otherElements["camera.sheet"].exists)
+            XCTAssertFalse(app.otherElements["capture.camera"].exists)
             app.buttons["auth.cancel"].tap()
             XCTAssertTrue(app.buttons["auth.apple"].waitForNonExistence(timeout: 5))
             XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))

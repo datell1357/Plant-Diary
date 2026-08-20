@@ -46,9 +46,9 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.camera"].tap()
-        XCTAssertTrue(app.otherElements["camera.sheet"].waitForExistence(timeout: 5))
-        app.buttons["camera.dismiss"].tap()
-        XCTAssertTrue(app.otherElements["camera.sheet"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
+        app.buttons["capture.close"].tap()
+        XCTAssertTrue(app.otherElements["capture.camera"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
     }
 
@@ -95,11 +95,13 @@ final class AppLaunchUITests: XCTestCase {
         app.buttons["photo.acknowledge"].tap()
         XCTAssertTrue(app.alerts["사진 처리 안내"].waitForExistence(timeout: 5))
         app.alerts["사진 처리 안내"].buttons["동의하고 계속"].tap()
-        XCTAssertTrue(app.staticTexts["사진 분석 결과"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["identification.confirm"].isEnabled)
-        app.buttons["identification.candidate.0"].tap()
-        XCTAssertTrue(app.buttons["identification.confirm"].isEnabled)
-        app.buttons["identification.confirm"].tap()
+        XCTAssertTrue(
+            app.otherElements["capture.identification-result"].waitForExistence(timeout: 10)
+        )
+        // §6.11: one primary registration action, re-targeted by the selected
+        // alternate candidate.
+        app.buttons["identification.candidate.1"].tap()
+        app.buttons["capture.result.register"].tap()
         XCTAssertTrue(app.navigationBars["식물 등록"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["registration.submit"].isEnabled)
         app.textFields["registration.name"].tap()
@@ -171,11 +173,11 @@ final class AppLaunchUITests: XCTestCase {
         denied.launchEnvironment["QA_CAMERA_DENIED"] = "1"
         denied.launch()
         denied.buttons["tab.camera"].tap()
-        denied.buttons["photo.camera"].tap()
-        XCTAssertTrue(denied.staticTexts["photo.error"].waitForExistence(timeout: 5))
-        XCTAssertTrue(denied.buttons["photo.settings"].exists)
-        XCTAssertTrue(denied.buttons["photo.library"].exists)
-        XCTAssertTrue(denied.buttons["photo.manual"].exists)
+        XCTAssertTrue(denied.otherElements["capture.camera"].waitForExistence(timeout: 5))
+        denied.buttons["capture.shutter"].tap()
+        XCTAssertTrue(denied.staticTexts["capture.error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(denied.buttons["capture.settings"].exists)
+        XCTAssertTrue(denied.buttons["capture.library"].exists)
         denied.terminate()
 
         let corrupt = XCUIApplication()
@@ -184,8 +186,9 @@ final class AppLaunchUITests: XCTestCase {
         corrupt.launchEnvironment["QA_PHOTO_FIXTURE"] = "corrupt"
         corrupt.launch()
         corrupt.buttons["tab.camera"].tap()
-        XCTAssertTrue(corrupt.staticTexts["photo.error"].waitForExistence(timeout: 5))
-        XCTAssertTrue(corrupt.buttons["photo.library"].exists)
-        XCTAssertTrue(corrupt.buttons["photo.manual"].exists)
+        // A corrupt fixture never produces a draft, so the flow stays on the
+        // camera step and surfaces recovery there.
+        XCTAssertTrue(corrupt.staticTexts["capture.error"].waitForExistence(timeout: 5))
+        XCTAssertTrue(corrupt.buttons["capture.library"].exists)
     }
 }

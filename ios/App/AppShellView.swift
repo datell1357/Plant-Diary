@@ -8,6 +8,7 @@ struct AppShellView: View {
     @State var navigation = AppNavigationState()
     @State var showsLogin = false
     @State private var showsOnboarding = OnboardingState.shouldPresent
+    @State private var captureDestination: AppRoute?
 
     init() {
         #if DEBUG
@@ -75,24 +76,29 @@ struct AppShellView: View {
             mountAccountStores()
             handleQARouteIfPresent()
         }
-        .sheet(
+        .fullScreenCover(
             isPresented: Binding(
                 get: { navigation.isCameraPresented },
                 set: { $0 ? navigation.presentCamera() : navigation.dismissCamera() }
-            )
-        ) {
-            CameraActionView(
-                dismiss: { navigation.dismissCamera() },
-                complete: {
-                    navigation.dismissCamera()
-                    navigation.push(.identificationDraft)
-                },
-                manualRegistration: {
-                    navigation.dismissCamera()
-                    navigation.push(.manualRegistration)
+            ),
+            onDismiss: { captureDestination = nil },
+            content: {
+                NavigationStack {
+                    switch captureDestination {
+                    case .identificationDraft:
+                        IdentificationFlowView()
+                    case .manualRegistration:
+                        PlantRegistrationView()
+                    default:
+                        CameraActionView(
+                            dismiss: { navigation.dismissCamera() },
+                            complete: { captureDestination = .identificationDraft },
+                            manualRegistration: { captureDestination = .manualRegistration }
+                        )
+                    }
                 }
-            )
-        }
+            }
+        )
         .sheet(isPresented: $showsLogin) {
             LoginSheet(auth: auth)
         }
@@ -125,8 +131,7 @@ struct AppShellView: View {
         }
     }
 
-    /// Figma `home-screen-logged-out` §8.3: signed-out tab taps present the login
-    /// sheet and leave the selected tab and its stack untouched.
+    /// Signed-out tab taps present login without changing tab or stack.
     private func requestTab(_ tab: AppTab) {
         guard navigation.requestTab(tab, authentication: authenticationState) == .proceed
         else {
