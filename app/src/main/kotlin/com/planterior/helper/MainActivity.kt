@@ -23,8 +23,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.planterior.helper.auth.AuthRuntime
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.feature.home.HomeViewModel
+import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
 import com.planterior.helper.feature.weather.LocationPermission
 import com.planterior.helper.feature.weather.WeatherLocationGateway
 import com.planterior.helper.navigation.NotificationStackNavigator
@@ -407,6 +409,11 @@ internal fun PlanteriorApp(
             homeViewModel = resolvedHomeViewModel,
             registrationRepository = authRuntime?.registrationRepository,
             collectionRepository = authRuntime?.collectionRepository,
+            miniHomeRepository = authRuntime?.miniHomeRepository,
+            miniHomeAuthOwnershipOverride =
+                authRuntime?.forcedHomeAccountUid?.let {
+                    MiniHomeAuthOwnership.Authenticated(AccountId(it))
+                },
             wateringRepository = authRuntime?.wateringRepository,
             wateringNotificationSettingsRepository =
                 authRuntime?.wateringNotificationSettingsRepository,

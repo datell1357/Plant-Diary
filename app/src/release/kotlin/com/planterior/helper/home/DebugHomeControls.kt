@@ -15,4 +15,6 @@ fun debugHomeWeatherSource(
 ): HomeWeatherSource = fallback
 
 /** 출시 빌드에는 세션을 가로채는 경로가 없다. 항상 실제 인증 상태만 쓴다. */
+fun debugHomeAccountUid(context: Context): String? = null
+
 fun debugHomeSessions(context: Context): Flow<HomeSession>? = null

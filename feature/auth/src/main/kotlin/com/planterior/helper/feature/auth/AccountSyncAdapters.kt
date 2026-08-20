@@ -1,11 +1,17 @@
 package com.planterior.helper.feature.auth
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.functions.FirebaseFunctions
+import com.planterior.helper.core.data.AuthoritativeMiniHomeLayoutRead
+import com.planterior.helper.core.data.AuthoritativeMiniHomeLayoutReader
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
+import com.planterior.helper.core.database.AuthoritativeMiniHomeCacheWrite
 import com.planterior.helper.core.database.CachedMiniHomeEntity
+import com.planterior.helper.core.database.CachedMiniHomePlacementEntity
 import com.planterior.helper.core.database.CachedPlantEntity
 import com.planterior.helper.core.database.CachedWateringScheduleEntity
 import com.planterior.helper.core.database.LastSyncEntity
+import com.planterior.helper.core.database.MiniHomeCacheApplyResult
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
 import java.time.Instant
@@ -35,17 +41,33 @@ data class RemoteWateringSchedule(
     val enabled: Boolean? = null,
 )
 
-/**
- * 홈 미리보기에 필요한 만큼의 서버 미니홈피 구성이다.
- *
- * 좌표·z-order·아이템 목록은 미니홈피 화면의 몫이므로 여기서 가져오지 않는다.
- */
+data class RemoteMiniHomePlacement(
+    val id: String,
+    val plantId: String?,
+    val itemId: String?,
+    val normalizedX: Double,
+    val normalizedY: Double,
+    val zIndex: Int,
+    val layoutRevision: Long,
+)
+
+/** 홈 preview와 상세 화면이 함께 쓰는 마지막 서버 확정 구성이다. */
 data class RemoteMiniHome(
     val id: String,
     val name: String,
     val placedPlantCount: Int,
     val revision: Long,
     val updatedAtEpochMillis: Long,
+    val placements: List<RemoteMiniHomePlacement> = emptyList(),
+)
+
+data class RemoteMiniHomeAuthoritativeState(
+    val generation: Long,
+    val layout: RemoteMiniHome?,
+    val operationId: String?,
+    val payloadHash: String?,
+    val tombstoneId: String?,
+    val authoritativeAtEpochMillis: Long,
 )
 
 interface AccountSyncRemote {
@@ -56,10 +78,27 @@ interface AccountSyncRemote {
     /** 마지막으로 확정된 미니홈피. 아직 만들지 않았거나 삭제되었으면 `null`. */
     suspend fun miniHome(accountUid: String): RemoteMiniHome?
 
+    suspend fun miniHomeAuthoritativeState(accountUid: String): RemoteMiniHomeAuthoritativeState {
+        val layout = miniHome(accountUid)
+        return RemoteMiniHomeAuthoritativeState(
+            generation = maxOf(1, layout?.revision ?: 0),
+            layout = layout,
+            operationId = layout?.let { "legacy-sync-${it.revision}" },
+            payloadHash = layout?.let { "0".repeat(64) },
+            tombstoneId = if (layout == null) "initial-missing" else null,
+            authoritativeAtEpochMillis = layout?.updatedAtEpochMillis ?: 0,
+        )
+    }
+
     suspend fun verifyDomain(accountUid: String, domain: SyncDomain)
 }
 
-class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : AccountSyncRemote {
+class FirestoreAccountSyncRemote(
+    private val firestore: FirebaseFirestore,
+    functions: FirebaseFunctions,
+    private val miniHomeReader: AuthoritativeMiniHomeLayoutReader =
+        AuthoritativeMiniHomeLayoutReader(functions),
+) : AccountSyncRemote {
     override suspend fun plants(accountUid: String): List<RemotePlant> =
         firestore
             .collection("users/$accountUid/personalPlants")
@@ -112,24 +151,51 @@ class FirestoreAccountSyncRemote(private val firestore: FirebaseFirestore) : Acc
     }
 
     override suspend fun miniHome(accountUid: String): RemoteMiniHome? =
-        firestore
-            .collection("users/$accountUid/miniHomes")
-            .get()
-            .await()
-            .documents
-            .asSequence()
-            .mapNotNull { document ->
-                val name = document.getString("name") ?: return@mapNotNull null
-                RemoteMiniHome(
-                    document.id,
-                    name,
-                    (document.getLong("placedPlantCount") ?: 0L).toInt(),
-                    document.getLong("revision") ?: 0L,
-                    document.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+        miniHomeAuthoritativeState(accountUid).layout
+
+    override suspend fun miniHomeAuthoritativeState(
+        accountUid: String
+    ): RemoteMiniHomeAuthoritativeState =
+        when (val result = miniHomeReader.read(AccountId(accountUid))) {
+            is AuthoritativeMiniHomeLayoutRead.Missing ->
+                RemoteMiniHomeAuthoritativeState(
+                    result.generation,
+                    null,
+                    null,
+                    null,
+                    result.tombstoneId,
+                    result.updatedAtEpochMillis,
+                )
+            is AuthoritativeMiniHomeLayoutRead.Present -> {
+                val home = result.layout
+                RemoteMiniHomeAuthoritativeState(
+                    generation = home.generation,
+                    layout =
+                        RemoteMiniHome(
+                            home.id,
+                            home.name,
+                            home.placedPlantCount,
+                            home.revision,
+                            home.updatedAtEpochMillis,
+                            home.placements.map { placement ->
+                                RemoteMiniHomePlacement(
+                                    placement.id,
+                                    placement.plantId,
+                                    placement.itemId,
+                                    placement.normalizedX,
+                                    placement.normalizedY,
+                                    placement.zIndex,
+                                    placement.revision,
+                                )
+                            },
+                        ),
+                    operationId = home.idempotencyKey,
+                    payloadHash = home.requestHash,
+                    tombstoneId = null,
+                    authoritativeAtEpochMillis = home.updatedAtEpochMillis,
                 )
             }
-            // 계정당 미니홈피는 하나다. 예기치 않게 여럿이면 revision이 가장 높은 확정본을 쓴다.
-            .maxByOrNull { it.revision }
+        }
 
     override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) {
         val collection =
@@ -161,10 +227,11 @@ class FirestoreAccountSynchronizer(
 ) : AccountSynchronizer {
     constructor(
         firestore: FirebaseFirestore,
+        functions: FirebaseFunctions,
         database: PlanteriorDatabase,
         outbox: OfflineFirstSyncRepository? = null,
         now: () -> Instant = Instant::now,
-    ) : this(FirestoreAccountSyncRemote(firestore), database, outbox, now)
+    ) : this(FirestoreAccountSyncRemote(firestore, functions), database, outbox, now)
 
     override suspend fun sync(accountUid: String): SyncSummary {
         require(accountUid.matches(Regex("^[A-Za-z0-9_-]{1,128}$")))
@@ -213,22 +280,51 @@ class FirestoreAccountSynchronizer(
             remote.verifyDomain(accountUid, SyncDomain.NOTIFICATIONS)
         }
         syncDomain(accountUid, SyncDomain.MINI_HOME) {
-            val remoteMiniHome = remote.miniHome(accountUid)
-            database
-                .cacheDao()
-                .reconcileMiniHome(
-                    accountUid,
-                    remoteMiniHome?.let {
+            val authoritative = remote.miniHomeAuthoritativeState(accountUid)
+            val remoteMiniHome = authoritative.layout
+            val write =
+                if (remoteMiniHome == null) {
+                    AuthoritativeMiniHomeCacheWrite.Deletion(
+                        accountUid,
+                        authoritative.generation,
+                        requireNotNull(authoritative.tombstoneId),
+                        authoritative.authoritativeAtEpochMillis,
+                    )
+                } else {
+                    AuthoritativeMiniHomeCacheWrite.Layout(
+                        accountUid,
+                        authoritative.generation,
+                        requireNotNull(authoritative.operationId),
+                        requireNotNull(authoritative.payloadHash),
                         CachedMiniHomeEntity(
                             accountUid,
-                            it.id,
-                            it.name,
-                            it.placedPlantCount,
-                            it.revision,
-                            it.updatedAtEpochMillis,
-                        )
-                    },
-                )
+                            remoteMiniHome.id,
+                            remoteMiniHome.name,
+                            remoteMiniHome.placedPlantCount,
+                            remoteMiniHome.revision,
+                            remoteMiniHome.updatedAtEpochMillis,
+                        ),
+                        remoteMiniHome.placements.map {
+                            CachedMiniHomePlacementEntity(
+                                accountUid,
+                                it.id,
+                                remoteMiniHome.id,
+                                it.plantId,
+                                it.itemId,
+                                it.normalizedX,
+                                it.normalizedY,
+                                it.zIndex,
+                                it.layoutRevision,
+                            )
+                        },
+                    )
+                }
+            check(
+                database.cacheDao().applyAuthoritativeMiniHome(write)
+                    !is MiniHomeCacheApplyResult.Conflict
+            ) {
+                "Authoritative mini-home cache identity conflicted"
+            }
         }
         return lastKnown(accountUid)
     }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -71,6 +72,413 @@ class PlanteriorDatabaseTest {
         assertEquals("draft-new", pending.first().draftPayload)
         assertEquals(10, pending.first().createdAtEpochMillis)
     }
+
+    @Test
+    fun `mini home outbox persists reconciliation phase reason details and receipt identity`() =
+        runTest {
+            val dao = database.syncDao()
+            dao.enqueue(
+                OperationOutboxEntity(
+                    "mini-home-operation",
+                    "account-a",
+                    "miniHomeLayouts",
+                    "home-a",
+                    "REPLACE",
+                    7,
+                    "canonical-payload",
+                    10,
+                    payloadHash = "b".repeat(64),
+                )
+            )
+
+            dao.markMayHaveCommitted(
+                "account-a",
+                "mini-home-operation",
+                "NETWORK",
+                "callable response unavailable",
+            )
+            dao.recordCommittedReceipt(
+                "account-a",
+                "mini-home-operation",
+                "mini-home-operation",
+                7,
+                8,
+                "b".repeat(64),
+            )
+            var restored = requireNotNull(dao.operation("account-a", "mini-home-operation"))
+            assertEquals("MAY_HAVE_COMMITTED", restored.state)
+            assertEquals("NETWORK", restored.lastErrorCode)
+            assertEquals("callable response unavailable", restored.failureDetails)
+            assertEquals("mini-home-operation", restored.committedOperationId)
+            assertEquals(7L, restored.committedExpectedRevision)
+            assertEquals(8L, restored.committedRevision)
+            assertEquals("b".repeat(64), restored.payloadHash)
+            assertEquals("b".repeat(64), restored.committedPayloadHash)
+            assertEquals("canonical-payload", restored.draftPayload)
+
+            dao.markReconciliationRequired(
+                "account-a",
+                "mini-home-operation",
+                "OUTBOX_MISMATCH",
+                "authoritative receipt does not match payload",
+                8,
+                "different-operation",
+                7,
+                8,
+                "c".repeat(64),
+            )
+            restored = requireNotNull(dao.operation("account-a", "mini-home-operation"))
+            assertEquals("RECONCILIATION_REQUIRED", restored.state)
+            assertEquals("OUTBOX_MISMATCH", restored.lastErrorCode)
+            assertEquals("authoritative receipt does not match payload", restored.failureDetails)
+            assertEquals("different-operation", restored.committedOperationId)
+            assertEquals("b".repeat(64), restored.payloadHash)
+            assertEquals("c".repeat(64), restored.committedPayloadHash)
+        }
+
+    @Test
+    fun `mini home lineage removal is atomic owner scoped and preserves unrelated operations`() =
+        runTest {
+            val dao = database.syncDao()
+            listOf(
+                    OperationOutboxEntity(
+                        "lineage-root",
+                        "account-a",
+                        "miniHomeLayouts",
+                        "home-a",
+                        "REPLACE",
+                        1,
+                        "old-invalid",
+                        1,
+                        lineageId = "lineage-root",
+                    ),
+                    OperationOutboxEntity(
+                        "lineage-successor",
+                        "account-a",
+                        "miniHomeLayouts",
+                        "home-a",
+                        "REPLACE",
+                        1,
+                        "corrected",
+                        2,
+                        lineageId = "lineage-root",
+                        supersedesOperationId = "lineage-root",
+                    ),
+                    OperationOutboxEntity(
+                        "unrelated-mini-home",
+                        "account-a",
+                        "miniHomeLayouts",
+                        "home-a",
+                        "REPLACE",
+                        1,
+                        "unrelated",
+                        3,
+                        lineageId = "unrelated-mini-home",
+                    ),
+                    OperationOutboxEntity(
+                        "lineage-root",
+                        "account-b",
+                        "miniHomeLayouts",
+                        "home-b",
+                        "REPLACE",
+                        1,
+                        "other-owner",
+                        4,
+                        lineageId = "lineage-root",
+                    ),
+                    OperationOutboxEntity(
+                        "other-domain",
+                        "account-a",
+                        "personalPlants",
+                        "plant-a",
+                        "UPDATE",
+                        1,
+                        "other-domain",
+                        5,
+                        lineageId = "lineage-root",
+                    ),
+                )
+                .forEach { dao.enqueue(it) }
+
+            dao.removeLineage("account-a", "miniHomeLayouts", "lineage-root")
+
+            assertNull(dao.operation("account-a", "lineage-root"))
+            assertNull(dao.operation("account-a", "lineage-successor"))
+            assertNotNull(dao.operation("account-a", "unrelated-mini-home"))
+            assertNotNull(dao.operation("account-b", "lineage-root"))
+            assertNotNull(dao.operation("account-a", "other-domain"))
+        }
+
+    @Test
+    fun `persisted discard anchor accepts malformed identity and cannot cross owner type or changed lineage`() =
+        runTest {
+            val dao = database.syncDao()
+            listOf(
+                    OperationOutboxEntity(
+                        "malformed/operation",
+                        "account-a",
+                        "miniHomeLayouts",
+                        "home-a",
+                        "REPLACE",
+                        1,
+                        "{bad-json",
+                        2,
+                        lineageId = "malformed/lineage",
+                    ),
+                    OperationOutboxEntity(
+                        "related-operation",
+                        "account-a",
+                        "miniHomeLayouts",
+                        "home-a",
+                        "REPLACE",
+                        1,
+                        "{bad-json-2",
+                        1,
+                        lineageId = "malformed/lineage",
+                    ),
+                    OperationOutboxEntity(
+                        "malformed/operation",
+                        "account-b",
+                        "miniHomeLayouts",
+                        "home-b",
+                        "REPLACE",
+                        1,
+                        "{foreign",
+                        3,
+                        lineageId = "malformed/lineage",
+                    ),
+                    OperationOutboxEntity(
+                        "other-type-operation",
+                        "account-a",
+                        "personalPlants",
+                        "plant-a",
+                        "UPDATE",
+                        1,
+                        "other",
+                        4,
+                        lineageId = "malformed/lineage",
+                    ),
+                )
+                .forEach { dao.enqueue(it) }
+            val rowHandleId =
+                requireNotNull(dao.operation("account-a", "malformed/operation")).rowHandleId
+
+            assertTrue(
+                dao.discardPersistedOperation(
+                    "account-a",
+                    "miniHomeLayouts",
+                    "malformed/operation",
+                    "stale-lineage",
+                    rowHandleId,
+                    0,
+                ) is PersistedOperationDiscardResult.Stale
+            )
+            assertNotNull(dao.operation("account-a", "malformed/operation"))
+
+            assertEquals(
+                PersistedOperationDiscardResult.Consumed(2),
+                dao.discardPersistedOperation(
+                    "account-a",
+                    "miniHomeLayouts",
+                    "malformed/operation",
+                    "malformed/lineage",
+                    rowHandleId,
+                    0,
+                ),
+            )
+            assertNull(dao.operation("account-a", "malformed/operation"))
+            assertNull(dao.operation("account-a", "related-operation"))
+            assertNotNull(dao.operation("account-b", "malformed/operation"))
+            assertNotNull(dao.operation("account-a", "other-type-operation"))
+        }
+
+    @Test
+    fun `persisted handle rejects stale generation after delete and reinsert ABA`() = runTest {
+        val dao = database.syncDao()
+        val original =
+            OperationOutboxEntity(
+                "aba-operation",
+                "account-a",
+                "miniHomeLayouts",
+                "home-a",
+                "REPLACE",
+                1,
+                "{bad-json",
+                1,
+                lineageId = "aba-lineage",
+                rowHandleId = "aba-generation-1",
+            )
+        dao.enqueue(original)
+        val handleRow =
+            requireNotNull(
+                dao.operationByHandle(
+                    "account-a",
+                    "miniHomeLayouts",
+                    "aba-operation",
+                    "aba-lineage",
+                    "aba-generation-1",
+                )
+            )
+        assertEquals(original.rowHandleId, handleRow.rowHandleId)
+        dao.remove("account-a", "aba-operation")
+        dao.enqueue(original.copy(rowHandleId = "aba-generation-2"))
+
+        assertTrue(
+            dao.discardPersistedOperation(
+                "account-a",
+                "miniHomeLayouts",
+                "aba-operation",
+                "aba-lineage",
+                "aba-generation-1",
+                0,
+            ) is PersistedOperationDiscardResult.Stale
+        )
+        assertEquals(
+            "aba-generation-2",
+            dao.operation("account-a", "aba-operation")?.rowHandleId,
+        )
+    }
+
+    @Test
+    fun `full persisted handle CAS rejects ABA replacement for every mutable outbox field`() =
+        runTest {
+            val dao = database.syncDao()
+            val original =
+                OperationOutboxEntity(
+                    "cas-operation",
+                    "account-a",
+                    "miniHomeLayouts",
+                    "home-a",
+                    "REPLACE",
+                    3,
+                    "original-payload",
+                    1,
+                    payloadHash = null,
+                    lineageId = "cas-lineage",
+                    rowHandleId = "cas-generation-1",
+                    rowVersion = 0,
+                )
+            dao.enqueue(original)
+            val first =
+                dao.compareAndSetOperation(
+                    original,
+                    original.copy(
+                        state = "MAY_HAVE_COMMITTED",
+                        payloadHash = "a".repeat(64),
+                        lastErrorCode = "NETWORK",
+                        failureDetails = "first mutation",
+                    ),
+                ) as OperationOutboxCompareAndSetResult.Updated
+            assertEquals(1L, first.operation.rowVersion)
+
+            dao.remove("account-a", "cas-operation")
+            val replacement =
+                original.copy(
+                    draftPayload = "replacement-payload",
+                    state = "RECONCILIATION_REQUIRED",
+                    payloadHash = "b".repeat(64),
+                    committedOperationId = "replacement-receipt",
+                    committedExpectedRevision = 9,
+                    committedRevision = 10,
+                    committedPayloadHash = "c".repeat(64),
+                    lastErrorCode = "PAYLOAD_MISMATCH",
+                    failureDetails = "replacement details",
+                    rowHandleId = "cas-generation-2",
+                    rowVersion = 0,
+                )
+            dao.enqueue(replacement)
+
+            val stale =
+                dao.compareAndSetOperation(
+                    first.operation,
+                    first.operation.copy(
+                        state = "PENDING",
+                        payloadHash = "d".repeat(64),
+                        committedOperationId = "stale-receipt",
+                        committedExpectedRevision = 3,
+                        committedRevision = 4,
+                        committedPayloadHash = "e".repeat(64),
+                        lastErrorCode = null,
+                        failureDetails = null,
+                    ),
+                )
+
+            assertTrue(stale is OperationOutboxCompareAndSetResult.Stale)
+            assertEquals(replacement, dao.operation("account-a", "cas-operation"))
+        }
+
+    @Test
+    fun `typed persisted discard distinguishes consumed stale duplicate and rejected handles`() =
+        runTest {
+            val dao = database.syncDao()
+            val original =
+                OperationOutboxEntity(
+                    "typed-discard",
+                    "account-a",
+                    "miniHomeLayouts",
+                    "home-a",
+                    "REPLACE",
+                    3,
+                    "payload",
+                    1,
+                    lineageId = "typed-lineage",
+                    rowHandleId = "typed-generation-1",
+                    rowVersion = 4,
+                )
+            dao.enqueue(original)
+
+            assertTrue(
+                dao.discardPersistedOperation(
+                    "account-a",
+                    "personalPlants",
+                    "typed-discard",
+                    "typed-lineage",
+                    "typed-generation-1",
+                    4,
+                ) is PersistedOperationDiscardResult.Rejected
+            )
+            dao.remove("account-a", "typed-discard")
+            val replacement =
+                original.copy(
+                    draftPayload = "replacement",
+                    rowHandleId = "typed-generation-2",
+                    rowVersion = 0,
+                )
+            dao.enqueue(replacement)
+            val stale =
+                dao.discardPersistedOperation(
+                    "account-a",
+                    "miniHomeLayouts",
+                    "typed-discard",
+                    "typed-lineage",
+                    "typed-generation-1",
+                    4,
+                )
+            assertTrue(stale is PersistedOperationDiscardResult.Stale)
+            assertEquals(replacement, (stale as PersistedOperationDiscardResult.Stale).current)
+
+            val consumed =
+                dao.discardPersistedOperation(
+                    "account-a",
+                    "miniHomeLayouts",
+                    "typed-discard",
+                    "typed-lineage",
+                    "typed-generation-2",
+                    0,
+                )
+            assertEquals(PersistedOperationDiscardResult.Consumed(1), consumed)
+            assertEquals(
+                PersistedOperationDiscardResult.Missing,
+                dao.discardPersistedOperation(
+                    "account-a",
+                    "miniHomeLayouts",
+                    "typed-discard",
+                    "typed-lineage",
+                    "typed-generation-2",
+                    0,
+                ),
+            )
+        }
 
     @Test
     fun `same operation id persists independently for two accounts`() = runTest {
@@ -151,15 +559,27 @@ class PlanteriorDatabaseTest {
         val dao = database.cacheDao()
         dao.upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "이전 이름", 1, 1, 10))
 
-        dao.reconcileMiniHome(
-            "account-a",
-            CachedMiniHomeEntity("account-a", "home-a", "새 이름", 4, 2, 20),
+        dao.applyAuthoritativeMiniHome(
+            AuthoritativeMiniHomeCacheWrite.Layout(
+                "account-a",
+                2,
+                "operation-update",
+                "a".repeat(64),
+                CachedMiniHomeEntity("account-a", "home-a", "새 이름", 4, 2, 20),
+                emptyList(),
+            )
         )
         assertEquals("새 이름", dao.miniHome("account-a")?.name)
         assertEquals(4, dao.miniHome("account-a")?.placedPlantCount)
 
-        // 서버에서 미니홈피가 삭제되면 홈도 더 이상 이전 구성을 보여주면 안 된다.
-        dao.reconcileMiniHome("account-a", null)
+        dao.applyAuthoritativeMiniHome(
+            AuthoritativeMiniHomeCacheWrite.Deletion(
+                "account-a",
+                3,
+                "deletion-operation",
+                30,
+            )
+        )
         assertNull(dao.miniHome("account-a"))
     }
 
@@ -196,7 +616,7 @@ class PlanteriorDatabaseTest {
     }
 
     @Test
-    fun `migration three to six runs on a real version three database and keeps every row`() {
+    fun `migration three to twelve runs on a real version three database and keeps every row`() {
         database.close()
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = createVersion3Database(context, MIGRATION_3_4_DB)
@@ -216,6 +636,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -254,13 +682,22 @@ class PlanteriorDatabaseTest {
                 migrated.cacheDao().schedule("account-a", "schedule-a2")?.zoneId,
             )
             assertEquals(
-                listOf("operation-a1", "operation-a2"),
+                listOf("operation-a1", "operation-a2", "operation-a3"),
                 migrated.syncDao().pending("account-a").map { it.operationId },
             )
             assertEquals(
                 "남아야 하는 draft",
                 migrated.syncDao().pending("account-a").first().draftPayload,
             )
+            val migratedReconciliation =
+                requireNotNull(migrated.syncDao().operation("account-a", "operation-a3"))
+            assertEquals("RECONCILIATION_REQUIRED", migratedReconciliation.state)
+            assertEquals("OUTBOX_MISMATCH", migratedReconciliation.lastErrorCode)
+            assertNull(migratedReconciliation.failureDetails)
+            assertNull(migratedReconciliation.committedOperationId)
+            assertEquals("operation-a3", migratedReconciliation.lineageId)
+            assertNull(migratedReconciliation.supersedesOperationId)
+            assertTrue(migratedReconciliation.rowHandleId.isNotBlank())
             assertEquals(
                 1_786_500_000_000,
                 migrated.syncDao().lastSync("account-a", "PLANTS")?.syncedAtEpochMillis,
@@ -283,9 +720,9 @@ class PlanteriorDatabaseTest {
         }
         migrated.close()
 
-        // 4. 두 마이그레이션이 실제로 실행되어 버전이 올라가고 스키마가 5번과 같아야 한다.
-        assertEquals("마이그레이션 후 user_version은 6이어야 한다", 6, readUserVersion(file))
-        assertMatchesVersion6Schema(file)
+        // 4. 모든 마이그레이션이 실행되어 현재 스키마 버전까지 올라가야 한다.
+        assertEquals("마이그레이션 후 user_version은 14이어야 한다", 14, readUserVersion(file))
+        assertMatchesVersion14Schema(file)
 
         // 5. 닫았다 다시 열어도 내용이 유지되어야 한다.
         val reopened =
@@ -296,6 +733,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -304,7 +749,7 @@ class PlanteriorDatabaseTest {
             assertEquals(2, reopened.cacheDao().plants("account-a").size)
         }
         reopened.close()
-        assertEquals(6, readUserVersion(file))
+        assertEquals(14, readUserVersion(file))
 
         assertTrue(file.delete())
         restoreInMemoryDatabase(context)
@@ -324,6 +769,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -341,8 +794,8 @@ class PlanteriorDatabaseTest {
                 .contains("index_operation_outbox_accountId_state_createdAtEpochMillis")
         )
 
-        // 스키마 6번은 외래 키가 없다. 마이그레이션이 임의로 만들지 않았는지 확인한다.
-        VERSION_6_TABLES.forEach { table ->
+        // 현재 스키마는 외래 키가 없다. 마이그레이션이 임의로 만들지 않았는지 확인한다.
+        VERSION_14_TABLES.forEach { table ->
             assertEquals("${table}에 외래 키가 생기면 안 된다", 0, readForeignKeyCount(file, table))
         }
 
@@ -364,6 +817,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -386,6 +847,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -406,8 +875,8 @@ class PlanteriorDatabaseTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = createVersion3Database(context, DOWNGRADE_DB)
         // 앞서 배포된 더 높은 버전에서 되돌아온 상황을 흑낸다.
-        openRaw(file).use { it.execSQL("PRAGMA user_version = 7") }
-        assertEquals(7, readUserVersion(file))
+        openRaw(file).use { it.execSQL("PRAGMA user_version = 15") }
+        assertEquals(15, readUserVersion(file))
 
         val downgraded =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DOWNGRADE_DB)
@@ -417,6 +886,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -476,6 +953,14 @@ class PlanteriorDatabaseTest {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -539,7 +1024,20 @@ class PlanteriorDatabaseTest {
         }
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
+                )
                 .allowMainThreadQueries()
                 .build()
         migrated
@@ -618,7 +1116,7 @@ class PlanteriorDatabaseTest {
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(name)
                 .callback(
-                    object : SupportSQLiteOpenHelper.Callback(VERSION_6) {
+                    object : SupportSQLiteOpenHelper.Callback(VERSION_14) {
                         override fun onCreate(db: SupportSQLiteDatabase) = Unit
 
                         override fun onUpgrade(
@@ -685,9 +1183,9 @@ class PlanteriorDatabaseTest {
             }
         }
 
-    /** 마이그레이션 결과가 committed 스키마 `6.json`과 같은지 확인한다. */
-    private fun assertMatchesVersion6Schema(file: File) {
-        VERSION_6_TABLES.forEach { table ->
+    /** 마이그레이션 결과가 현재 committed 스키마와 같은지 확인한다. */
+    private fun assertMatchesVersion14Schema(file: File) {
+        VERSION_14_TABLES.forEach { table ->
             assertTrue("$table 테이블이 있어야 한다", readTableNames(file).contains(table))
         }
 
@@ -715,6 +1213,12 @@ class PlanteriorDatabaseTest {
         )
         assertEquals(0, readForeignKeyCount(file, "cached_mini_homes"))
 
+        val watermark = readColumns(file, "mini_home_cache_watermarks")
+        assertEquals("verified", watermark.last().name)
+        assertEquals("INTEGER", watermark.last().type)
+        assertTrue(watermark.last().notNull)
+        assertEquals("1", watermark.last().defaultValue)
+
         val schedules = readColumns(file, "cached_watering_schedules")
         assertFalse(schedules.first { it.name == "reminderTime" }.notNull)
         assertFalse(schedules.first { it.name == "enabled" }.notNull)
@@ -741,6 +1245,27 @@ class PlanteriorDatabaseTest {
         assertFalse(plants.first { it.name == "lastWateredDate" }.notNull)
         assertTrue(plants.first { it.name == "detailsComplete" }.notNull)
         assertEquals("0", plants.first { it.name == "detailsComplete" }.defaultValue)
+
+        val outbox = readColumns(file, "operation_outbox")
+        assertEquals(
+            listOf(
+                "failureDetails",
+                "committedOperationId",
+                "committedExpectedRevision",
+                "committedRevision",
+                "payloadHash",
+                "committedPayloadHash",
+                "lineageId",
+                "supersedesOperationId",
+                "rowHandleId",
+                "rowVersion",
+            ),
+            outbox.takeLast(10).map { it.name },
+        )
+        assertTrue(outbox.dropLast(2).takeLast(8).all { !it.notNull && it.defaultValue == null })
+        assertTrue(outbox.takeLast(2).all { it.notNull })
+        assertEquals("''", outbox[outbox.lastIndex - 1].defaultValue)
+        assertEquals("0", outbox.last().defaultValue)
     }
 
     private fun restoreInMemoryDatabase(context: Context) {
@@ -760,7 +1285,9 @@ class PlanteriorDatabaseTest {
 
     private companion object {
         const val VERSION_3 = 3
-        const val VERSION_6 = 6
+        const val VERSION_12 = 12
+        const val VERSION_13 = 13
+        const val VERSION_14 = 14
         const val MIGRATION_3_4_DB = "migration-3-4.db"
         const val INDEX_DB = "migration-3-4-index.db"
         const val DUPLICATE_DB = "migration-3-4-duplicate.db"
@@ -769,11 +1296,13 @@ class PlanteriorDatabaseTest {
         /** `schemas/.../3.json`의 identityHash. 실제 v3 Room 파일과 동일하게 재현하기 위해 필요하다. */
         const val VERSION_3_IDENTITY_HASH = "aaa3850f1960bd80061701475b7929c5"
 
-        val VERSION_6_TABLES =
+        val VERSION_14_TABLES =
             listOf(
                 "cached_plants",
                 "cached_watering_schedules",
                 "cached_mini_homes",
+                "cached_mini_home_placements",
+                "mini_home_cache_watermarks",
                 "operation_outbox",
                 "last_sync",
             )
@@ -800,6 +1329,7 @@ class PlanteriorDatabaseTest {
                 "INSERT INTO `cached_watering_schedules` VALUES ('account-a', 'schedule-a2', 'plant-a2', '2026-08-15', '10:00', 'America/Los_Angeles', 1, 14)",
                 "INSERT INTO `operation_outbox` VALUES ('operation-a1', 'account-a', 'personalPlant', 'plant-a1', 'UPDATE', 1, '남아야 하는 draft', 15, 'PENDING', NULL, NULL)",
                 "INSERT INTO `operation_outbox` VALUES ('operation-a2', 'account-a', 'personalPlant', 'plant-a2', 'UPDATE', 2, '두 번째 draft', 16, 'CONFLICT', 9, 'REVISION_CONFLICT')",
+                "INSERT INTO `operation_outbox` VALUES ('operation-a3', 'account-a', 'miniHomeLayouts', 'home-a', 'REPLACE', 3, '미니홈 draft', 17, 'FAILED', NULL, 'OUTBOX_MISMATCH')",
                 "INSERT INTO `last_sync` VALUES ('account-a', 'PLANTS', 1786500000000, 'SUCCESS', NULL)",
                 "INSERT INTO `last_sync` VALUES ('account-a', 'MINI_HOME', 1786500000001, 'FAILED', 'unavailable')",
             )

@@ -12,9 +12,11 @@ import {
   confirmNotificationOpened,
   ensureWateringNotificationSettings,
   identifyPlant,
+  loadMiniHomeLayout,
   reconcileWateringNotificationTimezone,
   refreshWeather,
   registerNotificationEndpoint,
+  saveMiniHomeLayout,
   searchWeatherRegions,
   setManualWeatherRegion,
   setWeatherLocationConsent,
@@ -51,7 +53,7 @@ async function invokeCallable(
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Callable test server did not bind a TCP port");
   try {
-    return await fetch(`http://127.0.0.1:${address.port}`, {
+    const response = await fetch(`http://127.0.0.1:${address.port}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -60,6 +62,8 @@ async function invokeCallable(
       },
       body: JSON.stringify({ data }),
     });
+    await response.clone().arrayBuffer();
+    return response;
   } finally {
     await closeServer(server);
   }
@@ -71,10 +75,12 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-test("all owner watering and Apple callable boundaries reject missing App Check first", async () => {
+test("all owner watering mini-home and Apple callable boundaries reject missing App Check first", async () => {
   const endpoints: CallableHandler[] = [
     (request, response) => applyRevisionedOwnerWrite(request, response),
     (request, response) => completeWatering(request, response),
+    (request, response) => loadMiniHomeLayout(request, response),
+    (request, response) => saveMiniHomeLayout(request, response),
     (request, response) => beginAppleSignIn(request, response),
     (request, response) => completeAppleSignIn(request, response),
   ];
@@ -112,6 +118,8 @@ test("valid debug App Check reaches application validation on hardened callables
     const endpoints: CallableHandler[] = [
       (request, response) => applyRevisionedOwnerWrite(request, response),
       (request, response) => completeWatering(request, response),
+      (request, response) => loadMiniHomeLayout(request, response),
+      (request, response) => saveMiniHomeLayout(request, response),
       (request, response) => beginAppleSignIn(request, response),
       (request, response) => completeAppleSignIn(request, response),
     ];
@@ -126,6 +134,28 @@ test("valid debug App Check reaches application validation on hardened callables
       const body = await response.json() as { error?: { status?: string } };
       assert.equal(body.error?.status, "INVALID_ARGUMENT");
     }
+    const miniHomeValidation = await invokeCallable(
+      (request, response) => saveMiniHomeLayout(request, response),
+      "debug.valid.token",
+      {
+        expectedOwnerUid: "debug-user",
+        miniHomeId: "home-a",
+        expectedRevision: 0,
+        idempotencyKey: "mini-home-validation-0001",
+        name: " invalid ",
+        placements: [],
+      },
+      "debug.auth.token",
+    );
+    assert.equal(miniHomeValidation.status, 400);
+    const validationBody = await miniHomeValidation.json() as {
+      error?: { status?: string; details?: { reason?: string; field?: string } };
+    };
+    assert.deepEqual(validationBody.error, {
+      message: "name must be NFC, safe, and contain 1 to 100 Unicode code points",
+      status: "INVALID_ARGUMENT",
+      details: { reason: "INVALID_REQUEST", field: "name" },
+    });
   } finally {
     appCheck.verifyToken = verifyAppCheckToken;
     auth.verifyIdToken = verifyAuthToken;
@@ -192,6 +222,8 @@ test("hardened callable boundaries reject invalid App Check before application v
     const endpoints: CallableHandler[] = [
       (request, response) => applyRevisionedOwnerWrite(request, response),
       (request, response) => completeWatering(request, response),
+      (request, response) => loadMiniHomeLayout(request, response),
+      (request, response) => saveMiniHomeLayout(request, response),
       (request, response) => beginAppleSignIn(request, response),
       (request, response) => completeAppleSignIn(request, response),
     ];

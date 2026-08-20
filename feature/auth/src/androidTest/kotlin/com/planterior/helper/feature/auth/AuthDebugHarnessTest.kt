@@ -106,7 +106,7 @@ class AuthDebugHarnessTest {
         val googleProof = proof(AuthProvider.GOOGLE, "isolation-a-${UUID.randomUUID()}")
         val appleProof = proof(AuthProvider.APPLE, "isolation-b-${UUID.randomUUID()}")
         val cache = RecordingCache()
-        val delegate = FirestoreAccountSyncRemote(firestore)
+        val delegate = FirestoreAccountSyncRemote(firestore, FirebaseFunctions.getInstance())
         val partialRemote =
             object : AccountSyncRemote by delegate {
                 // 미니홈피는 이제 전용 snapshot 조회를 쓴다. 부분 동기화를 만들려면 그 경로를 실패시켜야 한다.

@@ -8,15 +8,22 @@ import java.time.Instant
  * 실패는 두 종류로 나뉜다. 식물 관리 데이터를 읽지 못하면 홈은 [Error]가 되고, 날씨나 동기화만 실패하면 [Content] 안에서 부분 저하로만 표시한다.
  */
 sealed interface HomeUiState {
+    /** 이 상태의 비공개 데이터 소유자. 중립 상태는 `null`이다. */
+    val ownerUid: String?
+
     /** 첫 로딩. 아직 세션조차 확인하지 못했다. */
-    data object Loading : HomeUiState
+    data object Loading : HomeUiState {
+        override val ownerUid: String? = null
+    }
 
     /**
      * 로그인 전 홈이다.
      *
      * 식물·아이템 데이터를 하나도 읽지 않으며 로그인 유도만 보여준다.
      */
-    data object LoggedOut : HomeUiState
+    data object LoggedOut : HomeUiState {
+        override val ownerUid: String? = null
+    }
 
     /**
      * 로그인했지만 등록한 식물이 없다.
@@ -27,6 +34,7 @@ sealed interface HomeUiState {
         val greetingName: String?,
         val weather: HomeWeatherState,
         val sync: HomeSyncState,
+        override val ownerUid: String = "legacy-unmanaged",
     ) : HomeUiState
 
     /**
@@ -42,6 +50,7 @@ sealed interface HomeUiState {
         val miniHome: HomeMiniHomePreview?,
         val weather: HomeWeatherState,
         val sync: HomeSyncState,
+        override val ownerUid: String = "legacy-unmanaged",
     ) : HomeUiState {
         /** 날씨나 동기화 중 하나라도 저하되었는지. 홈 자체는 계속 사용할 수 있다. */
         val isPartial: Boolean
@@ -49,7 +58,10 @@ sealed interface HomeUiState {
     }
 
     /** 식물 관리 데이터를 읽지 못해 홈을 구성할 수 없다. */
-    data class Error(val sync: HomeSyncState) : HomeUiState
+    data class Error(
+        val sync: HomeSyncState,
+        override val ownerUid: String = "legacy-unmanaged",
+    ) : HomeUiState
 }
 
 /**

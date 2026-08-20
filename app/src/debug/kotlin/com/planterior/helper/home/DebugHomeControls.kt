@@ -59,6 +59,11 @@ fun debugHomeWeatherSource(
  *
  * @return 고정할 세션 흐름. 시나리오가 없으면 `null`이고 이때는 실제 인증 상태를 그대로 쓴다.
  */
+fun debugHomeAccountUid(context: Context): String? =
+    sessionAccount(context).takeIf {
+        sessionScenario(context) == SESSION_SIGNED_IN && it.isNotBlank()
+    }
+
 fun debugHomeSessions(context: Context): Flow<HomeSession>? =
     when (sessionScenario(context)) {
         SESSION_LOGGED_OUT -> flowOf(HomeSession.SignedOut)

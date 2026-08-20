@@ -9,6 +9,8 @@ import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeC
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
+import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
+import { executeDeleteMiniHomeLayout, executeLoadMiniHomeLayout, executeSaveMiniHomeLayout, MiniHomeError } from "./mini-home.js";
 import { FirestoreWateringCompletionStore } from "./firestore-watering-store.js";
 import {
   FirestoreNotificationSettingsStore,
@@ -55,6 +57,7 @@ if (getApps().length === 0) initializeApp();
 const firestore = getFirestore();
 const store = new FirestoreMutationStore(firestore);
 const wateringStore = new FirestoreWateringCompletionStore(firestore);
+const miniHomeStore = new FirestoreMiniHomeLayoutStore(firestore);
 const notificationSettingsStore = new FirestoreNotificationSettingsStore(firestore);
 const wateringDeliveryStore = new FirestoreWateringDeliveryStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
@@ -100,6 +103,69 @@ export const applyRevisionedOwnerWrite = onCall({ enforceAppCheck: true }, async
 });
 
 export { executeOwnerMutation, executeServerStateWrite } from "./contracts.js";
+
+export const loadMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
+  try {
+    return await executeLoadMiniHomeLayout(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      miniHomeStore,
+    );
+  } catch (error: unknown) {
+    if (error instanceof MiniHomeError) {
+      throw new HttpsError(
+        error.code,
+        error.message,
+        error.reason === undefined
+          ? undefined
+          : { reason: error.reason, ...error.details },
+      );
+    }
+    throw error;
+  }
+});
+
+export const deleteMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
+  try {
+    return await executeDeleteMiniHomeLayout(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      miniHomeStore,
+    );
+  } catch (error: unknown) {
+    if (error instanceof MiniHomeError) {
+      throw new HttpsError(
+        error.code,
+        error.message,
+        error.reason === undefined
+          ? undefined
+          : { reason: error.reason, ...error.details },
+      );
+    }
+    throw error;
+  }
+});
+
+export const saveMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
+  try {
+    return await executeSaveMiniHomeLayout(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      miniHomeStore,
+    );
+  } catch (error: unknown) {
+    if (error instanceof MiniHomeError) {
+      throw new HttpsError(
+        error.code,
+        error.message,
+        error.reason === undefined
+          ? undefined
+          : { reason: error.reason, ...error.details },
+      );
+    }
+    throw error;
+  }
+});
 
 export const completeWatering = onCall({ enforceAppCheck: true }, async (request) => {
   try {

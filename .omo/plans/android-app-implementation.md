@@ -195,7 +195,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): fixture weather로 고온+건조 상세와 행동 안내, API 실패에서 timestamped stale 표시·도감 정상 이용, 알림 탭 상세 연결을 확인. Evidence `<attemptDir>/task-12-android-app-implementation.png`.
   Commit: Y | `feat(api): 날씨 기반 식물 위험 안내와 알림 구현`
 
-- [ ] 13. 미니홈피 식물 배치와 저장 구현
+- [x] 13. 미니홈피 식물 배치와 저장 구현
   Recommended task executor category: `visual-engineering`
   What to do / Must NOT do: Figma isometric room을 Compose Canvas로 재현하고 등록 식물 picker, 식물당 미니어처, normalized x/y와 z, drag 배치, canvas clamp, 명시적 Save, revision 충돌, unsaved Save/Discard/Cancel을 구현한다. 마지막 서버 확정 구성만 일반 화면에 표시하고 저장 실패를 성공처럼 표시하지 않는다.
   Parallelization: Wave 4 | Blocked by: 3, 4, 8 | Blocks: 14, 15, 18

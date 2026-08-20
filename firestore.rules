@@ -45,13 +45,13 @@ service cloud.firestore {
         && request.resource.data.revision == resource.data.revision + 1;
     }
     function approvedCollection(collection) {
-      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'notificationHistory', 'identificationRequests'];
+      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'miniHomeStates', 'placements', 'ownedItems', 'shareLinks', 'consents', 'deletionRequests', 'notificationDeliveries', 'notificationHistory', 'identificationRequests'];
     }
     function ownerWritable(collection) {
-      return collection in ['miniHomes', 'placements', 'consents', 'identificationRequests'];
+      return collection in ['consents', 'identificationRequests'];
     }
     function serverWritable(collection) {
-      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries', 'notificationHistory'];
+      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'miniHomeStates', 'placements', 'ownedItems', 'shareLinks', 'deletionRequests', 'notificationDeliveries', 'notificationHistory'];
     }
     function validPersonalPlant() {
       return validEntityKeys(['displayName', 'registrationMethod'], ['contentId', 'representativePhotoPath', 'location', 'note', 'lastWateredDate'])
@@ -87,11 +87,36 @@ service cloud.firestore {
         || (collection == 'weatherPlantSettings'
           && validEntityKeys(['plantId', 'enabled'], [])
           && validOpaqueId(request.resource.data.plantId) && request.resource.data.enabled is bool)
-        || (collection == 'miniHomes' && validEntityKeys(['name'], []) && request.resource.data.name is string)
+        || (collection == 'miniHomes'
+          && validEntityKeys(['name', 'placedPlantCount', 'placementCount', 'placementIds', 'requestHash'], [])
+          && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 100
+          && request.resource.data.requestHash is string && request.resource.data.requestHash.matches('^[a-f0-9]{64}$')
+          && request.resource.data.placedPlantCount is int && request.resource.data.placedPlantCount >= 0 && request.resource.data.placedPlantCount <= 20
+          && request.resource.data.placementCount is int && request.resource.data.placementCount >= 0 && request.resource.data.placementCount <= 20
+          && request.resource.data.placementIds is list && request.resource.data.placementIds.size() == request.resource.data.placementCount)
+        || (collection == 'miniHomeStates'
+          && validEntityKeys(['state', 'miniHomeId', 'layoutRevision', 'requestHash', 'tombstoneId'], [])
+          && request.resource.data.state in ['ACTIVE', 'DELETED']
+          && ((request.resource.data.state == 'ACTIVE'
+              && validOpaqueId(request.resource.data.miniHomeId)
+              && request.resource.data.layoutRevision is int && request.resource.data.layoutRevision >= 1
+              && request.resource.data.requestHash is string && request.resource.data.requestHash.matches('^[a-f0-9]{64}$')
+              && request.resource.data.tombstoneId == null)
+            || (request.resource.data.state == 'DELETED'
+              && request.resource.data.miniHomeId == null
+              && request.resource.data.layoutRevision == null
+              && request.resource.data.requestHash == null
+              && validOperationKey(request.resource.data.tombstoneId)
+              && request.resource.data.idempotencyKey == request.resource.data.tombstoneId)))
         || (collection == 'placements'
-          && validEntityKeys(['normalizedX', 'normalizedY', 'zIndex'], ['plantId', 'itemId'])
+          && validEntityKeys(['miniHomeId', 'layoutRevision', 'plantId', 'itemId', 'normalizedX', 'normalizedY', 'zIndex'], [])
+          && validOpaqueId(request.resource.data.miniHomeId)
+          && request.resource.data.layoutRevision is int && request.resource.data.layoutRevision >= 1
+          && ((validOpaqueId(request.resource.data.plantId) && request.resource.data.itemId == null)
+            || (request.resource.data.plantId == null && validOpaqueId(request.resource.data.itemId)))
           && request.resource.data.normalizedX is number && request.resource.data.normalizedX >= 0 && request.resource.data.normalizedX <= 1
-          && request.resource.data.normalizedY is number && request.resource.data.normalizedY >= 0 && request.resource.data.normalizedY <= 1 && request.resource.data.zIndex is int)
+          && request.resource.data.normalizedY is number && request.resource.data.normalizedY >= 0 && request.resource.data.normalizedY <= 1
+          && request.resource.data.zIndex is int && request.resource.data.zIndex >= 0 && request.resource.data.zIndex < 20)
         || (collection == 'consents'
           && validEntityKeys(['type', 'granted', 'recordedAt'], ['commandGeneration', 'legacyRecovery'])
           && request.resource.data.type in ['IDENTIFICATION_PHOTO_PROCESSING', 'LOCATION', 'ANALYTICS']
@@ -102,6 +127,11 @@ service cloud.firestore {
           && validEntityKeys(['temporaryOriginalPath', 'createdAt', 'expiresAt'], [])
           && request.resource.data.temporaryOriginalPath is string && request.resource.data.createdAt is timestamp
           && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.resource.data.createdAt);
+    }
+    function validPlacementMetadata(uid) {
+      return validMetadata(uid)
+        && request.resource.data.revision == request.resource.data.layoutRevision
+        && request.resource.data.expectedRevision == request.resource.data.layoutRevision - 1;
     }
     function validDelivery() {
       return validEntityKeys(['plantId', 'dueDate', 'attempt', 'status', 'scheduledFor', 'deliveredAt', 'deduplicationKey'], [])
@@ -258,10 +288,12 @@ service cloud.firestore {
       allow update: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && validUpdate(uid) && validOwnerEntity(collection);
       allow create: if collection == 'consents' && documentId == 'location' && trustedServer() && validCreate(uid) && validOwnerEntity(collection);
       allow update: if collection == 'consents' && documentId == 'location' && trustedServer() && validUpdate(uid) && validOwnerEntity(collection);
-      allow create: if serverWritable(collection) && trustedServer() && validCreate(uid)
-        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings'] && validOwnerEntity(collection)));
-      allow update: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && validUpdate(uid)
-        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings'] && validOwnerEntity(collection)));
+      allow create: if collection == 'placements' && trustedServer() && validPlacementMetadata(uid) && validOwnerEntity(collection);
+      allow update: if collection == 'placements' && trustedServer() && validPlacementMetadata(uid) && validOwnerEntity(collection);
+      allow create: if serverWritable(collection) && collection != 'placements' && trustedServer() && validCreate(uid)
+        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'miniHomes', 'miniHomeStates'] && validOwnerEntity(collection)));
+      allow update: if serverWritable(collection) && collection != 'notificationDeliveries' && collection != 'placements' && trustedServer() && validUpdate(uid)
+        && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'miniHomes', 'miniHomeStates'] && validOwnerEntity(collection)));
       allow delete: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && resource.data.ownerUid == uid;
       allow delete: if collection == 'consents' && documentId == 'location' && trustedServer() && resource.data.ownerUid == uid;
       allow delete: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && resource.data.ownerUid == uid;

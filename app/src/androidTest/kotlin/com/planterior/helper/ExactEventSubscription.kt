@@ -521,6 +521,8 @@ internal interface ExactEventLeaseObserver {
 
     fun unregistered() = Unit
 
+    fun sourceDetached() = Unit
+
     fun drained() = Unit
 
     companion object {
@@ -786,6 +788,7 @@ internal class LeasedExactEventRegistration<T>(
                 detachFailure = removalFailure
                 takeDrainCompletionLocked()
             }
+        observer.sourceDetached()
         if (completion != null) {
             behavior.leaveCausalBranchIf(BehaviorCausalBranch.EVENT_AWAIT_CONTINUATION)
         }

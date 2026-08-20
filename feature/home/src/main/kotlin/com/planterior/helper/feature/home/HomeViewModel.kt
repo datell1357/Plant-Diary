@@ -69,7 +69,7 @@ class HomeViewModel(
         val sync = repository.syncStatus().toUiState()
         val care =
             repository.plantCare().getOrElse {
-                return HomeUiState.Error(sync)
+                return HomeUiState.Error(sync, session.accountUid)
             }
         val weather = repository.weather().toUiState()
 
@@ -78,6 +78,7 @@ class HomeViewModel(
                 greetingName = session.displayName,
                 weather = weather,
                 sync = sync,
+                ownerUid = session.accountUid,
             )
         }
 
@@ -90,6 +91,7 @@ class HomeViewModel(
             miniHome = repository.miniHomePreview(),
             weather = weather,
             sync = sync,
+            ownerUid = session.accountUid,
         )
     }
 

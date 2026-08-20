@@ -176,6 +176,9 @@ data class WeatherRiskDto(
 data class MiniHomeDto(
     override val ownerUid: String,
     val name: String,
+    val placedPlantCount: Int,
+    val placementCount: Int,
+    val placementIds: List<String>,
     override val revision: Long,
     override val expectedRevision: Long,
     override val idempotencyKey: String,
@@ -184,6 +187,8 @@ data class MiniHomeDto(
 
 data class PlacementDto(
     override val ownerUid: String,
+    val miniHomeId: String,
+    val layoutRevision: Long,
     val plantId: String?,
     val itemId: String?,
     val normalizedX: Double,

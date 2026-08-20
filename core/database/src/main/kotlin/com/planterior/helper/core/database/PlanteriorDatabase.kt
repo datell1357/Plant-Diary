@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.text.Normalizer
 
 @Database(
     entities =
@@ -11,10 +12,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
             CachedPlantEntity::class,
             CachedWateringScheduleEntity::class,
             CachedMiniHomeEntity::class,
+            CachedMiniHomePlacementEntity::class,
+            MiniHomeCacheWatermarkEntity::class,
             OperationOutboxEntity::class,
             LastSyncEntity::class,
         ],
-    version = 6,
+    version = 14,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
@@ -101,6 +104,206 @@ val MIGRATION_5_6 =
             )
         }
     }
+
+/** 마지막 확정 미니홈피의 전체 좌표와 layering을 계정별로 복원한다. */
+val MIGRATION_6_7 =
+    object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS cached_mini_home_placements (`accountId` TEXT NOT NULL, `placementId` TEXT NOT NULL, `miniHomeId` TEXT NOT NULL, `plantId` TEXT, `itemId` TEXT, `normalizedX` REAL NOT NULL, `normalizedY` REAL NOT NULL, `zIndex` INTEGER NOT NULL, `layoutRevision` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `placementId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_cached_mini_home_placements_accountId_miniHomeId_layoutRevision_zIndex ON cached_mini_home_placements (`accountId`, `miniHomeId`, `layoutRevision`, `zIndex`)"
+            )
+        }
+    }
+
+/** 미니홈피 저장의 불확실한 전송과 authoritative receipt를 프로세스 재시작 뒤에도 복원한다. */
+val MIGRATION_7_8 =
+    object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN failureDetails TEXT")
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN committedOperationId TEXT")
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN committedExpectedRevision INTEGER")
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN committedRevision INTEGER")
+            db.execSQL(
+                "UPDATE operation_outbox SET state = 'RECONCILIATION_REQUIRED' WHERE aggregateType = 'miniHomeLayouts' AND state IN ('CONFLICT', 'FAILED') AND lastErrorCode IN ('REVISION_CONFLICT', 'OUTBOX_MISMATCH', 'UNAVAILABLE_ENTITY')"
+            )
+        }
+    }
+
+/** 미니홈피 canonical payload hash를 local command와 authoritative receipt 양쪽에 보존한다. */
+val MIGRATION_8_9 =
+    object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN payloadHash TEXT")
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN committedPayloadHash TEXT")
+        }
+    }
+
+/** 미니홈피 lineage를 추가하고 legacy 표시 이름을 canonical cache 경계로 복구한다. */
+/** Adds an opaque persisted row generation so stale handles cannot delete ABA replacements. */
+val MIGRATION_10_11 =
+    object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE operation_outbox ADD COLUMN rowHandleId TEXT NOT NULL DEFAULT ''"
+            )
+            db.execSQL(
+                "UPDATE operation_outbox SET rowHandleId = lower(hex(randomblob(16))) WHERE rowHandleId = ''"
+            )
+        }
+    }
+
+/** Adds a monotonic CAS version to every persisted outbox generation. */
+val MIGRATION_11_12 =
+    object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE operation_outbox ADD COLUMN rowVersion INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
+
+/** Persists owner-scoped authoritative layout/deletion ordering across process restarts. */
+val MIGRATION_12_13 =
+    object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS mini_home_cache_watermarks (`accountId` TEXT NOT NULL, `generation` INTEGER NOT NULL, `kind` TEXT NOT NULL, `layoutRevision` INTEGER, `miniHomeId` TEXT, `operationId` TEXT, `payloadHash` TEXT, `tombstoneId` TEXT, `authoritativeAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`))"
+            )
+            db.execSQL(
+                "INSERT INTO mini_home_cache_watermarks (accountId, generation, kind, layoutRevision, miniHomeId, operationId, payloadHash, tombstoneId, authoritativeAtEpochMillis) SELECT accountId, CASE WHEN revision > 0 THEN revision - 1 ELSE 0 END, 'PRESENT', revision, miniHomeId, NULL, NULL, NULL, updatedAtEpochMillis FROM cached_mini_homes"
+            )
+        }
+    }
+
+/**
+ * Marks inferred pre-watermark state as unverified until one authoritative server epoch applies.
+ */
+val MIGRATION_13_14 =
+    object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE mini_home_cache_watermarks ADD COLUMN verified INTEGER NOT NULL DEFAULT 1"
+            )
+            db.execSQL(
+                "UPDATE mini_home_cache_watermarks SET verified = 0 WHERE kind = 'PRESENT' AND operationId IS NULL AND payloadHash IS NULL AND tombstoneId IS NULL"
+            )
+        }
+    }
+
+val MIGRATION_9_10 =
+    object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN lineageId TEXT")
+            db.execSQL("ALTER TABLE operation_outbox ADD COLUMN supersedesOperationId TEXT")
+            db.execSQL(
+                "UPDATE operation_outbox SET lineageId = operationId WHERE aggregateType = 'miniHomeLayouts'"
+            )
+            val legacyNames = buildList {
+                db.query("SELECT accountId, name FROM cached_mini_homes").use { cursor ->
+                    while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
+                }
+            }
+            legacyNames.forEach { (accountId, legacyName) ->
+                val canonicalName = recoverLegacyMiniHomeName(legacyName)
+                if (canonicalName == null) {
+                    db.execSQL(
+                        "DELETE FROM cached_mini_home_placements WHERE accountId = ?",
+                        arrayOf(accountId),
+                    )
+                    db.execSQL(
+                        "DELETE FROM cached_mini_homes WHERE accountId = ?",
+                        arrayOf(accountId),
+                    )
+                } else if (canonicalName != legacyName) {
+                    db.execSQL(
+                        "UPDATE cached_mini_homes SET name = ? WHERE accountId = ? AND name = ?",
+                        arrayOf(canonicalName, accountId, legacyName),
+                    )
+                }
+            }
+        }
+    }
+
+internal fun recoverLegacyMiniHomeName(legacyName: String): String? {
+    if (legacyName.isEmpty() || legacyName.hasUnpairedSurrogate()) return null
+    val canonicalName = Normalizer.normalize(legacyName, Normalizer.Form.NFC)
+    val codePoints = canonicalName.codePoints().toArray()
+    if (
+        codePoints.isEmpty() ||
+            codePoints.size > 100 ||
+            codePoints.first() in LEGACY_MINI_HOME_WHITE_SPACE ||
+            codePoints.last() in LEGACY_MINI_HOME_WHITE_SPACE ||
+            codePoints.any { it in 0x0000..0x001F || it in 0x007F..0x009F } ||
+            codePoints.any(LEGACY_MINI_HOME_BIDI_CONTROLS::contains)
+    ) {
+        return null
+    }
+    return canonicalName
+}
+
+private fun String.hasUnpairedSurrogate(): Boolean {
+    var index = 0
+    while (index < length) {
+        val character = this[index]
+        when {
+            Character.isHighSurrogate(character) -> {
+                if (index + 1 >= length || !Character.isLowSurrogate(this[index + 1])) return true
+                index += 2
+            }
+            Character.isLowSurrogate(character) -> return true
+            else -> index += 1
+        }
+    }
+    return false
+}
+
+private val LEGACY_MINI_HOME_WHITE_SPACE =
+    setOf(
+        0x0009,
+        0x000A,
+        0x000B,
+        0x000C,
+        0x000D,
+        0x0020,
+        0x0085,
+        0x00A0,
+        0x1680,
+        0x2000,
+        0x2001,
+        0x2002,
+        0x2003,
+        0x2004,
+        0x2005,
+        0x2006,
+        0x2007,
+        0x2008,
+        0x2009,
+        0x200A,
+        0x2028,
+        0x2029,
+        0x202F,
+        0x205F,
+        0x3000,
+    )
+
+private val LEGACY_MINI_HOME_BIDI_CONTROLS =
+    setOf(
+        0x061C,
+        0x200E,
+        0x200F,
+        0x202A,
+        0x202B,
+        0x202C,
+        0x202D,
+        0x202E,
+        0x2066,
+        0x2067,
+        0x2068,
+        0x2069,
+    )
 
 val MIGRATION_2_3 =
     object : Migration(2, 3) {

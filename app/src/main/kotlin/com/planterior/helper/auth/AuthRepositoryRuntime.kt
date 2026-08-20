@@ -11,16 +11,26 @@ import com.planterior.helper.BuildConfig
 import com.planterior.helper.FirebaseRuntime
 import com.planterior.helper.core.data.FirebaseRemoteMutationGateway
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
+import com.planterior.helper.core.database.MIGRATION_10_11
+import com.planterior.helper.core.database.MIGRATION_11_12
+import com.planterior.helper.core.database.MIGRATION_12_13
+import com.planterior.helper.core.database.MIGRATION_13_14
 import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.MIGRATION_4_5
 import com.planterior.helper.core.database.MIGRATION_5_6
+import com.planterior.helper.core.database.MIGRATION_6_7
+import com.planterior.helper.core.database.MIGRATION_7_8
+import com.planterior.helper.core.database.MIGRATION_8_9
+import com.planterior.helper.core.database.MIGRATION_9_10
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRemoteDataSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRepository
 import com.planterior.helper.feature.collection.FirebasePlantThumbnailLoader
+import com.planterior.helper.feature.minihome.FirebaseMiniHomeRemoteDataSource
+import com.planterior.helper.feature.minihome.FirebaseMiniHomeRepository
 import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
 import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.watering.FirebaseWateringNotificationSettingsRepository
@@ -43,6 +53,7 @@ private constructor(
     val syncRepository: OfflineFirstSyncRepository,
     val registrationRepository: FirebaseRegistrationRepository,
     val collectionRepository: FirebaseCollectionRepository,
+    val miniHomeRepository: FirebaseMiniHomeRepository,
     val wateringRepository: OutboxWateringRepository,
     val wateringNotificationSettingsRepository: FirebaseWateringNotificationSettingsRepository,
     val weatherRepository: FirebaseWeatherRepository,
@@ -86,6 +97,14 @@ private constructor(
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9,
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
                     )
                     .build()
             return try {
@@ -129,6 +148,10 @@ private constructor(
                     syncRepository,
                     registrationRepository,
                     collectionRepository,
+                    FirebaseMiniHomeRepository(
+                        database,
+                        FirebaseMiniHomeRemoteDataSource(auth, firestore, functions),
+                    ),
                     wateringRepository,
                     FirebaseWateringNotificationSettingsRepository(auth, firestore, functions),
                     weatherRepository,

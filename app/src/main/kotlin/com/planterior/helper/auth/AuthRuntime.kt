@@ -36,14 +36,17 @@ import com.planterior.helper.feature.home.HomeRepository
 import com.planterior.helper.feature.home.HomeSession
 import com.planterior.helper.feature.home.HomeSyncStatus
 import com.planterior.helper.feature.home.HomeWeather
+import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.feature.weather.WeatherPermissionCapabilityStore
 import com.planterior.helper.feature.weather.WeatherRepository
 import com.planterior.helper.home.CachedHomeRepository
+import com.planterior.helper.home.debugHomeAccountUid
 import com.planterior.helper.home.debugHomeSessions
 import com.planterior.helper.home.debugHomeWeatherSource
+import com.planterior.helper.minihome.debugMiniHomeRepository
 import com.planterior.helper.notification.FirebaseNotificationEndpointGateway
 import com.planterior.helper.notification.NotificationAccountTransitionGate
 import com.planterior.helper.notification.NotificationEndpointGateway
@@ -60,11 +63,13 @@ private constructor(
     private val apple: AppleWebAuthProvider?,
     val hasSession: Boolean,
     val forcedHomeSession: Boolean,
+    val forcedHomeAccountUid: String?,
     private val closeAction: () -> Unit,
     /** 홈 대시보드가 읽는 저장소. 인증 상태와 같은 수명을 가진다. */
     val homeRepository: HomeRepository,
     val registrationRepository: RegistrationRepository?,
     val collectionRepository: CollectionRepository?,
+    val miniHomeRepository: MiniHomeRepository?,
     val wateringRepository: WateringRepository?,
     val wateringNotificationSettingsRepository: WateringNotificationSettingsRepository?,
     val weatherRepository: WeatherRepository?,
@@ -113,7 +118,7 @@ private constructor(
                     FirestoreAccountSynchronizer(
                         debugAccountSyncRemote(
                             activity,
-                            FirestoreAccountSyncRemote(shared.firestore),
+                            FirestoreAccountSyncRemote(shared.firestore, shared.functions),
                         ),
                         shared.database,
                         outbox = shared.syncRepository,
@@ -148,6 +153,7 @@ private constructor(
                 apple,
                 identity.current() != null,
                 forcedSessions != null,
+                debugHomeAccountUid(activity),
                 if (closesSharedRuntime) shared::close else ({}),
                 // 데이터는 항상 실제 캐시에서 읽는다. 디버그 QA는 세션과 날씨만 고정할 수 있다.
                 run {
@@ -178,6 +184,11 @@ private constructor(
                     shared.registrationRepository,
                 ),
                 shared.collectionRepository,
+                debugMiniHomeRepository(
+                    activity.applicationContext,
+                    shared.database,
+                    shared.miniHomeRepository,
+                ),
                 shared.wateringRepository,
                 shared.wateringNotificationSettingsRepository,
                 shared.weatherRepository,
@@ -243,9 +254,11 @@ private constructor(
                 null,
                 false,
                 false,
+                null,
                 {},
                 // 구성이 없으면 로그인할 수 없으므로 홈은 항상 로그아웃 상태로 머무른다.
                 UnavailableHomeRepository,
+                null,
                 null,
                 null,
                 null,

@@ -57,6 +57,7 @@ class PlanteriorNavigationTest {
                 PlanteriorNavHost(
                     navController = navController,
                     startRoute = backStack.first(),
+                    authRouteGuardEnabled = false,
                     homeViewModel = homeViewModel,
                 )
             }

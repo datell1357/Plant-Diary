@@ -18,6 +18,7 @@ import com.planterior.helper.feature.collection.CollectionTestTags
 import com.planterior.helper.feature.collection.PlantDetailTestTags
 import com.planterior.helper.feature.home.HomeTestTags
 import com.planterior.helper.feature.home.HomeUiState
+import com.planterior.helper.feature.minihome.MiniHomeTestTags
 import com.planterior.helper.feature.registration.RegistrationTestTags
 import com.planterior.helper.feature.watering.WateringTestTags
 import com.planterior.helper.feature.weather.WeatherTestTags
@@ -74,6 +75,7 @@ class RepositoryLifecycleMainActivityTest {
                     WateringTestTags.SCREEN,
                 ),
                 Destination(PlanteriorRoute.Weather, WeatherTestTags.SCREEN),
+                Destination(PlanteriorRoute.MiniHome, MiniHomeTestTags.SCREEN),
             )
 
         destinations.forEach { destination ->

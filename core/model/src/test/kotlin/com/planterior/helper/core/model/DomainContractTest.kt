@@ -30,6 +30,15 @@ class DomainContractTest {
     }
 
     @Test
+    fun `mini home coordinates and layers reject invalid external values`() {
+        assertEquals(0.5, NormalizedCoordinate(0.5).value, 0.0)
+        assertEquals(2, PlacementLayer(2).value)
+        assertThrows(IllegalArgumentException::class.java) { NormalizedCoordinate(Double.NaN) }
+        assertThrows(IllegalArgumentException::class.java) { NormalizedCoordinate(1.01) }
+        assertThrows(IllegalArgumentException::class.java) { PlacementLayer(-1) }
+    }
+
+    @Test
     fun `operation ids are stable for a logical mutation and reject malformed input`() {
         val first = OperationId.stable(AccountId("account-a"), "plant-01", "water", "2026-08-12")
         val retried = OperationId.stable(AccountId("account-a"), "plant-01", "water", "2026-08-12")

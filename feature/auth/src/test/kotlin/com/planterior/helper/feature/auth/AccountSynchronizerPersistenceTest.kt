@@ -7,7 +7,11 @@ import com.planterior.helper.core.data.OfflineFirstSyncRepository
 import com.planterior.helper.core.data.RemoteMutationCommand
 import com.planterior.helper.core.data.RemoteMutationGateway
 import com.planterior.helper.core.data.RemoteMutationResult
+import com.planterior.helper.core.database.CachedMiniHomeEntity
+import com.planterior.helper.core.database.CachedMiniHomePlacementEntity
 import com.planterior.helper.core.database.CachedPlantEntity
+import com.planterior.helper.core.database.MiniHomeCacheWatermarkEntity
+import com.planterior.helper.core.database.MiniHomeCacheWatermarkKind
 import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
 import java.time.Instant
@@ -290,6 +294,66 @@ class AccountSynchronizerPersistenceTest {
     }
 
     @Test
+    fun `mini home sync replaces the complete placement set including zero placements`() = runTest {
+        val revisionOne =
+            RemoteMiniHome(
+                "home-a",
+                "revision one",
+                1,
+                1,
+                now.toEpochMilli(),
+                listOf(
+                    RemoteMiniHomePlacement(
+                        "plant-one",
+                        "plant-a",
+                        null,
+                        0.1,
+                        0.125,
+                        0,
+                        1,
+                    ),
+                    RemoteMiniHomePlacement(
+                        "decor-one",
+                        null,
+                        "decor-a",
+                        0.3,
+                        0.125,
+                        1,
+                        1,
+                    ),
+                ),
+            )
+        FirestoreAccountSynchronizer(FakeRemote(miniHome = revisionOne), database, now = { now })
+            .sync(account)
+        assertEquals(
+            listOf("plant-one", "decor-one"),
+            database.cacheDao().miniHomePlacements(account, "home-a", 1).map { it.placementId },
+        )
+
+        val revisionTwo =
+            RemoteMiniHome(
+                "home-a",
+                "revision two empty",
+                0,
+                2,
+                now.plusSeconds(1).toEpochMilli(),
+                emptyList(),
+            )
+        FirestoreAccountSynchronizer(FakeRemote(miniHome = revisionTwo), database, now = { now })
+            .sync(account)
+
+        assertEquals(2L, database.cacheDao().miniHome(account)?.revision)
+        assertEquals(
+            emptyList<CachedMiniHomePlacementEntity>(),
+            database.cacheDao().miniHomePlacements(account, "home-a", 2),
+        )
+        assertEquals(
+            emptyList<CachedMiniHomePlacementEntity>(),
+            database.cacheDao().miniHomePlacements(account, "home-a", 1),
+        )
+    }
+
+    @Test
     fun `remote mini home update replaces the cached configuration`() = runTest {
         FirestoreAccountSynchronizer(
                 FakeRemote(miniHome = RemoteMiniHome("home-a", "이전 이름", 1, 1, now.toEpochMilli())),
@@ -319,7 +383,11 @@ class AccountSynchronizerPersistenceTest {
             .sync(account)
         assertNotNull(database.cacheDao().miniHome(account))
 
-        FirestoreAccountSynchronizer(FakeRemote(miniHome = null), database, now = { now })
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = null, miniHomeGeneration = 2),
+                database,
+                now = { now },
+            )
             .sync(account)
 
         assertNull(
@@ -327,6 +395,122 @@ class AccountSynchronizerPersistenceTest {
             database.cacheDao().miniHome(account),
         )
     }
+
+    @Test
+    fun `account sync bootstraps lower server missing epoch over migrated unverified cache`() =
+        runTest {
+            database
+                .cacheDao()
+                .upsertMiniHome(
+                    CachedMiniHomeEntity(
+                        account,
+                        "home-a",
+                        "migrated revision three",
+                        0,
+                        3,
+                        300,
+                    )
+                )
+            database
+                .cacheDao()
+                .upsertMiniHomeCacheWatermark(
+                    MiniHomeCacheWatermarkEntity(
+                        account,
+                        2,
+                        MiniHomeCacheWatermarkKind.PRESENT.name,
+                        3,
+                        "home-a",
+                        null,
+                        null,
+                        null,
+                        300,
+                        verified = false,
+                    )
+                )
+
+            FirestoreAccountSynchronizer(
+                    FakeRemote(miniHome = null, miniHomeGeneration = 1),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+            assertNull(database.cacheDao().miniHome(account))
+            assertEquals(1L, database.cacheDao().miniHomeCacheWatermark(account)?.generation)
+            assertEquals(true, database.cacheDao().miniHomeCacheWatermark(account)?.verified)
+        }
+
+    @Test
+    fun `delayed account sync cannot regress or resurrect a newer mini home state`() = runTest {
+        FirestoreAccountSynchronizer(
+                FakeRemote(
+                    miniHome = RemoteMiniHome("home-a", "revision two", 1, 2, now.toEpochMilli()),
+                    miniHomeGeneration = 2,
+                ),
+                database,
+                now = { now },
+            )
+            .sync(account)
+        FirestoreAccountSynchronizer(
+                FakeRemote(
+                    miniHome =
+                        RemoteMiniHome("home-a", "delayed revision one", 1, 1, now.toEpochMilli()),
+                    miniHomeGeneration = 1,
+                ),
+                database,
+                now = { now },
+            )
+            .sync(account)
+        assertEquals("revision two", database.cacheDao().miniHome(account)?.name)
+
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = null, miniHomeGeneration = 3),
+                database,
+                now = { now },
+            )
+            .sync(account)
+        FirestoreAccountSynchronizer(
+                FakeRemote(
+                    miniHome =
+                        RemoteMiniHome("home-a", "late resurrection", 1, 2, now.toEpochMilli()),
+                    miniHomeGeneration = 2,
+                ),
+                database,
+                now = { now },
+            )
+            .sync(account)
+
+        assertNull(database.cacheDao().miniHome(account))
+        assertEquals(3L, database.cacheDao().currentMiniHomeCache(account)?.watermark?.generation)
+    }
+
+    @Test
+    fun `account sync applies newer recreation after deletion with reset layout revision`() =
+        runTest {
+            FirestoreAccountSynchronizer(
+                    FakeRemote(miniHome = null, miniHomeGeneration = 4),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+            FirestoreAccountSynchronizer(
+                    FakeRemote(
+                        miniHome =
+                            RemoteMiniHome("home-recreated", "recreated", 0, 1, now.toEpochMilli()),
+                        miniHomeGeneration = 5,
+                    ),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+            assertEquals("recreated", database.cacheDao().miniHome(account)?.name)
+            assertEquals(1L, database.cacheDao().miniHome(account)?.revision)
+            assertEquals(
+                5L,
+                database.cacheDao().currentMiniHomeCache(account)?.watermark?.generation,
+            )
+        }
 
     @Test
     fun `mini home sync failure leaves the previously cached configuration usable`() = runTest {
@@ -381,6 +565,7 @@ class AccountSynchronizerPersistenceTest {
         private val plants: List<RemotePlant> = emptyList(),
         private val schedules: List<RemoteWateringSchedule> = emptyList(),
         private val miniHome: RemoteMiniHome? = null,
+        private val miniHomeGeneration: Long = miniHome?.revision ?: 0,
         private val failures: Set<SyncDomain> = emptySet(),
     ) : AccountSyncRemote {
         override suspend fun plants(accountUid: String): List<RemotePlant> =
@@ -391,6 +576,21 @@ class AccountSynchronizerPersistenceTest {
 
         override suspend fun miniHome(accountUid: String): RemoteMiniHome? =
             result(SyncDomain.MINI_HOME, miniHome)
+
+        override suspend fun miniHomeAuthoritativeState(
+            accountUid: String
+        ): RemoteMiniHomeAuthoritativeState =
+            result(
+                SyncDomain.MINI_HOME,
+                RemoteMiniHomeAuthoritativeState(
+                    miniHomeGeneration,
+                    miniHome,
+                    miniHome?.let { "sync-operation-$miniHomeGeneration" },
+                    miniHome?.let { "0".repeat(64) },
+                    if (miniHome == null) "deletion-$miniHomeGeneration" else null,
+                    miniHome?.updatedAtEpochMillis ?: miniHomeGeneration,
+                ),
+            )
 
         override suspend fun verifyDomain(accountUid: String, domain: SyncDomain) {
             result(domain, Unit)

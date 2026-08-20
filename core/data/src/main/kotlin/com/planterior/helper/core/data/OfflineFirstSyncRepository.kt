@@ -73,7 +73,7 @@ class OfflineFirstSyncRepository(
         var failed = 0
         for (operation in
             database.syncDao().replayable(accountId.value, TRANSIENT_FAILURE_CODES).filterNot {
-                it.aggregateType == WATERING_COMPLETIONS
+                it.aggregateType == WATERING_COMPLETIONS || it.aggregateType == MINI_HOME_LAYOUTS
             }) {
             when (
                 val result =
@@ -113,6 +113,7 @@ class OfflineFirstSyncRepository(
 
     private companion object {
         const val WATERING_COMPLETIONS = "wateringCompletions"
+        const val MINI_HOME_LAYOUTS = "miniHomeLayouts"
         val TRANSIENT_FAILURE_CODES =
             setOf(
                 "ABORTED",

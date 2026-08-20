@@ -38,6 +38,10 @@ import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
 import com.planterior.helper.feature.identify.IdentificationRoute
+import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
+import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
+import com.planterior.helper.feature.minihome.MiniHomeRepository
+import com.planterior.helper.feature.minihome.MiniHomeRoute
 import com.planterior.helper.feature.registration.RegistrationAuthOwnership
 import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationRepository
@@ -53,6 +57,7 @@ import com.planterior.helper.feature.weather.WeatherRepository
 import com.planterior.helper.feature.weather.WeatherRoute
 import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.identify.photoIdentificationHandoff
+import com.planterior.helper.minihome.observeDebugMiniHomeState
 import com.planterior.helper.ui.PlaceholderScreen
 import java.time.Clock
 import kotlinx.coroutines.launch
@@ -88,6 +93,8 @@ fun PlanteriorNavHost(
     homeViewModel: HomeViewModel? = null,
     registrationRepository: RegistrationRepository? = null,
     collectionRepository: CollectionRepository? = null,
+    miniHomeRepository: MiniHomeRepository? = null,
+    miniHomeAuthOwnershipOverride: MiniHomeAuthOwnership? = null,
     wateringRepository: WateringRepository? = null,
     wateringNotificationSettingsRepository: WateringNotificationSettingsRepository? = null,
     weatherRepository: WeatherRepository? = null,
@@ -111,6 +118,13 @@ fun PlanteriorNavHost(
             coordinatorAvailable = authCoordinator != null,
             enforcementEnabled = authRouteGuardEnabled,
         )
+    val miniHomeAuthOwnership =
+        miniHomeAuthOwnershipOverride
+            ?: miniHomeAuthOwnership(
+                authState = liveAuthState,
+                coordinatorAvailable = authCoordinator != null,
+                enforcementEnabled = authRouteGuardEnabled,
+            )
     LaunchedEffect(
         currentRoute,
         liveAuthState,
@@ -225,7 +239,7 @@ fun PlanteriorNavHost(
                 onPauseOrDispose {}
             }
             HomeScreen(
-                state = homeState,
+                state = homeState.displayedFor(miniHomeAuthOwnership),
                 onSignIn = { navController.navigate(PlanteriorRoute.Login()) },
                 onNotifications = { navController.navigate(PlanteriorRoute.Notifications) },
                 onIdentify = { navController.navigate(PlanteriorRoute.Camera) },
@@ -409,10 +423,25 @@ fun PlanteriorNavHost(
             }
         }
         composable<PlanteriorRoute.MiniHome> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_mini_home),
-                description = stringResource(R.string.screen_mini_home_description),
-            )
+            if (miniHomeRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_mini_home),
+                    description = stringResource(R.string.screen_mini_home_description),
+                )
+            } else {
+                val context = LocalContext.current
+                MiniHomeRoute(
+                    repository = miniHomeRepository,
+                    onBack = { navController.popBackStack() },
+                    onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
+                    photoLoader =
+                        remember(collectionThumbnailLoader) {
+                            MiniHomePhotoLoader(collectionThumbnailLoader::load)
+                        },
+                    authOwnership = miniHomeAuthOwnership,
+                    onStateObserved = { observeDebugMiniHomeState(context, it) },
+                )
+            }
         }
         composable<PlanteriorRoute.Notifications> {
             if (wateringNotificationSettingsRepository == null) {
@@ -561,6 +590,37 @@ internal fun registrationAuthOwnership(
         is AuthUiState.ReauthenticationRequired,
         is AuthUiState.LinkConflict,
         is AuthUiState.LinkFailure -> RegistrationAuthOwnership.Unknown
+    }
+}
+
+internal fun HomeUiState.displayedFor(authOwnership: MiniHomeAuthOwnership): HomeUiState =
+    when (authOwnership) {
+        MiniHomeAuthOwnership.Unmanaged -> this
+        MiniHomeAuthOwnership.Restoring,
+        MiniHomeAuthOwnership.Unknown -> HomeUiState.Loading
+        MiniHomeAuthOwnership.SignedOut -> HomeUiState.LoggedOut
+        is MiniHomeAuthOwnership.Authenticated ->
+            if (ownerUid == authOwnership.accountId.value) this else HomeUiState.Loading
+    }
+
+internal fun miniHomeAuthOwnership(
+    authState: AuthUiState?,
+    coordinatorAvailable: Boolean,
+    enforcementEnabled: Boolean,
+): MiniHomeAuthOwnership {
+    if (!enforcementEnabled) return MiniHomeAuthOwnership.Unmanaged
+    if (!coordinatorAvailable) return MiniHomeAuthOwnership.Unknown
+    return when (authState) {
+        AuthUiState.Restoring -> MiniHomeAuthOwnership.Restoring
+        is AuthUiState.SignedOut -> MiniHomeAuthOwnership.SignedOut
+        is AuthUiState.Authenticated ->
+            MiniHomeAuthOwnership.Authenticated(AccountId(authState.account.uid))
+        null,
+        is AuthUiState.SigningIn,
+        is AuthUiState.LinkConsentRequired,
+        is AuthUiState.ReauthenticationRequired,
+        is AuthUiState.LinkConflict,
+        is AuthUiState.LinkFailure -> MiniHomeAuthOwnership.Unknown
     }
 }
 

@@ -104,6 +104,7 @@ class ExactEventSubscriptionTest {
         private val onDetachStarted: () -> Unit = {},
         private val onReleasing: () -> Unit = {},
         private val onUnregistered: () -> Unit = {},
+        private val onSourceDetached: () -> Unit = {},
         private val onDrained: () -> Unit = {},
     ) : ExactEventLeaseObserver {
         override fun acquired() = onAcquired()
@@ -113,6 +114,8 @@ class ExactEventSubscriptionTest {
         override fun releasing() = onReleasing()
 
         override fun unregistered() = onUnregistered()
+
+        override fun sourceDetached() = onSourceDetached()
 
         override fun drained() = onDrained()
     }
@@ -415,6 +418,15 @@ class ExactEventSubscriptionTest {
             val fixture =
                 fixture<String>(
                     matches = { it == "home" },
+                    leaseObserver =
+                        LeaseHooks(
+                            onReleasing = {
+                                scheduler.step("callback-releasing")
+                                scheduler.await("source-detached")
+                            },
+                            onDetachStarted = { scheduler.step("detach-started") },
+                            onSourceDetached = { scheduler.step("source-detached") },
+                        ),
                     stateObserver =
                         StateHooks(
                             onAwaitClaimed = { scheduler.step("await-claimed") },
@@ -540,6 +552,7 @@ class ExactEventSubscriptionTest {
                                 }
                             },
                             onDetachStarted = { scheduler.step("detach-started") },
+                            onSourceDetached = { scheduler.step("source-detached") },
                             onDrained = { scheduler.step("drain-complete") },
                         ),
                 )
@@ -552,6 +565,7 @@ class ExactEventSubscriptionTest {
                 scheduler.await("duplicate-counted")
                 val result = executor.submitAwait(fixture.subscription)
                 scheduler.await("detach-started")
+                scheduler.await("source-detached")
                 scheduler.step("duplicate-release")
                 duplicateFuture.get(BOUND, TimeUnit.SECONDS)
                 scheduler.await("drain-complete")
@@ -661,6 +675,7 @@ class ExactEventSubscriptionTest {
                         ),
                     stateObserver =
                         StateHooks(
+                            onAwaitClaimed = { scheduler.step("drain-await-claimed") },
                             onCloseLinearized = { reason, ownsDetach ->
                                 if (reason == "CANCELLED" && !ownsDetach) {
                                     scheduler.step("drain-cancellation-linearized")
@@ -677,6 +692,7 @@ class ExactEventSubscriptionTest {
                 val duplicateFuture = executor.submit { fixture.source.emit("home") }
                 scheduler.await("drain-duplicate-acquired")
                 val awaitFuture = executor.submitAwait(fixture.subscription)
+                scheduler.await("drain-await-claimed")
                 scheduler.await("success-drain-started")
                 val closeFuture = executor.submit { fixture.subscription.close() }
                 scheduler.await("drain-cancellation-linearized")
@@ -1659,7 +1675,7 @@ class ExactEventSubscriptionTest {
         const val BOUND = 3L
         private const val TRACE_LOG_TAG = "ExactEventBehavior"
         private const val EXPECTED_COMPLETE_DIGEST =
-            "7f4b84d498bb33b5c46c6df71c07d11b1900030e34d9e15459b890b905abbb82"
+            "7786ea72685dc54c92f7a1fe7a371edcbcc10988cd5133ba021906e2873ff39a"
         private val EXECUTED_BEHAVIORS = ConcurrentHashMap<String, ExactEventBehaviorSnapshot>()
         private val EXECUTED_BOUNDARIES = ConcurrentHashMap<String, Int>()
 
@@ -1706,8 +1722,15 @@ class ExactEventSubscriptionTest {
                 Schedule("first-emit-before-await", "po:emit<await", listOf("emit", "await")),
                 Schedule(
                     "await-before-first-emit",
-                    "po:await<emit<terminal",
-                    listOf("await-claimed", "emit", "terminal"),
+                    "po:await<emit<release<detach<source-detached<terminal",
+                    listOf(
+                        "await-claimed",
+                        "emit",
+                        "callback-releasing",
+                        "detach-started",
+                        "source-detached",
+                        "terminal",
+                    ),
                 ),
                 Schedule(
                     "duplicate-before-await",
@@ -1726,11 +1749,12 @@ class ExactEventSubscriptionTest {
                 ),
                 Schedule(
                     "duplicate-at-drain-completion",
-                    "po:first<dup-count<detach<dup-release<drain",
+                    "po:first<dup-count<detach<source-detached<dup-release<drain",
                     listOf(
                         "first",
                         "duplicate-counted",
                         "detach-started",
+                        "source-detached",
                         "duplicate-release",
                         "drain-complete",
                     ),
@@ -1755,10 +1779,11 @@ class ExactEventSubscriptionTest {
                 ),
                 Schedule(
                     "cancellation-while-drain-waits",
-                    "po:first<dup-acquire<success-drain<cancel<dup-release<cancel-terminal",
+                    "po:first<dup-acquire<await<success-drain<cancel<dup-release<cancel-terminal",
                     listOf(
                         "drain-first-event",
                         "drain-duplicate-acquired",
+                        "drain-await-claimed",
                         "success-drain-started",
                         "drain-cancellation-linearized",
                         "drain-duplicate-release",

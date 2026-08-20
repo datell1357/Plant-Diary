@@ -7,11 +7,19 @@ import com.planterior.helper.core.database.CachedMiniHomeEntity
 import com.planterior.helper.core.database.CachedPlantEntity
 import com.planterior.helper.core.database.CachedWateringScheduleEntity
 import com.planterior.helper.core.database.LastSyncEntity
+import com.planterior.helper.core.database.MIGRATION_10_11
+import com.planterior.helper.core.database.MIGRATION_11_12
+import com.planterior.helper.core.database.MIGRATION_12_13
+import com.planterior.helper.core.database.MIGRATION_13_14
 import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.MIGRATION_4_5
 import com.planterior.helper.core.database.MIGRATION_5_6
+import com.planterior.helper.core.database.MIGRATION_6_7
+import com.planterior.helper.core.database.MIGRATION_7_8
+import com.planterior.helper.core.database.MIGRATION_8_9
+import com.planterior.helper.core.database.MIGRATION_9_10
 import com.planterior.helper.core.database.PlanteriorDatabase
 import java.time.LocalDate
 import java.time.ZoneId
@@ -38,6 +46,14 @@ class HomeVisualQaSeed {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
+                    MIGRATION_13_14,
                 )
                 .build()
         try {

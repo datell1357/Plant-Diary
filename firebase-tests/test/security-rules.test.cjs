@@ -19,8 +19,16 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "weatherPlantSettings") return { plantId: "plant-a", enabled: true };
   if (collectionName === "weatherSnapshots") return { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-12T03:00:00Z"), zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"] };
   if (collectionName === "weatherRisks") return { plantId: "plant-a", plantName: "몬스테라", snapshotId: "current", type: "DRY", reason: "건조해요", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null };
-  if (collectionName === "miniHomes") return { name: "우리 집" };
-  if (collectionName === "placements") return { normalizedX: 0.5, normalizedY: 0.5, zIndex: 1 };
+  if (collectionName === "miniHomes") {
+    return {
+      name: "우리 집",
+      placedPlantCount: 1,
+      placementCount: 1,
+      placementIds: ["placement-a"],
+      requestHash: "a".repeat(64),
+    };
+  }
+  if (collectionName === "placements") return { miniHomeId: "home-a", layoutRevision: 1, plantId: "plant-a", itemId: null, normalizedX: 0.5, normalizedY: 0.5, zIndex: 0 };
   if (collectionName === "ownedItems") return { itemId: "item-a", acquiredAt: ts("2026-08-12T00:00:00Z"), applied: false };
   if (collectionName === "shareLinks") return { miniHomeId: "home-a", sourceRevision: 1, snapshotPath: "share-images/user-a/share-a/share.png", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-09-12T00:00:00Z"), revokedAt: null };
   if (collectionName === "consents") return { type: "LOCATION", granted: true, recordedAt: ts("2026-08-12T00:00:00Z") };
@@ -30,7 +38,7 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "identificationRequests") return { temporaryOriginalPath: "identification-originals/user-a/request-a/original.webp", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-13T00:00:00Z") };
   throw new Error(`Missing fixture for ${collectionName}`);
 };
-const serverCollections = new Set(["wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings", "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries", "notificationHistory"]);
+const serverCollections = new Set(["wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings", "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries", "notificationHistory"]);
 
 describe("Planterior Firebase ownership contract", () => {
   before(async () => {
@@ -95,6 +103,26 @@ describe("Planterior Firebase ownership contract", () => {
       await assertFails(setDoc(doc(foreign, path), { ...write("user-b"), ...collectionFixture(collectionName) }));
       await assertFails(getDoc(doc(anonymous, path)));
     }
+  });
+
+  it("requires the transactional mini-home boundary and validates layout documents", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const home = { ...write("user-a"), ...collectionFixture("miniHomes") };
+    const placement = { ...write("user-a"), ...collectionFixture("placements") };
+    await assertFails(setDoc(doc(owner, "users/user-a/miniHomes/home-a"), home));
+    await assertFails(setDoc(doc(owner, "users/user-a/placements/placement-a"), placement));
+    await assertSucceeds(setDoc(doc(server, "users/user-a/miniHomes/home-a"), home));
+    await assertSucceeds(setDoc(doc(server, "users/user-a/placements/placement-a"), placement));
+    await assertFails(setDoc(doc(server, "users/user-a/placements/both-targets"), {
+      ...placement,
+      plantId: "plant-a",
+      itemId: "item-a",
+    }));
+    await assertFails(setDoc(doc(server, "users/user-a/placements/outside"), {
+      ...placement,
+      normalizedX: 1.1,
+    }));
   });
 
   it("keeps the generation-protected location consent command server-owned", async () => {

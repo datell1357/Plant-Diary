@@ -5,8 +5,6 @@ export type ServerContext = Readonly<{ trusted: boolean }>;
 
 export type OwnerCollection =
   | "personalPlants"
-  | "miniHomes"
-  | "placements"
   | "consents"
   | "identificationRequests";
 
@@ -221,8 +219,6 @@ function oneOf<T extends string>(candidate: string, allowed: readonly T[], field
 function ownerCollection(value: string): OwnerCollection {
   switch (value) {
     case "personalPlants":
-    case "miniHomes":
-    case "placements":
     case "consents":
     case "identificationRequests":
       return value;
@@ -304,23 +300,6 @@ async function validateOwnerPayload(
         throw new ContractError("invalid-argument", "note must contain at most 1000 characters");
       }
       await validateLastWateredDate(payload, ownerUid, store);
-      return;
-    }
-    case "miniHomes":
-      exactFields(payload, ["name"]);
-      stringField(payload, "name");
-      return;
-    case "placements": {
-      exactFields(payload, ["plantId", "itemId", "normalizedX", "normalizedY", "zIndex"]);
-      const plantId = nullableStringField(payload, "plantId");
-      const itemId = nullableStringField(payload, "itemId");
-      if ((plantId === null) === (itemId === null)) throw new ContractError("invalid-argument", "Placement must reference exactly one target");
-      if (plantId !== null) opaqueField(payload, "plantId");
-      if (itemId !== null) opaqueField(payload, "itemId");
-      const x = numberField(payload, "normalizedX");
-      const y = numberField(payload, "normalizedY");
-      if (x < 0 || x > 1 || y < 0 || y > 1) throw new ContractError("invalid-argument", "Placement coordinates must be normalized");
-      integerField(payload, "zIndex");
       return;
     }
     case "consents":

@@ -133,6 +133,22 @@ value class Revision(val value: Long) {
 }
 
 @JvmInline
+value class NormalizedCoordinate(val value: Double) {
+    init {
+        require(value.isFinite() && value in 0.0..1.0) {
+            "Normalized coordinate must be finite and inside the canvas"
+        }
+    }
+}
+
+@JvmInline
+value class PlacementLayer(val value: Int) {
+    init {
+        require(value >= 0) { "Placement layer cannot be negative" }
+    }
+}
+
+@JvmInline
 value class OperationId(val value: String) {
     init {
         require(Regex("^[A-Za-z0-9_-]{8,128}$").matches(value)) {
@@ -314,9 +330,9 @@ data class MiniHomePlacement(
     val id: PlacementId,
     val plantId: PersonalPlantId?,
     val itemId: ItemId?,
-    val normalizedX: Double,
-    val normalizedY: Double,
-    val zIndex: Int,
+    val normalizedX: NormalizedCoordinate,
+    val normalizedY: NormalizedCoordinate,
+    val zIndex: PlacementLayer,
 )
 
 data class RiskGuidanceContent(

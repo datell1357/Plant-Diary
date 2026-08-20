@@ -1,9 +1,11 @@
 package com.planterior.helper.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Ignore
 import androidx.room.Index
 import java.time.LocalDate
+import java.util.UUID
 
 @Entity(
     tableName = "cached_plants",
@@ -61,6 +63,16 @@ data class OperationOutboxEntity(
     val state: String = "PENDING",
     val actualRevision: Long? = null,
     val lastErrorCode: String? = null,
+    val failureDetails: String? = null,
+    val committedOperationId: String? = null,
+    val committedExpectedRevision: Long? = null,
+    val committedRevision: Long? = null,
+    val payloadHash: String? = null,
+    val committedPayloadHash: String? = null,
+    val lineageId: String? = null,
+    val supersedesOperationId: String? = null,
+    @ColumnInfo(defaultValue = "''") val rowHandleId: String = UUID.randomUUID().toString(),
+    @ColumnInfo(defaultValue = "0") val rowVersion: Long = 0,
 )
 
 /**
@@ -77,6 +89,99 @@ data class CachedMiniHomeEntity(
     val revision: Long,
     val updatedAtEpochMillis: Long,
 )
+
+/** 마지막 서버 확정 revision에 속한 미니홈피 배치. draft는 operation_outbox에만 둔다. */
+@Entity(
+    tableName = "cached_mini_home_placements",
+    primaryKeys = ["accountId", "placementId"],
+    indices = [Index(value = ["accountId", "miniHomeId", "layoutRevision", "zIndex"])],
+)
+data class CachedMiniHomePlacementEntity(
+    val accountId: String,
+    val placementId: String,
+    val miniHomeId: String,
+    val plantId: String?,
+    val itemId: String?,
+    val normalizedX: Double,
+    val normalizedY: Double,
+    val zIndex: Int,
+    val layoutRevision: Long,
+)
+
+/** Owner-scoped ordering identity for the last authoritative layout or deletion applied to Room. */
+@Entity(tableName = "mini_home_cache_watermarks", primaryKeys = ["accountId"])
+data class MiniHomeCacheWatermarkEntity(
+    val accountId: String,
+    val generation: Long,
+    val kind: String,
+    val layoutRevision: Long?,
+    val miniHomeId: String?,
+    val operationId: String?,
+    val payloadHash: String?,
+    val tombstoneId: String?,
+    val authoritativeAtEpochMillis: Long,
+    @ColumnInfo(defaultValue = "1") val verified: Boolean,
+)
+
+enum class MiniHomeCacheWatermarkKind {
+    PRESENT,
+    DELETED,
+}
+
+data class MiniHomeCacheWatermark(
+    val accountId: String,
+    val generation: Long,
+    val kind: MiniHomeCacheWatermarkKind,
+    val layoutRevision: Long?,
+    val miniHomeId: String?,
+    val operationId: String?,
+    val payloadHash: String?,
+    val tombstoneId: String?,
+    val authoritativeAtEpochMillis: Long,
+    val verified: Boolean,
+)
+
+data class CachedMiniHomeLayoutState(
+    val watermark: MiniHomeCacheWatermark,
+    val home: CachedMiniHomeEntity?,
+    val placements: List<CachedMiniHomePlacementEntity>,
+)
+
+sealed interface AuthoritativeMiniHomeCacheWrite {
+    val accountId: String
+    val generation: Long
+    val authoritativeAtEpochMillis: Long
+
+    data class Layout(
+        override val accountId: String,
+        override val generation: Long,
+        val operationId: String,
+        val payloadHash: String,
+        val home: CachedMiniHomeEntity,
+        val placements: List<CachedMiniHomePlacementEntity>,
+    ) : AuthoritativeMiniHomeCacheWrite {
+        override val authoritativeAtEpochMillis: Long = home.updatedAtEpochMillis
+    }
+
+    data class Deletion(
+        override val accountId: String,
+        override val generation: Long,
+        val tombstoneId: String,
+        val deletedAtEpochMillis: Long,
+    ) : AuthoritativeMiniHomeCacheWrite {
+        override val authoritativeAtEpochMillis: Long = deletedAtEpochMillis
+    }
+}
+
+sealed interface MiniHomeCacheApplyResult {
+    val current: CachedMiniHomeLayoutState
+
+    data class Applied(override val current: CachedMiniHomeLayoutState) : MiniHomeCacheApplyResult
+
+    data class Ignored(override val current: CachedMiniHomeLayoutState) : MiniHomeCacheApplyResult
+
+    data class Conflict(override val current: CachedMiniHomeLayoutState) : MiniHomeCacheApplyResult
+}
 
 @Entity(tableName = "last_sync", primaryKeys = ["accountId", "domain"])
 data class LastSyncEntity(
