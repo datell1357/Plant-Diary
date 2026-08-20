@@ -1,11 +1,9 @@
 extension LocalPlantCollectionStore {
+    func index(forRouteTarget rawTarget: String) -> Int? {
+        plants.firstIndex { $0.plantID?.rawValue == rawTarget }
+    }
+
     func containsRouteTarget(_ rawTarget: String) -> Bool {
-        if rawTarget.hasPrefix("local-") {
-            let indexText = rawTarget.dropFirst("local-".count)
-            if let index = Int(indexText) {
-                return plants.indices.contains(index)
-            }
-        }
-        return plants.contains { $0.plantID?.rawValue == rawTarget }
+        index(forRouteTarget: rawTarget) != nil
     }
 }

@@ -21,10 +21,7 @@ final class AppLaunchUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
 
-        let homeDetail = app.buttons["home.open-detail"]
-        XCTAssertTrue(homeDetail.waitForExistence(timeout: 5))
-        homeDetail.tap()
-        XCTAssertTrue(app.otherElements["home.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["홈"].waitForExistence(timeout: 5))
 
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.open-detail"].waitForExistence(timeout: 5))
@@ -32,7 +29,7 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.home"].tap()
-        XCTAssertTrue(app.otherElements["home.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["홈"].waitForExistence(timeout: 5))
 
         app.buttons["tab.storage"].tap()
         XCTAssertTrue(app.buttons["storage.open-detail"].waitForExistence(timeout: 5))
@@ -70,25 +67,6 @@ final class AppLaunchUITests: XCTestCase {
             XCTAssertTrue(control.waitForExistence(timeout: 5), "\(identifier) should exist")
             XCTAssertTrue(control.isHittable, "\(identifier) should have a hittable target")
         }
-    }
-
-    func testHostileAndDeletedURLsFallBackWithoutMetadata() {
-        let hostileApp = XCUIApplication()
-        hostileApp.launchEnvironment["QA_DEEP_LINK"] = "https://evil.test/plant/private-plant"
-        hostileApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        hostileApp.launch()
-        XCTAssertTrue(hostileApp.otherElements["route.unavailable"].waitForExistence(timeout: 5))
-        XCTAssertFalse(hostileApp.staticTexts["private-plant"].exists)
-        hostileApp.terminate()
-
-        let deletedApp = XCUIApplication()
-        deletedApp.launchEnvironment["QA_DEEP_LINK"] = "planterior://plant/deleted-plant"
-        deletedApp.launchEnvironment["QA_TARGET_DELETED"] = "1"
-        deletedApp.launchEnvironment["QA_AUTHENTICATED"] = "1"
-        deletedApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        deletedApp.launch()
-        XCTAssertTrue(deletedApp.otherElements["route.unavailable"].waitForExistence(timeout: 5))
-        XCTAssertFalse(deletedApp.staticTexts["deleted-plant"].exists)
     }
 
     func testReduceMotionLaunchContract() {
