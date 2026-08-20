@@ -167,6 +167,11 @@ final class LocalPlantCollectionStore: ObservableObject {
         persist()
     }
 
+    func presentationIdentity(at index: Int) -> String? {
+        guard plants.indices.contains(index) else { return nil }
+        return plants[index].plantID?.rawValue ?? weatherPlantID(at: index)?.rawValue
+    }
+
     func rememberScrollAnchor(_ index: Int) {
         scrollAnchor = index
         defaults.set(index, forKey: "collection.\(accountID).scroll-anchor")

@@ -6,145 +6,66 @@ import SwiftUI
 struct PlantCareDetailView: View {
     let index: Int
     let plantCalendar = PlantCareCalendar()
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.dynamicTypeSize) var dynamicTypeSize
     @ObservedObject var collection = LocalPlantCollectionStore.shared
     @State var nickname = ""
-    @State private var healthNote = ""
-    @State private var notes: [String] = []
+    @State var healthNote = ""
+    @State var notes: [String] = []
     @State var location = ""
     @State var privateMemo = ""
     @State var lastWateredOn: Date?
     @State var wateringIntervalDays = 10
     @State var wateringFeedback: WateringFeedback?
     @State var weatherAlertsEnabled = true
-    @State private var showsDeleteConfirmation = false
+    @State var showsDeleteConfirmation = false
     @State var saveError: String?
+    @State private var showsEditing = true
 
     var body: some View {
-        Form {
-            Section("식물 정보") {
-                TextField("별명", text: $nickname)
-                    .accessibilityIdentifier("plant.detail.nickname")
-                TextField("위치", text: $location)
-                    .accessibilityIdentifier("plant.detail.location")
-                TextField("비공개 메모", text: $privateMemo)
-                    .accessibilityIdentifier("plant.detail.private-memo")
-                Button("변경 저장") { persistEdits() }
-                    .disabled(trimmedNickname.isEmpty)
-                    .accessibilityIdentifier("plant.detail.save")
-            }
-            Section("물 주기 일정") {
-                if let lastWateredOn {
-                    DatePicker(
-                        "마지막 물 주기",
-                        selection: Binding(
-                            get: { lastWateredOn },
-                            set: { self.lastWateredOn = $0 }
-                        ),
-                        in: ...todayDate,
-                        displayedComponents: .date
-                    )
-                    .accessibilityIdentifier("watering.last-date-picker")
-                    Text("마지막 물 주기: \(calendarDate?.rawValue ?? "-")")
-                        .accessibilityIdentifier("watering.last-date")
-                } else {
-                    Text("마지막 물 주기일을 설정하면 다음 일정을 계산해요.")
-                        .accessibilityIdentifier("watering.missing-date")
-                    Button("마지막 물 주기 오늘로 설정") {
-                        setWateringBaselineToday()
-                    }
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .accessibilityIdentifier("watering.set-today")
+        ScrollView {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+                hero
+                titleSummary
+                wateringSection
+                guideSection
+                remedyLink
+                weatherSection
+                if showsEditing {
+                    editingSection
                 }
-                Stepper(
-                    "물 주기 간격: \(wateringIntervalDays)일",
-                    value: $wateringIntervalDays,
-                    in: 1 ... 30
-                )
-                .accessibilityIdentifier("watering.interval")
-                weatherAlertToggle
-                wateringScheduleContent
-                Button(wateringButtonTitle) {
-                    recordWateredToday()
+                timelineSection
+                if let saveError {
+                    Text(saveError)
+                        .font(PlanteriorTypography.supporting)
+                        .foregroundStyle(PlanteriorPalette.warning.color)
+                        .accessibilityIdentifier("plant.detail.save-error")
                 }
-                .disabled(lastWateredOn == nil)
-                .foregroundStyle(wateringButtonColor)
-                .accessibilityIdentifier("watering.complete")
+                deleteAction
             }
-            Section("건강 기록") {
-                TextField("건강 메모", text: $healthNote)
-                    .accessibilityIdentifier("plant.detail.note")
-                Button("기록 추가") {
-                    notes.append(healthNote.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    ))
-                    collection.addHealthNote(
-                        healthNote.trimmingCharacters(
-                            in: .whitespacesAndNewlines
-                        ),
-                        at: index
-                    )
-                    healthNote = ""
-                }
-                .disabled(
-                    healthNote.trimmingCharacters(
-                        in: .whitespacesAndNewlines
-                    ).isEmpty
-                )
-                .accessibilityIdentifier("plant.detail.add-note")
-                ForEach(notes, id: \.self) {
-                    Text($0)
-                        .accessibilityIdentifier("plant.detail.timeline")
-                }
-            }
-            Section("관리 가이드") {
-                Text("물: 흙이 마르면 충분히 주세요.")
-                Text("빛: 밝은 간접광을 권장해요.")
-                Text("온도: 18–27°C")
-                Text("습도: 40–70%")
-                DisclosureGroup("증상 · 원인 · 행동") {
-                    Text("잎 처짐 · 수분 부족 가능성 · 흙 상태를 확인하세요.")
-                }
-            }
-            if let saveError {
-                Text(saveError)
-                    .foregroundStyle(.red)
-                    .accessibilityIdentifier("plant.detail.save-error")
-            }
-            Section {
-                Button("식물 삭제", role: .destructive) {
-                    showsDeleteConfirmation = true
-                }
-                .accessibilityIdentifier("plant.detail.delete")
-            }
+            .padding(.horizontal, PlanteriorSpacing.large)
+            .padding(.vertical, PlanteriorSpacing.small)
         }
-        .scrollContentBackground(.hidden)
         .background(PlanteriorPalette.canvas.color)
-        .tint(PlanteriorPalette.accent.color)
         .navigationTitle(trimmedNickname)
-        .task {
-            guard collection.plants.indices.contains(index) else {
-                return
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            Button {
+                showsEditing.toggle()
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .frame(
+                        width: PlanteriorControl.minimumTarget,
+                        height: PlanteriorControl.minimumTarget
+                    )
             }
-            nickname = collection.plants[index].displayName
-            location = collection.plants[index].location ?? ""
-            privateMemo = collection.plants[index].privateMemo ?? ""
-            notes = collection.healthNotes[index] ?? []
-            wateringIntervalDays = collection.wateringIntervalDays(at: index)
-            if let plantID = collection.weatherPlantID(at: index) {
-                weatherAlertsEnabled = LocalWeatherAlertStore.shared
-                    .plantEnabled(for: plantID)
-            }
-            lastWateredOn = collection.plants[index].lastWateredOn.flatMap(date)
-            #if DEBUG
-                let draftDate = ProcessInfo.processInfo.environment[
-                    "QA_WATERING_DRAFT_DATE"
-                ].flatMap { try? CalendarDate.parse($0) }
-                if let draftDate {
-                    lastWateredOn = date(draftDate)
-                }
-            #endif
+            .accessibilityLabel(showsEditing ? "편집 닫기" : "식물 정보 편집")
+            .accessibilityIdentifier("plant.detail.edit")
         }
+        .tint(PlanteriorPalette.accent.color)
+        .accessibilityIdentifier("plant.detail.screen")
+        .task { loadPlant() }
         .confirmationDialog(
             "이 식물을 삭제할까요?",
             isPresented: $showsDeleteConfirmation
@@ -157,5 +78,118 @@ struct PlantCareDetailView: View {
             Button("취소") {}
                 .accessibilityIdentifier("plant.detail.delete-cancel")
         }
+    }
+
+    private var hero: some View {
+        Image(.collectionHero)
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: .infinity)
+            .aspectRatio(370 / 220, contentMode: .fit)
+            .background(PlanteriorPalette.subtle.color)
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+            .accessibilityLabel("\(trimmedNickname) 대표 이미지")
+            .accessibilityIdentifier("plant.detail.hero")
+    }
+
+    private var titleSummary: some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+            Text(trimmedNickname)
+                .font(PlanteriorTypography.pageTitle)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("plant.detail.title")
+            Text(PlantCarePresentation.species(for: trimmedNickname))
+                .font(PlanteriorTypography.supporting.italic())
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .accessibilityIdentifier("plant.detail.species")
+            Text(detailMetadata)
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .accessibilityIdentifier("plant.detail.metadata")
+        }
+    }
+
+    private var guideSection: some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+            Text("식물 가이드 및 관리 기준")
+                .font(PlanteriorTypography.sectionTitle)
+            LazyVGrid(columns: guideColumns, spacing: PlanteriorSpacing.medium) {
+                ForEach(PlantCarePresentation.guideMetrics) { metric in
+                    PlanteriorCard {
+                        VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                            Label(metric.title, systemImage: metric.icon)
+                                .font(PlanteriorTypography.caption.weight(.semibold))
+                                .foregroundStyle(PlanteriorPalette.accent.color)
+                            Text(metric.value)
+                                .font(PlanteriorTypography.cardTitle)
+                            Text(metric.hint)
+                                .font(PlanteriorTypography.microLabel)
+                                .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                        }
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("plant.detail.guide")
+    }
+
+    private var remedyLink: some View {
+        NavigationLink {
+            PlantSymptomRemedyView(
+                displayName: trimmedNickname,
+                hasWateringBaseline: lastWateredOn != nil
+            )
+        } label: {
+            HStack(spacing: PlanteriorSpacing.medium) {
+                PlanteriorIconWell(systemImage: "cross.case")
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                    Text("증상 대처법")
+                        .font(PlanteriorTypography.cardTitle)
+                    Text("잎과 흙 상태를 직접 확인하는 방법")
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                }
+                Spacer(minLength: PlanteriorSpacing.small)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(PlanteriorPalette.textTertiary.color)
+            }
+            .padding(PlanteriorSpacing.large)
+            .background(PlanteriorPalette.surface.color)
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+            .overlay {
+                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                    .stroke(PlanteriorPalette.border.color, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("plant.detail.remedy")
+    }
+
+    private var deleteAction: some View {
+        Button("식물 삭제", role: .destructive) {
+            showsDeleteConfirmation = true
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: PlanteriorControl.minimumTarget)
+        .accessibilityIdentifier("plant.detail.delete")
+    }
+
+    private var guideColumns: [GridItem] {
+        let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
+        return Array(
+            repeating: GridItem(.flexible(), spacing: PlanteriorSpacing.medium),
+            count: count
+        )
+    }
+
+    private var detailMetadata: String {
+        guard collection.plants.indices.contains(index) else { return "" }
+        let plant = collection.plants[index]
+        let place = plant.location.flatMap { $0.isEmpty ? nil : $0 }
+            ?? "위치 미설정"
+        let method = plant.registrationMethod == .manual ? "직접 등록" : "사진 식별"
+        return "\(place) · \(method)"
     }
 }

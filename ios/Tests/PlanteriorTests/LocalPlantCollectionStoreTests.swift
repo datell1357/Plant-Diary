@@ -96,10 +96,13 @@ struct LocalPlantCollectionStoreTests {
         store.save(draft(named: "첫 번째"))
         store.save(draft(named: "두 번째"))
         let secondID = try #require(store.weatherPlantID(at: 1))
+        let secondPresentationID = try #require(store.presentationIdentity(at: 1))
+        #expect(secondPresentationID == secondID.rawValue)
 
         store.remove(at: 0)
 
         #expect(store.weatherPlantID(at: 0) == secondID)
+        #expect(store.presentationIdentity(at: 0) == secondPresentationID)
         let restored = LocalPlantCollectionStore(
             defaults: defaults,
             notificationSchedules: LocalNotificationScheduleStore(

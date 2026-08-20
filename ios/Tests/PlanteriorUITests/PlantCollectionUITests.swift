@@ -5,6 +5,7 @@ final class PlantCollectionUITests: XCTestCase {
     func testWateringDueCompletionUpdatesNextDate() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
@@ -17,8 +18,8 @@ final class PlantCollectionUITests: XCTestCase {
         let nextDate = app.staticTexts["watering.next-date"]
         XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
         XCTAssertTrue(nextDate.label.contains("2026-08-11"))
-        app.swipeUp()
         let completeButton = app.buttons["watering.complete"]
+        XCTAssertTrue(completeButton.isHittable)
         completeButton.tap()
         expectation(
             for: NSPredicate(format: "label CONTAINS %@", "기록했어요"),
@@ -34,6 +35,7 @@ final class PlantCollectionUITests: XCTestCase {
     func testWateringMissingDateShowsSetupGuidance() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
@@ -49,7 +51,7 @@ final class PlantCollectionUITests: XCTestCase {
         let setTodayButton = app.buttons["watering.set-today"]
         XCTAssertTrue(setTodayButton.exists)
         XCTAssertFalse(app.staticTexts["watering.next-date"].exists)
-        XCTAssertTrue(app.buttons["auth.open"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["app.shell"].exists)
         XCTAssertTrue(app.buttons["tab.collection"].exists)
         attachScreenshot(named: "task-11-watering-missing-date")
 
@@ -69,6 +71,7 @@ final class PlantCollectionUITests: XCTestCase {
     func testWateringDraftDateUpdatesScheduleBeforeSave() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
@@ -87,6 +90,7 @@ final class PlantCollectionUITests: XCTestCase {
     func testSearchDetailTimelineAndDeleteConfirmation() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launch()
@@ -133,6 +137,7 @@ final class PlantCollectionUITests: XCTestCase {
     func testFilteredEmptyDoesNotClaimCollectionIsEmpty() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launch()
@@ -166,6 +171,7 @@ final class PlantCollectionUITests: XCTestCase {
     private func assertState(_ state: String, label: String) {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_COLLECTION_PRIVATE_FIXTURE"] = "1"
         app.launchEnvironment["QA_COLLECTION_STATE"] = state
