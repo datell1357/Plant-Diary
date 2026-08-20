@@ -150,9 +150,19 @@ public actor AccountSyncEngine {
             || !state.conflicts.isEmpty
     }
 
-    public func discardAndUnmount(_ accountID: AccountID) async {
-        await store(AccountSyncSnapshot(), for: accountID)
+    @discardableResult
+    public func discardAndUnmount(_ accountID: AccountID) async -> Bool {
         unmount(accountID)
+        accounts[accountID] = nil
+        guard let persistence else {
+            return true
+        }
+        do {
+            try await persistence.delete(for: accountID)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func store(

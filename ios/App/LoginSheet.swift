@@ -104,7 +104,7 @@ struct LoginSheet: View {
     }
 }
 
-private extension UIApplication {
+extension UIApplication {
     var planteriorTopViewController: UIViewController? {
         connectedScenes
             .compactMap { $0 as? UIWindowScene }

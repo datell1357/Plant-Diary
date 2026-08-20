@@ -144,5 +144,22 @@
             }
             return try JSONDecoder().decode(AccountSyncSnapshot.self, from: data)
         }
+
+        public func delete(for accountID: AccountID) async throws {
+            containers[accountID] = nil
+            let fileName = AccountStoreLocation.fileName(for: accountID)
+            guard let urls = try? FileManager.default.contentsOfDirectory(
+                at: rootDirectory,
+                includingPropertiesForKeys: nil
+            ) else {
+                return
+            }
+            for url in urls {
+                let isStoreFile = url.lastPathComponent == fileName
+                    || url.lastPathComponent.hasPrefix("\(fileName)-")
+                guard isStoreFile else { continue }
+                try FileManager.default.removeItem(at: url)
+            }
+        }
     }
 #endif

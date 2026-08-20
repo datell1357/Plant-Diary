@@ -28,4 +28,22 @@ struct SwiftDataAccountCacheTests {
         #expect(try cache.queuedOperationIDs(for: first) == [mutation.id.rawValue])
         #expect(try cache.queuedOperationIDs(for: second).isEmpty)
     }
+
+    @Test
+    @MainActor
+    func deletionDiscardPhysicallyDestroysAccountStore() async throws {
+        let accountID = try AccountID.parse("delete-account")
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "PlanteriorDeletion-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = SwiftDataAccountCache(rootDirectory: root)
+        let engine = AccountSyncEngine(persistence: cache)
+
+        await engine.mount(accountID)
+        #expect(FileManager.default.fileExists(atPath: cache.storeURL(for: accountID).path))
+
+        await engine.discardAndUnmount(accountID)
+
+        #expect(!FileManager.default.fileExists(atPath: cache.storeURL(for: accountID).path))
+    }
 }

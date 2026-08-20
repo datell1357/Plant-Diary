@@ -169,6 +169,14 @@ private extension SyncDomain {
     }
 }
 
+extension AppSyncRuntime {
+    func destroyLocalStore(for accountID: AccountID) async -> Bool {
+        let removed = await engine.discardAndUnmount(accountID)
+        await refresh()
+        return removed
+    }
+}
+
 private final class ListenerRegistrationBox: @unchecked Sendable {
     private let listener: any ListenerRegistration
 

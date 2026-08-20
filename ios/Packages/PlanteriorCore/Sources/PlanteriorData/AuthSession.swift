@@ -129,9 +129,9 @@ public actor AuthSession {
         let saved = try await store.load()
         let id = metadata?.accountID ?? saved?.accountID
         try await backend.signOut()
-        try await store.clear()
         metadata = nil
         pendingRoute = nil
+        try await store.clear()
         return id.map(AccountCacheSignal.unmount)
     }
 

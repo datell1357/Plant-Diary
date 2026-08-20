@@ -22,9 +22,9 @@ final class AuthRuntime: NSObject, ObservableObject {
         sync.snapshot
     }
 
-    private var nonce: String?
-    private let sessions: SessionMetadataController
-    private let sync = AppSyncRuntime()
+    var nonce: String?
+    let sessions: SessionMetadataController
+    let sync = AppSyncRuntime()
     private var syncObservation: AnyCancellable?
 
     override init() {
@@ -149,18 +149,21 @@ final class AuthRuntime: NSObject, ObservableObject {
         await signOutAfterSync()
     }
 
-    private func signOutAfterSync() async {
-        do {
-            try Auth.auth().signOut()
-            cacheSignal = try await sessions.logout()
-        } catch {
-            errorMessage = "로그아웃에 실패했어요."
-            return
-        }
-        GIDSignIn.sharedInstance.signOut()
+    func failClosedSessionState() {
         accountID = nil
         authenticatedProfile = nil
         isSignedIn = false
+    }
+
+    func applyLogoutCleanup(_ cleanup: SessionCleanupResult) {
+        cacheSignal = cleanup.cacheSignal
+        errorMessage = cleanup.metadataCleared
+            ? nil
+            : "로그아웃했지만 저장된 로그인 정보 정리가 필요해요."
+    }
+
+    func reportSignOutFailure() {
+        errorMessage = "로그아웃에 실패했어요."
     }
 
     private func establishSession(

@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import PlanteriorDesignSystem
 import PlanteriorDomain
@@ -6,9 +7,13 @@ import SwiftUI
 struct AccountDeletionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.sizeCategory) private var sizeCategory
+    @EnvironmentObject private var auth: AuthRuntime
     @StateObject private var coordinator: AccountDeletionCoordinator
 
-    init(onCompleted: @escaping () async -> [String] = { [] }) {
+    init(
+        ownerID: AccountID?,
+        onCompleted: @escaping () async -> [String] = { [] }
+    ) {
         let allowsFake: Bool
         #if DEBUG
             allowsFake = ProcessInfo.processInfo.environment[
@@ -17,11 +22,16 @@ struct AccountDeletionView: View {
         #else
             allowsFake = false
         #endif
+        let now = Int64(Date().timeIntervalSince1970)
+        let service: any AccountDeletionServicing = allowsFake
+            ? QAAccountDeletionService(now: 1000)
+            : FirebaseAccountDeletionService()
         _coordinator = StateObject(
             wrappedValue: AccountDeletionCoordinator(
                 allowsTrustedFake: allowsFake,
-                ownerID: try? AccountID.parse("qa-delete-owner"),
-                now: 1000,
+                ownerID: ownerID,
+                now: allowsFake ? 1000 : now,
+                service: service,
                 onCompleted: onCompleted
             )
         )
@@ -65,7 +75,7 @@ struct AccountDeletionView: View {
             }
         }
         .accessibilityIdentifier("account-deletion.screen")
-        .task { coordinator.preview() }
+        .task { await coordinator.preview() }
     }
 
     private var failedCategories: [String] {
@@ -87,20 +97,60 @@ struct AccountDeletionView: View {
 
     private var actionButtons: some View {
         VStack(spacing: 12) {
-            PlanteriorPrimaryButton("최근 인증") {
-                coordinator.reauthenticate()
-            }
-            .accessibilityIdentifier("account-deletion.reauthenticate")
+            reauthenticationControl
             PlanteriorPrimaryButton("최종 삭제 확인") {
-                coordinator.request()
+                Task { await coordinator.request() }
             }
             .accessibilityIdentifier("account-deletion.confirm")
             if coordinator.workflow?.status == .received {
                 PlanteriorPrimaryButton("삭제 요청 취소") {
-                    coordinator.cancel()
+                    Task { await coordinator.cancel() }
                 }
                 .accessibilityIdentifier("account-deletion.cancel-request")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var reauthenticationControl: some View {
+        if coordinator.allowsTrustedFake {
+            PlanteriorPrimaryButton("최근 인증") {
+                coordinator.reauthenticate()
+            }
+            .accessibilityIdentifier("account-deletion.reauthenticate")
+        } else if auth.sessionProvider == .apple {
+            SignInWithAppleButton(.continue) { request in
+                auth.beginApple(request)
+            } onCompletion: { result in
+                Task {
+                    let succeeded = await auth.reauthenticateApple(result)
+                    updateReauthentication(succeeded)
+                }
+            }
+            .signInWithAppleButtonStyle(.black)
+            .frame(minHeight: PlanteriorControl.primaryButtonHeight)
+            .clipShape(Capsule())
+            .accessibilityIdentifier("account-deletion.reauthenticate")
+        } else {
+            PlanteriorPrimaryButton("Google로 최근 인증") {
+                guard let controller = UIApplication.shared
+                    .planteriorTopViewController else { return }
+                Task {
+                    let succeeded = await auth.reauthenticateGoogle(
+                        presenting: controller
+                    )
+                    updateReauthentication(succeeded)
+                }
+            }
+            .accessibilityIdentifier("account-deletion.reauthenticate")
+        }
+    }
+
+    private func updateReauthentication(_ succeeded: Bool) {
+        if succeeded {
+            coordinator.acceptReauthentication()
+        } else {
+            coordinator.reportReauthenticationFailure()
         }
     }
 

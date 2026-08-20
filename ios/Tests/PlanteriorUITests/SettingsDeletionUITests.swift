@@ -45,7 +45,7 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
             "account-deletion.cleanup-receipts"
         ].label
         XCTAssertEqual(cleanup, "로컬 정리 1회")
-        XCTAssertEqual(receipts, "정리 영수증 7개")
+        XCTAssertEqual(receipts, "정리 영수증 8개")
         attachJSON(
             [
                 "observedStatus": "삭제 완료 · 로컬 정리 승인됨",
@@ -61,6 +61,7 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_DELETION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_ACCOUNT_ID"] = "qa-account"
         app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "denied"
         if ax5 {
             app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
@@ -120,7 +121,7 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
                 "notifications": "reported",
                 "location": "reported",
                 "policy": "visible",
-                "productionIntegration": "unavailable"
+                "productionIntegration": "authenticated-callable"
             ],
             named: "task-18-settings-data"
         )

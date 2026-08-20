@@ -7,6 +7,7 @@ public protocol AccountSyncPersisting: Sendable {
         for accountID: AccountID
     ) async throws
     func load(for accountID: AccountID) async throws -> AccountSyncSnapshot
+    func delete(for accountID: AccountID) async throws
 }
 
 public enum AccountStoreLocation {
@@ -47,5 +48,12 @@ public actor AccountSyncPersistence: AccountSyncPersisting {
             AccountSyncSnapshot.self,
             from: Data(contentsOf: url)
         )
+    }
+
+    public func delete(for accountID: AccountID) async throws {
+        let url = storeURL(for: accountID)
+        if FileManager.default.fileExists(atPath: url.path()) {
+            try FileManager.default.removeItem(at: url)
+        }
     }
 }

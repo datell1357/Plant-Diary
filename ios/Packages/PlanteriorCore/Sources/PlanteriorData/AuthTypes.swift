@@ -70,6 +70,19 @@ public enum AccountCacheSignal: Equatable, Sendable {
     case unmount(AccountID)
 }
 
+public struct SessionCleanupResult: Equatable, Sendable {
+    public let cacheSignal: AccountCacheSignal?
+    public let metadataCleared: Bool
+
+    public init(
+        cacheSignal: AccountCacheSignal?,
+        metadataCleared: Bool
+    ) {
+        self.cacheSignal = cacheSignal
+        self.metadataCleared = metadataCleared
+    }
+}
+
 public enum SanitizedPendingRoute: Equatable, Sendable {
     case plant(PersonalPlantID)
 }

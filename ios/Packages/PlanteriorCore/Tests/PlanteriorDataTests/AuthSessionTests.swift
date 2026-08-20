@@ -101,6 +101,33 @@ struct AuthSessionTests {
     }
 
     @Test
+    func remoteSignOutClearsPendingRouteWhenMetadataCleanupFails() async throws {
+        let accountA = try AccountID.parse("account-a")
+        let accountB = try AccountID.parse("account-b")
+        let store = MetadataStoreFake(
+            initial: SessionMetadata(accountID: accountA, provider: .apple),
+            failsClear: true
+        )
+        let backend = BackendFake(
+            signInAccount: .init(id: accountB, isNewAccount: false)
+        )
+        let session = makeSession(backend: backend, store: store)
+        #expect(await session.holdPendingPlantRoute(rawTarget: "private-plant"))
+
+        await #expect(throws: MetadataStoreFakeError.clearFailed) {
+            try await session.logout()
+        }
+        let result = try await session.signIn(
+            with: ProviderFake(provider: .google, response: .success)
+        )
+        guard case let .succeeded(transition) = result else {
+            Issue.record("sign-in should succeed after remote sign-out")
+            return
+        }
+        #expect(transition.resumedRoute == nil)
+    }
+
+    @Test
     func accountSwitchSignalsIsolationAndResumesOnlySanitizedRoute() async throws {
         let accountA = try AccountID.parse("account-a")
         let accountB = try AccountID.parse("account-b")

@@ -36,11 +36,17 @@ actor ProviderFake: SocialAuthProviding {
     }
 }
 
+enum MetadataStoreFakeError: Error {
+    case clearFailed
+}
+
 actor MetadataStoreFake: SessionMetadataPersisting {
     private var metadata: SessionMetadata?
+    private let failsClear: Bool
 
-    init(initial: SessionMetadata? = nil) {
+    init(initial: SessionMetadata? = nil, failsClear: Bool = false) {
         metadata = initial
+        self.failsClear = failsClear
     }
 
     func load() async throws -> SessionMetadata? {
@@ -52,6 +58,9 @@ actor MetadataStoreFake: SessionMetadataPersisting {
     }
 
     func clear() async throws {
+        guard !failsClear else {
+            throw MetadataStoreFakeError.clearFailed
+        }
         metadata = nil
     }
 

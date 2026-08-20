@@ -1,5 +1,6 @@
 import Foundation
 @testable import Planterior
+import PlanteriorDomain
 import Testing
 
 @MainActor
@@ -65,6 +66,74 @@ struct OperationalPrivacyTests {
         }
 
         #expect(retry == ["at-2400"])
+    }
+
+    @Test
+    func productionDeletionUsesAuthenticatedOwnerAndCreatesRequest() async throws {
+        let ownerID = try AccountID.parse("production-delete-owner")
+        let coordinator = AccountDeletionCoordinator(
+            allowsTrustedFake: false,
+            ownerID: ownerID,
+            now: 1000,
+            service: QAAccountDeletionService(now: 1000)
+        )
+
+        await coordinator.preview()
+        await coordinator.request()
+        #expect(coordinator.requestCount == 0)
+
+        coordinator.acceptReauthentication()
+        await coordinator.request()
+
+        #expect(coordinator.scope?.ownerID == ownerID)
+        #expect(coordinator.reauthenticated)
+        #expect(coordinator.requestCount == 1)
+    }
+
+    @Test
+    func completedDeletionRejectsPartialCleanupReceipt() async throws {
+        let ownerID = try AccountID.parse("partial-cleanup-owner")
+        let partialReceipts = AccountDeletionCoordinator
+            .requiredCleanupReceipts
+            .subtracting(["keychain"])
+        let coordinator = AccountDeletionCoordinator(
+            allowsTrustedFake: true,
+            ownerID: ownerID,
+            now: 1000,
+            service: QAAccountDeletionService(now: 1000),
+            onCompleted: { Array(partialReceipts) }
+        )
+
+        await coordinator.preview()
+        coordinator.reauthenticate()
+        await coordinator.request()
+        await coordinator.simulateCompletion()
+
+        #expect(coordinator.workflow?.status == .completed)
+        #expect(coordinator.cleanupCount == 0)
+        #expect(coordinator.message == "삭제 완료 · 로컬 정리 실패")
+    }
+
+    @Test
+    func deletionClearsOnlyTheCompletedAccountsDefaults() throws {
+        let suiteName = "OperationalPrivacyTests.defaults"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let ownerID = try AccountID.parse("account-a")
+        defaults.set(true, forKey: "weather.account-a.alerts")
+        defaults.set(true, forKey: "weather.account-b.alerts")
+        defaults.set(true, forKey: "global.appearance")
+
+        #expect(
+            SettingsView.clearAccountDefaults(
+                ownerID: ownerID,
+                defaults: defaults
+            )
+        )
+        #expect(defaults.object(forKey: "weather.account-a.alerts") == nil)
+        #expect(defaults.bool(forKey: "weather.account-b.alerts"))
+        #expect(defaults.bool(forKey: "global.appearance"))
     }
 
     @Test

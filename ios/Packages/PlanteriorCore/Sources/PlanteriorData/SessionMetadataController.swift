@@ -49,8 +49,29 @@ public actor SessionMetadataController {
     public func logout() async throws -> AccountCacheSignal? {
         let saved = try await store.load()
         let accountID = metadata?.accountID ?? saved?.accountID
-        try await store.clear()
         metadata = nil
+        try await store.clear()
         return accountID.map(AccountCacheSignal.unmount)
+    }
+
+    public func logoutAfterRemoteSignOut(
+        fallbackAccountID: AccountID?
+    ) async -> SessionCleanupResult {
+        let saved = try? await store.load()
+        let accountID = metadata?.accountID ?? saved?.accountID
+            ?? fallbackAccountID
+        metadata = nil
+        do {
+            try await store.clear()
+            return SessionCleanupResult(
+                cacheSignal: accountID.map(AccountCacheSignal.unmount),
+                metadataCleared: true
+            )
+        } catch {
+            return SessionCleanupResult(
+                cacheSignal: accountID.map(AccountCacheSignal.unmount),
+                metadataCleared: false
+            )
+        }
     }
 }

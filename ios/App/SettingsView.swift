@@ -1,3 +1,4 @@
+import PlanteriorData
 import PlanteriorDesignSystem
 import PlanteriorDomain
 import SwiftUI
@@ -78,8 +79,12 @@ struct SettingsView: View {
             NavigationStack { PrivacyPolicyView() }
         }
         .sheet(isPresented: $showsDeletion) {
+            let ownerID = accountScopeID.flatMap { try? AccountID.parse($0) }
             NavigationStack {
-                AccountDeletionView(onCompleted: performDeletionCleanup)
+                AccountDeletionView(ownerID: ownerID) {
+                    guard let ownerID else { return [] }
+                    return await performDeletionCleanup(ownerID: ownerID)
+                }
             }
         }
     }
@@ -110,27 +115,51 @@ struct SettingsView: View {
         return auth.accountID?.rawValue
     }
 
-    func performDeletionCleanup() async -> [String] {
-        #if DEBUG
-            if ProcessInfo.processInfo.environment["QA_DELETION_FIXTURE"] == "1" {
-                return Self.deletionReceipt
-            }
-        #endif
-        UNUserNotificationCenter.current()
-            .removeAllPendingNotificationRequests()
-        UNUserNotificationCenter.current()
-            .removeAllDeliveredNotifications()
-        if let bundleID = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+    func performDeletionCleanup(ownerID: AccountID) async -> [String] {
+        var receipts: [String] = []
+        if await auth.sync.destroyLocalStore(for: ownerID) {
+            receipts.append(contentsOf: ["swiftdata", "sync"])
         }
-        await auth.completeSignOut(action: .discard)
-        return Self.deletionReceipt
+        await IdentificationDraftStore.shared.clear()
+        if await IdentificationDraftStore.shared.load() == nil {
+            receipts.append("media")
+        }
+
+        let notificationCenter = UNUserNotificationCenter.current()
+        notificationCenter.removeAllPendingNotificationRequests()
+        notificationCenter.removeAllDeliveredNotifications()
+        receipts.append("notifications")
+
+        if Self.clearAccountDefaults(ownerID: ownerID) {
+            receipts.append("userdefaults")
+        }
+
+        let session = await auth.completeDeletionSignOut()
+        if session.firebaseSignedOut {
+            receipts.append("auth")
+        }
+        if session.metadataCleared {
+            receipts.append("keychain")
+        }
+        if !auth.isSignedIn, auth.accountID == nil {
+            receipts.append("routes")
+        }
+        return receipts
     }
 
-    static let deletionReceipt = [
-        "auth", "keychain", "swiftdata", "sync",
-        "userdefaults", "notifications", "routes"
-    ]
+    static func clearAccountDefaults(
+        ownerID: AccountID,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        let accountSegment = ".\(ownerID.rawValue)."
+        let scopedKeys = defaults.dictionaryRepresentation().keys.filter {
+            $0.contains(accountSegment)
+        }
+        scopedKeys.forEach(defaults.removeObject(forKey:))
+        return !defaults.dictionaryRepresentation().keys.contains {
+            $0.contains(accountSegment)
+        }
+    }
 
     static func notificationText(_ status: UNAuthorizationStatus) -> String {
         switch status {
