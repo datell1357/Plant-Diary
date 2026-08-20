@@ -22,7 +22,8 @@ final class AppLaunchUITests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
 
-        XCTAssertTrue(app.navigationBars["홈"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["홈"].exists)
 
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.open-detail"].waitForExistence(timeout: 5))
@@ -30,7 +31,8 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
 
         app.buttons["tab.home"].tap()
-        XCTAssertTrue(app.navigationBars["홈"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["홈"].exists)
 
         app.buttons["tab.storage"].tap()
         XCTAssertTrue(app.scrollViews["storage.screen"].waitForExistence(timeout: 5))

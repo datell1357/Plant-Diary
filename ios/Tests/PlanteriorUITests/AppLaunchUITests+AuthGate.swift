@@ -29,7 +29,8 @@ extension AppLaunchUITests {
             XCTAssertFalse(app.otherElements["camera.sheet"].exists)
             app.buttons["auth.cancel"].tap()
             XCTAssertTrue(app.buttons["auth.apple"].waitForNonExistence(timeout: 5))
-            XCTAssertTrue(app.navigationBars["홈"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
+            XCTAssertFalse(app.navigationBars["홈"].exists)
         }
     }
 }

@@ -2,6 +2,26 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 extension HomeDashboardView {
+    /// Figma `alert-banner` §6.4: amber tint, 20pt leading glyph, 12 gap, and
+    /// 13 Semibold amber copy. Geometry is identical in both auth states; only
+    /// the copy differs (§8.3).
+    var weatherWarningBanner: some View {
+        PlanteriorCard(variant: .warning) {
+            HStack(alignment: .top, spacing: PlanteriorSpacing.medium) {
+                Image(systemName: "exclamationmark.shield")
+                    .font(PlanteriorTypography.supporting)
+                    .foregroundStyle(PlanteriorPalette.warning.color)
+                    .frame(width: 20, height: 20)
+                    .accessibilityHidden(true)
+                Text(weatherWarningText)
+                    .font(PlanteriorTypography.caption.weight(.semibold))
+                    .foregroundStyle(PlanteriorPalette.warning.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("home.weather.warning")
+            }
+        }
+    }
+
     var weatherSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("날씨 기반 안내")

@@ -11,12 +11,46 @@ struct LoginSheet: View {
             Capsule()
                 .fill(PlanteriorPalette.border.color)
                 .frame(width: 36, height: 5)
-            Text("계정으로 시작하기")
-                .font(PlanteriorTypography.screenTitle)
-            Text("내 식물과 관리 기록을 안전하게 동기화해요.")
+            Text("로그인")
+                .font(PlanteriorTypography.pageTitle)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .accessibilityIdentifier("auth.title")
+                .accessibilityAddTraits(.isHeader)
+            Text("소셜 계정으로 간편하게 시작하세요")
                 .font(PlanteriorTypography.body)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .multilineTextAlignment(.center)
+                .accessibilityIdentifier("auth.subtitle")
+
+            // Figma §6.8 order: Google above Apple. The provider screens
+            // themselves stay native (ASAuthorization / Google SDK).
+            Button {
+                guard let controller = UIApplication.shared.planteriorTopViewController else {
+                    return
+                }
+                Task {
+                    await auth.signInWithGoogle(presenting: controller)
+                    if auth.isSignedIn {
+                        dismiss()
+                    }
+                }
+            } label: {
+                Label("Google로 계속하기", systemImage: "g.circle.fill")
+                    .font(PlanteriorTypography.body.weight(.semibold))
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: PlanteriorControl.primaryButtonHeight)
+            }
+            .buttonStyle(.plain)
+            .background(PlanteriorPalette.surface.color)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule().stroke(
+                    PlanteriorPalette.border.color,
+                    lineWidth: PlanteriorControl.hairline
+                )
+            }
+            .accessibilityIdentifier("auth.google")
 
             SignInWithAppleButton(.continue) { request in
                 auth.beginApple(request)
@@ -38,26 +72,14 @@ struct LoginSheet: View {
                 }
             }
             .signInWithAppleButtonStyle(.black)
-            .frame(height: PlanteriorControl.minimumTarget)
+            .frame(height: PlanteriorControl.primaryButtonHeight)
+            .clipShape(Capsule())
             .accessibilityIdentifier("auth.apple")
 
-            Button {
-                guard let controller = UIApplication.shared.planteriorTopViewController else {
-                    return
-                }
-                Task {
-                    await auth.signInWithGoogle(presenting: controller)
-                    if auth.isSignedIn {
-                        dismiss()
-                    }
-                }
-            } label: {
-                Label("Google로 계속하기", systemImage: "g.circle.fill")
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: PlanteriorControl.minimumTarget)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("auth.google")
+            Text("로그인 시 서비스 이용 약관 및 개인정보 처리방침에 동의하는 것으로 간주됩니다.")
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                .multilineTextAlignment(.center)
 
             if let errorMessage = auth.errorMessage {
                 Text(errorMessage)

@@ -2,31 +2,58 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 extension HomeDashboardView {
+    /// Figma `mini-room-card` §6.3: the isometric room fills a radius-xl card
+    /// with two floating 36pt circular actions. Signed-out renders the same
+    /// geometry with the empty room.
     var miniHomeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("나의 미니홈")
-                .font(PlanteriorTypography.sectionTitle)
-            Button(action: requestMiniHomeOpen) {
-                PlanteriorCard {
-                    HStack {
-                        Text(
-                            store.miniHome.map {
-                                "\($0.name) · 저장됨"
-                            }
-                                ?? "아직 저장된 미니홈이 없어요."
-                        )
-                        .accessibilityIdentifier("home.minhome.label")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .accessibilityHidden(true)
-                    }
-                }
+        Image(.homeRoom)
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: .infinity)
+            .frame(height: 326)
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+            .accessibilityIdentifier("home.room.hero")
+            .accessibilityLabel("\(roomTitle) 미리보기")
+            .overlay(alignment: .topLeading) {
+                roomAction(
+                    systemImage: "leaf",
+                    label: "미니홈 꾸미기",
+                    identifier: "home.room.decorate",
+                    action: requestMiniHomeOpen
+                )
             }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .accessibilityIdentifier("home.minhome.preview")
+            .overlay(alignment: .topTrailing) {
+                roomAction(
+                    systemImage: "square.and.arrow.up",
+                    label: "미니홈 공유",
+                    identifier: "home.room.share",
+                    action: requestMiniHomeOpen
+                )
+            }
+            .accessibilityElement(children: .contain)
+    }
+
+    private func roomAction(
+        systemImage: String,
+        label: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .frame(
+                    width: PlanteriorControl.minimumTarget,
+                    height: PlanteriorControl.minimumTarget
+                )
+                .background(PlanteriorPalette.surface.color)
+                .clipShape(Circle())
         }
+        .buttonStyle(.plain)
+        .padding(PlanteriorSpacing.medium)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
     }
 
     func requestMiniHomeOpen() {

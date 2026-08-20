@@ -2,39 +2,104 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 extension HomeDashboardView {
-    @ViewBuilder
-    var authenticationContent: some View {
-        switch authenticationState {
-        case .loggedOut:
-            PlanteriorCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("로그인하면 오늘의 돌봄을 확인할 수 있어요.")
-                        .accessibilityIdentifier("home.auth.logged-out")
-                    identifyButton
-                }
+    /// Figma `top-area-wrapper` §6.2: 40pt avatar, greeting stack, notification
+    /// button, then the tappable room-title row. The body below is identical in
+    /// every auth state — signed-out never hides it (§8.3).
+    var homeHeader: some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+            HStack(spacing: PlanteriorSpacing.medium) {
+                Image(.homeAvatar)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+                    .accessibilityIdentifier("home.avatar")
+                    .accessibilityHidden(true)
+                greetingStack
+                Spacer(minLength: PlanteriorSpacing.small)
+                notificationButton
             }
-        case .signingIn:
-            PlanteriorCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .accessibilityHidden(true)
-                        Text("로그인 중")
-                            .foregroundStyle(
-                                PlanteriorPalette.textSecondary.color
-                            )
-                            .accessibilityIdentifier(
-                                "home.auth.signing-in"
-                            )
-                    }
-                    identifyButton
-                }
-            }
-        case .authenticated:
-            Text("오늘도 식물과 좋은 하루 보내세요.")
-                .font(PlanteriorTypography.screenTitle)
+            titleRow
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.header")
+    }
+
+    private var greetingStack: some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+            Text("안녕하세요, \(profileName)님!")
+                .font(PlanteriorTypography.heroGreeting)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .accessibilityIdentifier("home.greeting")
-            identifyButton
+                .accessibilityAddTraits(.isHeader)
+            Text(greetingMeta)
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .accessibilityIdentifier("home.greeting.meta")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var notificationButton: some View {
+        Button(action: openCareSettings) {
+            Image(systemName: "bell.badge")
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .frame(
+                    width: PlanteriorControl.minimumTarget,
+                    height: PlanteriorControl.minimumTarget
+                )
+                .background(PlanteriorPalette.surface.color)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("알림 설정")
+        .accessibilityIdentifier("home.notifications")
+    }
+
+    /// §6.2 title row: the name opens the rename dialog; the signed-out variant
+    /// puts the green start link on the trailing side.
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.small) {
+            Button(action: requestRename) {
+                Text("\(roomTitle) 🏡")
+                    .font(PlanteriorTypography.sectionTitle)
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .frame(minHeight: PlanteriorControl.minimumTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.room.title")
+            .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: PlanteriorSpacing.small)
+            if authenticationState != .authenticated {
+                loginLink
+            }
+        }
+    }
+
+    private var loginLink: some View {
+        Button(action: openCamera) {
+            Text("로그인하고 시작하기")
+                .font(PlanteriorTypography.caption.weight(.semibold))
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("home.login.link")
+    }
+
+    @ViewBuilder
+    var signingInIndicator: some View {
+        if authenticationState == .signingIn {
+            HStack(spacing: PlanteriorSpacing.small) {
+                ProgressView()
+                    .accessibilityHidden(true)
+                Text("로그인 중")
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .accessibilityIdentifier("home.auth.signing-in")
+            }
         }
     }
 

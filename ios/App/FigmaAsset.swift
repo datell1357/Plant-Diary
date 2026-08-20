@@ -58,7 +58,15 @@ enum FigmaAsset: String, CaseIterable, Sendable {
 
 extension Image {
     /// Builds a SwiftUI `Image` from the typed Figma asset contract.
+    ///
+    /// The Figma PNGs ship as loose bundle resources rather than in an asset
+    /// catalog, so they are resolved through `UIImage(named:)` instead of the
+    /// catalog-only `Image(_ name:)` initializer.
     init(_ asset: FigmaAsset) {
-        self.init(asset.resourceName)
+        if let image = UIImage(named: asset.resourceName) {
+            self.init(uiImage: image)
+        } else {
+            self.init(asset.resourceName)
+        }
     }
 }
