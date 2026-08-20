@@ -9,13 +9,20 @@ struct PlantCollectionView: View {
     @ObservedObject var collection = LocalPlantCollectionStore.shared
     @State private var search = ""
     @FocusState private var searchFocused: Bool
+    @Environment(\.sizeCategory) var sizeCategory
     let careCalendar = PlantCareCalendar()
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        VStack(spacing: 0) {
             VStack(spacing: PlanteriorSpacing.medium) {
                 header
                 searchField
+                if !isTrueEmptyCollection {
+                    HStack {
+                        Spacer()
+                        addPlantButton
+                    }
+                }
                 ScrollView {
                     VStack(spacing: PlanteriorSpacing.small) {
                         stateBanner
@@ -28,27 +35,12 @@ struct PlantCollectionView: View {
                             plantRows
                         }
                     }
-                    .padding(.bottom, 76)
+                    .padding(.bottom, PlanteriorSpacing.large)
                 }
                 .accessibilityIdentifier("collection.screen")
             }
             .padding(.horizontal, PlanteriorSpacing.large)
             .padding(.top, PlanteriorSpacing.small)
-
-            if !isTrueEmptyCollection {
-                Button(action: openCamera) {
-                    Image(systemName: "plus")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                        .frame(width: 56, height: 56)
-                        .background(PlanteriorPalette.accent.color)
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel("식물 추가")
-                .accessibilityIdentifier("collection.add")
-                .padding(.trailing, PlanteriorSpacing.large)
-                .padding(.bottom, PlanteriorSpacing.large)
-            }
         }
         .background(PlanteriorPalette.canvas.color)
         .toolbar(.hidden, for: .navigationBar)
@@ -57,6 +49,19 @@ struct PlantCollectionView: View {
             collection.setSnapshotStateFromQA()
             collection.restoreScrollAnchor()
         }
+    }
+
+    private var addPlantButton: some View {
+        Button(action: openCamera) {
+            Image(systemName: "plus")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+                .frame(width: 56, height: 56)
+                .background(PlanteriorPalette.accent.color)
+                .clipShape(Circle())
+        }
+        .accessibilityLabel("식물 추가")
+        .accessibilityIdentifier("collection.add")
     }
 
     private var header: some View {

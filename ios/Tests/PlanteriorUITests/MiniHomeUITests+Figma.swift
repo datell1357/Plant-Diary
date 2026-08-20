@@ -123,6 +123,14 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
         XCTAssertTrue(app.buttons["minihome.save"].isHittable)
         XCTAssertTrue(app.buttons["minihome.close"].isHittable)
         XCTAssertTrue(app.buttons["minihome.editor.category.plant"].isHittable)
+        let decoration = app.buttons["minihome.editor.category.decoration"]
+        guard decoration.isHittable else {
+            XCTFail("decoration category must be directly reachable at AX5")
+            return
+        }
+        decoration.tap()
+        XCTAssertEqual(decoration.value as? String, "선택됨")
+        app.buttons["minihome.editor.category.plant"].tap()
         XCTAssertTrue(app.buttons["minihome.editor.tray.0"].isHittable)
         XCTAssertTrue(app.buttons["minihome.editor.reset"].isHittable)
 

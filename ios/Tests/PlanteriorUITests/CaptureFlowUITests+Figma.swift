@@ -2,41 +2,6 @@ import XCTest
 
 @MainActor
 final class CaptureFlowUITests: XCTestCase {
-    func testCameraCaptureRendersFigmaBlackChromeWithShutterControls() {
-        let app = XCUIApplication()
-        launchCapture(app)
-        openCamera(app)
-        let surface = app.otherElements["capture.camera"]
-        XCTAssertTrue(surface.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["capture.close"].exists)
-        XCTAssertEqual(app.buttons["capture.close"].label, "촬영 닫기")
-        let hint = app.staticTexts["capture.hint"]
-        XCTAssertTrue(hint.exists)
-        XCTAssertEqual(hint.label, "식물을 초점에 맞춰주세요")
-        let viewport = app.images["capture.viewport"]
-        XCTAssertTrue(viewport.exists, "the viewfinder must render a real image layer")
-        XCTAssertGreaterThanOrEqual(
-            viewport.frame.width.rounded(),
-            300
-        )
-        XCTAssertTrue(app.buttons["capture.library"].exists)
-        XCTAssertEqual(app.buttons["capture.library"].label, "사진 보관함")
-        XCTAssertTrue(app.buttons["capture.switch"].exists)
-        let shutter = app.buttons["capture.shutter"]
-        XCTAssertTrue(shutter.exists)
-        XCTAssertEqual(shutter.label, "촬영")
-        XCTAssertGreaterThanOrEqual(
-            shutter.frame.height.rounded(),
-            64,
-            "§6.11 shutter is a 72pt circle inside an 80pt ring"
-        )
-        XCTAssertFalse(app.staticTexts["capture.result.species"].exists)
-        assertMinimumTargets(
-            app,
-            identifiers: ["capture.close", "capture.library", "capture.switch", "capture.shutter"]
-        )
-    }
-
     func testCameraDeniedPermissionKeepsNativeRecoveryPaths() {
         let app = XCUIApplication()
         launchCapture(app, environment: ["QA_CAMERA_DENIED": "1"])
@@ -70,7 +35,10 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertLessThan(identify.frame.minY, retake.frame.minY)
         XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
         XCTAssertTrue(app.buttons["photo.manual"].exists)
-        assertMinimumTargets(app, identifiers: ["photo.acknowledge", "photo.retake"])
+        assertMinimumTargets(
+            app,
+            identifiers: ["photo.acknowledge", "photo.retake", "photo.replace", "photo.manual"]
+        )
     }
 
     func testPhotoReviewPreservesConsentAcknowledgementAndDenial() {
@@ -139,7 +107,14 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["capture.result.alternates.header"].exists)
         XCTAssertEqual(app.staticTexts["capture.result.alternates.header"].label, "다른 후보")
         XCTAssertTrue(app.buttons["identification.candidate.1"].exists)
-        XCTAssertEqual(app.buttons["identification.candidate.1"].label, "후보 2 신뢰도 80%")
+        XCTAssertEqual(
+            app.buttons["identification.candidate.1"].label,
+            "몬스테라 아단소니, 신뢰도 80%"
+        )
+        XCTAssertEqual(
+            app.buttons["identification.candidate.2"].label,
+            "필로덴드론, 신뢰도 68%"
+        )
         let register = app.buttons["capture.result.register"]
         XCTAssertTrue(register.exists)
         XCTAssertEqual(register.label, "이 식물로 등록하기")

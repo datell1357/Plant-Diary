@@ -69,7 +69,11 @@ struct CameraActionView: View {
         Button {
             showsLibrary = true
         } label: {
-            captureControlLabel(systemImage: "photo.on.rectangle", title: "사진 보관함")
+            captureControlLabel(
+                systemImage: "photo.on.rectangle",
+                title: "사진 보관함",
+                labelID: "capture.library.label"
+            )
         }
         .accessibilityLabel("사진 보관함")
         .accessibilityIdentifier("capture.library")

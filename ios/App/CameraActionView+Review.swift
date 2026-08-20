@@ -26,8 +26,10 @@ extension CameraActionView {
                     }
                 }
                 .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.top, PlanteriorSpacing.large)
+                .padding(.vertical, PlanteriorSpacing.large)
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             reviewActions
         }
         .background(PlanteriorPalette.canvas.color)
@@ -103,22 +105,39 @@ extension CameraActionView {
                 discardDraft()
             }
             .accessibilityIdentifier("photo.retake")
-            HStack(spacing: PlanteriorSpacing.large) {
-                Button("사진 다시 선택") {
-                    showsLibrary = true
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: PlanteriorSpacing.large) {
+                    replacePhotoButton
+                    manualRegistrationButton
                 }
-                .accessibilityIdentifier("photo.replace")
-                Button("직접 등록하기") {
-                    manualRegistration()
+                VStack(spacing: PlanteriorSpacing.extraSmall) {
+                    replacePhotoButton
+                    manualRegistrationButton
                 }
-                .accessibilityIdentifier("photo.manual")
             }
             .font(PlanteriorTypography.caption)
             .foregroundStyle(PlanteriorPalette.accent.color)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.bottom, PlanteriorSpacing.large)
         .background(PlanteriorPalette.canvas.color)
+    }
+
+    private var replacePhotoButton: some View {
+        Button("사진 다시 선택") {
+            showsLibrary = true
+        }
+        .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
+        .contentShape(Rectangle())
+        .accessibilityIdentifier("photo.replace")
+    }
+
+    private var manualRegistrationButton: some View {
+        Button("직접 등록하기") {
+            manualRegistration()
+        }
+        .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
+        .contentShape(Rectangle())
+        .accessibilityIdentifier("photo.manual")
     }
 }

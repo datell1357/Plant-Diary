@@ -38,6 +38,31 @@ struct IdentificationFlowView: View {
             .task { await identifyDraft() }
     }
 
+    var analysisCompleteLabel: some View {
+        Text("분석 완료")
+            .font(PlanteriorTypography.caption)
+            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    func resultActions(_ candidates: IdentificationCandidates) -> some View {
+        VStack(spacing: PlanteriorSpacing.small) {
+            PlanteriorPrimaryButton("이 식물로 등록하기") {
+                selectedCandidate = selectedCandidate ?? candidates.items.first
+                showsRegistration = selectedCandidate != nil
+            }
+            .accessibilityIdentifier("capture.result.register")
+            Button("직접 수정하기") { showsManualRegistration = true }
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .accessibilityIdentifier("identification.manual")
+        }
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .padding(.bottom, PlanteriorSpacing.large)
+        .background(PlanteriorPalette.canvas.color)
+    }
+
     var effectiveReduceMotion: Bool {
         reduceMotion
             || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"

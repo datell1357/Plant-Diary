@@ -75,6 +75,9 @@ extension SettingsDeletionUITests {
         ]
         app.launch()
         openFigmaSettings(in: app)
+        let email = app.staticTexts["settings.profile.email"]
+        XCTAssertTrue(email.exists)
+        XCTAssertEqual(email.label, "minji@email.com")
         attachScreenshot(named: "settings-korean-ax5-reduce-motion")
 
         let quietHours = app.buttons["settings.quiet-hours.open"]
@@ -82,9 +85,33 @@ extension SettingsDeletionUITests {
             app.swipeUp()
         }
         quietHours.tap()
+        let scroll = app.scrollViews["quiet-hours.screen"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        let enabled = app.switches["quiet-hours.enabled"]
+        if enabled.value as? String != "1" {
+            enabled.tap()
+        }
+        scroll.swipeUp()
+        let start = app.datePickers["quiet-hours.start"]
+        XCTAssertTrue(start.isHittable)
+        XCTAssertTrue(app.staticTexts["시작 시간"].exists)
+        start.tap()
+        let dismissStart = app.buttons["PopoverDismissRegion"]
+        XCTAssertTrue(dismissStart.waitForExistence(timeout: 2))
+        dismissStart.tap()
+        scroll.swipeUp()
+        let end = app.datePickers["quiet-hours.end"]
+        XCTAssertTrue(end.isHittable)
+        XCTAssertTrue(app.staticTexts["종료 시간"].exists)
+        end.tap()
+        let dismissEnd = app.buttons["PopoverDismissRegion"]
+        XCTAssertTrue(dismissEnd.waitForExistence(timeout: 2))
+        dismissEnd.tap()
+        let save = app.buttons["quiet-hours.save"]
+        XCTAssertTrue(save.isHittable)
+        save.tap()
         XCTAssertTrue(
-            app.scrollViews["quiet-hours.screen"]
-                .waitForExistence(timeout: 5)
+            app.buttons["settings.quiet-hours.open"].waitForExistence(timeout: 5)
         )
         attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
     }

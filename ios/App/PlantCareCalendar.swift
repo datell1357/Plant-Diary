@@ -45,3 +45,15 @@ struct PlantCareCalendar {
         )
     }
 }
+
+extension PlantCollectionView {
+    func daysBetween(_ start: CalendarDate, _ end: CalendarDate) -> Int {
+        guard let startDate = careCalendar.date(from: start),
+              let endDate = careCalendar.date(from: end) else { return 0 }
+        return Calendar.current.dateComponents(
+            [.day],
+            from: startDate,
+            to: endDate
+        ).day ?? 0
+    }
+}

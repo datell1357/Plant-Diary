@@ -43,6 +43,7 @@ extension PlantCollectionView {
                         LocalizedStringKey(status.title),
                         variant: status.variant
                     )
+                    .accessibilityIdentifier("collection.status.\(item.offset)")
                     Text(careMetadata(for: item.element))
                         .font(PlanteriorTypography.caption)
                         .foregroundStyle(PlanteriorPalette.textSecondary.color)
@@ -64,12 +65,19 @@ extension PlantCollectionView {
     }
 
     var trueEmptyState: some View {
-        VStack(spacing: PlanteriorSpacing.medium) {
+        VStack(
+            spacing: sizeCategory.isAccessibilityCategory
+                ? PlanteriorSpacing.extraSmall
+                : PlanteriorSpacing.medium
+        ) {
             Image(.collectionEmptyAvatar)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 120, height: 120)
-                .padding(20)
+                .frame(
+                    width: sizeCategory.isAccessibilityCategory ? 24 : 120,
+                    height: sizeCategory.isAccessibilityCategory ? 24 : 120
+                )
+                .padding(sizeCategory.isAccessibilityCategory ? 0 : 20)
                 .background(PlanteriorPalette.subtle.color)
                 .clipShape(Circle())
                 .accessibilityLabel("빈 화분 캐릭터")
@@ -77,11 +85,16 @@ extension PlantCollectionView {
             Text("아직 등록된 식물이 없어요 😢")
                 .font(PlanteriorTypography.sectionTitle)
                 .accessibilityIdentifier("collection.empty.title")
-            Text("첫 번째 반려식물을 등록하고 성장기를 남겨보세요")
-                .font(PlanteriorTypography.supporting)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .multilineTextAlignment(.center)
-                .accessibilityIdentifier("collection.empty.body")
+            Text(
+                sizeCategory.isAccessibilityCategory
+                    ? "첫 반려식물을 등록해 보세요"
+                    : "첫 번째 반려식물을 등록하고 성장기를 남겨보세요"
+            )
+            .font(PlanteriorTypography.supporting)
+            .accessibilityLabel("첫 번째 반려식물을 등록하고 성장기를 남겨보세요")
+            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+            .multilineTextAlignment(.center)
+            .accessibilityIdentifier("collection.empty.body")
             PlanteriorPrimaryButton("사진으로 식별하기", action: openCamera)
                 .accessibilityIdentifier("collection.empty.camera")
             NavigationLink {
@@ -100,7 +113,7 @@ extension PlantCollectionView {
             }
             .accessibilityIdentifier("collection.empty.manual")
         }
-        .padding(.top, PlanteriorSpacing.huge)
+        .padding(.vertical, PlanteriorSpacing.large)
     }
 
     func careStatus(
@@ -122,16 +135,6 @@ extension PlantCollectionView {
         case let .upcoming(nextDate):
             return ("D-\(max(daysBetween(today, nextDate), 0))", .neutral)
         }
-    }
-
-    private func daysBetween(_ start: CalendarDate, _ end: CalendarDate) -> Int {
-        guard let startDate = careCalendar.date(from: start),
-              let endDate = careCalendar.date(from: end) else { return 0 }
-        return Calendar.current.dateComponents(
-            [.day],
-            from: startDate,
-            to: endDate
-        ).day ?? 0
     }
 
     func careMetadata(for plant: PlantRegistrationDraft) -> String {

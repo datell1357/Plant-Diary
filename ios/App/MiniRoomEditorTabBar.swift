@@ -12,7 +12,7 @@ struct MiniRoomEditorTabBar: View {
     private static let underlineHeight: CGFloat = 2
     /// Minimum readable tab width once Dynamic Type stops the labels fitting
     /// five-across; beyond this the strip scrolls instead of colliding.
-    private static let scrollingTabWidth: CGFloat = 96
+    private static let scrollingTabWidth: CGFloat = 64
 
     var body: some View {
         Group {
@@ -24,7 +24,7 @@ struct MiniRoomEditorTabBar: View {
                                 .frame(width: Self.scrollingTabWidth)
                         }
                     }
-                    .padding(.horizontal, PlanteriorSpacing.large)
+                    .padding(.horizontal, PlanteriorSpacing.small)
                 }
             } else {
                 HStack(spacing: 0) {

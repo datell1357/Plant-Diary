@@ -7,22 +7,35 @@ extension HomeDashboardView {
     /// every auth state — signed-out never hides it (§8.3).
     var homeHeader: some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                Image(.homeAvatar)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 40, height: 40)
-                    .clipShape(Circle())
-                    .accessibilityIdentifier("home.avatar")
-                    .accessibilityHidden(true)
+            if effectiveSizeCategory.isAccessibilityCategory {
+                HStack {
+                    profileAvatar
+                    Spacer()
+                    notificationButton
+                }
                 greetingStack
-                Spacer(minLength: PlanteriorSpacing.small)
-                notificationButton
+            } else {
+                HStack(spacing: PlanteriorSpacing.medium) {
+                    profileAvatar
+                    greetingStack
+                    Spacer(minLength: PlanteriorSpacing.small)
+                    notificationButton
+                }
             }
             titleRow
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.header")
+    }
+
+    private var profileAvatar: some View {
+        Image(.homeAvatar)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 40, height: 40)
+            .clipShape(Circle())
+            .accessibilityIdentifier("home.avatar")
+            .accessibilityHidden(true)
     }
 
     private var greetingStack: some View {
@@ -60,22 +73,34 @@ extension HomeDashboardView {
     /// §6.2 title row: the name opens the rename dialog; the signed-out variant
     /// puts the green start link on the trailing side.
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.small) {
-            Button(action: requestRename) {
-                Text("\(roomTitle) 🏡")
-                    .font(PlanteriorTypography.sectionTitle)
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    .frame(minHeight: PlanteriorControl.minimumTarget, alignment: .leading)
-                    .contentShape(Rectangle())
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.small) {
+                roomTitleButton
+                Spacer(minLength: PlanteriorSpacing.small)
+                if authenticationState != .authenticated {
+                    loginLink
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home.room.title")
-            .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: PlanteriorSpacing.small)
-            if authenticationState != .authenticated {
-                loginLink
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                roomTitleButton
+                if authenticationState != .authenticated {
+                    loginLink
+                }
             }
         }
+    }
+
+    private var roomTitleButton: some View {
+        Button(action: requestRename) {
+            Text("\(roomTitle) 🏡")
+                .font(PlanteriorTypography.sectionTitle)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .frame(minHeight: PlanteriorControl.minimumTarget, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("home.room.title")
+        .accessibilityAddTraits(.isHeader)
     }
 
     private var loginLink: some View {

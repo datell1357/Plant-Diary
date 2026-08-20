@@ -46,9 +46,11 @@ extension SettingsView {
     }
 
     private var profileEmail: some View {
-        Text("minji@email.com")
+        Text(verbatim: "minji@email.com")
             .font(PlanteriorTypography.supporting)
             .foregroundStyle(PlanteriorPalette.textSecondary.color)
-            .accessibilityLabel("이메일 minji 골뱅이 email 점 com")
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("minji@email.com")
+            .accessibilityIdentifier("settings.profile.email")
     }
 }

@@ -85,6 +85,29 @@ extension HomeDashboardUITests {
 
     /// §6.8: Google above Apple, live dimmed Home behind the sheet, and the
     /// provider screens themselves stay native (no app-drawn credential form).
+    func testSignInSheetAtKoreanAX5KeepsProviderActionsAndCopyReadable() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchArguments += [
+            "-AppleLanguages", "(ko)",
+            "-AppleLocale", "ko_KR",
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["home.login.link"].waitForExistence(timeout: 10))
+        app.buttons["home.login.link"].tap()
+        let google = app.buttons["auth.google"]
+        let apple = app.buttons["auth.apple"]
+        XCTAssertTrue(google.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(google.frame.height, 52)
+        XCTAssertGreaterThanOrEqual(google.frame.width, 300)
+        XCTAssertGreaterThanOrEqual(apple.frame.height, 52)
+        XCTAssertEqual(google.label, "Google로 계속하기")
+        XCTAssertEqual(app.staticTexts["auth.subtitle"].label, "소셜 계정으로 간편하게 시작하세요")
+    }
+
     func testSignInSheetOrdersGoogleAboveAppleOverLiveDimmedHome() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"

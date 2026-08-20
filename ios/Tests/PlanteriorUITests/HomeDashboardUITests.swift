@@ -158,7 +158,15 @@ final class HomeDashboardUITests: XCTestCase {
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["home.greeting"].waitForExistence(timeout: 5))
+        let greeting = app.staticTexts["home.greeting"]
+        XCTAssertTrue(greeting.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(
+            greeting.frame.width,
+            250,
+            "AX5 header must reflow so 안녕하세요 is not split mid-word"
+        )
+        let metadata = app.staticTexts["home.greeting.meta"]
+        XCTAssertGreaterThanOrEqual(metadata.frame.width, 260)
         for _ in 0 ..< 4 {
             app.swipeUp()
         }

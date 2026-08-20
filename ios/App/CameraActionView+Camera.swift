@@ -133,7 +133,7 @@ extension CameraActionView {
             Spacer()
             switchControl
         }
-        .padding(.horizontal, PlanteriorSpacing.section)
+        .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.bottom, PlanteriorSpacing.section)
     }
 
@@ -161,23 +161,34 @@ extension CameraActionView {
         Button {
             requestCamera()
         } label: {
-            captureControlLabel(systemImage: "arrow.triangle.2.circlepath", title: "카메라 전환")
+            captureControlLabel(
+                systemImage: "arrow.triangle.2.circlepath",
+                title: "카메라 전환",
+                labelID: "capture.switch.label"
+            )
         }
         .accessibilityLabel("카메라 전환")
         .accessibilityIdentifier("capture.switch")
     }
 
-    func captureControlLabel(systemImage: String, title: String) -> some View {
+    func captureControlLabel(
+        systemImage: String,
+        title: String,
+        labelID: String
+    ) -> some View {
         VStack(spacing: PlanteriorSpacing.extraSmall) {
             Image(systemName: systemImage)
                 .font(.system(size: 22))
             Text(title)
                 .font(PlanteriorTypography.microLabel)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(labelID)
         }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-        .frame(
-            minWidth: PlanteriorControl.minimumTarget,
-            minHeight: PlanteriorControl.minimumTarget
-        )
+        .frame(width: 120)
+        .frame(minHeight: PlanteriorControl.minimumTarget)
     }
 }

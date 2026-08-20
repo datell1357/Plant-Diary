@@ -3,6 +3,7 @@ import SwiftUI
 
 struct QuietHoursSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sizeCategory) private var sizeCategory
     @State private var enabled: Bool
     @State private var startDate: Date
     @State private var endDate: Date
@@ -100,20 +101,46 @@ struct QuietHoursSettingsView: View {
         }
     }
 
+    @ViewBuilder
     private func timePicker(
         _ title: String,
         selection: Binding<Date>,
         id: String
     ) -> some View {
-        DatePicker(
-            title,
-            selection: selection,
-            displayedComponents: .hourAndMinute
-        )
-        .datePickerStyle(.compact)
-        .frame(minHeight: PlanteriorControl.minimumTarget)
-        .disabled(!enabled)
-        .accessibilityIdentifier(id)
+        if sizeCategory.isAccessibilityCategory {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                Text(title)
+                    .font(PlanteriorTypography.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("\(id).label")
+                DatePicker(
+                    title,
+                    selection: selection,
+                    displayedComponents: .hourAndMinute
+                )
+                .labelsHidden()
+                .datePickerStyle(.compact)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: PlanteriorControl.minimumTarget,
+                    alignment: .leading
+                )
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(id)
+            }
+            .padding(.vertical, PlanteriorSpacing.small)
+            .disabled(!enabled)
+        } else {
+            DatePicker(
+                title,
+                selection: selection,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.compact)
+            .frame(minHeight: PlanteriorControl.minimumTarget)
+            .disabled(!enabled)
+            .accessibilityIdentifier(id)
+        }
     }
 
     private func iconWell(_ systemName: String) -> some View {

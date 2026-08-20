@@ -16,9 +16,10 @@ extension IdentificationFlowView {
                     alternatesSection(candidates)
                 }
                 .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.top, PlanteriorSpacing.large)
-                .padding(.bottom, PlanteriorSpacing.huge)
+                .padding(.vertical, PlanteriorSpacing.large)
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             resultActions(candidates)
         }
         .background(PlanteriorPalette.canvas.color)
@@ -79,26 +80,16 @@ extension IdentificationFlowView {
     private func resultSummaryCard(_ candidate: IdentificationCandidate) -> some View {
         PlanteriorCard {
             VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                HStack {
-                    HStack(spacing: PlanteriorSpacing.extraSmall) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(PlanteriorTypography.caption)
-                            .accessibilityHidden(true)
-                        Text("신뢰도 \(candidate.confidencePercentage)%")
-                            .font(PlanteriorTypography.microLabel)
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        confidencePill(candidate)
+                        Spacer()
+                        analysisCompleteLabel
                     }
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .padding(.horizontal, PlanteriorSpacing.medium)
-                    .padding(.vertical, PlanteriorSpacing.extraSmall)
-                    .background(PlanteriorPalette.accentSurface.color)
-                    .clipShape(Capsule())
-                    .accessibilityElement()
-                    .accessibilityLabel("신뢰도 \(candidate.confidencePercentage)%")
-                    .accessibilityIdentifier("capture.result.confidence")
-                    Spacer()
-                    Text("분석 완료")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                        confidencePill(candidate)
+                        analysisCompleteLabel
+                    }
                 }
                 Text(candidate.species.koreanName)
                     .font(PlanteriorTypography.pageTitle)
@@ -115,6 +106,26 @@ extension IdentificationFlowView {
                     .accessibilityIdentifier("capture.result.summary")
             }
         }
+    }
+
+    private func confidencePill(_ candidate: IdentificationCandidate) -> some View {
+        HStack(spacing: PlanteriorSpacing.extraSmall) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(PlanteriorTypography.caption)
+                .accessibilityHidden(true)
+            Text("신뢰도 \(candidate.confidencePercentage)%")
+                .font(PlanteriorTypography.microLabel)
+                .lineLimit(1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .foregroundStyle(PlanteriorPalette.accent.color)
+        .padding(.horizontal, PlanteriorSpacing.medium)
+        .padding(.vertical, PlanteriorSpacing.extraSmall)
+        .background(PlanteriorPalette.accentSurface.color)
+        .clipShape(Capsule())
+        .accessibilityElement()
+        .accessibilityLabel("신뢰도 \(candidate.confidencePercentage)%")
+        .accessibilityIdentifier("capture.result.confidence")
     }
 
     @ViewBuilder
@@ -175,26 +186,11 @@ extension IdentificationFlowView {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("후보 \(index + 1) 신뢰도 \(candidate.confidencePercentage)%")
+        .accessibilityLabel(
+            "\(candidate.species.koreanName), 신뢰도 \(candidate.confidencePercentage)%"
+        )
+        .accessibilityValue(selectedCandidate == candidate ? "선택됨" : "선택 안 됨")
         .accessibilityAddTraits(selectedCandidate == candidate ? [.isSelected] : [])
         .accessibilityIdentifier("identification.candidate.\(index)")
-    }
-
-    private func resultActions(_ candidates: IdentificationCandidates) -> some View {
-        VStack(spacing: PlanteriorSpacing.small) {
-            PlanteriorPrimaryButton("이 식물로 등록하기") {
-                selectedCandidate = selectedCandidate ?? candidates.items.first
-                showsRegistration = selectedCandidate != nil
-            }
-            .accessibilityIdentifier("capture.result.register")
-            Button("직접 수정하기") { showsManualRegistration = true }
-                .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .frame(minHeight: PlanteriorControl.minimumTarget)
-                .accessibilityIdentifier("identification.manual")
-        }
-        .padding(.horizontal, PlanteriorSpacing.large)
-        .padding(.bottom, PlanteriorSpacing.large)
-        .background(PlanteriorPalette.canvas.color)
     }
 }

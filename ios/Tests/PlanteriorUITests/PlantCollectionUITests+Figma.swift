@@ -79,6 +79,25 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertEqual(app.buttons["collection.empty.camera"].label, "사진으로 식별하기")
         XCTAssertEqual(app.buttons["collection.empty.manual"].label, "직접 등록하기")
         XCTAssertFalse(app.staticTexts["검색 결과가 없어요"].exists)
+        let camera = app.buttons["collection.empty.camera"]
+        let manual = app.buttons["collection.empty.manual"]
+        let homeTab = app.buttons["tab.home"]
+        attachScreenshot(named: "collection-empty-before-camera")
+        guard manual.isHittable, !manual.frame.intersects(homeTab.frame) else {
+            XCTFail(
+                "empty manual route must clear the tab bar; "
+                    + "manual=\(manual.frame), tab=\(homeTab.frame)"
+            )
+            return
+        }
+        guard camera.isHittable, !camera.frame.intersects(homeTab.frame) else {
+            XCTFail(
+                "empty camera must clear the tab bar; camera=\(camera.frame), tab=\(homeTab.frame)"
+            )
+            return
+        }
+        camera.tap()
+        XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
         attachScreenshot(named: "collection-empty-402x874")
     }
 
@@ -93,7 +112,14 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.scrollViews["collection.screen"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["collection.row.0"].exists)
+        let row = app.buttons["collection.row.0"]
+        let add = app.buttons["collection.add"]
+        let status = app.staticTexts["collection.status.0"]
+        XCTAssertTrue(row.exists)
+        XCTAssertTrue(add.isHittable)
+        XCTAssertTrue(status.exists)
+        XCTAssertFalse(row.frame.intersects(add.frame))
+        XCTAssertGreaterThan(status.frame.width, status.frame.height)
         attachScreenshot(named: "collection-list-korean-ax5")
         app.buttons["collection.row.0"].tap()
         XCTAssertTrue(app.scrollViews["plant.detail.screen"].waitForExistence(timeout: 5))

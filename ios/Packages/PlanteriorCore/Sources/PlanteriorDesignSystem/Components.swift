@@ -102,6 +102,8 @@ public struct PlanteriorStatusPill: View {
     public var body: some View {
         Text(title)
             .font(PlanteriorTypography.microLabel)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(variant.foreground.color)
             .padding(.horizontal, PlanteriorSpacing.medium)
             .padding(.vertical, PlanteriorSpacing.extraSmall)
