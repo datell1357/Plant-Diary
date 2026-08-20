@@ -15,12 +15,18 @@ final class OperationalAccessibilityUITests: XCTestCase {
         XCTAssertTrue(
             app.scrollViews["settings.screen"].waitForExistence(timeout: 5)
         )
-        let privacy = app.buttons["settings.privacy"]
-        XCTAssertTrue(privacy.waitForExistence(timeout: 5))
-        privacy.tap()
+        try audit(app)
+        let quietHours = app.buttons["settings.quiet-hours.open"]
+        XCTAssertTrue(quietHours.waitForExistence(timeout: 5))
+        quietHours.tap()
         XCTAssertTrue(
-            app.scrollViews["privacy.screen"].waitForExistence(timeout: 5)
+            app.scrollViews["quiet-hours.screen"]
+                .waitForExistence(timeout: 5)
         )
+        try audit(app)
+    }
+
+    private func audit(_ app: XCUIApplication) throws {
         try app.performAccessibilityAudit(
             for: [
                 .contrast,

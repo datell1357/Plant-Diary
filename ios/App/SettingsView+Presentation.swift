@@ -1,0 +1,151 @@
+import AVFoundation
+import CoreLocation
+import PlanteriorDesignSystem
+import SwiftUI
+import UIKit
+
+extension SettingsView {
+    var alertGroup: some View {
+        settingsGroup("알림 관리") {
+            toggleRow(
+                "물 주기 알림",
+                icon: "drop",
+                isOn: $wateringEnabled,
+                id: "settings.alerts.watering-enabled"
+            )
+            rowDivider
+            toggleRow(
+                "날씨 알림",
+                icon: "sun.max",
+                isOn: Binding(
+                    get: { weather.globalAlertsEnabled },
+                    set: { weather.setGlobalAlertsEnabled($0) }
+                ),
+                id: "settings.alerts.weather-enabled"
+            )
+            rowDivider
+            Button {
+                showsQuietHours = true
+            } label: {
+                rowLabel(
+                    "알림 금지 시간 설정",
+                    icon: "clock",
+                    value: quietHoursSummary
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings.quiet-hours.open")
+        }
+    }
+
+    var environmentGroup: some View {
+        settingsGroup("지역 및 환경") {
+            Button {
+                showsRegionSettings = true
+            } label: {
+                rowLabel("관리 지역 설정", icon: "mappin", value: regionName)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings.region.open")
+            rowDivider
+            Button {
+                guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                    return
+                }
+                openURL(url)
+            } label: {
+                rowLabel("위치 권한 관리", icon: "shield", value: Self.locationText)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("settings.permission.location")
+            rowDivider
+            permissionRow(
+                "카메라",
+                value: Self.cameraText,
+                id: "settings.permission.camera"
+            )
+            rowDivider
+            permissionRow(
+                "알림",
+                value: notificationStatus,
+                id: "settings.permission.notifications"
+            )
+        }
+    }
+
+    var accountGroup: some View {
+        settingsGroup("계정") {
+            actionRow(
+                "꾸미기 마일스톤",
+                icon: "trophy",
+                id: "settings.milestones",
+                action: openMilestones
+            )
+            rowDivider
+            actionRow(
+                "개인정보 처리방침",
+                icon: "doc.text",
+                id: "settings.privacy"
+            ) { showsPrivacy = true }
+            rowDivider
+            actionRow(
+                "계정 삭제",
+                icon: "person.crop.circle.badge.minus",
+                id: "settings.delete-account"
+            ) { showsDeletion = true }
+            rowDivider
+            rowLabel(
+                "앱 버전",
+                icon: "info.circle",
+                value: appVersion,
+                disclosure: false
+            )
+            .accessibilityIdentifier("settings.app-version")
+            rowDivider
+            actionRow(
+                "로그아웃",
+                icon: "rectangle.portrait.and.arrow.right",
+                id: "auth.logout",
+                disclosure: false
+            ) { auth.pendingLogout = true }
+        }
+    }
+
+    var appVersion: String {
+        "v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")"
+    }
+}
+
+extension SettingsView {
+    static var locationText: String {
+        switch CLLocationManager().authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: "허용됨"
+        case .denied, .restricted: "허용 안 됨"
+        case .notDetermined: "확인 필요"
+        @unknown default: "확인 필요"
+        }
+    }
+
+    static var cameraText: String {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: "허용됨"
+        case .denied, .restricted: "허용 안 됨"
+        case .notDetermined: "확인 필요"
+        @unknown default: "확인 필요"
+        }
+    }
+
+    static func fullRegionName(_ code: String?) -> String {
+        switch code {
+        case "manual-seoul": "서울특별시"
+        case "manual-busan": "부산광역시"
+        case "manual-incheon": "인천광역시"
+        case "manual-daegu": "대구광역시"
+        case "manual-daejeon": "대전광역시"
+        case "manual-gwangju": "광주광역시"
+        case "manual-jeju": "제주특별자치도"
+        case let code?: WeatherRuntime.regionName(for: code)
+        case nil: "현재 위치"
+        }
+    }
+}

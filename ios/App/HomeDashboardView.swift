@@ -14,6 +14,7 @@ struct HomeDashboardView: View {
     @StateObject var weatherRuntime = WeatherRuntime()
     @State var notificationState = NotificationRuntimeState.initial
     @State var showsRegionSettings = false
+    @State var showsQuietHoursSettings = false
     @State var isInitialLoadComplete = false
     @State var pendingMiniHomeOpen = false
     @State var isRenamePresented = false
@@ -114,14 +115,21 @@ struct HomeDashboardView: View {
         ) { _ in
             reload()
         }
-        .sheet(isPresented: $showsRegionSettings) {
-            RegionSettingsView(
-                weather: weatherRuntime,
-                dismiss: {
+        .fullScreenCover(isPresented: $showsRegionSettings) {
+            NavigationStack {
+                RegionSettingsView(
+                    weather: weatherRuntime,
+                    showsCloseButton: true
+                ) {
                     showsRegionSettings = false
                     Task { await refreshWeather() }
                 }
-            )
+            }
+        }
+        .fullScreenCover(isPresented: $showsQuietHoursSettings) {
+            NavigationStack {
+                QuietHoursSettingsView(showsCloseButton: true)
+            }
         }
     }
 }

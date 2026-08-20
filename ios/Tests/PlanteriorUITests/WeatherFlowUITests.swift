@@ -88,6 +88,9 @@ final class WeatherFlowUITests: XCTestCase {
         app.launchEnvironment["QA_WEATHER_NOW"] = "2026-08-11T03:00:00Z"
         app.launch()
 
+        app.swipeUp()
+        app.swipeUp()
+        app.swipeUp()
         XCTAssertTrue(
             app.staticTexts["weather.risk.high_temperature"]
                 .waitForExistence(timeout: 5)
@@ -103,7 +106,7 @@ final class WeatherFlowUITests: XCTestCase {
         attachScreenshot(named: "task-13-weather-ax5-actions")
     }
 
-    func testRegionSettingsDisclosesPurposeAndSavesManualRegion() {
+    func testRegionSettingsSearchesSelectsAndSavesManualRegion() {
         let app = weatherApp()
         app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "denied"
         app.launchEnvironment["QA_WEATHER_FIXTURE"] = "high-dry"
@@ -111,22 +114,18 @@ final class WeatherFlowUITests: XCTestCase {
         app.launch()
 
         let openRegion = app.buttons["weather.open-region"]
+        XCTAssertTrue(app.staticTexts["weather.purpose"].exists)
         XCTAssertTrue(openRegion.waitForExistence(timeout: 5))
         openRegion.tap()
-        XCTAssertTrue(app.staticTexts["weather.purpose"].waitForExistence(timeout: 5))
-        let alerts = app.switches["weather.alerts-enabled"]
-        XCTAssertTrue(alerts.exists)
-        alerts.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
-        ).tap()
-        let switchDisabled = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == '0'"),
-            object: alerts
+        XCTAssertTrue(
+            app.buttons["weather.use-current-location"]
+                .waitForExistence(timeout: 5)
         )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [switchDisabled], timeout: 5),
-            .completed
-        )
+        XCTAssertTrue(app.staticTexts["weather.recent-regions"].exists)
+        let back = app.buttons["weather.region.back"]
+        XCTAssertTrue(back.exists)
+        XCTAssertTrue(back.isHittable)
+        attachScreenshot(named: "region-402x874-light")
         let region = app.textFields["weather.manual-region"]
         region.tap()
         region.typeText("서울")
@@ -134,19 +133,10 @@ final class WeatherFlowUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         attachScreenshot(named: "task-13-weather-settings")
         result.tap()
+        XCTAssertEqual(result.value as? String, "선택됨")
+        app.buttons["weather.region.save"].tap()
         XCTAssertTrue(app.staticTexts["weather.region"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["weather.region"].label.contains("서울"))
-        let alertCount = app.staticTexts["weather.alert-count"]
-        let alertCountDisabled = XCTNSPredicateExpectation(
-            predicate: NSPredicate(
-                format: "label == '예정 위험 알림 0건'"
-            ),
-            object: alertCount
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [alertCountDisabled], timeout: 5),
-            .completed
-        )
     }
 
     func testPerPlantWeatherAlertControlIsVisible() {
@@ -172,9 +162,12 @@ final class WeatherFlowUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         let alerts = app.switches["weather.plant-alerts-enabled"]
+        app.swipeUp()
+        XCTAssertTrue(alerts.isHittable)
         alerts.coordinate(
             withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)
         ).tap()
+        XCTAssertEqual(alerts.value as? String, "0")
         attachScreenshot(named: "task-13-weather-plant-toggle")
         app.buttons["tab.home"].tap()
         app.buttons["tab.collection"].tap()

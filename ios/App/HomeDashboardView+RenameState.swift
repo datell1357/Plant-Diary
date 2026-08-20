@@ -123,6 +123,6 @@ extension HomeDashboardView {
 
     /// §6.2 notification button target.
     func openCareSettings() {
-        showsRegionSettings = true
+        showsQuietHoursSettings = true
     }
 }

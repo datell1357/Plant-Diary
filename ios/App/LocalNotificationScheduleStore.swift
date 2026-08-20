@@ -15,15 +15,20 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     }
 
     private let defaults: UserDefaults
+    private let quietHours: () -> QuietHoursPreference
     private var key: String
     private var schedules: [StoredSchedule] = []
 
     init(
         defaults: UserDefaults = .standard,
-        key: String = "notifications.signed-out.scheduled"
+        key: String = "notifications.signed-out.scheduled",
+        quietHours: @escaping () -> QuietHoursPreference = {
+            LocalNotificationPreferenceStore.shared.quietHours
+        }
     ) {
         self.defaults = defaults
         self.key = key
+        self.quietHours = quietHours
         restore()
     }
 
@@ -46,8 +51,10 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
             completedPlantIDs: request.completedPlantIDs,
             existingDeduplicationKeys: []
         )
+        let quietHours = quietHours()
         schedules = try NotificationCoordinator()
             .schedules(normalizedRequest)
+            .filter { !quietHours.contains($0.time) }
             .map {
                 StoredSchedule(
                     plantID: $0.plantID.rawValue,

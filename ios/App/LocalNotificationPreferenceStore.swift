@@ -11,19 +11,23 @@ final class LocalNotificationPreferenceStore {
         let time: String?
     }
 
+    private struct StoredQuietHours: Codable {
+        let enabled: Bool
+        let start: String
+        let end: String
+    }
+
     private struct StoredPreferences: Codable {
         let globalEnabled: Bool
         let globalTime: String
         let overrides: [String: StoredOverride]
+        let quietHours: StoredQuietHours?
     }
 
     private let defaults: UserDefaults
     private var key: String
-    private var preferences = StoredPreferences(
-        globalEnabled: true,
-        globalTime: "09:00",
-        overrides: [:]
-    )
+    private var preferences =
+        LocalNotificationPreferenceStore.defaultPreferences
 
     init(
         defaults: UserDefaults = .standard,
@@ -41,6 +45,20 @@ final class LocalNotificationPreferenceStore {
         return NotificationPreference(
             enabled: preferences.globalEnabled,
             time: time
+        )
+    }
+
+    var quietHours: QuietHoursPreference {
+        let stored = preferences.quietHours
+        guard let start = try? LocalTime.parse(stored?.start ?? "22:00"),
+              let end = try? LocalTime.parse(stored?.end ?? "07:00")
+        else {
+            preconditionFailure("Bundled quiet-hours defaults must be valid")
+        }
+        return QuietHoursPreference(
+            enabled: stored?.enabled ?? false,
+            start: start,
+            end: end
         )
     }
 
@@ -65,7 +83,22 @@ final class LocalNotificationPreferenceStore {
         preferences = StoredPreferences(
             globalEnabled: enabled,
             globalTime: time.rawValue,
-            overrides: preferences.overrides
+            overrides: preferences.overrides,
+            quietHours: preferences.quietHours
+        )
+        persist()
+    }
+
+    func setQuietHours(enabled: Bool, start: LocalTime, end: LocalTime) {
+        preferences = StoredPreferences(
+            globalEnabled: preferences.globalEnabled,
+            globalTime: preferences.globalTime,
+            overrides: preferences.overrides,
+            quietHours: StoredQuietHours(
+                enabled: enabled,
+                start: start.rawValue,
+                end: end.rawValue
+            )
         )
         persist()
     }
@@ -83,27 +116,20 @@ final class LocalNotificationPreferenceStore {
         preferences = StoredPreferences(
             globalEnabled: preferences.globalEnabled,
             globalTime: preferences.globalTime,
-            overrides: overrides
+            overrides: overrides,
+            quietHours: preferences.quietHours
         )
         persist()
     }
 
     private func restore() {
         guard let data = defaults.data(forKey: key) else {
-            preferences = StoredPreferences(
-                globalEnabled: true,
-                globalTime: "09:00",
-                overrides: [:]
-            )
+            preferences = Self.defaultPreferences
             return
         }
         preferences = (
             try? JSONDecoder().decode(StoredPreferences.self, from: data)
-        ) ?? StoredPreferences(
-            globalEnabled: true,
-            globalTime: "09:00",
-            overrides: [:]
-        )
+        ) ?? Self.defaultPreferences
     }
 
     private func persist() {
@@ -112,4 +138,11 @@ final class LocalNotificationPreferenceStore {
         }
         defaults.set(data, forKey: key)
     }
+
+    private static let defaultPreferences = StoredPreferences(
+        globalEnabled: true,
+        globalTime: "09:00",
+        overrides: [:],
+        quietHours: nil
+    )
 }

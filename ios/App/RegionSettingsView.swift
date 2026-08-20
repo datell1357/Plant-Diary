@@ -2,110 +2,122 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 struct RegionSettingsView: View {
+    @Environment(\.dismiss) var dismiss
     @ObservedObject var weather: WeatherRuntime
-    let dismiss: () -> Void
-    @State private var regionQuery = ""
-    private let regions = [
-        ("manual-seoul", "서울"),
-        ("manual-busan", "부산"),
-        ("manual-incheon", "인천"),
-        ("manual-daegu", "대구"),
-        ("manual-daejeon", "대전"),
-        ("manual-gwangju", "광주"),
-        ("manual-jeju", "제주")
+    @State var regionQuery = ""
+    @State var selectedCode: String?
+    @State var usesCurrentLocation: Bool
+    @State var recentCodes = [
+        "manual-seoul", "manual-busan", "manual-haeundae"
+    ]
+    let showsCloseButton: Bool
+    let onSaved: () -> Void
+
+    let regions = [
+        ("manual-seoul", "서울특별시 강남구"),
+        ("manual-busan", "경기도 성남시 분당구"),
+        ("manual-haeundae", "부산광역시 해운대구"),
+        ("manual-incheon", "인천광역시"),
+        ("manual-daegu", "대구광역시"),
+        ("manual-daejeon", "대전광역시"),
+        ("manual-gwangju", "광주광역시"),
+        ("manual-jeju", "제주특별자치도")
     ]
 
+    init(
+        weather: WeatherRuntime,
+        showsCloseButton: Bool = false,
+        onSaved: @escaping () -> Void = {}
+    ) {
+        self.weather = weather
+        self.showsCloseButton = showsCloseButton
+        self.onSaved = onSaved
+        let manualCode = weather.manualRegionCode
+        _selectedCode = State(initialValue: manualCode)
+        _usesCurrentLocation = State(initialValue: manualCode == nil)
+    }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("날씨 기능") {
-                    Text("날씨는 식물의 온도·습도 위험 안내에만 사용해요.")
-                        .accessibilityIdentifier("weather.purpose")
-                    Toggle(
-                        "날씨 위험 알림",
-                        isOn: Binding(
-                            get: { weather.globalAlertsEnabled },
-                            set: { weather.setGlobalAlertsEnabled($0) }
-                        )
-                    )
-                    .accessibilityIdentifier("weather.alerts-enabled")
-                    Text(
-                        weather.globalAlertsEnabled
-                            ? "위험 알림 켜짐"
-                            : "위험 알림 꺼짐"
-                    )
-                    .accessibilityIdentifier(
-                        weather.globalAlertsEnabled
-                            ? "weather.alerts.enabled"
-                            : "weather.alerts.disabled"
-                    )
-                }
-                Section("현재 위치") {
-                    Text(authorizationText)
-                    Button("위치 권한 요청") {
-                        weather.requestLocationPermission()
+        ScrollView {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+                searchField
+                currentLocationCard
+                Text("최근 검색 지역")
+                    .font(PlanteriorTypography.caption.weight(.semibold))
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .padding(.leading, PlanteriorSpacing.large)
+                    .accessibilityIdentifier("weather.recent-regions")
+                regionCard
+                #if DEBUG
+                    revokeLocationButton
+                #endif
+            }
+            .padding(PlanteriorSpacing.large)
+        }
+        .accessibilityIdentifier("region-settings.screen")
+        .background(PlanteriorPalette.canvas.color)
+        .navigationTitle("관리 지역 설정")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if showsCloseButton {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
                     }
-                    .accessibilityIdentifier("weather.request-location")
-                    #if DEBUG
-                        if ProcessInfo.processInfo.environment[
-                            "QA_WEATHER_SHOW_REVOKE"
-                        ] == "1" {
-                            Button("QA 위치 철회") {
-                                weather.revokeLocationForQA()
-                                dismiss()
-                            }
-                            .accessibilityIdentifier("weather.qa-revoke")
-                        }
-                    #endif
-                }
-                Section("수동 지역") {
-                    TextField("지역 검색", text: $regionQuery)
-                        .accessibilityIdentifier("weather.manual-region")
-                    ForEach(filteredRegions, id: \.code) { region in
-                        Button(region.name) {
-                            weather.setManualRegion(region.code)
-                            dismiss()
-                        }
-                        .accessibilityIdentifier(
-                            "weather.region-result.\(region.code)"
-                        )
-                    }
-                    Button("수동 지역 해제") {
-                        weather.setManualRegion(nil)
-                        dismiss()
-                    }
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .accessibilityLabel("뒤로")
+                    .accessibilityIdentifier("weather.region.back")
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(PlanteriorPalette.canvas.color)
-            .navigationTitle("날씨 지역")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("닫기", action: dismiss)
-                }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("저장", action: save)
+                    .accessibilityIdentifier("weather.region.save")
             }
         }
     }
 
-    private var authorizationText: String {
-        switch weather.authorization {
-        case .notDetermined: "위치 권한 미선택"
-        case .denied: "위치 권한 꺼짐"
-        case .reduced: "대략적인 위치 사용 중"
-        case .full: "정확한 위치 사용 중"
+    #if DEBUG
+        @ViewBuilder private var revokeLocationButton: some View {
+            if ProcessInfo.processInfo.environment["QA_WEATHER_SHOW_REVOKE"] == "1" {
+                Button("QA 위치 철회") {
+                    weather.revokeLocationForQA()
+                    onSaved()
+                    dismiss()
+                }
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .accessibilityIdentifier("weather.qa-revoke")
+            }
         }
-    }
+    #endif
 
-    private var filteredRegions: [(code: String, name: String)] {
-        let query = regionQuery.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
+    var filteredRegions: [(code: String, name: String)] {
+        let query = regionQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visible = query.isEmpty ? recentCodes : regions.map(\.0)
         return regions.compactMap { code, name in
-            guard query.isEmpty || name.localizedCaseInsensitiveContains(query)
+            guard visible.contains(code),
+                  query.isEmpty || name.localizedCaseInsensitiveContains(query)
             else {
                 return nil
             }
             return (code: code, name: name)
         }
+    }
+
+    var currentLocationText: String {
+        if let code = weather.locationRegionCode {
+            return WeatherRuntime.regionName(for: code)
+        }
+        switch weather.authorization {
+        case .denied: return "위치 권한을 확인해 주세요"
+        case .reduced: return "대략적인 위치 사용 중"
+        case .full: return "정확한 위치 사용 중"
+        case .notDetermined: return "위치를 확인해 현재 지역을 설정합니다"
+        }
+    }
+
+    func save() {
+        weather.setManualRegion(usesCurrentLocation ? nil : selectedCode)
+        onSaved()
+        dismiss()
     }
 }
