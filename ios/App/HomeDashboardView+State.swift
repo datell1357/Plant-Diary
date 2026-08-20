@@ -57,6 +57,7 @@ extension HomeDashboardView {
         guard let today = effectiveToday else {
             return
         }
+        store.updateCompletedPlantIDs(collection.completedPlantIDs)
         store.reload(
             plants: collection.plants,
             today: today,

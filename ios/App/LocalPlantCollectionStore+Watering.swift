@@ -54,6 +54,7 @@ extension LocalPlantCollectionStore {
             intervalDays: intervalDays
         )
         let result = try coordinator.recordWateredToday(for: plantID)
+        markWateringCompleted(for: plantID)
         let current = plants[index]
         plants[index] = PlantRegistrationDraft(
             plantID: current.plantID,

@@ -102,19 +102,20 @@ final class HomeDashboardUITests: XCTestCase {
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         app.launch()
 
-        XCTAssertTrue(
-            app.staticTexts["home.notification.scheduled"]
-                .waitForExistence(timeout: 5)
-        )
+        let initialCount = app.staticTexts["home.notification.scheduled"]
+        XCTAssertTrue(initialCount.waitForExistence(timeout: 5))
+        XCTAssertEqual(initialCount.label, "예정 알림 2건")
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
         app.buttons["collection.row.0"].tap()
         let complete = app.buttons["watering.complete"]
         XCTAssertTrue(complete.waitForExistence(timeout: 5))
         complete.tap()
-        let count = app.staticTexts["notification.scheduled-count"]
+        app.buttons["tab.home"].tap()
+        app.swipeUp()
+        let count = app.staticTexts["home.notification.scheduled"]
         XCTAssertTrue(count.waitForExistence(timeout: 5))
-        XCTAssertEqual(count.label, "0")
+        XCTAssertEqual(count.label, "예정 알림 0건")
     }
 
     func testAllCareVariantsUseStableVisualOrdering() {

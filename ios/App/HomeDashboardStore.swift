@@ -12,6 +12,11 @@ final class HomeDashboardStore: ObservableObject {
     @Published private(set) var miniHome: MiniHome?
     @Published private(set) var plannedNotificationCount = 0
     @Published private(set) var globalNotificationTime = "09:00"
+    private var completedPlantIDs: Set<PersonalPlantID> = []
+
+    func updateCompletedPlantIDs(_ plantIDs: Set<PersonalPlantID>) {
+        completedPlantIDs = plantIDs
+    }
 
     func reload(
         plants: [PlantRegistrationDraft],
@@ -73,7 +78,7 @@ final class HomeDashboardStore: ObservableObject {
             global: global,
             perPlant: LocalNotificationPreferenceStore.shared.overrides,
             dueDates: dueDates,
-            completedPlantIDs: [],
+            completedPlantIDs: completedPlantIDs,
             existingDeduplicationKeys: []
         )
         do {

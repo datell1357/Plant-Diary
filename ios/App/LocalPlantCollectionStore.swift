@@ -15,6 +15,7 @@ final class LocalPlantCollectionStore: ObservableObject {
     static let shared = LocalPlantCollectionStore()
     @Published var plants: [PlantRegistrationDraft] = []
     @Published private(set) var weatherPlantIDs: [PersonalPlantID] = []
+    @Published private(set) var completedPlantIDs: Set<PersonalPlantID> = []
     @Published var healthNotes: [Int: [String]] = [:]
     @Published private(set) var scrollAnchor: Int?
     @Published var snapshotState = CollectionViewState.content
@@ -51,8 +52,17 @@ final class LocalPlantCollectionStore: ObservableObject {
     }
 
     func mount(accountID: String?) {
-        self.accountID = accountID ?? "signed-out"
+        let mountedAccountID = accountID ?? "signed-out"
+        guard self.accountID != mountedAccountID else {
+            return
+        }
+        self.accountID = mountedAccountID
+        completedPlantIDs = []
         restore()
+    }
+
+    func markWateringCompleted(for plantID: PersonalPlantID) {
+        completedPlantIDs.insert(plantID)
     }
 
     private func restore() {
@@ -61,10 +71,7 @@ final class LocalPlantCollectionStore: ObservableObject {
         healthNotes = [:]
         scrollAnchor = nil
         if let data = defaults.data(forKey: plantsKey) {
-            plants = (try? JSONDecoder().decode(
-                [PlantRegistrationDraft].self,
-                from: data
-            )) ?? []
+            plants = (try? JSONDecoder().decode([PlantRegistrationDraft].self, from: data)) ?? []
         }
         if let data = defaults.data(forKey: notesKey) {
             healthNotes = (try? JSONDecoder().decode(
@@ -73,9 +80,7 @@ final class LocalPlantCollectionStore: ObservableObject {
             )) ?? [:]
         }
         let rawIDs = defaults.stringArray(forKey: weatherPlantIDsKey) ?? []
-        weatherPlantIDs = rawIDs.compactMap {
-            try? PersonalPlantID.parse($0)
-        }
+        weatherPlantIDs = rawIDs.compactMap { try? PersonalPlantID.parse($0) }
         while weatherPlantIDs.count < plants.count {
             let rawValue = "local_\(UUID().uuidString)"
             if let plantID = try? PersonalPlantID.parse(rawValue) {
@@ -178,9 +183,7 @@ final class LocalPlantCollectionStore: ObservableObject {
         ) != nil else {
             return
         }
-        scrollAnchor = defaults.integer(
-            forKey: "collection.\(accountID).scroll-anchor"
-        )
+        scrollAnchor = defaults.integer(forKey: "collection.\(accountID).scroll-anchor")
     }
 
     func persist() {
@@ -192,9 +195,6 @@ final class LocalPlantCollectionStore: ObservableObject {
             try? JSONEncoder().encode(healthNotes),
             forKey: notesKey
         )
-        defaults.set(
-            weatherPlantIDs.map(\.rawValue),
-            forKey: weatherPlantIDsKey
-        )
+        defaults.set(weatherPlantIDs.map(\.rawValue), forKey: weatherPlantIDsKey)
     }
 }

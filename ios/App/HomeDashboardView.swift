@@ -55,6 +55,9 @@ struct HomeDashboardView: View {
         .onChange(of: collection.plants) {
             Task { await refreshWeather() }
         }
+        .onChange(of: collection.completedPlantIDs) {
+            reload()
+        }
         .onChange(of: auth.accountID?.rawValue) {
             remountAccount(accountScopeID)
             Task { await refreshWeather() }
