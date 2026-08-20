@@ -41,6 +41,9 @@ struct ShopView: View {
                             .accessibilityIdentifier(
                                 "shop.row.\(entry.item.id.rawValue)"
                             )
+                            .accessibilityValue(
+                                conditionText(entry.eligibility)
+                            )
                             Text(conditionText(entry.eligibility))
                             Button("획득") {
                                 acquire(entry.item)

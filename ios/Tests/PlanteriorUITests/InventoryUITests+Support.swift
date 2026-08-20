@@ -13,6 +13,7 @@ extension InventoryUITestSupport where Self: XCTestCase {
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_INVENTORY_FIXTURE"] = "1"
         app.launchEnvironment["QA_INVENTORY_ROUTE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_INVENTORY_RESET_TOKEN"] = UUID().uuidString
         app.launchEnvironment["QA_INVENTORY_NOW"] = "2026-08-11T02:00:00Z"
         app.launchEnvironment["QA_HOME_FIXTURE"] = "1"

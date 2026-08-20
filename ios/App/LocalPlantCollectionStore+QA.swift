@@ -3,6 +3,19 @@ import PlanteriorData
 import PlanteriorDomain
 
 extension LocalPlantCollectionStore {
+    func resetPersistenceForQA() {
+        #if DEBUG
+            guard ProcessInfo.processInfo.environment[
+                "QA_RESET_COLLECTION"
+            ] == "1" else {
+                return
+            }
+            defaults.removeObject(forKey: plantsKey)
+            defaults.removeObject(forKey: notesKey)
+            defaults.removeObject(forKey: weatherPlantIDsKey)
+        #endif
+    }
+
     func setSnapshotStateFromQA() {
         #if DEBUG
             snapshotState = CollectionViewState(

@@ -17,8 +17,9 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         ]
         let descending = Array(ascending.reversed())
         waitForShopRows(firstPage, in: app)
-        XCTAssertTrue(
-            app.staticTexts["조건 미충족 · 식물 등록 필요"].exists
+        XCTAssertEqual(
+            app.buttons["shop.row.item-lamp"].value as? String,
+            "조건 미충족 · 식물 등록 필요"
         )
         waitForShopRows(ascending, in: app) {
             app.buttons["shop.load-more"].tap()
