@@ -32,14 +32,12 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["홈"].waitForExistence(timeout: 5))
 
         app.buttons["tab.storage"].tap()
-        XCTAssertTrue(app.buttons["storage.open-detail"].waitForExistence(timeout: 5))
-        app.buttons["storage.open-detail"].tap()
-        XCTAssertTrue(app.otherElements["storage.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["storage.screen"].waitForExistence(timeout: 5))
 
         app.buttons["tab.settings"].tap()
-        XCTAssertTrue(app.buttons["settings.open-detail"].waitForExistence(timeout: 5))
-        app.buttons["settings.open-detail"].tap()
-        XCTAssertTrue(app.otherElements["settings.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings.milestones"].waitForExistence(timeout: 5))
+        app.buttons["settings.milestones"].tap()
+        XCTAssertTrue(app.scrollViews["milestones.screen"].waitForExistence(timeout: 5))
 
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
@@ -82,6 +80,7 @@ final class AppLaunchUITests: XCTestCase {
     func testIdentificationRequiresCandidateConfirmationBeforeRegistration() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_PHOTO_FIXTURE"] = "valid"
         app.launch()
 
@@ -103,9 +102,15 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["registration.submit"].isEnabled)
         app.buttons["registration.submit"].tap()
         XCTAssertTrue(app.staticTexts["registration.saved"].waitForExistence(timeout: 5))
-        app.navigationBars["식물 등록"].buttons.element(boundBy: 0).tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertEqual(app.staticTexts.matching(identifier: "collection.plant-row").count, 1)
+        app.terminate()
+
+        let collectionApp = XCUIApplication()
+        collectionApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        collectionApp.launchEnvironment["QA_INITIAL_TAB"] = "collection"
+        collectionApp.launch()
+        XCTAssertTrue(
+            collectionApp.buttons["collection.row.0"].waitForExistence(timeout: 5)
+        )
     }
 
     func testLoginSheetPresentsAndCancelsWithoutPrivateRows() {
