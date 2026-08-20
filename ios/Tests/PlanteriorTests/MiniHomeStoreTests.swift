@@ -1,5 +1,6 @@
 import Foundation
 @testable import Planterior
+import PlanteriorData
 import PlanteriorDomain
 import Testing
 
@@ -97,8 +98,59 @@ struct MiniHomeStoreTests {
         #expect(second.state == .idle)
     }
 
+    /// A brand-new account has no committed room, so Reset must fall back to
+    /// the room the editor was mounted with rather than keeping the edits.
+    @Test
+    func resetRestoresMountDefaultWhenNoCommittedRoomExists() throws {
+        let fixture = try fixture()
+        let store = MiniHomeStore(repository: fixture.repository())
+        let mountDefault = try room(name: "새 미니홈", revision: 0)
+        store.mount(defaultDraft: mountDefault)
+        #expect(store.committed == nil)
+
+        store.renameDraft("편집한 방")
+        try store.addDraftPlacement(placement(zIndex: 0))
+        #expect(store.draft != mountDefault)
+
+        store.resetDraft()
+
+        #expect(store.draft == mountDefault)
+        #expect(store.committed == nil)
+        #expect(store.canUndoDraft == false)
+        #expect(store.state == .idle)
+    }
+
+    /// Once a room is committed, Reset must return to that committed room and
+    /// never to the original mount default.
+    @Test
+    func resetRestoresCommittedRoomAfterSave() throws {
+        let fixture = try fixture()
+        let store = MiniHomeStore(repository: fixture.repository())
+        try store.mount(defaultDraft: room(name: "새 미니홈", revision: 0))
+        store.renameDraft("저장한 방")
+        try store.save()
+
+        store.renameDraft("저장 후 편집")
+        store.resetDraft()
+
+        #expect(store.draft?.name == "저장한 방")
+        #expect(store.draft == store.committed)
+        #expect(store.hasUnsavedChanges == false)
+    }
+
     private func fixture() throws -> MiniHomeStoreFixture {
         try MiniHomeStoreFixture()
+    }
+
+    private func placement(zIndex: Int) throws -> MiniHomePlacement {
+        try MiniHomePlacement(
+            id: MiniHomeGeometry.nextPlacementID(existing: []),
+            plantID: PersonalPlantID.parse("test-plant"),
+            itemID: nil,
+            normalizedX: 0.5,
+            normalizedY: 0.55,
+            zIndex: zIndex
+        )
     }
 
     private func room(name: String, revision: UInt64) throws -> MiniHome {

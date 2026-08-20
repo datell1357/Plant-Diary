@@ -25,6 +25,10 @@ final class MiniHomeStore: ObservableObject {
     /// Draft-only history for the Figma `action-footer` undo action. Cleared on
     /// mount, save, discard, and reset so it can never resurrect a committed room.
     private var draftHistory: [MiniHome] = []
+    /// The room the editor started from. It is the committed room once one
+    /// exists, and the mount default before the first save, so Reset has a real
+    /// target on a brand-new account. Refreshed only at mount and on commit.
+    private var mountBaseline: MiniHome?
 
     init(repository: LocalMiniHomeRepository) {
         self.repository = repository
@@ -37,6 +41,7 @@ final class MiniHomeStore: ObservableObject {
     func mount(defaultDraft: MiniHome? = nil) {
         committed = repository.load()
         draft = committed ?? defaultDraft
+        mountBaseline = draft
         draftHistory = []
         state = .idle
     }
@@ -55,10 +60,10 @@ final class MiniHomeStore: ObservableObject {
         state = .idle
     }
 
-    /// Returns the draft to the last committed room (or the mount default when
-    /// nothing is committed yet) without saving anything.
-    func resetDraft(fallback: MiniHome? = nil) {
-        draft = committed ?? fallback ?? draft
+    /// Returns the draft to the last committed room, or to the room the editor
+    /// was mounted with when nothing is committed yet, without saving anything.
+    func resetDraft() {
+        draft = committed ?? mountBaseline ?? draft
         draftHistory = []
         state = .idle
     }
@@ -134,6 +139,7 @@ final class MiniHomeStore: ObservableObject {
         case let .committed(saved):
             committed = saved
             self.draft = saved
+            mountBaseline = saved
             draftHistory = []
             state = .saved
         case let .conflict(authoritative):
