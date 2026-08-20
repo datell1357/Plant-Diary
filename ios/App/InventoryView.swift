@@ -20,8 +20,6 @@ struct InventoryView: View {
 
     init() {
         let now = Self.runtimeInstant()
-        let allowsProgression =
-            MilestoneProgressView.allowsLocalAuthoritativeService
         self.now = now
         _mode = State(initialValue: Self.initialMode)
         _repository = StateObject(
@@ -34,70 +32,38 @@ struct InventoryView: View {
         _progression = StateObject(
             wrappedValue: MilestoneRepository(
                 now: now,
-                allowsLocalAuthoritativeService: allowsProgression
+                allowsLocalAuthoritativeService:
+                MilestoneProgressView.allowsLocalAuthoritativeService
             )
         )
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+                storageHeader
+                modeSelector
+                categoryFilters
                 if mode == .warehouse {
                     warehouse
                 } else {
                     ShopView(
                         entries: shopPage.entries,
                         hasMore: shopPage.nextCursor != nil,
-                        loadMore: {
-                            visibleItemLimit += 2
-                        },
+                        loadMore: { visibleItemLimit += 2 },
                         acquire: acquire,
                         showDetail: { selectedItem = $0 }
                     )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            .padding(.horizontal, PlanteriorSpacing.large)
+            .padding(.vertical, PlanteriorSpacing.small)
         }
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveSizeCategory)
-        .navigationTitle("창고")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .accessibilityIdentifier("storage.screen")
-        .safeAreaInset(edge: .top) {
-            VStack(spacing: 8) {
-                if !repository.catalog.isEmpty {
-                    Text("보유 \(repository.ownedItems.count)개")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(
-                            PlanteriorPalette.textSecondary.color
-                        )
-                        .frame(
-                            maxWidth: .infinity,
-                            alignment: .leading
-                        )
-                        .accessibilityIdentifier("storage.ready")
-                }
-                modeSelector
-                categoryFilters
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
-            .background(PlanteriorPalette.canvas.color)
-        }
-        .toolbar {
-            if mode == .shop {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(
-                        sortDescending ? "이름 오름차순" : "이름 내림차순"
-                    ) {
-                        sortDescending.toggle()
-                        visibleItemLimit = 2
-                    }
-                    .accessibilityIdentifier("shop.sort")
-                }
-            }
-        }
         .task(id: accountScopeID) {
             repository.mount(accountID: accountScopeID)
             collection.mount(accountID: accountScopeID)
@@ -108,28 +74,42 @@ struct InventoryView: View {
                 .seedQAIfNeeded()
             repository.seedQAIfNeeded()
         }
-        .sheet(item: $selectedItem) {
-            let item = $0
-            InventoryItemDetailView(
-                item: item,
-                isOwned: repository.ownedItems.contains { owned in
-                    owned.itemID == item.id
-                }
-            )
-            .environment(\.sizeCategory, effectiveSizeCategory)
+        .navigationDestination(isPresented: detailPresented) {
+            if let selectedItem {
+                InventoryItemDetailView(
+                    item: selectedItem,
+                    eligibility: eligibility(for: selectedItem),
+                    isOwned: isOwned(selectedItem),
+                    isApplied: isApplied(selectedItem),
+                    message: message,
+                    acquire: { acquire(selectedItem) },
+                    togglePlacement: { togglePlacement(selectedItem) }
+                )
+                .environment(\.sizeCategory, effectiveSizeCategory)
+            }
         }
         .safeAreaInset(edge: .bottom) {
             if let message {
                 Text(message)
-                    .foregroundStyle(
-                        PlanteriorPalette.textPrimary.color
-                    )
-                    .padding(12)
+                    .font(PlanteriorTypography.supporting)
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .padding(PlanteriorSpacing.medium)
                     .frame(maxWidth: .infinity)
                     .background(PlanteriorPalette.subtle.color)
                     .accessibilityIdentifier("storage.message")
             }
         }
+    }
+
+    private var detailPresented: Binding<Bool> {
+        Binding(
+            get: { selectedItem != nil },
+            set: {
+                if !$0 {
+                    selectedItem = nil
+                }
+            }
+        )
     }
 }
 

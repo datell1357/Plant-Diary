@@ -7,20 +7,12 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         app.launch()
         openStorage(in: app)
         openShop(in: app)
+        assertFigmaShopSurface(in: app)
+        attachScreenshot(named: "storage-shop-402x874")
 
-        let firstPage = [
-            "shop.row.item-lamp",
-            "shop.row.item-chair"
-        ]
-        let ascending = firstPage + [
-            "shop.row.item-green-wall"
-        ]
+        let firstPage = assertInitialShopPage(in: app)
+        let ascending = firstPage + ["shop.row.item-green-wall"]
         let descending = Array(ascending.reversed())
-        waitForShopRows(firstPage, in: app)
-        XCTAssertEqual(
-            app.buttons["shop.row.item-lamp"].value as? String,
-            "조건 미충족 · 식물 등록 필요"
-        )
         waitForShopRows(ascending, in: app) {
             app.buttons["shop.load-more"].tap()
         }
@@ -35,10 +27,12 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         }
         let lamp = app.buttons["shop.row.item-lamp"]
         waitForHittable(lamp)
-        let detail = app.otherElements["storage.detail.item-lamp"]
+        let detail = app.scrollViews["storage.detail.item-lamp"]
         waitForElement(detail) {
             lamp.tap()
         }
+        assertFigmaDetailSurface(itemID: "item-lamp", in: app)
+        attachScreenshot(named: "storage-detail-shop-402x874")
         let condition = app.staticTexts["storage.detail.condition"]
         XCTAssertEqual(
             condition.label,
@@ -89,5 +83,45 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
             named: "task-15-placement"
         )
         attachScreenshot(named: "task-15-inventory")
+    }
+
+    func testWarehouseGridDetailAndPlacementUseFigmaSurface() {
+        let app = inventoryApp()
+        app.launch()
+        openStorage(in: app)
+        assertFigmaWarehouseSurface(in: app)
+        attachScreenshot(named: "storage-warehouse-402x874")
+
+        let chair = app.buttons["storage.row.item-chair"]
+        let detail = app.scrollViews["storage.detail.item-chair"]
+        waitForElement(detail) {
+            chair.tap()
+        }
+        assertFigmaDetailSurface(itemID: "item-chair", in: app)
+        attachScreenshot(named: "storage-detail-402x874")
+
+        let apply = app.buttons["storage.detail.apply.item-chair"]
+        waitForHittable(apply)
+        apply.tap()
+        XCTAssertTrue(
+            app.staticTexts["storage.detail.status"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertEqual(
+            app.staticTexts["storage.detail.status"].label,
+            "적용 중"
+        )
+    }
+
+    func testReduceMotionWarehouseEvidence() {
+        let app = inventoryApp()
+        app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
+        app.launch()
+        openStorage(in: app)
+        assertFigmaWarehouseSurface(in: app)
+        XCTAssertTrue(
+            app.otherElements["app.shell.reduce-motion"].exists
+        )
+        attachScreenshot(named: "storage-warehouse-reduce-motion-light")
     }
 }

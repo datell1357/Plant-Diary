@@ -41,7 +41,10 @@ extension InventoryUITests {
         waitForElement(ownedRow) {
             app.buttons["storage.mode.warehouse"].tap()
         }
-        let apply = app.buttons["storage.apply.item-green-wall"]
+        let detail = app.scrollViews["storage.detail.item-green-wall"]
+        waitForElement(detail) { ownedRow.tap() }
+
+        let apply = app.buttons["storage.detail.apply.item-green-wall"]
         waitForHittable(apply)
         let applied = triggerAndReadMessage(
             in: app,
@@ -49,7 +52,7 @@ extension InventoryUITests {
         ) {
             apply.tap()
         }
-        let remove = app.buttons["storage.remove.item-green-wall"]
+        let remove = app.buttons["storage.detail.remove.item-green-wall"]
         waitForElement(remove) {}
         let removed = triggerAndReadMessage(
             in: app,
@@ -58,12 +61,16 @@ extension InventoryUITests {
             remove.tap()
         }
         waitForElement(apply) {}
-        XCTAssertTrue(ownedRow.exists)
+
+        let back = app.navigationBars["아이템 상세"].buttons.firstMatch
+        waitForHittable(back)
+        back.tap()
+        XCTAssertTrue(ownedRow.waitForExistence(timeout: 5))
         return InventoryPlacementEvidence(
             applied: applied,
             removed: removed,
             ownedRow: ownedRow.identifier,
-            applyControl: apply.identifier
+            applyControl: "storage.detail.apply.item-green-wall"
         )
     }
 

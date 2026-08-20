@@ -4,40 +4,47 @@ import PlanteriorDomain
 import SwiftUI
 
 extension InventoryView {
-    func warehouseRow(_ item: ShopItem) -> some View {
-        let isApplied = repository.ownedItems.first {
-            $0.itemID == item.id
-        }?.applied == true
-        return PlanteriorCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Button(item.name) {
-                    selectedItem = item
+    func warehouseCard(_ item: ShopItem) -> some View {
+        let applied = isApplied(item)
+        return Button {
+            selectedItem = item
+        } label: {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                ZStack(alignment: .topLeading) {
+                    Image(StorageItemPresentation.asset(for: item))
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(1, contentMode: .fit)
+                        .background(PlanteriorPalette.subtle.color)
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
+                        )
+                        .accessibilityLabel("\(item.name) 이미지")
+                        .accessibilityIdentifier(
+                            "storage.image.\(item.id.rawValue)"
+                        )
+                    if applied {
+                        PlanteriorStatusPill("적용 중", variant: .accent)
+                            .padding(PlanteriorSpacing.extraSmall)
+                            .accessibilityLabel("적용 상태")
+                            .accessibilityValue("적용 중")
+                    }
                 }
-                .font(PlanteriorTypography.sectionTitle)
-                .frame(minHeight: PlanteriorControl.minimumTarget)
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .accessibilityIdentifier("storage.row.\(item.id.rawValue)")
-                Text(isApplied ? "적용 중" : "보유")
-                    .foregroundStyle(
-                        PlanteriorPalette.textSecondary.color
-                    )
-                Button(isApplied ? "미니홈에서 제거" : "미니홈에 적용") {
-                    togglePlacement(item)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: PlanteriorControl.minimumTarget)
-                .background(PlanteriorPalette.accent.color)
-                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .accessibilityIdentifier(
-                    "storage.\(isApplied ? "remove" : "apply").\(item.id.rawValue)"
-                )
-                .accessibilityLabel(
-                    "\(item.name) " +
-                        (isApplied ? "미니홈에서 제거" : "미니홈에 적용")
-                )
+                Text(item.name)
+                    .font(PlanteriorTypography.caption.weight(.medium))
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("storage.row.\(item.id.rawValue)")
+        .accessibilityLabel(item.name)
+        .accessibilityValue(
+            "\(StorageItemPresentation.categoryName(item.category)), " +
+                (applied ? "적용 중" : "보유 중")
+        )
     }
 
     func acquire(_ item: ShopItem) {

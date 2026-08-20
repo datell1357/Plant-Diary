@@ -34,9 +34,13 @@ extension InventoryUITestSupport where Self: XCTestCase {
         XCTAssertTrue(
             app.scrollViews["storage.screen"].waitForExistence(timeout: 10)
         )
-        XCTAssertTrue(
-            app.staticTexts["storage.ready"].waitForExistence(timeout: 10)
-        )
+        let ready = app.staticTexts.matching(
+            NSPredicate(
+                format: "identifier IN %@",
+                ["storage.count", "shop.ready"]
+            )
+        ).firstMatch
+        XCTAssertTrue(ready.waitForExistence(timeout: 10))
     }
 
     func openShop(in app: XCUIApplication) {

@@ -1,22 +1,36 @@
 import PlanteriorData
+import PlanteriorDesignSystem
+import PlanteriorDomain
 import SwiftUI
 
 extension InventoryView {
     var warehouse: some View {
-        let ownedIDs = Set(repository.ownedItems.map(\.itemID))
-        let items = repository.catalog.filter {
-            ownedIDs.contains($0.id) &&
-                (category == nil || $0.category == category)
-        }
-        return Group {
+        let items = warehouseItems
+        return VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+            Text("보유 아이템 \(items.count)개")
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .accessibilityIdentifier("storage.count")
             if items.isEmpty {
                 Text("보유한 아이템이 없어요.")
+                    .font(PlanteriorTypography.supporting)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
                     .accessibilityIdentifier("storage.empty")
             } else {
-                ForEach(items, id: \.id) { item in
-                    warehouseRow(item)
+                LazyVGrid(columns: storageColumns, spacing: PlanteriorSpacing.medium) {
+                    ForEach(items, id: \.id) { item in
+                        warehouseCard(item)
+                    }
                 }
             }
+        }
+    }
+
+    var warehouseItems: [ShopItem] {
+        let ownedIDs = Set(repository.ownedItems.map(\.itemID))
+        return repository.catalog.filter {
+            ownedIDs.contains($0.id) &&
+                (category == nil || $0.category == category)
         }
     }
 
@@ -44,5 +58,20 @@ extension InventoryView {
             conditions.insert($0.rawValue)
         }
         return conditions
+    }
+
+    func eligibility(for item: ShopItem) -> InventoryAcquisitionEligibility {
+        repository.entries(
+            category: item.category,
+            metConditions: metConditions
+        ).first { $0.item.id == item.id }?.eligibility ?? .eligible
+    }
+
+    func isOwned(_ item: ShopItem) -> Bool {
+        repository.ownedItems.contains { $0.itemID == item.id }
+    }
+
+    func isApplied(_ item: ShopItem) -> Bool {
+        repository.ownedItems.first { $0.itemID == item.id }?.applied == true
     }
 }
