@@ -3,156 +3,105 @@ import PlanteriorDesignSystem
 import PlanteriorDomain
 import SwiftUI
 
+/// Figma `room-canvas-container`: the isometric room fills a radius-lg card that
+/// stays the visual focus, placements sit on the room, and a Surface pill carries
+/// the move affordance copy.
 struct MiniHomeEditorCanvas: View {
     let room: MiniHome
-    @ObservedObject var store: MiniHomeStore
-    @Binding var errorMessage: String?
+    let placementAsset: (MiniHomePlacement) -> FigmaAsset
+    let placementLabel: (MiniHomePlacement) -> String
+    let move: (MiniHomePlacement, MiniHomePosition?) -> Void
+    let moveBy: (MiniHomePlacement, Double, Double) -> Void
+
+    /// Figma `isometric-3d-room` ships at 358x330 logical points.
+    private static let aspectRatio: CGFloat = 358.0 / 330.0
+    private static let itemSide: CGFloat = 56
+    private static let coordinateSpace = "minihome.editor.canvas"
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                MiniHomeRoomBackground()
+                Image(.roomHero)
+                    .resizable()
+                    .scaledToFill()
+                    .accessibilityIdentifier("minihome.editor.room")
+                    .accessibilityLabel("\(room.name) 방")
                 ForEach(
                     MiniHomeGeometry.ordered(room.placements),
                     id: \.id
                 ) { placement in
-                    placementView(placement, size: geometry.size)
+                    MiniRoomPlacementView(
+                        placement: placement,
+                        asset: placementAsset(placement),
+                        label: placementLabel(placement),
+                        side: Self.itemSide,
+                        moveBy: moveBy
+                    )
+                    .position(position(placement, in: geometry.size))
+                    .gesture(dragGesture(placement, size: geometry.size))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .coordinateSpace(name: "minihome.editor.canvas")
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+            .coordinateSpace(name: Self.coordinateSpace)
         }
-        .frame(height: 320)
+        .aspectRatio(Self.aspectRatio, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .bottomLeading) { hintPill }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("미니홈 배치 공간")
         .accessibilityIdentifier("minihome.editor.canvas")
     }
 
-    private func placementView(
+    private var hintPill: some View {
+        HStack(spacing: PlanteriorSpacing.extraSmall) {
+            Image(systemName: "circle.grid.2x2.fill")
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.accent.color)
+            Text("길게 눌러서 가구 이동")
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .accessibilityIdentifier("minihome.editor.hint")
+        }
+        .padding(.horizontal, PlanteriorSpacing.medium)
+        .padding(.vertical, PlanteriorSpacing.small)
+        .background(PlanteriorPalette.surface.color)
+        .clipShape(Capsule())
+        .padding(PlanteriorSpacing.medium)
+    }
+
+    private func position(
+        _ placement: MiniHomePlacement,
+        in size: CGSize
+    ) -> CGPoint {
+        CGPoint(
+            x: CGFloat(MiniHomeGeometry.pixelCoordinate(
+                normalized: placement.normalizedX,
+                length: Double(size.width),
+                itemRadius: Double(Self.itemSide / 2)
+            )),
+            y: CGFloat(MiniHomeGeometry.pixelCoordinate(
+                normalized: placement.normalizedY,
+                length: Double(size.height),
+                itemRadius: Double(Self.itemSide / 2)
+            ))
+        )
+    }
+
+    private func dragGesture(
         _ placement: MiniHomePlacement,
         size: CGSize
-    ) -> some View {
-        placementIcon(placement)
-            .position(
-                x: CGFloat(
-                    MiniHomeGeometry.pixelCoordinate(
-                        normalized: placement.normalizedX,
-                        length: Double(size.width),
-                        itemRadius: 26
-                    )
-                ),
-                y: CGFloat(
-                    MiniHomeGeometry.pixelCoordinate(
-                        normalized: placement.normalizedY,
-                        length: Double(size.height),
-                        itemRadius: 26
-                    )
-                )
-            )
-            .gesture(
-                DragGesture(coordinateSpace: .named("minihome.editor.canvas"))
-                    .onEnded { value in
-                        move(
-                            placement,
-                            horizontal: value.location.x,
-                            vertical: value.location.y,
-                            size: size
-                        )
-                    }
-            )
-    }
-
-    private func placementIcon(
-        _ placement: MiniHomePlacement
-    ) -> some View {
-        Image(systemName: "leaf.fill")
-            .font(.system(size: 34))
-            .foregroundStyle(PlanteriorPalette.accent.color)
-            .frame(width: 52, height: 52)
-            .background(PlanteriorPalette.surface.color)
-            .clipShape(Circle())
-            .accessibilityLabel("배치된 식물")
-            .accessibilityValue(
-                "가로 \(percentage(placement.normalizedX))퍼센트, " +
-                    "세로 \(percentage(placement.normalizedY))퍼센트"
-            )
-            .accessibilityIdentifier(
-                "minihome.placement.\(placement.id.rawValue)"
-            )
-            .accessibilityAction(named: "왼쪽으로 이동") {
-                moveBy(
-                    placement,
-                    horizontalDelta: -0.1,
-                    verticalDelta: 0
-                )
+    ) -> some Gesture {
+        DragGesture(coordinateSpace: .named(Self.coordinateSpace))
+            .onEnded { value in
+                move(placement, try? MiniHomeGeometry.position(
+                    dragX: Double(value.location.x),
+                    dragY: Double(value.location.y),
+                    roomWidth: Double(size.width),
+                    roomHeight: Double(size.height)
+                ))
             }
-            .accessibilityAction(named: "오른쪽으로 이동") {
-                moveBy(
-                    placement,
-                    horizontalDelta: 0.1,
-                    verticalDelta: 0
-                )
-            }
-            .accessibilityAction(named: "위로 이동") {
-                moveBy(
-                    placement,
-                    horizontalDelta: 0,
-                    verticalDelta: -0.1
-                )
-            }
-            .accessibilityAction(named: "아래로 이동") {
-                moveBy(
-                    placement,
-                    horizontalDelta: 0,
-                    verticalDelta: 0.1
-                )
-            }
-    }
-
-    private func move(
-        _ placement: MiniHomePlacement,
-        horizontal: Double,
-        vertical: Double,
-        size: CGSize
-    ) {
-        do {
-            let position = try MiniHomeGeometry.position(
-                dragX: horizontal,
-                dragY: vertical,
-                roomWidth: Double(size.width),
-                roomHeight: Double(size.height)
-            )
-            try store.moveDraftPlacement(id: placement.id, to: position)
-        } catch {
-            errorMessage = "식물 위치를 옮기지 못했어요."
-        }
-    }
-
-    private func moveBy(
-        _ placement: MiniHomePlacement,
-        horizontalDelta: Double,
-        verticalDelta: Double
-    ) {
-        let nextX = min(
-            max(placement.normalizedX + horizontalDelta, 0),
-            1
-        )
-        let nextY = min(
-            max(placement.normalizedY + verticalDelta, 0),
-            1
-        )
-        do {
-            let position = try MiniHomePosition(
-                normalizedX: nextX,
-                normalizedY: nextY
-            )
-            try store.moveDraftPlacement(id: placement.id, to: position)
-        } catch {
-            errorMessage = "식물 위치를 옮기지 못했어요."
-        }
-    }
-
-    private func percentage(_ normalized: Double) -> Int {
-        Int((normalized * 100).rounded())
     }
 }

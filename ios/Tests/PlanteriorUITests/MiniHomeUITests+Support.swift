@@ -19,6 +19,21 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         return app
     }
 
+    func figmaEditorApp(token: String) -> XCUIApplication {
+        let app = miniHomeApp()
+        app.launchEnvironment["QA_MINIHOME_RESET_TOKEN"] =
+            "\(token)-\(UUID())"
+        return app
+    }
+
+    func openFigmaEditor(in app: XCUIApplication) {
+        openEditor(in: app)
+        XCTAssertTrue(
+            app.staticTexts["minihome.editor.title"]
+                .waitForExistence(timeout: 5)
+        )
+    }
+
     func openEditor(in app: XCUIApplication) {
         XCTAssertTrue(
             app.scrollViews["minihome.screen"]
@@ -33,22 +48,30 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         )
     }
 
+    /// Committed-only projection contract on the current live surfaces.
+    /// `home.minhome.label` was retired with the Figma Home rebuild (7600231);
+    /// Home now projects the committed room through `home.room.hero`, and the
+    /// MiniHome screen renders the committed name itself. Both are asserted so
+    /// this stays stronger than the single retired label it replaces.
     func waitForCommittedRoom(
         named name: String,
         in app: XCUIApplication
     ) {
-        let label = app.staticTexts["home.minhome.label"]
-        XCTAssertTrue(label.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.images["home.room.hero"].waitForExistence(timeout: 10),
+            "Home must keep projecting the committed room"
+        )
+        app.buttons["home.room.decorate"].tap()
+        let committedName = app.staticTexts["minihome.committed.name"]
+        XCTAssertTrue(committedName.waitForExistence(timeout: 10))
         let committed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(
-                format: "label == %@",
-                "\(name) · 저장됨"
-            ),
-            object: label
+            predicate: NSPredicate(format: "label == %@", name),
+            object: committedName
         )
         XCTAssertEqual(
             XCTWaiter.wait(for: [committed], timeout: 10),
-            .completed
+            .completed,
+            "committed room name on MiniHome: \(committedName.label)"
         )
     }
 

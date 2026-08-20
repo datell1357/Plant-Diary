@@ -33,7 +33,22 @@ extension MiniHomeEditorView {
         }
     }
 
+    /// Figma tray tap: select the entry and place it in the room. Plants and
+    /// owned items share one placement path so undo/reset behave identically.
+    func place(_ entry: MiniRoomTrayEntry) {
+        selectedEntryID = entry.id
+        if let plantID = entry.plantID {
+            addPlant(plantID)
+        } else if let itemID = entry.itemID {
+            addPlacement(plantID: nil, itemID: itemID)
+        }
+    }
+
     func addPlant(_ plantID: PersonalPlantID) {
+        addPlacement(plantID: plantID, itemID: nil)
+    }
+
+    private func addPlacement(plantID: PersonalPlantID?, itemID: ItemID?) {
         isNameFocused = false
         guard let placementID = try? MiniHomeGeometry.nextPlacementID(
             existing: store.draft?.placements.map(\.id) ?? []
@@ -46,7 +61,7 @@ extension MiniHomeEditorView {
             let placement = try MiniHomePlacement(
                 id: placementID,
                 plantID: plantID,
-                itemID: nil,
+                itemID: itemID,
                 normalizedX: 0.5,
                 normalizedY: 0.55,
                 zIndex: store.draft?.placements.count ?? 0
@@ -54,6 +69,59 @@ extension MiniHomeEditorView {
             store.addDraftPlacement(placement)
         } catch {
             errorMessage = "식물을 배치하지 못했어요."
+        }
+    }
+
+    func undo() {
+        isNameFocused = false
+        errorMessage = nil
+        selectedEntryID = nil
+        store.undoDraft()
+    }
+
+    func reset() {
+        isNameFocused = false
+        errorMessage = nil
+        selectedEntryID = nil
+        store.resetDraft()
+    }
+
+    func moveByDrag(
+        _ placement: MiniHomePlacement,
+        to position: MiniHomePosition?
+    ) {
+        guard let position else {
+            errorMessage = "식물 위치를 옮기지 못했어요."
+            return
+        }
+        applyMove(placement, to: position)
+    }
+
+    func moveBy(
+        _ placement: MiniHomePlacement,
+        horizontalDelta: Double,
+        verticalDelta: Double
+    ) {
+        let nextX = min(max(placement.normalizedX + horizontalDelta, 0), 1)
+        let nextY = min(max(placement.normalizedY + verticalDelta, 0), 1)
+        guard let position = try? MiniHomePosition(
+            normalizedX: nextX,
+            normalizedY: nextY
+        ) else {
+            errorMessage = "식물 위치를 옮기지 못했어요."
+            return
+        }
+        applyMove(placement, to: position)
+    }
+
+    private func applyMove(
+        _ placement: MiniHomePlacement,
+        to position: MiniHomePosition
+    ) {
+        do {
+            try store.moveDraftPlacement(id: placement.id, to: position)
+        } catch {
+            errorMessage = "식물 위치를 옮기지 못했어요."
         }
     }
 

@@ -5,10 +5,12 @@ import SwiftUI
 
 struct MiniHomeView: View {
     @StateObject private var store: MiniHomeStore
+    @StateObject private var inventory: InventoryRepository
     @State private var showsEditor = false
     @State private var sharePresentation: MiniHomeSharePresentation?
     @Environment(\.sizeCategory) private var sizeCategory
     private let initialDraft: MiniHome?
+    private let accountID: String?
 
     init(accountID: String?) {
         let now = Self.runtimeInstant()
@@ -26,6 +28,13 @@ struct MiniHomeView: View {
         _store = StateObject(
             wrappedValue: MiniHomeStore(repository: repository)
         )
+        _inventory = StateObject(
+            wrappedValue: InventoryRepository(
+                now: now,
+                allowsLocalAcquisition: InventoryView.allowsLocalAcquisition
+            )
+        )
+        self.accountID = accountID
         initialDraft = Self.defaultDraft(updatedAt: now)
     }
 
@@ -34,6 +43,7 @@ struct MiniHomeView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text(store.committed?.name ?? "새 미니홈")
                     .font(PlanteriorTypography.screenTitle)
+                    .accessibilityIdentifier("minihome.committed.name")
                 if let room = store.committed ?? store.draft {
                     MiniHomeCanvasView(room: room)
                 }
@@ -59,12 +69,12 @@ struct MiniHomeView: View {
         .accessibilityIdentifier("minihome.screen")
         .task {
             store.mount(defaultDraft: initialDraft)
+            inventory.mount(accountID: accountID)
+            inventory.seedQAIfNeeded()
         }
         .sheet(isPresented: $showsEditor) {
-            NavigationStack {
-                MiniHomeEditorView(store: store)
-            }
-            .environment(\.sizeCategory, effectiveSizeCategory)
+            MiniHomeEditorView(store: store, inventory: inventory)
+                .environment(\.sizeCategory, effectiveSizeCategory)
         }
         .sheet(item: $sharePresentation) { presentation in
             NavigationStack {
