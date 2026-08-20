@@ -29,6 +29,21 @@ extension AppLaunchUITests {
         XCTAssertFalse(hostileApp.staticTexts["private-plant"].exists)
         hostileApp.terminate()
 
+        let foreignTargetApp = XCUIApplication()
+        foreignTargetApp.launchEnvironment["QA_DEEP_LINK"] =
+            "planterior://plant/private-plant"
+        foreignTargetApp.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        foreignTargetApp.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        foreignTargetApp.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        foreignTargetApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        foreignTargetApp.launch()
+        XCTAssertTrue(
+            foreignTargetApp.otherElements["route.unavailable"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(foreignTargetApp.staticTexts["private-plant"].exists)
+        foreignTargetApp.terminate()
+
         let malformedApp = XCUIApplication()
         malformedApp.launchEnvironment["QA_DEEP_LINK"] =
             "planterior://plant/%2E%2E"
