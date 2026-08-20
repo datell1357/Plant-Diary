@@ -24,16 +24,9 @@ struct AppShellView: View {
             tabContent
             AppTabBar(
                 selectedTab: navigation.selectedTab,
-                selectTab: { navigation.select($0) },
-                presentCamera: { navigation.presentCamera() }
+                selectTab: requestTab,
+                presentCamera: requestCamera
             )
-            if authenticationState == .signedOut {
-                Button("로그인하고 동기화하기") {
-                    showsLogin = true
-                }
-                .frame(minHeight: PlanteriorControl.minimumTarget)
-                .accessibilityIdentifier("auth.open")
-            }
         }
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveShellSizeCategory)
@@ -132,6 +125,24 @@ struct AppShellView: View {
         }
     }
 
+    /// Figma `home-screen-logged-out` §8.3: signed-out tab taps present the login
+    /// sheet and leave the selected tab and its stack untouched.
+    private func requestTab(_ tab: AppTab) {
+        guard navigation.requestTab(tab, authentication: authenticationState) == .proceed
+        else {
+            showsLogin = true
+            return
+        }
+    }
+
+    private func requestCamera() {
+        guard navigation.requestCamera(authentication: authenticationState) == .proceed
+        else {
+            showsLogin = true
+            return
+        }
+    }
+
     private var syncStatus: some View {
         let snapshot = auth.syncSnapshot
         return Text(
@@ -173,7 +184,7 @@ struct AppShellView: View {
             AppTabRootView(
                 tab: tab,
                 openDetail: { navigation.push(.tabDetail(tab)) },
-                openCamera: { navigation.presentCamera() },
+                openCamera: requestCamera,
                 openMiniHome: { navigation.push(.miniHome) }
             )
             .navigationDestination(for: AppRoute.self) { route in

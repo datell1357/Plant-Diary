@@ -17,6 +17,7 @@ final class AppLaunchUITests: XCTestCase {
     func testAppShellPreservesTabStacksAndPresentsCameraAction() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launch()
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
@@ -52,6 +53,7 @@ final class AppLaunchUITests: XCTestCase {
     func testEveryPrimaryNavigationControlIsReachable() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launch()
 
         for identifier in [
@@ -80,6 +82,7 @@ final class AppLaunchUITests: XCTestCase {
     func testIdentificationRequiresCandidateConfirmationBeforeRegistration() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_PHOTO_FIXTURE"] = "valid"
         app.launch()
@@ -106,6 +109,7 @@ final class AppLaunchUITests: XCTestCase {
 
         let collectionApp = XCUIApplication()
         collectionApp.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        collectionApp.launchEnvironment["QA_AUTHENTICATED"] = "1"
         collectionApp.launchEnvironment["QA_INITIAL_TAB"] = "collection"
         collectionApp.launch()
         XCTAssertTrue(
@@ -117,8 +121,8 @@ final class AppLaunchUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
-        XCTAssertTrue(app.buttons["auth.open"].waitForExistence(timeout: 5))
-        app.buttons["auth.open"].tap()
+        XCTAssertTrue(app.buttons["home.identify"].waitForExistence(timeout: 5))
+        app.buttons["home.identify"].tap()
         XCTAssertTrue(app.buttons["auth.apple"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["auth.google"].exists)
         app.buttons["auth.cancel"].tap()
@@ -144,6 +148,7 @@ final class AppLaunchUITests: XCTestCase {
     func testPhotoReviewReplaceAndAcknowledgementCancellation() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_PHOTO_FIXTURE"] = "valid"
         app.launch()
         app.buttons["tab.camera"].tap()
@@ -160,6 +165,7 @@ final class AppLaunchUITests: XCTestCase {
     func testDeniedCameraAndCorruptPhotoPreserveFallbackActions() {
         let denied = XCUIApplication()
         denied.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        denied.launchEnvironment["QA_AUTHENTICATED"] = "1"
         denied.launchEnvironment["QA_CAMERA_DENIED"] = "1"
         denied.launch()
         denied.buttons["tab.camera"].tap()
@@ -172,6 +178,7 @@ final class AppLaunchUITests: XCTestCase {
 
         let corrupt = XCUIApplication()
         corrupt.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        corrupt.launchEnvironment["QA_AUTHENTICATED"] = "1"
         corrupt.launchEnvironment["QA_PHOTO_FIXTURE"] = "corrupt"
         corrupt.launch()
         corrupt.buttons["tab.camera"].tap()

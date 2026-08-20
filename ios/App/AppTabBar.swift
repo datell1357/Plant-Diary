@@ -1,11 +1,28 @@
 import PlanteriorDesignSystem
 import SwiftUI
 
+/// Machine-consumed Figma tab-bar geometry (figma-analysis §6.1). Every value is a
+/// design-system token or an explicit Figma measurement; none are ad-hoc.
+enum AppTabBarMetrics {
+    static let iconSize: CGFloat = 24
+    static let iconLabelSpacing = PlanteriorSpacing.extraSmall
+    static let horizontalPadding = PlanteriorSpacing.small
+    static let minimumTarget = PlanteriorControl.minimumTarget
+    static let cameraDiameter = PlanteriorControl.cameraDiameter
+    static let cameraGlyphSize: CGFloat = 26
+    static let cameraRaise: CGFloat = 10
+    static let hairlineWidth = PlanteriorControl.hairline
+    static let surface = PlanteriorPalette.surface
+    static let hairline = PlanteriorPalette.border
+    static let activeTint = PlanteriorPalette.accent
+    static let inactiveTint = PlanteriorPalette.textSecondary
+}
+
 struct AppTabBar: View {
     @ScaledMetric(relativeTo: .caption2)
-    private var tabLabelSize = 11
+    private var tabLabelSize = 10
     @ScaledMetric(relativeTo: .body)
-    private var tabIconSize = 20
+    private var tabIconSize = AppTabBarMetrics.iconSize
     let selectedTab: AppTab
     let selectTab: (AppTab) -> Void
     let presentCamera: () -> Void
@@ -18,57 +35,61 @@ struct AppTabBar: View {
             tabButton(.storage)
             tabButton(.settings)
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 6)
-        .background(PlanteriorPalette.surface.color)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, AppTabBarMetrics.horizontalPadding)
+        .padding(.top, PlanteriorSpacing.small)
+        .background(AppTabBarMetrics.surface.color)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(AppTabBarMetrics.hairline.color)
+                .frame(height: AppTabBarMetrics.hairlineWidth)
+        }
     }
 
     private func tabButton(_ tab: AppTab) -> some View {
         Button {
             selectTab(tab)
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: AppTabBarMetrics.iconLabelSpacing) {
                 Image(systemName: selectedTab == tab ? tab.systemImage + ".fill" : tab.systemImage)
                     .font(.system(size: min(tabIconSize, 28)))
                 Text(tab.title)
-                    .font(
-                        .system(
-                            size: min(tabLabelSize, 16),
-                            weight: .regular
-                        )
-                    )
+                    .font(.system(size: min(tabLabelSize, 16), weight: .medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
+            .frame(maxWidth: .infinity, minHeight: AppTabBarMetrics.minimumTarget)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(
             selectedTab == tab
-                ? PlanteriorPalette.accent.color
-                : PlanteriorPalette.textSecondary.color
+                ? AppTabBarMetrics.activeTint.color
+                : AppTabBarMetrics.inactiveTint.color
         )
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
         .accessibilityIdentifier("tab.\(tab.rawValue)")
     }
 
+    /// The camera is a modal action, not a fifth tab: no selected trait, no stack.
     private var cameraButton: some View {
         Button(action: presentCamera) {
             Image(systemName: "camera.fill")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(.system(size: AppTabBarMetrics.cameraGlyphSize, weight: .semibold))
+                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
                 .frame(
-                    width: PlanteriorControl.cameraDiameter,
-                    height: PlanteriorControl.cameraDiameter
+                    width: AppTabBarMetrics.cameraDiameter,
+                    height: AppTabBarMetrics.cameraDiameter
                 )
-                .background(Circle().fill(PlanteriorPalette.accent.color))
+                .background(Circle().fill(AppTabBarMetrics.activeTint.color))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, minHeight: PlanteriorControl.cameraDiameter)
+        .offset(y: -AppTabBarMetrics.cameraRaise)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: AppTabBarMetrics.minimumTarget
+        )
         .accessibilityLabel("식물 사진 촬영")
         .accessibilityIdentifier("tab.camera")
     }

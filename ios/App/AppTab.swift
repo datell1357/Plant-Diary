@@ -13,10 +13,12 @@ enum AppTab: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// SF Symbol counterparts of the Figma tab glyphs (`house`, `book-open`,
+    /// `package`, `cog`) from figma-analysis §6.1.
     var systemImage: String {
         switch self {
         case .home: "house"
-        case .collection: "leaf"
+        case .collection: "book"
         case .storage: "shippingbox"
         case .settings: "gearshape"
         }

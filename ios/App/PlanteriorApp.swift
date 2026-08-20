@@ -38,6 +38,13 @@ struct PlanteriorApp: App {
     }
 }
 
+/// Outcome of a shell affordance tap. Figma `home-screen-logged-out` routes every
+/// signed-out tab and camera affordance to the login sheet instead of navigating.
+enum ShellAffordanceOutcome: Equatable, Sendable {
+    case proceed
+    case requiresLogin
+}
+
 struct AppNavigationState {
     private(set) var selectedTab: AppTab = .home
     var homePath: [AppRoute] = []
@@ -51,6 +58,27 @@ struct AppNavigationState {
 
     mutating func select(_ tab: AppTab) {
         selectedTab = tab
+    }
+
+    mutating func requestTab(
+        _ tab: AppTab,
+        authentication: AppAuthenticationState
+    ) -> ShellAffordanceOutcome {
+        guard authentication == .signedIn else {
+            return .requiresLogin
+        }
+        select(tab)
+        return .proceed
+    }
+
+    mutating func requestCamera(
+        authentication: AppAuthenticationState
+    ) -> ShellAffordanceOutcome {
+        guard authentication == .signedIn else {
+            return .requiresLogin
+        }
+        presentCamera()
+        return .proceed
     }
 
     mutating func push(_ route: AppRoute) {
