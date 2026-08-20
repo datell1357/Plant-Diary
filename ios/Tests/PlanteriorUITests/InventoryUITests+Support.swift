@@ -40,10 +40,7 @@ extension InventoryUITestSupport where Self: XCTestCase {
 
     func openShop(in app: XCUIApplication) {
         XCTAssertTrue(
-            app.otherElements["shop.screen"].waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.staticTexts["shop.ready"].waitForExistence(timeout: 10)
+            app.buttons["shop.row.item-lamp"].waitForExistence(timeout: 10)
         )
     }
 }

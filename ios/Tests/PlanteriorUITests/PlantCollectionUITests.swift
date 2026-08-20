@@ -6,6 +6,7 @@ final class PlantCollectionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         app.launch()
 
@@ -34,6 +35,7 @@ final class PlantCollectionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         app.launch()
 
@@ -68,6 +70,7 @@ final class PlantCollectionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         app.launchEnvironment["QA_WATERING_DRAFT_DATE"] = "2026-08-02"
         app.launch()
@@ -85,6 +88,7 @@ final class PlantCollectionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launch()
 
         app.buttons["tab.collection"].tap()
@@ -130,6 +134,7 @@ final class PlantCollectionUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launch()
 
         app.buttons["tab.collection"].tap()
