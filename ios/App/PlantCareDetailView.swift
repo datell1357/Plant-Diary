@@ -70,14 +70,6 @@ struct PlantCareDetailView: View {
                 .disabled(lastWateredOn == nil)
                 .foregroundStyle(wateringButtonColor)
                 .accessibilityIdentifier("watering.complete")
-                #if DEBUG
-                    Text(
-                        "\(LocalNotificationScheduleStore.shared.scheduledCount)"
-                    )
-                    .accessibilityIdentifier(
-                        "notification.scheduled-count"
-                    )
-                #endif
             }
             Section("건강 기록") {
                 TextField("건강 메모", text: $healthNote)

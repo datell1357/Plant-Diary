@@ -33,8 +33,6 @@ struct AppRouteDestination: View {
                 .font(.system(size: 44))
                 .foregroundStyle(PlanteriorPalette.accent.color)
                 .accessibilityHidden(true)
-            Text(title(for: route))
-                .font(PlanteriorTypography.screenTitle)
             Text(message(for: route))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
