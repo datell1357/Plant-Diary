@@ -18,6 +18,8 @@ final class AppLaunchUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launch()
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
