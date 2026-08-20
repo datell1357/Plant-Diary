@@ -6,6 +6,49 @@ import PlanteriorDomain
 extension WeatherRuntime {
     static var hasResetQAState = false
 
+    var manualRegionCode: String? {
+        guard let manualRegionStorageKey else {
+            return nil
+        }
+        return defaults.string(forKey: manualRegionStorageKey)
+    }
+
+    var manualRegionStorageKey: String? {
+        accountScopeID.map { "weather.\($0).manual-region" }
+    }
+
+    func setManualRegion(_ regionCode: String?) {
+        guard let manualRegionStorageKey else {
+            return
+        }
+        let normalized = regionCode?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let normalized, !normalized.isEmpty {
+            defaults.set(normalized, forKey: manualRegionStorageKey)
+        } else {
+            defaults.removeObject(forKey: manualRegionStorageKey)
+        }
+    }
+
+    func mount(accountID: String?) {
+        let nextScope = accountID ?? "signed-out"
+        guard accountScopeID != nextScope else {
+            return
+        }
+        prepareForAccountRemount()
+        accountScopeID = nextScope
+    }
+
+    static var initialAccountScopeID: String {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
+                return ProcessInfo.processInfo.environment["QA_ACCOUNT_ID"]
+                    ?? "qa-account"
+            }
+        #endif
+        return "signed-out"
+    }
+
     func resetQAStateIfNeeded() {
         #if DEBUG
             guard ProcessInfo.processInfo.environment[
@@ -14,11 +57,16 @@ extension WeatherRuntime {
                 return
             }
             defaults.removeObject(forKey: "weather.manual-region")
+            if let manualRegionStorageKey {
+                defaults.removeObject(forKey: manualRegionStorageKey)
+            }
             if ProcessInfo.processInfo.environment[
                 "QA_AUTHENTICATED"
             ] == "1" {
                 LocalWeatherAlertStore.shared.mount(
-                    accountID: "qa-account"
+                    accountID: ProcessInfo.processInfo.environment[
+                        "QA_ACCOUNT_ID"
+                    ] ?? "qa-account"
                 )
             }
             LocalWeatherAlertStore.shared.resetForQA()

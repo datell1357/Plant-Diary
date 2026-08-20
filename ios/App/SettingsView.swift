@@ -15,7 +15,7 @@ struct SettingsView: View {
     @State var showsDeletion = false
     @State var showsQuietHours = false
     @State var showsRegionSettings = false
-    @AppStorage("settings.watering.enabled") var wateringEnabled = true
+    @State var wateringEnabled = true
 
     var body: some View {
         ScrollView {
@@ -34,6 +34,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             AnalyticsRecorder.shared.record(.screenViewed(.settings))
+            mountPresentedAccount()
             weather.reloadAlertPreferences()
             reloadPresentedValues()
             let settings = await UNUserNotificationCenter.current()
@@ -51,6 +52,10 @@ struct SettingsView: View {
                     time: time
                 )
             }
+        }
+        .onChange(of: auth.accountID?.rawValue) {
+            mountPresentedAccount()
+            reloadPresentedValues()
         }
         .fullScreenCover(isPresented: $showsQuietHours) {
             NavigationStack {
@@ -80,10 +85,29 @@ struct SettingsView: View {
     }
 
     func reloadPresentedValues() {
+        wateringEnabled = LocalNotificationPreferenceStore.shared.global?.enabled
+            ?? true
         quietHoursSummary = QuietHoursPresentation.summary(
             LocalNotificationPreferenceStore.shared.quietHours
         )
         regionName = Self.fullRegionName(weather.manualRegionCode)
+    }
+
+    func mountPresentedAccount() {
+        LocalNotificationPreferenceStore.shared.mount(
+            accountID: accountScopeID
+        )
+        weather.mount(accountID: accountScopeID)
+    }
+
+    var accountScopeID: String? {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
+                return ProcessInfo.processInfo.environment["QA_ACCOUNT_ID"]
+                    ?? "qa-account"
+            }
+        #endif
+        return auth.accountID?.rawValue
     }
 
     func performDeletionCleanup() async -> [String] {

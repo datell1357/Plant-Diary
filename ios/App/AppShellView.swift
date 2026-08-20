@@ -1,3 +1,4 @@
+import PlanteriorData
 import PlanteriorDesignSystem
 import SwiftUI
 
@@ -73,7 +74,7 @@ struct AppShellView: View {
             showsLogin = navigation.pendingAuthenticationRoute != nil
         }
         .task {
-            mountAccountStores()
+            await mountAccountStores()
             handleQARouteIfPresent()
         }
         .fullScreenCover(
@@ -81,7 +82,10 @@ struct AppShellView: View {
                 get: { navigation.isCameraPresented },
                 set: { $0 ? navigation.presentCamera() : navigation.dismissCamera() }
             ),
-            onDismiss: { captureDestination = nil },
+            onDismiss: {
+                captureDestination = nil
+                Task { await IdentificationDraftStore.shared.clear() }
+            },
             content: {
                 NavigationStack {
                     switch captureDestination {
@@ -108,19 +112,16 @@ struct AppShellView: View {
                 showsOnboarding = false
             }
         }
+        .onChange(of: auth.isRestoring) { _, isRestoring in
+            guard !isRestoring else {
+                return
+            }
+            Task { await mountAccountStores() }
+        }
+        .onChange(of: auth.accountID?.rawValue) {
+            Task { await mountAccountStores() }
+        }
         .onChange(of: auth.isSignedIn) { _, isSignedIn in
-            LocalPlantCollectionStore.shared.mount(
-                accountID: accountScopeID
-            )
-            LocalNotificationScheduleStore.shared.mount(
-                accountID: accountScopeID
-            )
-            LocalNotificationPreferenceStore.shared.mount(
-                accountID: accountScopeID
-            )
-            LocalWeatherAlertStore.shared.mount(
-                accountID: accountScopeID
-            )
             guard isSignedIn else {
                 navigation = AppNavigationState()
                 return

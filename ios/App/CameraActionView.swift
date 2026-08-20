@@ -92,6 +92,7 @@ struct CameraActionView: View {
         draft = nil
         pickerItem = nil
         errorMessage = nil
+        Task { await consent.cancelSelection() }
     }
 
     /// The shutter and the switch control invoke the real capture stack. The app

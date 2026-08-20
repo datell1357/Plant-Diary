@@ -59,6 +59,7 @@ extension WeatherRuntime {
     }
 
     func prepareForAccountRemount() {
+        clearRegionStateForAccountRemount()
         latestEvaluation = nil
         latestPlantIDs = []
         plannedRisksByPlant = [:]

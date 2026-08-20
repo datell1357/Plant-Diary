@@ -10,7 +10,8 @@ extension HomeDashboardView {
             if ProcessInfo.processInfo.environment[
                 "QA_AUTHENTICATED"
             ] == "1" {
-                return "qa-account"
+                return ProcessInfo.processInfo.environment["QA_ACCOUNT_ID"]
+                    ?? "qa-account"
             }
         #endif
         return auth.accountID?.rawValue
@@ -76,7 +77,7 @@ extension HomeDashboardView {
             accountID: accountID
         )
         LocalWeatherAlertStore.shared.mount(accountID: accountID)
-        weatherRuntime.prepareForAccountRemount()
+        weatherRuntime.mount(accountID: accountID)
         weatherRuntime.reloadAlertPreferences()
         reload()
     }

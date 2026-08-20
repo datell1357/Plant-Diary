@@ -34,6 +34,38 @@ struct WeatherRuntimeAlertTests {
         #expect(runtime.newlyPlannedAlertCount == 2)
     }
 
+    @Test
+    func accountRemountScopesManualRegionAndClearsLiveRegionState() {
+        let accountA = "weather-a-\(UUID())"
+        let accountB = "weather-b-\(UUID())"
+        let defaults = UserDefaults.standard
+        defer {
+            defaults.removeObject(
+                forKey: "weather.\(accountA).manual-region"
+            )
+            defaults.removeObject(
+                forKey: "weather.\(accountB).manual-region"
+            )
+        }
+        let runtime = WeatherRuntime()
+        runtime.mount(accountID: accountA)
+        runtime.setManualRegion("account-a-region")
+        runtime.locationRegionCode = "37.57,126.98"
+
+        runtime.mount(accountID: accountB)
+
+        #expect(runtime.manualRegionCode == nil)
+        #expect(runtime.locationRegionCode == nil)
+        #expect(runtime.effectiveRegionCode == nil)
+        runtime.setManualRegion("account-b-region")
+
+        runtime.mount(accountID: accountA)
+
+        #expect(runtime.manualRegionCode == "account-a-region")
+        #expect(runtime.locationRegionCode == nil)
+        #expect(runtime.effectiveRegionCode == nil)
+    }
+
     private func evaluation() throws -> WeatherRiskEvaluation {
         let now = try Instant.parse("2026-08-11T03:00:00Z")
         let snapshot = try WeatherSnapshot(

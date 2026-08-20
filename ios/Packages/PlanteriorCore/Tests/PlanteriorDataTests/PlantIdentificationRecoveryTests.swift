@@ -37,16 +37,33 @@ struct PlantIdentificationRecoveryTests {
         let suite = "PlantIdentificationRecoveryTests.restore"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: suite,
+            directoryHint: .isDirectory
+        )
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
         let photo = NormalizedPhoto(
             data: Data("image".utf8),
             pixelWidth: 256,
             pixelHeight: 256,
             contentType: "image/jpeg"
         )
-        await IdentificationDraftStore(suiteName: suite).transfer(photo)
-        let restored = await IdentificationDraftStore(suiteName: suite).load()
+        let firstStore = IdentificationDraftStore(
+            suiteName: suite,
+            rootDirectory: root
+        )
+        await firstStore.mount(accountID: "account-a")
+        await firstStore.transfer(photo)
+        let restoredStore = IdentificationDraftStore(
+            suiteName: suite,
+            rootDirectory: root
+        )
+        await restoredStore.mount(accountID: "account-a")
+        let restored = await restoredStore.load()
         #expect(restored == photo)
-        defaults.removePersistentDomain(forName: suite)
     }
 }
 

@@ -155,39 +155,3 @@ public actor PhotoConsentCoordinator {
         draft != nil
     }
 }
-
-public actor IdentificationDraftStore: PhotoTransferRequesting {
-    public static let shared = IdentificationDraftStore()
-    private var draft: NormalizedPhoto?
-    private let defaults: UserDefaults
-    private let storageKey = "identification.draft"
-
-    public init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: storageKey) {
-            draft = try? JSONDecoder().decode(NormalizedPhoto.self, from: data)
-        }
-    }
-
-    public init(suiteName: String) {
-        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        self.defaults = defaults
-        if let data = defaults.data(forKey: storageKey) {
-            draft = try? JSONDecoder().decode(NormalizedPhoto.self, from: data)
-        }
-    }
-
-    public func transfer(_ photo: NormalizedPhoto) {
-        draft = photo
-        defaults.set(try? JSONEncoder().encode(photo), forKey: storageKey)
-    }
-
-    public func load() -> NormalizedPhoto? {
-        draft
-    }
-
-    public func clear() {
-        draft = nil
-        defaults.removeObject(forKey: storageKey)
-    }
-}

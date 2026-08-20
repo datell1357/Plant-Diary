@@ -21,6 +21,7 @@ final class WeatherRuntime: NSObject, ObservableObject {
     private let locationManager = CLLocationManager()
     let defaults: UserDefaults
     private let repository: any WeatherSnapshotRepository
+    var accountScopeID: String?
     private var locationRequestToken: UUID?
     var latestEvaluation: WeatherRiskEvaluation?
     var latestPlantIDs: [PersonalPlantID] = []
@@ -29,16 +30,14 @@ final class WeatherRuntime: NSObject, ObservableObject {
     override init() {
         defaults = .standard
         repository = Self.currentRepository()
+        accountScopeID = Self.initialAccountScopeID
         super.init()
+        defaults.removeObject(forKey: "weather.manual-region")
         locationManager.delegate = self
         resetQAStateIfNeeded()
         reloadAlertPreferences()
         applyQALocationStateIfNeeded()
         refreshAuthorization()
-    }
-
-    var manualRegionCode: String? {
-        defaults.string(forKey: "weather.manual-region")
     }
 
     var effectiveRegionName: String? {
@@ -48,14 +47,12 @@ final class WeatherRuntime: NSObject, ObservableObject {
         return Self.regionName(for: effectiveRegionCode)
     }
 
-    func setManualRegion(_ regionCode: String?) {
-        let normalized = regionCode?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let normalized, !normalized.isEmpty {
-            defaults.set(normalized, forKey: "weather.manual-region")
-        } else {
-            defaults.removeObject(forKey: "weather.manual-region")
-        }
+    func clearRegionStateForAccountRemount() {
+        locationManager.stopUpdatingLocation()
+        locationRequestToken = nil
+        locationRegionCode = nil
+        effectiveRegionCode = nil
+        accountScopeID = nil
     }
 
     func requestLocationPermission() {

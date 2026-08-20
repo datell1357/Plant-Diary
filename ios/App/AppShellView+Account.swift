@@ -1,4 +1,5 @@
 import Foundation
+import PlanteriorData
 
 extension AppShellView {
     var authenticationState: AppAuthenticationState {
@@ -15,17 +16,22 @@ extension AppShellView {
             if ProcessInfo.processInfo.environment[
                 "QA_AUTHENTICATED"
             ] == "1" {
-                return "qa-account"
+                return ProcessInfo.processInfo.environment["QA_ACCOUNT_ID"]
+                    ?? "qa-account"
             }
         #endif
         return auth.accountID?.rawValue
     }
 
-    func mountAccountStores() {
+    func mountAccountStores() async {
         LocalPlantCollectionStore.shared.mount(accountID: accountScopeID)
         LocalNotificationScheduleStore.shared.mount(accountID: accountScopeID)
         LocalNotificationPreferenceStore.shared.mount(accountID: accountScopeID)
         LocalWeatherAlertStore.shared.mount(accountID: accountScopeID)
+        guard !auth.isRestoring else {
+            return
+        }
+        await IdentificationDraftStore.shared.mount(accountID: accountScopeID)
     }
 
     func authorizeAccountAction() -> Bool {

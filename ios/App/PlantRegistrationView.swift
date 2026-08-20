@@ -130,6 +130,7 @@ struct PlantRegistrationView: View {
             )
         )
         saved = true
+        Task { await IdentificationDraftStore.shared.clear() }
     }
 
     private var calendarDate: CalendarDate? {
