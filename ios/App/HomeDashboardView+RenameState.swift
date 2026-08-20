@@ -123,6 +123,9 @@ extension HomeDashboardView {
 
     /// §6.2 notification button target.
     func openCareSettings() {
+        guard authorizeAccountAction() else {
+            return
+        }
         showsQuietHoursSettings = true
     }
 }

@@ -57,6 +57,9 @@ extension HomeDashboardView {
     }
 
     func requestMiniHomeOpen() {
+        guard authorizeAccountAction() else {
+            return
+        }
         if isInitialLoadComplete {
             openMiniHome()
         } else {

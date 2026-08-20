@@ -81,6 +81,33 @@ extension HomeDashboardUITests {
         assertSingleVerticalScrollOwner(app)
     }
 
+    /// Every account-oriented Home action must use the same shell-owned login
+    /// handoff as tabs and camera while signed out.
+    func testLoggedOutAccountActionsOpenLoginWithoutEnteringDestinations() {
+        for identifier in [
+            "home.room.decorate",
+            "home.room.share",
+            "home.notifications"
+        ] {
+            let app = XCUIApplication()
+            app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+            app.launch()
+
+            let action = app.buttons[identifier]
+            XCTAssertTrue(action.waitForExistence(timeout: 10))
+            action.tap()
+
+            let login = app.buttons["auth.google"]
+            XCTAssertTrue(
+                login.waitForExistence(timeout: 5),
+                "\(identifier) must hand off to the shell login gate"
+            )
+            XCTAssertFalse(app.scrollViews["mini-home.editor"].exists)
+            XCTAssertFalse(app.scrollViews["quiet-hours.screen"].exists)
+            app.terminate()
+        }
+    }
+
     // MARK: - home.signInSheet
 
     /// §6.8: Google above Apple, live dimmed Home behind the sheet, and the

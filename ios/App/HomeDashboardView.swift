@@ -6,6 +6,7 @@ import SwiftUI
 struct HomeDashboardView: View {
     let openCamera: () -> Void
     let openMiniHome: () -> Void
+    let authorizeAccountAction: () -> Bool
     @Environment(\.sizeCategory) var sizeCategory
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @EnvironmentObject var auth: AuthRuntime

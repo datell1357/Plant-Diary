@@ -65,6 +65,22 @@ extension SettingsDeletionUITests {
         XCTAssertFalse(app.textFields["weather.manual-region"].exists)
     }
 
+    func testSettingsProfileUsesAuthenticatedSessionIdentity() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_AUTH_PROFILE_NAME"] = "서연"
+        app.launchEnvironment["QA_AUTH_PROFILE_EMAIL"] = "owner+garden@example.org"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        XCTAssertEqual(app.staticTexts["settings.profile.name"].label, "서연")
+        XCTAssertEqual(
+            app.staticTexts["settings.profile.email"].label,
+            "owner+garden@example.org"
+        )
+        XCTAssertFalse(app.staticTexts["민지"].exists)
+        XCTAssertFalse(app.staticTexts["minji@email.com"].exists)
+    }
+
     func testFigmaSettingsAndQuietHoursAtKoreanAX5ReduceMotion() {
         let app = figmaSettingsApp()
         app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
@@ -120,6 +136,8 @@ extension SettingsDeletionUITests {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launchEnvironment["QA_AUTH_PROFILE_NAME"] = "민지"
+        app.launchEnvironment["QA_AUTH_PROFILE_EMAIL"] = "minji@email.com"
         app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "denied"
         return app
     }

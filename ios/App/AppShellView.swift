@@ -165,15 +165,6 @@ struct AppShellView: View {
             || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
     }
 
-    var authenticationState: AppAuthenticationState {
-        #if DEBUG
-            if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
-                return .signedIn
-            }
-        #endif
-        return auth.isSignedIn ? .signedIn : .signedOut
-    }
-
     @ViewBuilder
     private var tabContent: some View {
         switch navigation.selectedTab {
@@ -190,7 +181,8 @@ struct AppShellView: View {
                 tab: tab,
                 openDetail: { navigation.push(.tabDetail(tab)) },
                 openCamera: requestCamera,
-                openMiniHome: { navigation.push(.miniHome) }
+                openMiniHome: { navigation.push(.miniHome) },
+                authorizeAccountAction: authorizeAccountAction
             )
             .navigationDestination(for: AppRoute.self) { route in
                 AppRouteDestination(route: route)

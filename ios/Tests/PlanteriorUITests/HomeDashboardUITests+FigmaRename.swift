@@ -101,6 +101,31 @@ extension HomeDashboardUITests {
         XCTAssertEqual(relaunched.buttons["home.room.title"].label, "이끼 정원 🏡")
     }
 
+    /// Keyboard Done only finishes editing. A paid rename remains pending and
+    /// uncharged until the fee-bearing Save button is explicitly activated.
+    func testPaidRenameKeyboardDoneDoesNotCommitOrCharge() {
+        let app = XCUIApplication()
+        applyAuthenticatedFigmaLaunch(app)
+        app.launchEnvironment["QA_HOME_RENAME_MODE"] = "paid"
+        app.launch()
+
+        XCTAssertTrue(app.buttons["home.room.title"].waitForExistence(timeout: 10))
+        app.buttons["home.room.title"].tap()
+        let dialog = renameDialog(app)
+        XCTAssertTrue(dialog.waitForExistence(timeout: 5))
+
+        let input = app.textFields["home.rename.input"]
+        input.tap()
+        input.typeText("명시적 결제 정원\n")
+
+        XCTAssertTrue(
+            dialog.waitForExistence(timeout: 2),
+            "keyboard submission must not commit a paid rename"
+        )
+        XCTAssertEqual(app.staticTexts["home.rename.balance"].label, "보유 12")
+        XCTAssertEqual(app.buttons["home.room.title"].label, "민지의 미니 식물원 🏡")
+    }
+
     /// §6.9: an unaffordable rename is disabled rather than silently failing.
     func testInsufficientBalanceDisablesSaveWithoutCharging() {
         let app = XCUIApplication()
@@ -167,31 +192,5 @@ extension HomeDashboardUITests {
     /// element rather than a plain container.
     func renameDialog(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["home.rename.dialog"]
-    }
-
-    /// Accessibility: exactly one vertical scroll owner on Home, and it is the
-    /// identified Home surface itself.
-    func assertSingleVerticalScrollOwner(_ app: XCUIApplication) {
-        XCTAssertEqual(
-            app.scrollViews.count,
-            1,
-            "Home must expose exactly one vertical scroll owner"
-        )
-        XCTAssertEqual(app.scrollViews.element(boundBy: 0).identifier, "home.screen")
-    }
-
-    func assertMinimumTargets(
-        _ app: XCUIApplication,
-        identifiers: [String]
-    ) {
-        for identifier in identifiers {
-            let control = app.buttons[identifier]
-            XCTAssertTrue(control.exists, "\(identifier) should exist")
-            XCTAssertGreaterThanOrEqual(
-                control.frame.height.rounded(),
-                44,
-                "\(identifier) must keep a 44pt target"
-            )
-        }
     }
 }

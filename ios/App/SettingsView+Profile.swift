@@ -38,19 +38,24 @@ extension SettingsView {
     }
 
     private var profileName: some View {
-        Text("민지").font(PlanteriorTypography.heroGreeting)
+        Text(auth.accountProfile?.displayName ?? "Planterior 사용자")
+            .font(PlanteriorTypography.heroGreeting)
+            .accessibilityIdentifier("settings.profile.name")
     }
 
     private var profileBadge: some View {
         PlanteriorStatusPill("초보 식집사", variant: .accent)
     }
 
+    @ViewBuilder
     private var profileEmail: some View {
-        Text(verbatim: "minji@email.com")
-            .font(PlanteriorTypography.supporting)
-            .foregroundStyle(PlanteriorPalette.textSecondary.color)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityLabel("minji@email.com")
-            .accessibilityIdentifier("settings.profile.email")
+        if let email = auth.accountProfile?.email {
+            Text(verbatim: email)
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(email)
+                .accessibilityIdentifier("settings.profile.email")
+        }
     }
 }

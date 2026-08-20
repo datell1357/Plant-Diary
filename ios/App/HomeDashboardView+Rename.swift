@@ -101,7 +101,7 @@ extension HomeDashboardView {
             }
             .focused($isRenameFieldFocused)
             .submitLabel(.done)
-            .onSubmit(commitRename)
+            .onSubmit { isRenameFieldFocused = false }
             .accessibilityIdentifier("home.rename.input")
     }
 

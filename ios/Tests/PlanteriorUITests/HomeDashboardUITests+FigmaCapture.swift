@@ -67,4 +67,30 @@ extension HomeDashboardUITests {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    /// Accessibility: exactly one vertical scroll owner on Home, and it is the
+    /// identified Home surface itself.
+    func assertSingleVerticalScrollOwner(_ app: XCUIApplication) {
+        XCTAssertEqual(
+            app.scrollViews.count,
+            1,
+            "Home must expose exactly one vertical scroll owner"
+        )
+        XCTAssertEqual(app.scrollViews.element(boundBy: 0).identifier, "home.screen")
+    }
+
+    func assertMinimumTargets(
+        _ app: XCUIApplication,
+        identifiers: [String]
+    ) {
+        for identifier in identifiers {
+            let control = app.buttons[identifier]
+            XCTAssertTrue(control.exists, "\(identifier) should exist")
+            XCTAssertGreaterThanOrEqual(
+                control.frame.height.rounded(),
+                44,
+                "\(identifier) must keep a 44pt target"
+            )
+        }
+    }
 }

@@ -6,13 +6,15 @@ struct AppTabRootView: View {
     let openDetail: () -> Void
     let openCamera: () -> Void
     let openMiniHome: () -> Void
+    let authorizeAccountAction: () -> Bool
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
 
     var body: some View {
         if tab == .home {
             HomeDashboardView(
                 openCamera: openCamera,
-                openMiniHome: openMiniHome
+                openMiniHome: openMiniHome,
+                authorizeAccountAction: authorizeAccountAction
             )
         } else if tab == .collection {
             PlantCollectionView(

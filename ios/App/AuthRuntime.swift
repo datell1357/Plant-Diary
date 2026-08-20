@@ -14,6 +14,7 @@ final class AuthRuntime: NSObject, ObservableObject {
     @Published private(set) var isRestoring = true
     @Published private(set) var isSignedIn = false
     @Published private(set) var accountID: AccountID?
+    @Published private(set) var authenticatedProfile: AuthenticatedUserProfile?
     @Published private(set) var cacheSignal: AccountCacheSignal?
     @Published private(set) var errorMessage: String?
     @Published var pendingLogout = false
@@ -54,6 +55,7 @@ final class AuthRuntime: NSObject, ObservableObject {
                 return
             }
             accountID = parsedID
+            authenticatedProfile = Self.profile(for: user)
             cacheSignal = transition.cacheSignal
             try await sync.mount(accountID: user.uid)
             isSignedIn = true
@@ -157,6 +159,7 @@ final class AuthRuntime: NSObject, ObservableObject {
         }
         GIDSignIn.sharedInstance.signOut()
         accountID = nil
+        authenticatedProfile = nil
         isSignedIn = false
     }
 
@@ -184,6 +187,7 @@ final class AuthRuntime: NSObject, ObservableObject {
             isNewAccount: isNewAccount
         )
         accountID = parsedID
+        authenticatedProfile = Self.profile(for: result.user)
         cacheSignal = transition.cacheSignal
         try await sync.mount(accountID: result.user.uid)
         isSignedIn = true
