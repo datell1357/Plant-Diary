@@ -1,9 +1,27 @@
 import Foundation
 @testable import PlanteriorData
 import PlanteriorDomain
+import Security
 import Testing
 
 struct KeychainSessionMetadataStoreTests {
+    @Test
+    func deletionQueryContainsOnlyAttributesAcceptedBySecItemDelete() {
+        // Given
+        let service = "com.planterior.tests.delete-query"
+
+        // When
+        let query = KeychainSessionMetadataStore.deletionQuery(service: service)
+
+        // Then
+        #expect(Set(query.keys) == Set([
+            kSecClass as String,
+            kSecAttrService as String,
+            kSecAttrAccount as String
+        ]))
+        #expect(query[kSecAttrAccessible as String] == nil)
+    }
+
     @Test
     func roundTripsAndClearsMinimalSessionMetadata() async throws {
         let service = "com.planterior.tests.\(UUID().uuidString)"

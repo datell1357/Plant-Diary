@@ -43,9 +43,16 @@ public actor KeychainSessionMetadataStore: SessionMetadataPersisting {
         }
     }
 
+    static func deletionQuery(service: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "session-metadata"
+        ]
+    }
+
     public func clear() throws {
-        var query = baseQuery
-        query.removeValue(forKey: kSecAttrAccessible as String)
+        let query = Self.deletionQuery(service: service)
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainSessionMetadataError.delete(status)

@@ -43,7 +43,11 @@ final class AccountDeletionCoordinator: ObservableObject {
 
     func preview() async {
         guard let ownerID else {
-            await recoverPendingWorkflow()
+            guard let pending = pendingStore.load() else {
+                message = "인증된 계정을 확인할 수 없음"
+                return
+            }
+            await recover(pending)
             return
         }
         do {
@@ -145,11 +149,7 @@ final class AccountDeletionCoordinator: ObservableObject {
         await finalizeIfCompleted()
     }
 
-    private func recoverPendingWorkflow() async {
-        guard let pending = pendingStore.load() else {
-            message = "인증된 계정을 확인할 수 없음"
-            return
-        }
+    func recover(_ pending: PendingAccountDeletion) async {
         do {
             let recovered = try await service.recover(
                 ownerID: pending.ownerID,

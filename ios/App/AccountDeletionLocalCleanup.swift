@@ -43,25 +43,31 @@ enum AccountDeletionLocalCleanup {
 @MainActor
 enum AccountDeletionRecoveryRuntime {
     static func refresh(auth: AuthRuntime) async {
-        guard !auth.isRestoring,
-              let pending = PendingAccountDeletionStore.shared.load(),
-              shouldRefresh(
-                  pending: pending,
-                  isSignedIn: auth.isSignedIn,
-                  accountID: auth.accountID
-              )
-        else {
+        guard !auth.isRestoring else {
             return
         }
-        let coordinator = AccountDeletionCoordinator(
-            allowsTrustedFake: false,
-            ownerID: auth.accountID,
-            now: Int64(Date().timeIntervalSince1970),
-            onCompleted: { ownerID in
-                await AccountDeletionLocalCleanup.perform(ownerID: ownerID, auth: auth)
+        let pendingWorkflows = PendingAccountDeletionStore.shared.loadAll()
+            .filter {
+                shouldRefresh(
+                    pending: $0,
+                    isSignedIn: auth.isSignedIn,
+                    accountID: auth.accountID
+                )
             }
-        )
-        await coordinator.preview()
+        for pending in pendingWorkflows {
+            let coordinator = AccountDeletionCoordinator(
+                allowsTrustedFake: false,
+                ownerID: nil,
+                now: Int64(Date().timeIntervalSince1970),
+                onCompleted: { ownerID in
+                    await AccountDeletionLocalCleanup.perform(
+                        ownerID: ownerID,
+                        auth: auth
+                    )
+                }
+            )
+            await coordinator.recover(pending)
+        }
     }
 
     static func shouldRefresh(
