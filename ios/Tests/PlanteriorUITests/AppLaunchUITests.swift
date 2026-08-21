@@ -20,18 +20,16 @@ final class AppLaunchUITests: XCTestCase {
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        app.launchEnvironment["QA_AUTH_PROFILE_NAME"] = "민지"
+        app.launchEnvironment["QA_AUTH_PROFILE_EMAIL"] = "minji@email.com"
         app.launch()
-
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
-
         XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.navigationBars["홈"].exists)
-
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.open-detail"].waitForExistence(timeout: 5))
         app.buttons["collection.open-detail"].tap()
         XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
-
         app.buttons["tab.home"].tap()
         XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.navigationBars["홈"].exists)
@@ -41,6 +39,8 @@ final class AppLaunchUITests: XCTestCase {
 
         app.buttons["tab.settings"].tap()
         XCTAssertTrue(app.buttons["settings.milestones"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["settings.profile.name"].label, "민지")
+        XCTAssertEqual(app.staticTexts["settings.profile.email"].label, "minji@email.com")
         app.buttons["settings.milestones"].tap()
         XCTAssertTrue(app.scrollViews["milestones.screen"].waitForExistence(timeout: 5))
 

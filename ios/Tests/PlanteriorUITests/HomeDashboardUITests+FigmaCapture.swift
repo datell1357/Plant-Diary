@@ -48,6 +48,28 @@ extension HomeDashboardUITests {
         attachFigmaScreenshot(named: "home-sign-in-sheet")
     }
 
+    func testAuthenticatedHomeResetsFirstRunWeatherAlertBanner() {
+        let seeded = XCUIApplication()
+        applyAuthenticatedFigmaLaunch(seeded)
+        seeded.launchEnvironment["QA_RESET_WEATHER"] = "1"
+        seeded.launch()
+        let seededCount = seeded.staticTexts["weather.alert-count"]
+        for _ in 0 ..< 6 where !seededCount.exists {
+            seeded.swipeUp()
+        }
+        XCTAssertEqual(seededCount.label, "예정 위험 알림 4건")
+        seeded.terminate()
+
+        let fresh = XCUIApplication()
+        applyAuthenticatedFigmaLaunch(fresh)
+        fresh.launch()
+        let freshCount = fresh.staticTexts["weather.alert-count"]
+        for _ in 0 ..< 6 where !freshCount.exists {
+            fresh.swipeUp()
+        }
+        XCTAssertEqual(freshCount.label, "예정 위험 알림 4건")
+    }
+
     private func openRenameDialog(_ app: XCUIApplication) {
         let title = app.buttons["home.room.title"]
         XCTAssertTrue(title.waitForExistence(timeout: 10))

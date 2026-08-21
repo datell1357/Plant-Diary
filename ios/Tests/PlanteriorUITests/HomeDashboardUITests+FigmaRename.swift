@@ -183,6 +183,8 @@ extension HomeDashboardUITests {
         app.launchEnvironment["QA_HOME_PROFILE_NAME"] = "민지"
         app.launchEnvironment["QA_HOME_WEATHER_STATE"] = "high-dry"
         app.launchEnvironment["QA_WEATHER_MANUAL_REGION"] = "manual-seoul"
+        app.launchEnvironment["QA_WEATHER_NOW"] = "2026-08-11T03:00:00Z"
+        app.launchEnvironment["QA_RESET_WEATHER"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         app.launchEnvironment["QA_MINIHOME_NOW"] = "2026-08-11T00:00:00Z"
         app.launchEnvironment["QA_MINIHOME_RESET_TOKEN"] = UUID().uuidString
