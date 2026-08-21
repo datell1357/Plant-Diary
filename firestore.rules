@@ -196,8 +196,41 @@ service cloud.firestore {
           && (request.resource.data.deliveredTransition == null || request.resource.data.deliveredTransition is int))
         || (collection == 'deletionRequests' && validDeletion())
         || (collection == 'ownedItems'
-          && validEntityKeys(['itemId', 'acquiredAt', 'applied'], [])
-          && validOpaqueId(request.resource.data.itemId) && request.resource.data.acquiredAt is timestamp && request.resource.data.applied is bool)
+          && validEntityKeys(
+            ['itemId', 'acquiredAt', 'applied'],
+            ['nameSnapshot', 'categorySnapshot', 'assetPathSnapshot', 'assetSha256Snapshot',
+              'assetByteSizeSnapshot', 'assetMimeTypeSnapshot', 'assetWidthSnapshot',
+              'assetHeightSnapshot', 'assetMediaRevisionSnapshot', 'catalogRevisionSnapshot']
+          )
+          && validOpaqueId(request.resource.data.itemId)
+          && request.resource.data.acquiredAt is timestamp
+          && request.resource.data.applied is bool
+          && (
+            !request.resource.data.keys().hasAny([
+              'nameSnapshot', 'categorySnapshot', 'assetPathSnapshot', 'assetSha256Snapshot',
+              'assetByteSizeSnapshot', 'assetMimeTypeSnapshot', 'assetWidthSnapshot',
+              'assetHeightSnapshot', 'assetMediaRevisionSnapshot', 'catalogRevisionSnapshot'
+            ])
+            || (
+              request.resource.data.keys().hasAll([
+                'nameSnapshot', 'categorySnapshot', 'assetPathSnapshot', 'assetSha256Snapshot',
+                'assetByteSizeSnapshot', 'assetMimeTypeSnapshot', 'assetWidthSnapshot',
+                'assetHeightSnapshot', 'assetMediaRevisionSnapshot', 'catalogRevisionSnapshot'
+              ])
+              && request.resource.data.nameSnapshot is string
+              && request.resource.data.nameSnapshot.size() >= 1
+              && request.resource.data.nameSnapshot.size() <= 100
+              && request.resource.data.categorySnapshot in ['BACKGROUND', 'FURNITURE', 'DECORATION']
+              && validCatalogAssetPath(
+                request.resource.data.itemId,
+                request.resource.data.assetPathSnapshot,
+                request.resource.data.assetSha256Snapshot
+              )
+              && validCatalogSnapshotMedia()
+              && request.resource.data.catalogRevisionSnapshot is int
+              && request.resource.data.catalogRevisionSnapshot >= 1
+            )
+          ))
         || (collection == 'shareLinks'
           && validEntityKeys(['miniHomeId', 'sourceRevision', 'snapshotPath', 'createdAt', 'expiresAt', 'revokedAt'], [])
           && validOpaqueId(request.resource.data.miniHomeId) && request.resource.data.sourceRevision is int && request.resource.data.sourceRevision >= 1
@@ -212,6 +245,86 @@ service cloud.firestore {
           || (request.resource.data.wateringIntervalDays is int
             && request.resource.data.wateringIntervalDays >= 1
             && request.resource.data.wateringIntervalDays <= 365));
+    }
+    function validCatalogAssetPath(itemId, assetPath, sha256) {
+      return validOpaqueId(itemId)
+        && sha256 is string
+        && sha256.matches('^[a-f0-9]{64}$')
+        && assetPath is string
+        && assetPath.size() >= 1
+        && assetPath.size() <= 512
+        && assetPath.matches('^catalog-assets/' + itemId + '/' + sha256 + '[.](png|jpg|jpeg|webp)$');
+    }
+    function validCatalogMediaBounds(byteSize, width, height) {
+      return byteSize is int && byteSize >= 1 && byteSize <= 8 * 1024 * 1024
+        && width is int && width >= 1 && width <= 32768
+        && height is int && height >= 1 && height <= 32768
+        && width * height <= 64 * 1024 * 1024
+        && width * height * 4 <= 256 * 1024 * 1024
+        && width <= height * 32 && height <= width * 32;
+    }
+    function validCatalogSnapshotMedia() {
+      return request.resource.data.assetMimeTypeSnapshot in ['image/png', 'image/jpeg', 'image/webp']
+        && ((request.resource.data.assetPathSnapshot.matches('.*[.]png$') && request.resource.data.assetMimeTypeSnapshot == 'image/png')
+          || (request.resource.data.assetPathSnapshot.matches('.*[.](jpg|jpeg)$') && request.resource.data.assetMimeTypeSnapshot == 'image/jpeg')
+          || (request.resource.data.assetPathSnapshot.matches('.*[.]webp$') && request.resource.data.assetMimeTypeSnapshot == 'image/webp'))
+        && request.resource.data.assetMediaRevisionSnapshot is int
+        && request.resource.data.assetMediaRevisionSnapshot >= 1
+        && validCatalogMediaBounds(
+          request.resource.data.assetByteSizeSnapshot,
+          request.resource.data.assetWidthSnapshot,
+          request.resource.data.assetHeightSnapshot
+        );
+    }
+    function validCatalogMediaMetadata(assetPath) {
+      return request.resource.data.assetContentType in ['image/png', 'image/jpeg', 'image/webp']
+        && ((assetPath.matches('.*[.]png$') && request.resource.data.assetContentType == 'image/png')
+          || (assetPath.matches('.*[.](jpg|jpeg)$') && request.resource.data.assetContentType == 'image/jpeg')
+          || (assetPath.matches('.*[.]webp$') && request.resource.data.assetContentType == 'image/webp'))
+        && request.resource.data.assetMediaRevision is int
+        && request.resource.data.assetMediaRevision >= 1
+        && validCatalogMediaBounds(
+          request.resource.data.assetByteSize,
+          request.resource.data.assetWidth,
+          request.resource.data.assetHeight
+        );
+    }
+    function validShopItem(documentId) {
+      return request.resource.data.keys().hasAll([
+          'name', 'description', 'category', 'assetPath', 'assetSha256', 'assetContentType',
+          'assetByteSize', 'assetWidth', 'assetHeight', 'assetMediaRevision', 'acquisitionCondition',
+          'publicationState', 'revision', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'name', 'description', 'category', 'assetPath', 'assetSha256', 'assetContentType',
+          'assetByteSize', 'assetWidth', 'assetHeight', 'assetMediaRevision', 'acquisitionCondition',
+          'publicationState', 'revision', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 100
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 1 && request.resource.data.description.size() <= 500
+        && request.resource.data.category in ['BACKGROUND', 'FURNITURE', 'DECORATION']
+        && validCatalogAssetPath(documentId, request.resource.data.assetPath, request.resource.data.assetSha256)
+        && validCatalogMediaMetadata(request.resource.data.assetPath)
+        && request.resource.data.acquisitionCondition in [null, 'registered-plant']
+        && request.resource.data.updatedAt is timestamp
+        && validPublishedContent();
+    }
+    function sameCatalogMediaIdentity() {
+      return request.resource.data.assetPath == resource.data.assetPath
+        && request.resource.data.assetSha256 == resource.data.assetSha256
+        && request.resource.data.assetContentType == resource.data.assetContentType
+        && request.resource.data.assetByteSize == resource.data.assetByteSize
+        && request.resource.data.assetWidth == resource.data.assetWidth
+        && request.resource.data.assetHeight == resource.data.assetHeight
+        && request.resource.data.assetMediaRevision == resource.data.assetMediaRevision;
+    }
+    function validCatalogMediaVersionUpdate() {
+      return sameCatalogMediaIdentity()
+        || (request.resource.data.assetPath != resource.data.assetPath
+          && request.resource.data.assetSha256 != resource.data.assetSha256
+          && request.resource.data.assetMediaRevision == resource.data.assetMediaRevision + 1);
     }
     function validOperationMetadata(uid, operationId) {
       return request.resource.data.ownerUid == uid
@@ -298,6 +411,18 @@ service cloud.firestore {
       allow delete: if collection == 'consents' && documentId == 'location' && trustedServer() && resource.data.ownerUid == uid;
       allow delete: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && resource.data.ownerUid == uid;
     }
+    match /users/{uid}/miniHomeProjectionPointers/{pointerId} {
+      allow read, write: if false;
+    }
+    match /users/{uid}/miniHomeProjections/{projectionId} {
+      allow read, write: if false;
+    }
+    match /catalogProjectionPointers/{pointerId} {
+      allow read, write: if false;
+    }
+    match /catalogProjections/{projectionId} {
+      allow read, write: if false;
+    }
     match /users/{uid}/weatherAlerts/{alertId} {
       allow read: if owns(uid);
       allow create, update: if trustedServer() && request.resource.data.ownerUid == uid;
@@ -315,7 +440,14 @@ service cloud.firestore {
     }
     match /shopItems/{documentId} {
       allow read: if contentAdmin() || publicDocument();
-      allow create, update: if contentAdmin() && validPublishedContent();
+      allow create: if contentAdmin()
+        && validShopItem(documentId)
+        && request.resource.data.revision == 1
+        && request.resource.data.assetMediaRevision == 1;
+      allow update: if contentAdmin()
+        && validShopItem(documentId)
+        && request.resource.data.revision == resource.data.revision + 1
+        && validCatalogMediaVersionUpdate();
       allow delete: if contentAdmin();
     }
     match /publicShares/{documentId} {

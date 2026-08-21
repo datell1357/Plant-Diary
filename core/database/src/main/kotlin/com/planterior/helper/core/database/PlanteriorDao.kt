@@ -117,10 +117,35 @@ interface CacheDao {
             }
             if (write.generation == before.watermark.generation) {
                 val candidate = write.watermark()
-                if (!before.watermark.sameIdentity(candidate) || !before.sameContent(write)) {
+                if (!before.watermark.sameDomainIdentity(candidate) || !before.sameContent(write)) {
                     return MiniHomeCacheApplyResult.Conflict(before)
                 }
-                return MiniHomeCacheApplyResult.Ignored(before)
+                return when (
+                    coherenceUpdate(
+                        before.watermark.snapshotToken,
+                        before.watermark.snapshotGeneration,
+                        candidate.snapshotToken,
+                        candidate.snapshotGeneration,
+                    )
+                ) {
+                    CoherenceUpdate.APPLY -> {
+                        upsertMiniHomeCacheWatermark(candidate.entity())
+                        MiniHomeCacheApplyResult.Applied(
+                            requireNotNull(currentMiniHomeCache(write.accountId))
+                        )
+                    }
+                    CoherenceUpdate.IGNORE -> MiniHomeCacheApplyResult.Ignored(before)
+                    CoherenceUpdate.CONFLICT -> MiniHomeCacheApplyResult.Conflict(before)
+                }
+            }
+            if (
+                before.watermark.kind == MiniHomeCacheWatermarkKind.PRESENT &&
+                    write is AuthoritativeMiniHomeCacheWrite.Layout
+            ) {
+                val currentRevision = requireNotNull(before.home).revision
+                if (write.home.revision < currentRevision) {
+                    return MiniHomeCacheApplyResult.Ignored(before)
+                }
             }
         }
 
@@ -157,6 +182,174 @@ interface CacheDao {
 
     @Query("SELECT scheduleId FROM cached_watering_schedules WHERE accountId = :accountId")
     suspend fun scheduleIds(accountId: String): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertShopItems(entities: List<CachedShopItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertOwnedItems(entities: List<CachedOwnedItemEntity>)
+
+    @Query(
+        "SELECT * FROM cached_shop_items WHERE accountId = :accountId ORDER BY category ASC, name ASC, itemId ASC"
+    )
+    suspend fun shopItems(accountId: String): List<CachedShopItemEntity>
+
+    @Query(
+        "SELECT * FROM cached_owned_items WHERE accountId = :accountId ORDER BY acquiredAtEpochMillis DESC, itemId ASC"
+    )
+    suspend fun ownedItems(accountId: String): List<CachedOwnedItemEntity>
+
+    @Query("DELETE FROM cached_shop_items WHERE accountId = :accountId")
+    suspend fun clearShopItems(accountId: String)
+
+    @Query("DELETE FROM cached_owned_items WHERE accountId = :accountId")
+    suspend fun clearOwnedItems(accountId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertInventorySnapshotWatermark(entity: InventorySnapshotWatermarkEntity)
+
+    @Query("SELECT * FROM inventory_snapshot_watermarks WHERE accountId = :accountId")
+    suspend fun inventorySnapshotWatermark(accountId: String): InventorySnapshotWatermarkEntity?
+
+    @Query("DELETE FROM inventory_snapshot_watermarks WHERE accountId = :accountId")
+    suspend fun clearInventorySnapshotWatermark(accountId: String)
+
+    @Transaction
+    suspend fun purgeInventoryCacheIfMatches(
+        accountId: String,
+        generation: Long,
+        snapshotHash: String,
+    ): Boolean {
+        val watermark = inventorySnapshotWatermark(accountId) ?: return false
+        if (watermark.generation != generation || watermark.snapshotHash != snapshotHash) {
+            return false
+        }
+        clearShopItems(accountId)
+        clearOwnedItems(accountId)
+        clearInventorySnapshotWatermark(accountId)
+        return true
+    }
+
+    @Transaction
+    suspend fun currentInventoryCache(accountId: String): CachedInventoryState? {
+        val watermark = inventorySnapshotWatermark(accountId) ?: return null
+        return CachedInventoryState(watermark, shopItems(accountId), ownedItems(accountId))
+    }
+
+    @Transaction
+    suspend fun currentMiniHomeSnapshotCache(accountId: String): CachedMiniHomeSnapshotState? {
+        val layout = currentMiniHomeCache(accountId)
+        val inventory = currentInventoryCache(accountId)
+        if (layout == null && inventory == null) return null
+        val layoutWatermark = layout?.watermark
+        val inventoryWatermark = inventory?.watermark
+        val coherent =
+            layoutWatermark?.verified == true &&
+                inventoryWatermark?.verified == true &&
+                layoutWatermark.snapshotToken != null &&
+                layoutWatermark.snapshotGeneration != null &&
+                layoutWatermark.snapshotToken == inventoryWatermark.snapshotToken &&
+                layoutWatermark.snapshotGeneration == inventoryWatermark.snapshotGeneration
+        return CachedMiniHomeSnapshotState(layout, inventory, coherent)
+    }
+
+    @Transaction
+    suspend fun purgeIncoherentMiniHomeSnapshot(accountId: String): Boolean {
+        val current = currentMiniHomeSnapshotCache(accountId) ?: return false
+        if (current.coherent) return false
+        clearMiniHomePlacements(accountId)
+        clearMiniHome(accountId)
+        clearMiniHomeCacheWatermark(accountId)
+        clearShopItems(accountId)
+        clearOwnedItems(accountId)
+        clearInventorySnapshotWatermark(accountId)
+        return true
+    }
+
+    /**
+     * Atomically rejects stale or conflicting complete snapshots before replacing owner cache rows.
+     */
+    @Transaction
+    suspend fun applyAuthoritativeInventory(
+        write: AuthoritativeInventoryCacheWrite
+    ): InventoryCacheApplyResult {
+        validateInventoryCacheWrite(write)
+        val before = currentInventoryCache(write.accountId)
+        if (before?.watermark?.verified == true) {
+            if (write.generation < before.watermark.generation) {
+                return InventoryCacheApplyResult.Ignored(before)
+            }
+            if (write.generation == before.watermark.generation) {
+                val sameIdentity =
+                    write.snapshotHash == before.watermark.snapshotHash &&
+                        write.registeredPlantCount == before.watermark.registeredPlantCount &&
+                        write.partial == before.watermark.partial
+                val sameContent =
+                    write.catalog.sortedBy { it.itemId } == before.catalog.sortedBy { it.itemId } &&
+                        write.owned.sortedBy { it.itemId } == before.owned.sortedBy { it.itemId }
+                if (!sameIdentity || !sameContent) {
+                    return InventoryCacheApplyResult.Conflict(before)
+                }
+                return when (
+                    coherenceUpdate(
+                        before.watermark.snapshotToken,
+                        before.watermark.snapshotGeneration,
+                        write.snapshotToken,
+                        write.snapshotGeneration,
+                    )
+                ) {
+                    CoherenceUpdate.APPLY -> {
+                        upsertInventorySnapshotWatermark(
+                            before.watermark.copy(
+                                snapshotToken = write.snapshotToken,
+                                snapshotGeneration = write.snapshotGeneration,
+                            )
+                        )
+                        InventoryCacheApplyResult.Applied(
+                            requireNotNull(currentInventoryCache(write.accountId))
+                        )
+                    }
+                    CoherenceUpdate.IGNORE -> InventoryCacheApplyResult.Ignored(before)
+                    CoherenceUpdate.CONFLICT -> InventoryCacheApplyResult.Conflict(before)
+                }
+            }
+        }
+
+        clearShopItems(write.accountId)
+        clearOwnedItems(write.accountId)
+        if (write.catalog.isNotEmpty()) upsertShopItems(write.catalog)
+        if (write.owned.isNotEmpty()) upsertOwnedItems(write.owned)
+        upsertInventorySnapshotWatermark(
+            InventorySnapshotWatermarkEntity(
+                accountId = write.accountId,
+                generation = write.generation,
+                snapshotHash = write.snapshotHash,
+                registeredPlantCount = write.registeredPlantCount,
+                loadedAtEpochMillis = write.loadedAtEpochMillis,
+                partial = write.partial,
+                verified = true,
+                snapshotToken = write.snapshotToken,
+                snapshotGeneration = write.snapshotGeneration,
+            )
+        )
+        return InventoryCacheApplyResult.Applied(
+            requireNotNull(currentInventoryCache(write.accountId))
+        )
+    }
+
+    @Transaction
+    suspend fun replaceInventorySnapshot(
+        accountId: String,
+        catalog: List<CachedShopItemEntity>,
+        owned: List<CachedOwnedItemEntity>,
+    ) {
+        require(catalog.all { it.accountId == accountId })
+        require(owned.all { it.accountId == accountId })
+        clearShopItems(accountId)
+        clearOwnedItems(accountId)
+        if (catalog.isNotEmpty()) upsertShopItems(catalog)
+        if (owned.isNotEmpty()) upsertOwnedItems(owned)
+    }
 
     @Query(
         "DELETE FROM cached_plants WHERE accountId = :accountId AND plantId = :plantId AND NOT EXISTS (SELECT 1 FROM operation_outbox WHERE accountId = :accountId AND aggregateType IN ('personalPlant', 'personalPlants') AND aggregateId = :plantId AND state IN ('PENDING', 'CONFLICT', 'FAILED'))"
@@ -196,7 +389,174 @@ interface CacheDao {
         clearMiniHomePlacements(accountId)
         clearMiniHome(accountId)
         clearMiniHomeCacheWatermark(accountId)
+        clearShopItems(accountId)
+        clearOwnedItems(accountId)
+        clearInventorySnapshotWatermark(accountId)
     }
+}
+
+private fun validateInventoryCacheWrite(write: AuthoritativeInventoryCacheWrite) {
+    require(write.accountId.matches(Regex("^[A-Za-z0-9_-]{1,128}$")))
+    require(write.generation >= 1)
+    require(write.snapshotHash.matches(Regex("^[a-f0-9]{64}$")))
+    require(write.registeredPlantCount in 0..200)
+    require(write.catalog.size <= 200 && write.owned.size <= 200)
+    require(write.catalog.all { it.accountId == write.accountId })
+    require(write.owned.all { it.accountId == write.accountId })
+    require(write.catalog.map { it.itemId }.distinct().size == write.catalog.size)
+    require(write.owned.map { it.itemId }.distinct().size == write.owned.size)
+    validateSnapshotIdentity(write.snapshotToken, write.snapshotGeneration)
+}
+
+private fun validateSnapshotIdentity(token: String?, generation: Long?) {
+    require((token == null) == (generation == null))
+    token?.let { require(it.matches(Regex("^[a-f0-9]{64}$"))) }
+    generation?.let { require(it >= 1) }
+}
+
+@Dao
+interface InventoryDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertOperation(entity: InventoryAcquisitionOperationEntity): Long
+
+    @Query(
+        "SELECT * FROM inventory_acquisition_operations WHERE accountId = :accountId AND operationId = :operationId"
+    )
+    suspend fun operation(
+        accountId: String,
+        operationId: String,
+    ): InventoryAcquisitionOperationEntity?
+
+    @Query(
+        "SELECT * FROM inventory_acquisition_operations WHERE accountId = :accountId AND state = 'PENDING' ORDER BY createdAtEpochMillis ASC, operationId ASC"
+    )
+    suspend fun pendingOperations(accountId: String): List<InventoryAcquisitionOperationEntity>
+
+    @Query(
+        "SELECT * FROM inventory_acquisition_operations WHERE accountId = :accountId AND state = 'COMPLETED' AND feedbackDeliveryState IN ('UNDELIVERED', 'CLAIMED', 'PRESENTED', 'ACK_PENDING') ORDER BY createdAtEpochMillis ASC, operationId ASC"
+    )
+    suspend fun receiptsAwaitingDelivery(
+        accountId: String
+    ): List<InventoryAcquisitionOperationEntity>
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET state = 'COMPLETED', result = :result, lastErrorCode = NULL, feedbackDeliveryState = :feedbackDeliveryState, feedbackAcknowledgedAtEpochMillis = NULL, feedbackClaimToken = NULL, feedbackClaimControllerEpoch = NULL, feedbackClaimGeneration = NULL, feedbackClaimLeaseExpiresAtEpochMillis = NULL, feedbackRowVersion = feedbackRowVersion + 1 WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND expectedCatalogRevision = :expectedCatalogRevision AND requestHash = :requestHash AND state = 'PENDING'"
+    )
+    suspend fun completeOperation(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        expectedCatalogRevision: Long,
+        requestHash: String,
+        result: String,
+        feedbackDeliveryState: String,
+    ): Int
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET state = 'FAILED', result = NULL, lastErrorCode = :lastErrorCode, feedbackDeliveryState = 'NONE', feedbackAcknowledgedAtEpochMillis = NULL, feedbackClaimToken = NULL, feedbackClaimControllerEpoch = NULL, feedbackClaimGeneration = NULL, feedbackClaimLeaseExpiresAtEpochMillis = NULL, feedbackRowVersion = feedbackRowVersion + 1 WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND expectedCatalogRevision = :expectedCatalogRevision AND requestHash = :requestHash AND state = 'PENDING'"
+    )
+    suspend fun failOperation(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        expectedCatalogRevision: Long,
+        requestHash: String,
+        lastErrorCode: String,
+    ): Int
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET feedbackDeliveryState = 'CLAIMED', feedbackClaimToken = :claimToken, feedbackClaimControllerEpoch = :controllerEpoch, feedbackClaimGeneration = :claimGeneration, feedbackClaimLeaseExpiresAtEpochMillis = :leaseExpiresAtEpochMillis, feedbackRowVersion = feedbackRowVersion + 1 WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND state = 'COMPLETED' AND result = :result AND feedbackRowVersion = :expectedRowVersion AND (feedbackDeliveryState = 'UNDELIVERED' OR (feedbackDeliveryState = 'CLAIMED' AND (feedbackClaimLeaseExpiresAtEpochMillis <= :nowEpochMillis OR (feedbackClaimToken = :claimToken AND (feedbackClaimControllerEpoch < :controllerEpoch OR (feedbackClaimControllerEpoch = :controllerEpoch AND feedbackClaimGeneration < :claimGeneration))))))"
+    )
+    suspend fun claimCompletedReceipt(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        result: String,
+        expectedRowVersion: Long,
+        claimToken: String,
+        controllerEpoch: Long,
+        claimGeneration: Long,
+        nowEpochMillis: Long,
+        leaseExpiresAtEpochMillis: Long,
+    ): Int
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET feedbackClaimToken = :claimToken, feedbackClaimControllerEpoch = :controllerEpoch, feedbackClaimGeneration = :claimGeneration, feedbackClaimLeaseExpiresAtEpochMillis = :leaseExpiresAtEpochMillis, feedbackRowVersion = feedbackRowVersion + 1 WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND state = 'COMPLETED' AND result = :result AND feedbackDeliveryState IN ('PRESENTED', 'ACK_PENDING') AND feedbackRowVersion = :expectedRowVersion AND (feedbackDeliveryState = 'ACK_PENDING' OR feedbackClaimLeaseExpiresAtEpochMillis <= :nowEpochMillis OR (feedbackClaimToken = :claimToken AND (feedbackClaimControllerEpoch < :controllerEpoch OR (feedbackClaimControllerEpoch = :controllerEpoch AND feedbackClaimGeneration < :claimGeneration))))"
+    )
+    suspend fun rebindPresentedOrPendingReceipt(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        result: String,
+        expectedRowVersion: Long,
+        claimToken: String,
+        controllerEpoch: Long,
+        claimGeneration: Long,
+        nowEpochMillis: Long,
+        leaseExpiresAtEpochMillis: Long,
+    ): Int
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET feedbackDeliveryState = 'PRESENTED' WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND state = 'COMPLETED' AND result = :result AND feedbackDeliveryState = 'CLAIMED' AND feedbackClaimToken = :claimToken AND feedbackClaimControllerEpoch = :controllerEpoch AND feedbackClaimGeneration = :claimGeneration AND feedbackRowVersion = :expectedRowVersion"
+    )
+    suspend fun markClaimedReceiptPresented(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        result: String,
+        claimToken: String,
+        controllerEpoch: Long,
+        claimGeneration: Long,
+        expectedRowVersion: Long,
+    ): Int
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET feedbackDeliveryState = 'ACK_PENDING' WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND state = 'COMPLETED' AND result = :result AND feedbackDeliveryState = 'PRESENTED' AND feedbackClaimToken = :claimToken AND feedbackClaimControllerEpoch = :controllerEpoch AND feedbackClaimGeneration = :claimGeneration AND feedbackRowVersion = :expectedRowVersion"
+    )
+    suspend fun markPresentedReceiptConsumed(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        result: String,
+        claimToken: String,
+        controllerEpoch: Long,
+        claimGeneration: Long,
+        expectedRowVersion: Long,
+    ): Int
+
+    @Query(
+        "UPDATE inventory_acquisition_operations SET feedbackDeliveryState = 'ACKNOWLEDGED', feedbackAcknowledgedAtEpochMillis = :acknowledgedAtEpochMillis, feedbackRowVersion = feedbackRowVersion + 1 WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND state = 'COMPLETED' AND result = :result AND feedbackDeliveryState = 'ACK_PENDING' AND feedbackClaimToken = :claimToken AND feedbackClaimControllerEpoch = :controllerEpoch AND feedbackClaimGeneration = :claimGeneration AND feedbackRowVersion = :expectedRowVersion"
+    )
+    suspend fun acknowledgePendingReceipt(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        result: String,
+        claimToken: String,
+        controllerEpoch: Long,
+        claimGeneration: Long,
+        expectedRowVersion: Long,
+        acknowledgedAtEpochMillis: Long,
+    ): Int
+
+    @Query(
+        "DELETE FROM inventory_acquisition_operations WHERE accountId = :accountId AND state = 'COMPLETED' AND feedbackDeliveryState = 'ACKNOWLEDGED' AND feedbackAcknowledgedAtEpochMillis IS NOT NULL AND feedbackAcknowledgedAtEpochMillis < :olderThanEpochMillis"
+    )
+    suspend fun deleteAcknowledgedCompletedOperations(
+        accountId: String,
+        olderThanEpochMillis: Long,
+    ): Int
+
+    @Query(
+        "DELETE FROM inventory_acquisition_operations WHERE accountId = :accountId AND operationId = :operationId AND itemId = :itemId AND expectedCatalogRevision = :expectedCatalogRevision AND requestHash = :requestHash"
+    )
+    suspend fun deleteOperation(
+        accountId: String,
+        operationId: String,
+        itemId: String,
+        expectedCatalogRevision: Long,
+        requestHash: String,
+    ): Int
 }
 
 private fun validateMiniHomeCacheWrite(write: AuthoritativeMiniHomeCacheWrite) {
@@ -218,9 +578,11 @@ private fun validateMiniHomeCacheWrite(write: AuthoritativeMiniHomeCacheWrite) {
                 }
             )
             require(write.placements.map { it.placementId }.toSet().size == write.placements.size)
+            validateSnapshotIdentity(write.snapshotToken, write.snapshotGeneration)
         }
         is AuthoritativeMiniHomeCacheWrite.Deletion -> {
             require(write.tombstoneId.matches(Regex("^[A-Za-z0-9_-]{8,128}$")))
+            validateSnapshotIdentity(write.snapshotToken, write.snapshotGeneration)
         }
     }
 }
@@ -239,6 +601,8 @@ private fun AuthoritativeMiniHomeCacheWrite.watermark(): MiniHomeCacheWatermark 
                 null,
                 authoritativeAtEpochMillis,
                 verified = true,
+                snapshotToken = snapshotToken,
+                snapshotGeneration = snapshotGeneration,
             )
         is AuthoritativeMiniHomeCacheWrite.Deletion ->
             MiniHomeCacheWatermark(
@@ -252,6 +616,8 @@ private fun AuthoritativeMiniHomeCacheWrite.watermark(): MiniHomeCacheWatermark 
                 tombstoneId,
                 authoritativeAtEpochMillis,
                 verified = true,
+                snapshotToken = snapshotToken,
+                snapshotGeneration = snapshotGeneration,
             )
     }
 
@@ -267,6 +633,8 @@ private fun MiniHomeCacheWatermarkEntity.watermark() =
         tombstoneId,
         authoritativeAtEpochMillis,
         verified,
+        snapshotToken,
+        snapshotGeneration,
     )
 
 private fun MiniHomeCacheWatermark.entity() =
@@ -281,9 +649,11 @@ private fun MiniHomeCacheWatermark.entity() =
         tombstoneId,
         authoritativeAtEpochMillis,
         verified,
+        snapshotToken,
+        snapshotGeneration,
     )
 
-private fun MiniHomeCacheWatermark.sameIdentity(other: MiniHomeCacheWatermark): Boolean =
+private fun MiniHomeCacheWatermark.sameDomainIdentity(other: MiniHomeCacheWatermark): Boolean =
     accountId == other.accountId &&
         generation == other.generation &&
         kind == other.kind &&
@@ -294,12 +664,37 @@ private fun MiniHomeCacheWatermark.sameIdentity(other: MiniHomeCacheWatermark): 
         tombstoneId == other.tombstoneId &&
         verified == other.verified
 
+private enum class CoherenceUpdate {
+    APPLY,
+    IGNORE,
+    CONFLICT,
+}
+
+private fun coherenceUpdate(
+    currentToken: String?,
+    currentGeneration: Long?,
+    candidateToken: String?,
+    candidateGeneration: Long?,
+): CoherenceUpdate =
+    when {
+        candidateToken == null -> CoherenceUpdate.IGNORE
+        currentToken == null -> CoherenceUpdate.APPLY
+        requireNotNull(candidateGeneration) > requireNotNull(currentGeneration) ->
+            CoherenceUpdate.APPLY
+        candidateGeneration < currentGeneration -> CoherenceUpdate.IGNORE
+        candidateToken == currentToken -> CoherenceUpdate.IGNORE
+        else -> CoherenceUpdate.CONFLICT
+    }
+
 private fun CachedMiniHomeLayoutState.sameContent(write: AuthoritativeMiniHomeCacheWrite): Boolean =
     when (write) {
-        is AuthoritativeMiniHomeCacheWrite.Layout ->
-            home == write.home && placements == write.placements
+        is AuthoritativeMiniHomeCacheWrite.Layout -> sameLayoutContent(write)
         is AuthoritativeMiniHomeCacheWrite.Deletion -> home == null && placements.isEmpty()
     }
+
+private fun CachedMiniHomeLayoutState.sameLayoutContent(
+    write: AuthoritativeMiniHomeCacheWrite.Layout
+): Boolean = home == write.home && placements == write.placements
 
 sealed interface OperationOutboxCompareAndSetResult {
     data class Updated(val operation: OperationOutboxEntity) : OperationOutboxCompareAndSetResult

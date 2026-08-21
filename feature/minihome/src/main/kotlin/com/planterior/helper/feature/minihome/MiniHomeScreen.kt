@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
@@ -61,6 +62,7 @@ import com.planterior.helper.core.designsystem.theme.PlanteriorBorderWidth
 import com.planterior.helper.core.designsystem.theme.PlanteriorRadius
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlacementId
@@ -89,6 +91,7 @@ object MiniHomeTestTags {
     const val MOVE_RIGHT = "mini-home:move-right"
     const val MOVE_UP = "mini-home:move-up"
     const val MOVE_DOWN = "mini-home:move-down"
+    const val BACKGROUND = "mini-home:background"
 
     fun placement(id: PlacementId) = "mini-home:placement:${id.value}"
 
@@ -645,7 +648,20 @@ private fun ColumnScope.MiniHomeBody(
             photoLoader = photoLoader,
         )
         if (editing != null) {
-            SelectedPlacementControls(editing, onMoveBy, onRemove)
+            val selectedIsBackground =
+                editing.selectedPlacementId?.let { selectedId ->
+                    val itemId =
+                        (editing.draft.placements.firstOrNull { it.id == selectedId }?.target
+                                as? MiniHomePlacementTarget.Decoration)
+                            ?.itemId
+                    decorations.firstOrNull { it.id == itemId }?.category == ItemCategory.BACKGROUND
+                } == true
+            SelectedPlacementControls(
+                editing,
+                movable = !selectedIsBackground,
+                onMoveBy = onMoveBy,
+                onRemove = onRemove,
+            )
             Picker(
                 editing,
                 plants,
@@ -680,16 +696,37 @@ private fun IsometricRoom(
     decorations: List<MiniHomeDecorationChoice>,
     photoLoader: MiniHomePhotoLoader,
 ) {
-    val floor = MaterialTheme.colorScheme.primaryContainer
-    val wall = MaterialTheme.colorScheme.surface
+    val backgroundPlacement =
+        layout.placements.firstOrNull { placement ->
+            val itemId =
+                (placement.target as? MiniHomePlacementTarget.Decoration)?.itemId
+                    ?: return@firstOrNull false
+            decorations.firstOrNull { it.id == itemId }?.category == ItemCategory.BACKGROUND
+        }
+    val backgroundChoice = backgroundPlacement?.let { placement ->
+        val itemId = (placement.target as MiniHomePlacementTarget.Decoration).itemId
+        decorations.firstOrNull { it.id == itemId }
+    }
+    val floor =
+        if (backgroundChoice == null) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
+    val wall =
+        if (backgroundChoice == null) MaterialTheme.colorScheme.surface
+        else MaterialTheme.colorScheme.surface.copy(alpha = 0.22f)
     val grid = MaterialTheme.colorScheme.outline
     val selectedBorder = MaterialTheme.colorScheme.primary
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier =
-            Modifier.fillMaxWidth().aspectRatio(1.2f).testTag(MiniHomeTestTags.CANVAS).semantics {
-                contentDescription = "미니 식물원 배치 공간"
-            },
+            Modifier.fillMaxWidth()
+                .aspectRatio(1.2f)
+                .clip(RoundedCornerShape(PlanteriorRadius.Card))
+                .testTag(MiniHomeTestTags.CANVAS)
+                .semantics {
+                    contentDescription =
+                        backgroundChoice?.let { "미니 식물원 배치 공간, 배경 ${it.displayName}" }
+                            ?: "미니 식물원 배치 공간, 기본 배경"
+                },
         contentAlignment = Alignment.TopStart,
     ) {
         val roomWidth = maxWidth
@@ -702,6 +739,7 @@ private fun IsometricRoom(
         val miniatureHeight = with(density) { projection.miniatureHeight.toDp() }
         val touchWidth = maxOf(miniatureWidth, PlanteriorTheme.spacing.huge * 2)
         val touchHeight = maxOf(miniatureHeight, PlanteriorTheme.spacing.huge * 2)
+        MiniHomeBackground(backgroundChoice, photoLoader, Modifier.fillMaxSize())
         Canvas(Modifier.fillMaxSize()) {
             drawRect(wall, size = Size(size.width, projection.floorTop + size.height * 0.10f))
             for (row in 0 until MiniHomeGrid.ROWS) {
@@ -731,6 +769,13 @@ private fun IsometricRoom(
             }
         }
         layout.placements
+            .asSequence()
+            .filterNot { placement ->
+                val itemId =
+                    (placement.target as? MiniHomePlacementTarget.Decoration)?.itemId
+                        ?: return@filterNot false
+                decorations.firstOrNull { it.id == itemId }?.category == ItemCategory.BACKGROUND
+            }
             .sortedBy { it.zIndex.value }
             .forEach { placement ->
                 val plant =
@@ -745,8 +790,16 @@ private fun IsometricRoom(
                     when (val target = placement.target) {
                         is MiniHomePlacementTarget.Plant ->
                             "식물 ${plant?.displayName ?: target.plantId.value}"
-                        is MiniHomePlacementTarget.Decoration ->
-                            "장식 ${decoration?.displayName ?: target.itemId.value}"
+                        is MiniHomePlacementTarget.Decoration -> {
+                            val kind =
+                                when (decoration?.category) {
+                                    ItemCategory.BACKGROUND -> "배경"
+                                    ItemCategory.FURNITURE -> "가구"
+                                    ItemCategory.DECORATION -> "장식"
+                                    null -> "종류 미확인 아이템"
+                                }
+                            "$kind ${decoration?.displayName ?: target.itemId.value}"
+                        }
                     }
                 val selectedNow = placement.id == selected
                 val anchor = projection.cellCenter(placement.position)
@@ -832,32 +885,57 @@ private fun IsometricRoom(
                             DecorationMiniature(
                                 identity = target.itemId.value,
                                 name = decoration?.displayName ?: target.itemId.value,
+                                mediaIdentity = decoration?.mediaIdentity,
+                                photoLoader = photoLoader,
                                 width = miniatureWidth,
                                 height = miniatureHeight,
                             )
                     }
                 }
             }
+        if (backgroundPlacement != null && backgroundChoice != null) {
+            OutlinedButton(
+                onClick = { onSelect(backgroundPlacement.id) },
+                enabled = enabled,
+                modifier =
+                    Modifier.align(Alignment.TopEnd)
+                        .padding(PlanteriorTheme.spacing.medium)
+                        .sizeIn(minHeight = 48.dp)
+                        .testTag(MiniHomeTestTags.BACKGROUND)
+                        .semantics {
+                            this.selected = backgroundPlacement.id == selected
+                            contentDescription = "배경 ${backgroundChoice.displayName} 선택"
+                        },
+            ) {
+                Text("배경 선택")
+            }
+        }
     }
 }
 
 @Composable
 private fun SelectedPlacementControls(
     state: MiniHomeUiState.Editing,
+    movable: Boolean,
     onMoveBy: (Int, Int) -> Unit,
     onRemove: () -> Unit,
 ) {
     if (state.selectedPlacementId == null) return
     PlanteriorCard {
-        Text("선택한 미니어처 이동", style = MaterialTheme.typography.titleMedium)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = PlanteriorTheme.spacing.medium),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            MoveButton("왼쪽", MiniHomeTestTags.MOVE_LEFT) { onMoveBy(-1, 0) }
-            MoveButton("위", MiniHomeTestTags.MOVE_UP) { onMoveBy(0, -1) }
-            MoveButton("아래", MiniHomeTestTags.MOVE_DOWN) { onMoveBy(0, 1) }
-            MoveButton("오른쪽", MiniHomeTestTags.MOVE_RIGHT) { onMoveBy(1, 0) }
+        Text(
+            if (movable) "선택한 미니어처 이동" else "선택한 배경",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (movable) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = PlanteriorTheme.spacing.medium),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                MoveButton("왼쪽", MiniHomeTestTags.MOVE_LEFT) { onMoveBy(-1, 0) }
+                MoveButton("위", MiniHomeTestTags.MOVE_UP) { onMoveBy(0, -1) }
+                MoveButton("아래", MiniHomeTestTags.MOVE_DOWN) { onMoveBy(0, 1) }
+                MoveButton("오른쪽", MiniHomeTestTags.MOVE_RIGHT) { onMoveBy(1, 0) }
+            }
         }
         OutlinedButton(
             onClick = onRemove,
@@ -868,7 +946,7 @@ private fun SelectedPlacementControls(
                     .sizeIn(minHeight = 48.dp)
                     .testTag(MiniHomeTestTags.REMOVE),
         ) {
-            Text("배치에서 제거")
+            Text(if (movable) "배치에서 제거" else "배경 제거")
         }
     }
 }
@@ -943,7 +1021,7 @@ private fun Picker(
                 }
             OutlinedButton(
                 onClick = { onAddDecoration(decoration.id) },
-                enabled = !editing.frozen && !placed,
+                enabled = !editing.frozen && !placed && decoration.availableForApplication,
                 modifier =
                     Modifier.fillMaxWidth()
                         .padding(top = PlanteriorTheme.spacing.medium)
@@ -961,8 +1039,14 @@ private fun Picker(
                         photoLoader = photoLoader,
                     )
                     Text(
-                        if (placed) "${decoration.displayName} 배치됨"
-                        else "${decoration.displayName} 추가",
+                        when {
+                            placed -> "${decoration.displayName} 배치됨"
+                            !decoration.availableForApplication ->
+                                "${decoration.displayName} 현재 추가할 수 없음"
+                            decoration.category == ItemCategory.BACKGROUND ->
+                                "${decoration.displayName} 배경 적용"
+                            else -> "${decoration.displayName} 추가"
+                        },
                         modifier = Modifier.weight(1f),
                         textAlign = TextAlign.Start,
                     )
@@ -1017,6 +1101,9 @@ private fun issueMessage(issue: MiniHomePlacementIssue): String =
         MiniHomePlacementIssue.OCCUPIED -> "다른 미니어처가 있는 칸이에요. 빈 칸을 선택해 주세요."
         MiniHomePlacementIssue.ALREADY_PLACED -> "같은 식물이나 장식은 한 번만 배치할 수 있어요."
         MiniHomePlacementIssue.ROOM_FULL -> "배치 공간이 가득 찼어요. 기존 미니어처를 제거해 주세요."
+        MiniHomePlacementIssue.CATEGORY_LIMIT -> "배경은 1개, 가구와 장식은 각각 10개까지 적용할 수 있어요."
+        MiniHomePlacementIssue.ITEM_UNAVAILABLE ->
+            "현재 제공하지 않는 아이템은 새로 적용할 수 없어요. 기존 배치에서는 제거할 수 있어요."
         MiniHomePlacementIssue.INVALID_NAME -> "이름은 앞뒤 공백 없이 1~100자로 입력해 주세요."
         MiniHomePlacementIssue.INVALID_REQUEST -> "배치 정보를 수정한 뒤 다시 저장해 주세요."
     }

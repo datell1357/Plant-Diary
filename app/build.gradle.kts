@@ -296,6 +296,8 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("test-fixtures"))
 }
 
 val validateReleaseAuthConfiguration =
@@ -329,6 +331,12 @@ tasks
         dependsOn(validateReleaseConfiguration)
     }
 
+tasks
+    .matching { it.name == "preDebugAndroidTestBuild" }
+    .configureEach {
+        dependsOn(":feature:shop:testDebugUnitTest")
+    }
+
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:data"))
@@ -340,6 +348,7 @@ dependencies {
     implementation(project(":feature:identify"))
     implementation(project(":feature:minihome"))
     implementation(project(":feature:registration"))
+    implementation(project(":feature:shop"))
     implementation(project(":feature:watering"))
     implementation(project(":feature:weather"))
     implementation(libs.androidx.core.ktx)

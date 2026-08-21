@@ -24,6 +24,7 @@ class PlanteriorRouteContractTest {
             PlanteriorRoute.Notifications,
             PlanteriorRoute.PlantDetail("plant-1"),
             PlanteriorRoute.WateringConfirmation("plant-1"),
+            PlanteriorRoute.InventoryItemDetail("item-1"),
             PlanteriorRoute.Login(returnRoute = "planterior://collection"),
         )
 
@@ -44,7 +45,7 @@ class PlanteriorRouteContractTest {
     }
 
     @Test
-    fun `plant detail carries only an opaque identifier`() {
+    fun `plant and inventory details carry only opaque identifiers`() {
         val encoded =
             json.encodeToJsonElement(
                 PlanteriorRoute.serializer(),
@@ -57,6 +58,12 @@ class PlanteriorRouteContractTest {
                 PlanteriorRoute.WateringConfirmation("plant-1"),
             ) as JsonObject
         assertEquals(setOf("type", "plantId"), watering.keys)
+        val inventory =
+            json.encodeToJsonElement(
+                PlanteriorRoute.serializer(),
+                PlanteriorRoute.InventoryItemDetail("item-1"),
+            ) as JsonObject
+        assertEquals(setOf("type", "itemId"), inventory.keys)
     }
 
     @Test

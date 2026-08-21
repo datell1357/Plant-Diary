@@ -23,24 +23,32 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import com.planterior.helper.core.designsystem.theme.PlanteriorRadius
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.CatalogMediaIdentity
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.CancellationException
 
+sealed interface MiniHomePhotoRequest {
+    data class PersonalPlant(val path: String) : MiniHomePhotoRequest
+
+    data class Catalog(val identity: CatalogMediaIdentity) : MiniHomePhotoRequest
+}
+
 fun interface MiniHomePhotoLoader {
-    suspend fun load(path: String): Bitmap
+    suspend fun load(request: MiniHomePhotoRequest): Bitmap
 }
 
 object PlaceholderMiniHomePhotoLoader : MiniHomePhotoLoader {
-    override suspend fun load(path: String): Bitmap =
+    override suspend fun load(request: MiniHomePhotoRequest): Bitmap =
         error("No mini-home photo source is configured")
 }
 
-private sealed interface MiniHomePhotoState {
+internal sealed interface MiniHomePhotoState {
     data object None : MiniHomePhotoState
 
     data object Loading : MiniHomePhotoState
@@ -51,25 +59,25 @@ private sealed interface MiniHomePhotoState {
 }
 
 @Composable
-private fun rememberMiniHomePhoto(
-    path: String?,
+internal fun rememberMiniHomePhoto(
+    request: MiniHomePhotoRequest?,
     loader: MiniHomePhotoLoader,
 ): MiniHomePhotoState {
     val state by
         produceState<MiniHomePhotoState>(
             initialValue =
-                if (path == null) MiniHomePhotoState.None else MiniHomePhotoState.Loading,
-            key1 = path,
+                if (request == null) MiniHomePhotoState.None else MiniHomePhotoState.Loading,
+            key1 = request,
             key2 = loader,
         ) {
-            if (path == null) {
+            if (request == null) {
                 value = MiniHomePhotoState.None
                 return@produceState
             }
             value = MiniHomePhotoState.Loading
             value =
                 try {
-                    MiniHomePhotoState.Loaded(loader.load(path))
+                    MiniHomePhotoState.Loaded(loader.load(request))
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
@@ -89,7 +97,11 @@ internal fun PlantMiniature(
     height: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val photo = rememberMiniHomePhoto(representativePhotoPath, photoLoader)
+    val photo =
+        rememberMiniHomePhoto(
+            representativePhotoPath?.let(MiniHomePhotoRequest::PersonalPlant),
+            photoLoader,
+        )
     val leaf = MaterialTheme.colorScheme.primary
     val leafHighlight = MaterialTheme.colorScheme.primaryContainer
     val pot = MaterialTheme.colorScheme.onSurfaceVariant
@@ -207,10 +219,14 @@ private fun DrawScope.drawPot(pot: Color, highlight: Color, shadow: Color) {
 internal fun DecorationMiniature(
     identity: String,
     name: String,
+    mediaIdentity: CatalogMediaIdentity?,
+    photoLoader: MiniHomePhotoLoader,
     width: Dp,
     height: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val photo =
+        rememberMiniHomePhoto(mediaIdentity?.let(MiniHomePhotoRequest::Catalog), photoLoader)
     val primary = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val detail = MaterialTheme.colorScheme.onSurfaceVariant
@@ -227,64 +243,137 @@ internal fun DecorationMiniature(
                 name.contains("rug", ignoreCase = true) -> 2
             else -> identity.hashCode().absoluteValue % 3
         }
-    Canvas(modifier.size(width, height).semantics { hideFromAccessibility() }) {
-        drawOval(
-            detail.copy(alpha = 0.13f),
-            topLeft = Offset(size.width * 0.12f, size.height * 0.93f),
-            size = Size(size.width * 0.76f, size.height * 0.07f),
-        )
-        when (variant) {
-            0 -> {
-                drawLine(
-                    detail,
-                    Offset(size.width * 0.5f, size.height * 0.28f),
-                    Offset(size.width * 0.5f, size.height * 0.88f),
-                    strokeWidth = size.width * 0.08f,
-                )
+    Box(
+        modifier = modifier.size(width, height).semantics { hideFromAccessibility() },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (photo is MiniHomePhotoState.Loaded) {
+            Image(
+                bitmap = photo.bitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier =
+                    Modifier.fillMaxSize()
+                        .clip(RoundedCornerShape(PlanteriorRadius.Small))
+                        .testTag("mini-home:item-media:$identity"),
+            )
+        }
+        if (photo !is MiniHomePhotoState.Loaded)
+            Canvas(Modifier.fillMaxSize().testTag("mini-home:item-fallback:$identity")) {
                 drawOval(
-                    detail,
-                    topLeft = Offset(size.width * 0.26f, size.height * 0.82f),
-                    size = Size(size.width * 0.48f, size.height * 0.12f),
+                    detail.copy(alpha = 0.13f),
+                    topLeft = Offset(size.width * 0.12f, size.height * 0.93f),
+                    size = Size(size.width * 0.76f, size.height * 0.07f),
                 )
-                drawRoundRect(
-                    primary,
-                    topLeft = Offset(size.width * 0.18f, size.height * 0.13f),
-                    size = Size(size.width * 0.64f, size.height * 0.30f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.18f),
-                )
-            }
-            1 -> {
-                drawRoundRect(
-                    primary,
-                    topLeft = Offset(size.width * 0.08f, size.height * 0.46f),
-                    size = Size(size.width * 0.84f, size.height * 0.20f),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.08f),
-                )
-                listOf(0.20f, 0.80f).forEach { x ->
-                    drawLine(
-                        detail,
-                        Offset(size.width * x, size.height * 0.62f),
-                        Offset(size.width * x, size.height * 0.91f),
-                        strokeWidth = size.width * 0.08f,
-                    )
+                when (variant) {
+                    0 -> {
+                        drawLine(
+                            detail,
+                            Offset(size.width * 0.5f, size.height * 0.28f),
+                            Offset(size.width * 0.5f, size.height * 0.88f),
+                            strokeWidth = size.width * 0.08f,
+                        )
+                        drawOval(
+                            detail,
+                            topLeft = Offset(size.width * 0.26f, size.height * 0.82f),
+                            size = Size(size.width * 0.48f, size.height * 0.12f),
+                        )
+                        drawRoundRect(
+                            primary,
+                            topLeft = Offset(size.width * 0.18f, size.height * 0.13f),
+                            size = Size(size.width * 0.64f, size.height * 0.30f),
+                            cornerRadius =
+                                androidx.compose.ui.geometry.CornerRadius(size.width * 0.18f),
+                        )
+                    }
+                    1 -> {
+                        drawRoundRect(
+                            primary,
+                            topLeft = Offset(size.width * 0.08f, size.height * 0.46f),
+                            size = Size(size.width * 0.84f, size.height * 0.20f),
+                            cornerRadius =
+                                androidx.compose.ui.geometry.CornerRadius(size.width * 0.08f),
+                        )
+                        listOf(0.20f, 0.80f).forEach { x ->
+                            drawLine(
+                                detail,
+                                Offset(size.width * x, size.height * 0.62f),
+                                Offset(size.width * x, size.height * 0.91f),
+                                strokeWidth = size.width * 0.08f,
+                            )
+                        }
+                    }
+                    else -> {
+                        rotate(7f, center) {
+                            drawRoundRect(
+                                primary,
+                                topLeft = Offset(size.width * 0.08f, size.height * 0.60f),
+                                size = Size(size.width * 0.84f, size.height * 0.28f),
+                                cornerRadius =
+                                    androidx.compose.ui.geometry.CornerRadius(size.width * 0.10f),
+                            )
+                            drawRoundRect(
+                                surface,
+                                topLeft = Offset(size.width * 0.25f, size.height * 0.67f),
+                                size = Size(size.width * 0.50f, size.height * 0.10f),
+                                cornerRadius =
+                                    androidx.compose.ui.geometry.CornerRadius(size.width * 0.05f),
+                            )
+                        }
+                    }
                 }
             }
-            else -> {
-                rotate(7f, center) {
-                    drawRoundRect(
-                        primary,
-                        topLeft = Offset(size.width * 0.08f, size.height * 0.60f),
-                        size = Size(size.width * 0.84f, size.height * 0.28f),
-                        cornerRadius =
-                            androidx.compose.ui.geometry.CornerRadius(size.width * 0.10f),
+    }
+}
+
+@Composable
+internal fun MiniHomeBackground(
+    choice: MiniHomeDecorationChoice?,
+    photoLoader: MiniHomePhotoLoader,
+    modifier: Modifier = Modifier,
+) {
+    if (choice == null) return
+    val photo =
+        rememberMiniHomePhoto(
+            choice.mediaIdentity?.let(MiniHomePhotoRequest::Catalog),
+            photoLoader,
+        )
+    val base = MaterialTheme.colorScheme.primaryContainer
+    val detail = MaterialTheme.colorScheme.primary
+    Box(
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(PlanteriorRadius.Card))
+                .background(base)
+                .testTag(
+                    if (photo is MiniHomePhotoState.Loaded) {
+                        "mini-home:background-media:${choice.id.value}"
+                    } else {
+                        "mini-home:background-fallback:${choice.id.value}"
+                    }
+                )
+                .semantics { hideFromAccessibility() }
+    ) {
+        if (photo is MiniHomePhotoState.Loaded) {
+            Image(
+                bitmap = photo.bitmap.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Canvas(Modifier.fillMaxSize()) {
+                val offset = (choice.id.value.hashCode().absoluteValue % 5 + 2).toFloat()
+                drawRect(base)
+                var x = -size.height
+                while (x < size.width) {
+                    drawLine(
+                        detail.copy(alpha = 0.10f),
+                        Offset(x, size.height),
+                        Offset(x + size.height, 0f),
+                        strokeWidth = offset,
                     )
-                    drawRoundRect(
-                        surface,
-                        topLeft = Offset(size.width * 0.25f, size.height * 0.67f),
-                        size = Size(size.width * 0.50f, size.height * 0.10f),
-                        cornerRadius =
-                            androidx.compose.ui.geometry.CornerRadius(size.width * 0.05f),
-                    )
+                    x += size.width / 6f
                 }
             }
         }
@@ -318,6 +407,8 @@ internal fun PickerIdentity(
             DecorationMiniature(
                 identity = decoration.id.value,
                 name = decoration.displayName,
+                mediaIdentity = decoration.mediaIdentity,
+                photoLoader = photoLoader,
                 width = width * 0.78f,
                 height = height * 0.82f,
             )

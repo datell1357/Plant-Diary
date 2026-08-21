@@ -2,6 +2,7 @@ package com.planterior.helper.feature.minihome
 
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.OperationId
@@ -25,6 +26,54 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MiniHomeControllerTest {
+    @Test
+    fun `background application is limited to one and unavailable items cannot be newly applied`() =
+        runTest {
+            val repository =
+                FakeRepository(
+                    decorations =
+                        listOf(
+                            MiniHomeDecorationChoice(
+                                ItemId("background-a"),
+                                "초록 벽",
+                                ItemCategory.BACKGROUND,
+                            ),
+                            MiniHomeDecorationChoice(
+                                ItemId("background-b"),
+                                "햇살 벽",
+                                ItemCategory.BACKGROUND,
+                            ),
+                            MiniHomeDecorationChoice(
+                                ItemId("retired"),
+                                "지난 장식",
+                                ItemCategory.DECORATION,
+                                availableForApplication = false,
+                            ),
+                        )
+                )
+            val controller = MiniHomeController(repository, SavedStateHandle())
+            controller.start()
+            controller.beginEditing()
+
+            controller.addDecoration(ItemId("background-a"))
+            controller.addDecoration(ItemId("background-b"))
+
+            var editing = controller.state.value as MiniHomeUiState.Editing
+            assertEquals(MiniHomePlacementIssue.CATEGORY_LIMIT, editing.issue)
+            assertEquals(
+                listOf("background-a"),
+                editing.draft.placements.map {
+                    (it.target as MiniHomePlacementTarget.Decoration).itemId.value
+                },
+            )
+
+            controller.addDecoration(ItemId("retired"))
+
+            editing = controller.state.value as MiniHomeUiState.Editing
+            assertEquals(MiniHomePlacementIssue.ITEM_UNAVAILABLE, editing.issue)
+            assertEquals(1, editing.draft.placements.size)
+        }
+
     @Test
     fun `surrounding whitespace is rejected before freezing or transmitting`() = runTest {
         val repository = FakeRepository()
@@ -2157,6 +2206,7 @@ class MiniHomeControllerTest {
         private val discardNonCancellable: Boolean = false,
         private val pendingDiscardGate: CompletableDeferred<Unit>? = null,
         private val pendingDiscardThrows: Boolean = false,
+        private val decorations: List<MiniHomeDecorationChoice> = emptyList(),
     ) : MiniHomeRepository {
         var account = AccountId("account-a")
         val saved = mutableListOf<MiniHomeSaveRequest>()
@@ -2318,7 +2368,7 @@ class MiniHomeControllerTest {
                         Instant.parse("2026-08-12T00:00:00Z"),
                     ),
                 listOf(MiniHomePlantChoice(PersonalPlantId("plant-a"), "몬스테라", null)),
-                emptyList(),
+                decorations,
                 stale = stale,
                 pending = ownerPending,
                 committedReceipt = committedReceipt,

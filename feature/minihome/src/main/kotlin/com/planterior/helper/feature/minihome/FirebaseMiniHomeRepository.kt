@@ -1,16 +1,22 @@
 package com.planterior.helper.feature.minihome
 
+import androidx.room.withTransaction
 import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
+import com.planterior.helper.core.data.AuthoritativeInventory
+import com.planterior.helper.core.data.AuthoritativeInventoryAvailability
 import com.planterior.helper.core.data.AuthoritativeMiniHomeLayoutRead
-import com.planterior.helper.core.data.AuthoritativeMiniHomeLayoutReader
+import com.planterior.helper.core.data.AuthoritativeMiniHomeSnapshotReader
+import com.planterior.helper.core.data.InconsistentInventoryException
+import com.planterior.helper.core.data.cacheWrite
+import com.planterior.helper.core.data.verifiedAuthoritativeInventoryOrNull
 import com.planterior.helper.core.database.AuthoritativeMiniHomeCacheWrite
 import com.planterior.helper.core.database.CachedMiniHomeEntity
 import com.planterior.helper.core.database.CachedMiniHomeLayoutState
 import com.planterior.helper.core.database.CachedMiniHomePlacementEntity
+import com.planterior.helper.core.database.InventoryCacheApplyResult
 import com.planterior.helper.core.database.MiniHomeCacheApplyResult
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkKind
 import com.planterior.helper.core.database.OperationOutboxCompareAndSetResult
@@ -52,6 +58,9 @@ data class RemoteMiniHomeSnapshot(
     val cachePayloadHash: String? = committedPayloadHash,
     val deletionTombstoneId: String? = if (layout == null) "initial-missing" else null,
     val authoritativeAtEpochMillis: Long = layout?.updatedAt?.toEpochMilli() ?: 0,
+    val authoritativeInventory: AuthoritativeInventory,
+    val snapshotToken: String = "0".repeat(64),
+    val snapshotGeneration: Long = maxOf(cacheGeneration, authoritativeInventory.generation),
 )
 
 private sealed interface PersistedMiniHomeOperationDecode {
@@ -79,6 +88,61 @@ private sealed interface CachedMiniHomeRecovery {
         val layout: MiniHomeLayout,
         val legacyName: String? = null,
     ) : CachedMiniHomeRecovery
+}
+
+private sealed interface CoherentMiniHomeCacheApply {
+    data class Current(
+        val layout: CachedMiniHomeLayoutState,
+        val inventory: AuthoritativeInventory,
+    ) : CoherentMiniHomeCacheApply
+
+    data object Conflict : CoherentMiniHomeCacheApply
+}
+
+private class CoherentMiniHomeCacheConflict : RuntimeException()
+
+private data class MiniHomePublicationToken(
+    val accountId: AccountId,
+    val ownerGeneration: Long,
+    val requestGeneration: Long,
+)
+
+private data class MiniHomePublicationVersion(
+    val snapshotGeneration: Long,
+    val layoutGeneration: Long,
+    val layoutRevision: Long?,
+    val layoutKind: MiniHomeCacheWatermarkKind?,
+    val inventoryGeneration: Long,
+) {
+    fun dominates(other: MiniHomePublicationVersion): Boolean {
+        if (snapshotGeneration < other.snapshotGeneration) return false
+        if (layoutGeneration < other.layoutGeneration) return false
+        if (inventoryGeneration < other.inventoryGeneration) return false
+        if (
+            layoutKind == MiniHomeCacheWatermarkKind.PRESENT &&
+                other.layoutKind == MiniHomeCacheWatermarkKind.PRESENT &&
+                requireNotNull(layoutRevision) < requireNotNull(other.layoutRevision)
+        ) {
+            return false
+        }
+        return true
+    }
+}
+
+private data class CachedMiniHomePublication(
+    val layoutState: CachedMiniHomeLayoutState?,
+    val recovery: CachedMiniHomeRecovery,
+    val inventory: AuthoritativeInventory?,
+    val plants: List<MiniHomePlantChoice>,
+    val version: MiniHomePublicationVersion,
+    val corruptInventoryGeneration: Pair<Long, String>? = null,
+    val incoherentSnapshot: Boolean = false,
+)
+
+private enum class MiniHomePublicationDecision {
+    PUBLISH,
+    REREAD,
+    FORBIDDEN,
 }
 
 sealed interface RemoteMiniHomeSaveResult {
@@ -110,17 +174,30 @@ class FirebaseMiniHomeRepository(
     private val database: PlanteriorDatabase,
     private val remote: MiniHomeRemoteDataSource,
     private val now: () -> Instant = Instant::now,
+    private val beforePublicationRead: suspend (AccountId) -> Unit = {},
 ) : MiniHomeRepository {
     private val ownerOperations = ConcurrentHashMap<String, Mutex>()
     private val recentSaveOutcomes = ConcurrentHashMap<String, RegisteredSaveOutcome>()
+    private val publicationMutex = Mutex()
+    private var observedPublicationOwner: AccountId? = null
+    private var ownerGeneration = 0L
+    private var requestGeneration = 0L
+    private val currentOwnerRequest = mutableMapOf<String, Long>()
+    private val lastPublished = mutableMapOf<String, MiniHomePublicationVersion>()
 
     override suspend fun load(): MiniHomeLoadResult {
         val account = remote.activeAccount() ?: return MiniHomeLoadResult.Forbidden
-        return withOwnerOperation(account) { loadLocked(account) }
+        return withOwnerOperation(account) {
+            val token =
+                beginPublication(account) ?: return@withOwnerOperation MiniHomeLoadResult.Forbidden
+            loadLocked(account, token)
+        }
     }
 
-    private suspend fun loadLocked(account: AccountId): MiniHomeLoadResult {
-        val cached = cachedLayout(account)
+    private suspend fun loadLocked(
+        account: AccountId,
+        token: MiniHomePublicationToken,
+    ): MiniHomeLoadResult {
         return try {
             val pendingBeforeLoad = activePendingOperation(account)
             val snapshot = remote.load(account).recoverLegacyName()
@@ -129,80 +206,17 @@ class FirebaseMiniHomeRepository(
             }
             val applied = cache(account, snapshot)
             if (remote.activeAccount() != account) return MiniHomeLoadResult.Forbidden
-            if (applied is MiniHomeCacheApplyResult.Conflict) {
-                throw IllegalStateException("Authoritative mini-home cache identity conflicted")
-            }
-            val effective = snapshot.fromCache(applied.current)
-            val pending = reconcilePendingOnLoad(account, effective, pendingBeforeLoad)
-            MiniHomeLoadResult.Ready(
-                account,
-                effective.layout ?: blankLayout(),
-                effective.plants,
-                effective.decorations,
-                stale = false,
-                pending = pending,
-                committedReceipt = effective.committedReceiptOrNull(),
+            publishCurrentRoomWinner(
+                account = account,
+                token = token,
+                stale = applied is CoherentMiniHomeCacheApply.Conflict,
+                fresh = snapshot.takeIf { applied is CoherentMiniHomeCacheApply.Current },
+                pendingBeforeLoad = pendingBeforeLoad,
             )
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            if (remote.activeAccount() != account) return MiniHomeLoadResult.Forbidden
-            when (cached) {
-                CachedMiniHomeRecovery.Irrecoverable -> {
-                    try {
-                        database.cacheDao().quarantineMiniHome(account.value)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        // The cache is already ignored for this load; a later load retries
-                        // quarantine.
-                    }
-                    MiniHomeLoadResult.Failed
-                }
-                CachedMiniHomeRecovery.Missing,
-                is CachedMiniHomeRecovery.Ready -> {
-                    if (cached is CachedMiniHomeRecovery.Ready && cached.legacyName != null) {
-                        try {
-                            database
-                                .cacheDao()
-                                .rewriteLegacyMiniHomeName(
-                                    account.value,
-                                    cached.layout.id.value,
-                                    cached.layout.revision.value,
-                                    cached.legacyName,
-                                    cached.layout.name,
-                                )
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (_: Exception) {
-                            // The normalized value remains safe to display and the next load
-                            // retries.
-                        }
-                    }
-                    val plants =
-                        try {
-                            database.cacheDao().plants(account.value).map {
-                                MiniHomePlantChoice(
-                                    PersonalPlantId(it.plantId),
-                                    it.displayName,
-                                    it.representativePhotoPath,
-                                )
-                            }
-                        } catch (error: CancellationException) {
-                            throw error
-                        } catch (_: Exception) {
-                            return MiniHomeLoadResult.Failed
-                        }
-                    MiniHomeLoadResult.Ready(
-                        account,
-                        (cached as? CachedMiniHomeRecovery.Ready)?.layout ?: blankLayout(),
-                        plants,
-                        emptyList(),
-                        stale = true,
-                        pending = pending(account),
-                    )
-                }
-            }
+            publishCurrentRoomWinner(account, token, stale = true)
         }
     }
 
@@ -468,13 +482,14 @@ class FirebaseMiniHomeRepository(
             return MiniHomeSaveResult.Forbidden
         }
         val applied = cache(request.accountId, snapshot)
-        if (applied is MiniHomeCacheApplyResult.Conflict) {
+        if (applied is CoherentMiniHomeCacheApply.Conflict) {
             return MiniHomeSaveResult.RequiresReconciliation(
                 MiniHomeSaveFailure.INCONSISTENT_RECEIPT,
                 operation.discardHandle(),
             )
         }
-        val effective = snapshot.fromCache(applied.current)
+        applied as CoherentMiniHomeCacheApply.Current
+        val effective = snapshot.fromCache(applied.layout, applied.inventory)
         val authoritative = effective.layout ?: blankLayout()
         val persistedDraft = decodePersistedOperation(operation)
         if (persistedDraft is PersistedMiniHomeOperationDecode.Canonical) {
@@ -636,8 +651,9 @@ class FirebaseMiniHomeRepository(
     private suspend fun resolveUncertainDiscard(
         accountId: AccountId,
         expectedHandle: MiniHomeDiscardHandle,
-    ): MiniHomeDiscardResult =
-        when (val loaded = loadLocked(accountId)) {
+    ): MiniHomeDiscardResult {
+        val token = beginPublication(accountId) ?: return MiniHomeDiscardResult.OwnerMismatch
+        return when (val loaded = loadLocked(accountId, token)) {
             is MiniHomeLoadResult.Ready ->
                 when {
                     loaded.stale -> MiniHomeDiscardResult.Rejected
@@ -650,6 +666,7 @@ class FirebaseMiniHomeRepository(
             MiniHomeLoadResult.Forbidden -> MiniHomeDiscardResult.OwnerMismatch
             MiniHomeLoadResult.Failed -> MiniHomeDiscardResult.Rejected
         }
+    }
 
     private fun MiniHomeDiscardHandle.sameRowGeneration(other: MiniHomeDiscardHandle): Boolean =
         accountId == other.accountId &&
@@ -720,13 +737,14 @@ class FirebaseMiniHomeRepository(
             return MiniHomeSaveResult.Forbidden
         }
         val applied = cache(request.accountId, snapshot)
-        if (applied is MiniHomeCacheApplyResult.Conflict) {
+        if (applied is CoherentMiniHomeCacheApply.Conflict) {
             return MiniHomeSaveResult.Failed(
                 MiniHomeSaveFailure.INCONSISTENT_RECEIPT,
                 operation.discardHandle(),
             )
         }
-        val effective = snapshot.fromCache(applied.current)
+        applied as CoherentMiniHomeCacheApply.Current
+        val effective = snapshot.fromCache(applied.layout, applied.inventory)
         val authoritative = effective.layout
         if (
             authoritative == null ||
@@ -810,16 +828,18 @@ class FirebaseMiniHomeRepository(
     private suspend fun cache(
         account: AccountId,
         snapshot: RemoteMiniHomeSnapshot,
-    ): MiniHomeCacheApplyResult {
+    ): CoherentMiniHomeCacheApply {
         require(snapshot.accountId == account)
         val layout = snapshot.layout
-        val write =
+        val layoutWrite =
             if (layout == null) {
                 AuthoritativeMiniHomeCacheWrite.Deletion(
                     account.value,
                     snapshot.cacheGeneration,
                     snapshot.deletionTombstoneId ?: "initial-missing",
                     snapshot.authoritativeAtEpochMillis,
+                    snapshot.snapshotToken,
+                    snapshot.snapshotGeneration,
                 )
             } else {
                 AuthoritativeMiniHomeCacheWrite.Layout(
@@ -852,18 +872,56 @@ class FirebaseMiniHomeRepository(
                             layout.revision.value,
                         )
                     },
+                    snapshot.snapshotToken,
+                    snapshot.snapshotGeneration,
                 )
             }
-        return database.cacheDao().applyAuthoritativeMiniHome(write)
+        return try {
+            database.withTransaction {
+                val layoutApplied = database.cacheDao().applyAuthoritativeMiniHome(layoutWrite)
+                if (layoutApplied is MiniHomeCacheApplyResult.Conflict) {
+                    throw CoherentMiniHomeCacheConflict()
+                }
+                val authoritative = snapshot.authoritativeInventory
+                require(authoritative.accountId == account)
+                val inventoryApplied =
+                    database
+                        .cacheDao()
+                        .applyAuthoritativeInventory(
+                            authoritative.cacheWrite(
+                                snapshot.snapshotToken,
+                                snapshot.snapshotGeneration,
+                            )
+                        )
+                if (inventoryApplied is InventoryCacheApplyResult.Conflict) {
+                    throw CoherentMiniHomeCacheConflict()
+                }
+                val coherent =
+                    database.cacheDao().currentMiniHomeSnapshotCache(account.value)
+                        ?: throw CoherentMiniHomeCacheConflict()
+                if (!coherent.coherent) throw CoherentMiniHomeCacheConflict()
+                val inventory =
+                    coherent.inventory?.verifiedAuthoritativeInventoryOrNull(account)
+                        ?: throw CoherentMiniHomeCacheConflict()
+                CoherentMiniHomeCacheApply.Current(
+                    coherent.layout ?: throw CoherentMiniHomeCacheConflict(),
+                    inventory,
+                )
+            }
+        } catch (_: CoherentMiniHomeCacheConflict) {
+            CoherentMiniHomeCacheApply.Conflict
+        }
     }
 
     private fun RemoteMiniHomeSnapshot.fromCache(
-        current: CachedMiniHomeLayoutState
+        current: CachedMiniHomeLayoutState,
+        inventory: AuthoritativeInventory,
     ): RemoteMiniHomeSnapshot {
         val layout = current.layoutOrNull()
         val watermark = current.watermark
         return copy(
             layout = layout,
+            decorations = inventory.miniHomeDecorationChoices(),
             committedOperationId =
                 watermark.operationId?.let(::OperationId).takeIf {
                     watermark.kind == MiniHomeCacheWatermarkKind.PRESENT
@@ -875,6 +933,7 @@ class FirebaseMiniHomeRepository(
             cachePayloadHash = watermark.payloadHash,
             deletionTombstoneId = watermark.tombstoneId,
             authoritativeAtEpochMillis = watermark.authoritativeAtEpochMillis,
+            authoritativeInventory = inventory,
         )
     }
 
@@ -889,19 +948,243 @@ class FirebaseMiniHomeRepository(
         )
     }
 
-    private suspend fun cachedLayout(account: AccountId): CachedMiniHomeRecovery =
-        try {
-            val home =
-                database.cacheDao().miniHome(account.value) ?: return CachedMiniHomeRecovery.Missing
-            val canonicalName =
-                recoverLegacyMiniHomeName(home.name) ?: return CachedMiniHomeRecovery.Irrecoverable
-            val placements =
-                MiniHomePlacementPolicy.layer(
+    private suspend fun beginPublication(account: AccountId): MiniHomePublicationToken? =
+        publicationMutex.withLock {
+            observePublicationOwner(remote.activeAccount())
+            if (observedPublicationOwner != account) return@withLock null
+            requestGeneration += 1
+            currentOwnerRequest[account.value] = requestGeneration
+            MiniHomePublicationToken(account, ownerGeneration, requestGeneration)
+        }
+
+    private fun observePublicationOwner(active: AccountId?) {
+        if (observedPublicationOwner != active) {
+            observedPublicationOwner = active
+            ownerGeneration += 1
+        }
+    }
+
+    private suspend fun publicationDecision(
+        token: MiniHomePublicationToken,
+        version: MiniHomePublicationVersion,
+    ): MiniHomePublicationDecision = publicationMutex.withLock {
+        observePublicationOwner(remote.activeAccount())
+        if (
+            observedPublicationOwner != token.accountId ||
+                ownerGeneration != token.ownerGeneration ||
+                currentOwnerRequest[token.accountId.value] != token.requestGeneration
+        ) {
+            return@withLock MiniHomePublicationDecision.FORBIDDEN
+        }
+        val previous = lastPublished[token.accountId.value]
+        if (previous != null && !version.dominates(previous)) {
+            return@withLock MiniHomePublicationDecision.REREAD
+        }
+        lastPublished[token.accountId.value] = version
+        MiniHomePublicationDecision.PUBLISH
+    }
+
+    private suspend fun publishCurrentRoomWinner(
+        account: AccountId,
+        token: MiniHomePublicationToken,
+        stale: Boolean,
+        fresh: RemoteMiniHomeSnapshot? = null,
+        pendingBeforeLoad: OperationOutboxEntity? = null,
+    ): MiniHomeLoadResult {
+        var reconciledPending: MiniHomePendingSave? = null
+        var pendingWasReconciled = false
+        repeat(MAX_PUBLICATION_REREADS) {
+            if (remote.activeAccount() != account) return MiniHomeLoadResult.Forbidden
+            val current =
+                try {
+                    readCoherentCachedPublication(account)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    return MiniHomeLoadResult.Failed
+                }
+            if (current.incoherentSnapshot) {
+                try {
+                    database.cacheDao().purgeIncoherentMiniHomeSnapshot(account.value)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // The token-mismatched pair is never published; cleanup retries later.
+                }
+                return MiniHomeLoadResult.Failed
+            }
+            current.corruptInventoryGeneration?.let { (generation, snapshotHash) ->
+                try {
                     database
                         .cacheDao()
-                        .miniHomePlacements(account.value, home.miniHomeId, home.revision)
-                        .map { it.placement() }
+                        .purgeInventoryCacheIfMatches(account.value, generation, snapshotHash)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // The invalid snapshot is not published; a later load retries cleanup.
+                }
+                return MiniHomeLoadResult.Failed
+            }
+            val recovered = current.recovery
+            if (recovered is CachedMiniHomeRecovery.Irrecoverable) {
+                try {
+                    database.cacheDao().quarantineMiniHome(account.value)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // The invalid layout is not published; a later load retries cleanup.
+                }
+                return MiniHomeLoadResult.Failed
+            }
+            if (recovered is CachedMiniHomeRecovery.Ready && recovered.legacyName != null) {
+                try {
+                    database
+                        .cacheDao()
+                        .rewriteLegacyMiniHomeName(
+                            account.value,
+                            recovered.layout.id.value,
+                            recovered.layout.revision.value,
+                            recovered.legacyName,
+                            recovered.layout.name,
+                        )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // The canonical value remains safe and the next load retries persistence.
+                }
+            }
+            val effective = fresh?.let { source ->
+                val state = current.layoutState ?: return MiniHomeLoadResult.Failed
+                val inventory = current.inventory ?: return MiniHomeLoadResult.Failed
+                source.fromCache(state, inventory)
+            }
+            if (effective != null && !pendingWasReconciled) {
+                reconciledPending = reconcilePendingOnLoad(account, effective, pendingBeforeLoad)
+                pendingWasReconciled = true
+            }
+            val pending = if (pendingWasReconciled) reconciledPending else pending(account)
+            val stable =
+                try {
+                    readCoherentCachedPublication(account)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    return MiniHomeLoadResult.Failed
+                }
+            if (stable != current) return@repeat
+            val layout = (recovered as? CachedMiniHomeRecovery.Ready)?.layout ?: blankLayout()
+            val decorations =
+                current.inventory
+                    ?.miniHomeDecorationChoices()
+                    ?.map { choice ->
+                        if (stale) choice.copy(availableForApplication = false) else choice
+                    }
+                    .orEmpty()
+            val receipt = effective?.committedReceiptOrNull()
+            val ready =
+                MiniHomeLoadResult.Ready(
+                    account,
+                    layout,
+                    effective?.plants ?: current.plants,
+                    decorations,
+                    stale,
+                    pending,
+                    receipt,
                 )
+            when (publicationDecision(token, current.version)) {
+                MiniHomePublicationDecision.PUBLISH -> return ready
+                MiniHomePublicationDecision.FORBIDDEN -> return MiniHomeLoadResult.Forbidden
+                MiniHomePublicationDecision.REREAD -> Unit
+            }
+        }
+        return if (remote.activeAccount() == account) {
+            MiniHomeLoadResult.Failed
+        } else {
+            MiniHomeLoadResult.Forbidden
+        }
+    }
+
+    private suspend fun readCoherentCachedPublication(
+        account: AccountId
+    ): CachedMiniHomePublication {
+        beforePublicationRead(account)
+        val raw = database.withTransaction {
+            database.cacheDao().currentMiniHomeSnapshotCache(account.value) to
+                database.cacheDao().plants(account.value)
+        }
+        val snapshotState = raw.first
+        val incoherentSnapshot = snapshotState?.coherent == false
+        val inventoryState = snapshotState?.inventory
+        val inventory =
+            inventoryState
+                ?.takeIf { !incoherentSnapshot }
+                ?.verifiedAuthoritativeInventoryOrNull(account)
+        val corruptInventory =
+            inventoryState
+                ?.takeIf { !incoherentSnapshot && inventory == null }
+                ?.watermark
+                ?.let { it.generation to it.snapshotHash }
+        val layoutState = snapshotState?.layout?.takeIf { !incoherentSnapshot }
+        val watermark = layoutState?.watermark
+        return CachedMiniHomePublication(
+            layoutState = layoutState,
+            recovery = recoverCachedLayout(account, layoutState),
+            inventory = inventory,
+            plants =
+                raw.second.map {
+                    MiniHomePlantChoice(
+                        PersonalPlantId(it.plantId),
+                        it.displayName,
+                        it.representativePhotoPath,
+                    )
+                },
+            version =
+                MiniHomePublicationVersion(
+                    snapshotGeneration = watermark?.takeIf { it.verified }?.snapshotGeneration ?: 0,
+                    layoutGeneration = watermark?.takeIf { it.verified }?.generation ?: 0,
+                    layoutRevision = watermark?.takeIf { it.verified }?.layoutRevision,
+                    layoutKind = watermark?.takeIf { it.verified }?.kind,
+                    inventoryGeneration = inventory?.generation ?: 0,
+                ),
+            corruptInventoryGeneration = corruptInventory,
+            incoherentSnapshot = incoherentSnapshot,
+        )
+    }
+
+    private fun recoverCachedLayout(
+        account: AccountId,
+        state: CachedMiniHomeLayoutState?,
+    ): CachedMiniHomeRecovery {
+        if (state == null) return CachedMiniHomeRecovery.Missing
+        return runCatching {
+            val watermark = state.watermark
+            require(watermark.accountId == account.value)
+            if (watermark.verified && watermark.kind == MiniHomeCacheWatermarkKind.DELETED) {
+                require(state.home == null && state.placements.isEmpty())
+                return@runCatching CachedMiniHomeRecovery.Missing
+            }
+            val home = requireNotNull(state.home)
+            require(home.accountId == account.value)
+            if (watermark.verified) {
+                require(watermark.kind == MiniHomeCacheWatermarkKind.PRESENT)
+                require(watermark.layoutRevision == home.revision)
+                require(watermark.miniHomeId == home.miniHomeId)
+                require(watermark.operationId?.matches(Regex("^[A-Za-z0-9_-]{8,128}$")) == true)
+                require(watermark.payloadHash?.matches(Regex("^[a-f0-9]{64}$")) == true)
+            }
+            val canonicalName = requireNotNull(recoverLegacyMiniHomeName(home.name))
+            val persistedPlacements = state.placements.map { it.placement() }
+            require(
+                persistedPlacements.count { it.target is MiniHomePlacementTarget.Plant } ==
+                    home.placedPlantCount
+            )
+            val placements =
+                if (watermark.verified) {
+                    require(MiniHomePlacementPolicy.isValid(persistedPlacements))
+                    persistedPlacements
+                } else {
+                    MiniHomePlacementPolicy.layer(persistedPlacements)
+                }
             CachedMiniHomeRecovery.Ready(
                 MiniHomeLayout(
                     MiniHomeId(home.miniHomeId),
@@ -912,11 +1195,9 @@ class FirebaseMiniHomeRepository(
                 ),
                 home.name.takeIf { it != canonicalName },
             )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            CachedMiniHomeRecovery.Irrecoverable
         }
+            .getOrElse { CachedMiniHomeRecovery.Irrecoverable }
+    }
 
     private fun RemoteMiniHomeSnapshot.committedReceiptOrNull(): MiniHomeCommittedReceipt? {
         val operationId = committedOperationId ?: return null
@@ -1473,22 +1754,55 @@ class FirebaseMiniHomeRepository(
         const val DEFAULT_HOME_ID = "primary"
         const val DEFAULT_NAME = "나의 미니 식물원"
         const val MAX_PENDING_CAS_ATTEMPTS = 4
+        const val MAX_PUBLICATION_REREADS = 4
+    }
+}
+
+internal fun AuthoritativeInventory.miniHomeDecorationChoices(): List<MiniHomeDecorationChoice> {
+    val catalogById = catalog.associate { item ->
+        item.itemId to
+            MiniHomeDecorationChoice(
+                item.itemId,
+                item.name,
+                item.category,
+                item.mediaIdentity,
+                availableForApplication = true,
+            )
+    }
+    return owned.map { ownership ->
+        when (ownership.availability) {
+            AuthoritativeInventoryAvailability.AVAILABLE ->
+                catalogById[ownership.itemId]
+                    ?: throw InconsistentInventoryException(
+                        "available ownership is absent from catalog"
+                    )
+            AuthoritativeInventoryAvailability.UNAVAILABLE -> {
+                val snapshot = ownership.catalogSnapshot
+                MiniHomeDecorationChoice(
+                    ownership.itemId,
+                    snapshot?.name ?: "사용할 수 없는 아이템",
+                    snapshot?.category,
+                    snapshot?.mediaIdentity,
+                    availableForApplication = false,
+                )
+            }
+        }
     }
 }
 
 class FirebaseMiniHomeRemoteDataSource(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore,
     private val functions: FirebaseFunctions,
-    private val layoutReader: AuthoritativeMiniHomeLayoutReader =
-        AuthoritativeMiniHomeLayoutReader(functions),
+    private val snapshotReader: AuthoritativeMiniHomeSnapshotReader =
+        AuthoritativeMiniHomeSnapshotReader(functions),
 ) : MiniHomeRemoteDataSource {
     override fun activeAccount(): AccountId? = auth.currentUser?.uid?.let(::AccountId)
 
     override suspend fun load(accountId: AccountId): RemoteMiniHomeSnapshot {
         require(activeAccount() == accountId)
-        val authoritative = layoutReader.read(accountId)
+        val snapshot = snapshotReader.read(accountId)
         ensureAccount(accountId)
+        val authoritative = snapshot.layout
         val authoritativeLayout =
             (authoritative as? AuthoritativeMiniHomeLayoutRead.Present)?.layout
         val authoritativeDeletion = authoritative as? AuthoritativeMiniHomeLayoutRead.Missing
@@ -1519,48 +1833,12 @@ class FirebaseMiniHomeRemoteDataSource(
             )
         }
         val plants =
-            firestore
-                .collection("users/${accountId.value}/personalPlants")
-                .get()
-                .await()
-                .documents
-                .map {
-                    require(it.getString("ownerUid") == accountId.value)
-                    MiniHomePlantChoice(
-                        PersonalPlantId(it.id),
-                        requireNotNull(it.getString("displayName")),
-                        it.getString("representativePhotoPath"),
-                    )
-                }
-        val owned =
-            firestore
-                .collection("users/${accountId.value}/ownedItems")
-                .get()
-                .await()
-                .documents
-                .associate { document ->
-                    require(document.getString("ownerUid") == accountId.value)
-                    (document.getString("itemId") ?: document.id) to Unit
-                }
-        val decorations =
-            if (owned.isEmpty()) emptyList()
-            else
-                firestore
-                    .collection("shopItems")
-                    .whereEqualTo("publicationState", "PUBLIC")
-                    .get()
-                    .await()
-                    .documents
-                    .filter {
-                        it.id in owned &&
-                            it.getString("category") in setOf("FURNITURE", "DECORATION")
-                    }
-                    .map {
-                        MiniHomeDecorationChoice(
-                            ItemId(it.id),
-                            requireNotNull(it.getString("name")),
-                        )
-                    }
+            snapshot.plants.map {
+                MiniHomePlantChoice(it.id, it.displayName, it.representativePhotoPath)
+            }
+        val inventory = snapshot.inventory
+        ensureAccount(accountId)
+        val decorations = inventory.miniHomeDecorationChoices()
         ensureAccount(accountId)
         return RemoteMiniHomeSnapshot(
             accountId,
@@ -1578,6 +1856,9 @@ class FirebaseMiniHomeRemoteDataSource(
             authoritativeAtEpochMillis =
                 authoritativeLayout?.updatedAtEpochMillis
                     ?: requireNotNull(authoritativeDeletion).updatedAtEpochMillis,
+            authoritativeInventory = inventory,
+            snapshotToken = snapshot.token,
+            snapshotGeneration = snapshot.generation,
         )
     }
 

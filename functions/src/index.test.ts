@@ -5,14 +5,19 @@ import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import express from "express";
 import {
+  acquireInventoryItem,
   applyRevisionedOwnerWrite,
   beginAppleSignIn,
   completeAppleSignIn,
   completeWatering,
   confirmNotificationOpened,
+  createCatalogProjectionWriteHandler,
+  createLoadInventoryCallable,
   ensureWateringNotificationSettings,
   identifyPlant,
+  loadInventory,
   loadMiniHomeLayout,
+  loadMiniHomeSnapshot,
   reconcileWateringNotificationTimezone,
   refreshWeather,
   registerNotificationEndpoint,
@@ -25,6 +30,7 @@ import {
   updateWateringNotificationSettings,
   updateWeatherAlerts,
 } from "./index.js";
+import { inventorySnapshotHash, type InventorySnapshot, type InventoryStore } from "./inventory.js";
 
 declare global {
   namespace Express {
@@ -75,12 +81,28 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
+test("catalog projection trigger surfaces failure so the exact event retry can converge", async () => {
+  let attempts = 0;
+  const handler = createCatalogProjectionWriteHandler({
+    async rebuild() {
+      attempts += 1;
+      if (attempts === 1) throw new Error("injected catalog rebuild failure");
+    },
+  });
+  await assert.rejects(() => handler(), /injected catalog rebuild failure/);
+  await handler();
+  assert.equal(attempts, 2);
+});
+
 test("all owner watering mini-home and Apple callable boundaries reject missing App Check first", async () => {
   const endpoints: CallableHandler[] = [
     (request, response) => applyRevisionedOwnerWrite(request, response),
     (request, response) => completeWatering(request, response),
     (request, response) => loadMiniHomeLayout(request, response),
+    (request, response) => loadMiniHomeSnapshot(request, response),
     (request, response) => saveMiniHomeLayout(request, response),
+    (request, response) => loadInventory(request, response),
+    (request, response) => acquireInventoryItem(request, response),
     (request, response) => beginAppleSignIn(request, response),
     (request, response) => completeAppleSignIn(request, response),
   ];
@@ -119,7 +141,10 @@ test("valid debug App Check reaches application validation on hardened callables
       (request, response) => applyRevisionedOwnerWrite(request, response),
       (request, response) => completeWatering(request, response),
       (request, response) => loadMiniHomeLayout(request, response),
+      (request, response) => loadMiniHomeSnapshot(request, response),
       (request, response) => saveMiniHomeLayout(request, response),
+      (request, response) => loadInventory(request, response),
+      (request, response) => acquireInventoryItem(request, response),
       (request, response) => beginAppleSignIn(request, response),
       (request, response) => completeAppleSignIn(request, response),
     ];
@@ -162,6 +187,93 @@ test("valid debug App Check reaches application validation on hardened callables
     for (const [name, value] of Object.entries(environment)) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
+  }
+});
+
+test("real loadInventory callable serializes the shared versioned catalog and owned contract", async () => {
+  const appCheck = getAppCheck();
+  const auth = getAuth();
+  const verifyAppCheckToken = appCheck.verifyToken;
+  const verifyAuthToken = auth.verifyIdToken;
+  appCheck.verifyToken = async () => ({ appId: "debug-app", token: {} }) as never;
+  auth.verifyIdToken = async () => ({ uid: "user-a" }) as never;
+  const store: InventoryStore = {
+    async load(ownerUid) {
+      const content: Pick<InventorySnapshot, "ownerUid" | "catalog" | "owned" | "registeredPlantCount" | "partial"> = {
+        ownerUid,
+        catalog: [{
+          itemId: "public-background",
+          name: "공개 배경",
+          description: "공개된 무료 배경",
+          category: "BACKGROUND",
+          mediaIdentity: {
+            path: `catalog-assets/public-background/${"a".repeat(64)}.webp`,
+            sha256: "a".repeat(64), byteSize: 3, mimeType: "image/webp",
+            width: 96, height: 64, mediaRevision: 1,
+          },
+          acquisitionCondition: null,
+          revision: 3,
+          updatedAtEpochMillis: 1,
+        }],
+        owned: [{
+          itemId: "deleted-decoration",
+          acquiredAtEpochMillis: 2,
+          applied: true,
+          revision: 4,
+          availability: "UNAVAILABLE",
+          catalogSnapshot: {
+            name: "삭제된 장식",
+            category: "DECORATION",
+            mediaIdentity: {
+              path: `catalog-assets/deleted-decoration/${"b".repeat(64)}.webp`,
+              sha256: "b".repeat(64), byteSize: 3, mimeType: "image/webp",
+              width: 96, height: 64, mediaRevision: 1,
+            },
+            catalogRevision: 3,
+          },
+        }],
+        registeredPlantCount: 1,
+        partial: true,
+      };
+      return {
+        contractVersion: 3,
+        ...content,
+        loadedAtEpochMillis: 3,
+        inventoryGeneration: 1,
+        snapshotHash: inventorySnapshotHash(content),
+      };
+    },
+    async acquire() {
+      throw new Error("not used");
+    },
+  };
+  try {
+    const callable = createLoadInventoryCallable(store);
+    const response = await invokeCallable(
+      (request, reply) => callable(request, reply),
+      "debug.valid.token",
+      { expectedOwnerUid: "user-a" },
+      "debug.auth.token",
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json() as { result: Record<string, unknown> };
+    assert.deepEqual(Object.keys(body.result).sort(), [
+      "catalog",
+      "contractVersion",
+      "inventoryGeneration",
+      "loadedAtEpochMillis",
+      "owned",
+      "ownerUid",
+      "partial",
+      "registeredPlantCount",
+      "snapshotHash",
+    ]);
+    assert.equal(body.result.contractVersion, 3);
+    assert.ok(Array.isArray(body.result.catalog));
+    assert.ok(Array.isArray(body.result.owned));
+  } finally {
+    appCheck.verifyToken = verifyAppCheckToken;
+    auth.verifyIdToken = verifyAuthToken;
   }
 });
 
@@ -223,7 +335,10 @@ test("hardened callable boundaries reject invalid App Check before application v
       (request, response) => applyRevisionedOwnerWrite(request, response),
       (request, response) => completeWatering(request, response),
       (request, response) => loadMiniHomeLayout(request, response),
+      (request, response) => loadMiniHomeSnapshot(request, response),
       (request, response) => saveMiniHomeLayout(request, response),
+      (request, response) => loadInventory(request, response),
+      (request, response) => acquireInventoryItem(request, response),
       (request, response) => beginAppleSignIn(request, response),
       (request, response) => completeAppleSignIn(request, response),
     ];

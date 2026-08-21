@@ -82,7 +82,7 @@ class MiniHomeMainActivityTest {
         compose.onNodeWithText("몬스테라 추가").performScrollTo().performClick()
         compose.onNodeWithText("원목 스탠드 추가").performScrollTo().performClick()
         val placement = compose.onNodeWithContentDescription("식물 몬스테라", substring = true)
-        placement.assertIsDisplayed()
+        placement.performScrollTo().assertIsDisplayed()
         placement.performTouchInput { swipe(center, centerRight) }
         awaitMiniHomeState(
             matches = { event ->
@@ -99,7 +99,10 @@ class MiniHomeMainActivityTest {
             .performScrollTo()
             .assertIsDisplayed()
         compose.onNodeWithTag(MiniHomeTestTags.SAVE).performScrollTo().performClick()
-        compose.onNodeWithText("저장했어요").performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithText("저장했어요", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
 
         val persisted = runBlocking {
             val dao = requireNotNull(application.repositoryRuntimeOrNull()).database.cacheDao()
@@ -146,7 +149,10 @@ class MiniHomeMainActivityTest {
         compose.onNodeWithTag(MiniHomeTestTags.SAVE_FAILURE).performScrollTo().assertIsDisplayed()
         setDebugMiniHomeSaveOutcome(application, OUTCOME_SUCCESS)
         compose.onNodeWithTag(MiniHomeTestTags.RETRY).performScrollTo().performClick()
-        compose.onNodeWithText("저장했어요").performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithText("저장했어요", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
 
         setDebugMiniHomeSaveOutcome(application, OUTCOME_CONFLICT)
         compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
@@ -159,7 +165,10 @@ class MiniHomeMainActivityTest {
         compose.onNodeWithText("다른 기기에서 저장한 방").performScrollTo().assertIsDisplayed()
         setDebugMiniHomeSaveOutcome(application, OUTCOME_SUCCESS)
         compose.onNodeWithText("수정한 배치 저장").performScrollTo().performClick()
-        compose.onNodeWithText("저장했어요").performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithText("저장했어요", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
 
         val ownerTransitionEvents = CopyOnWriteArrayList<DebugMiniHomeStateEvent>()
         val ownerTransitionSubscription = subscribeToDebugMiniHomeStates(ownerTransitionEvents::add)
@@ -234,7 +243,10 @@ class MiniHomeMainActivityTest {
         setDebugMiniHomeSaveOutcome(application, OUTCOME_SUCCESS)
         compose.onNodeWithText("서버가 거절한 편집").performTextReplacement("수정한 미니 식물원")
         compose.onNodeWithTag(MiniHomeTestTags.SAVE).performScrollTo().performClick()
-        compose.onNodeWithText("저장했어요").performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithText("저장했어요", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test

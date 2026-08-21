@@ -22,6 +22,7 @@ import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
@@ -40,6 +41,7 @@ import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
 import com.planterior.helper.feature.identify.IdentificationRoute
 import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
 import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
+import com.planterior.helper.feature.minihome.MiniHomePhotoRequest
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.feature.minihome.MiniHomeRoute
 import com.planterior.helper.feature.registration.RegistrationAuthOwnership
@@ -47,6 +49,13 @@ import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRoute
 import com.planterior.helper.feature.registration.RegistrationSeed
+import com.planterior.helper.feature.shop.CatalogMediaLoadResult
+import com.planterior.helper.feature.shop.CatalogMediaLoader
+import com.planterior.helper.feature.shop.InventoryAuthOwnership
+import com.planterior.helper.feature.shop.InventoryItemDetailRoute
+import com.planterior.helper.feature.shop.InventoryRepository
+import com.planterior.helper.feature.shop.InventoryRoute
+import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
 import com.planterior.helper.feature.watering.WateringConfirmationRoute
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRoute
@@ -95,6 +104,7 @@ fun PlanteriorNavHost(
     collectionRepository: CollectionRepository? = null,
     miniHomeRepository: MiniHomeRepository? = null,
     miniHomeAuthOwnershipOverride: MiniHomeAuthOwnership? = null,
+    inventoryRepository: InventoryRepository? = null,
     wateringRepository: WateringRepository? = null,
     wateringNotificationSettingsRepository: WateringNotificationSettingsRepository? = null,
     weatherRepository: WeatherRepository? = null,
@@ -106,6 +116,7 @@ fun PlanteriorNavHost(
     onOpenNotificationSettings: () -> Unit = {},
     onOpenLocationSettings: () -> Unit = {},
     collectionThumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
+    catalogMediaLoader: CatalogMediaLoader = PlaceholderCatalogMediaLoader,
     clock: Clock = Clock.systemDefaultZone(),
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -125,6 +136,7 @@ fun PlanteriorNavHost(
                 coordinatorAvailable = authCoordinator != null,
                 enforcementEnabled = authRouteGuardEnabled,
             )
+    val inventoryAuthOwnership = miniHomeAuthOwnership.toInventoryOwnership()
     LaunchedEffect(
         currentRoute,
         liveAuthState,
@@ -155,7 +167,12 @@ fun PlanteriorNavHost(
             launchSingleTop = true
         }
     }
-    val selectedIndex = BottomTabRoutes.indexOfFirst { it == currentRoute }
+    val selectedBottomRoute =
+        when (currentRoute) {
+            is PlanteriorRoute.InventoryItemDetail -> PlanteriorRoute.Storage
+            else -> currentRoute
+        }
+    val selectedIndex = BottomTabRoutes.indexOfFirst { it == selectedBottomRoute }
     val registrationHandoff =
         rememberSaveable(saver = IdentificationRegistrationHandoff.Saver) {
             IdentificationRegistrationHandoff()
@@ -174,7 +191,17 @@ fun PlanteriorNavHost(
         PlanteriorBottomBar(
             tabs = tabs,
             selectedIndex = selectedIndex,
-            onTabSelected = { index -> navController.navigateToTab(BottomTabRoutes[index]) },
+            onTabSelected = { index ->
+                val destination = BottomTabRoutes[index]
+                if (currentRoute is PlanteriorRoute.InventoryItemDetail) {
+                    navController.popBackStack()
+                    if (destination != PlanteriorRoute.Storage) {
+                        navController.navigateToTab(destination)
+                    }
+                } else {
+                    navController.navigateToTab(destination)
+                }
+            },
             cameraContentDescription = cameraDescription,
             onCameraClick = { navController.navigate(PlanteriorRoute.Camera) },
         )
@@ -276,11 +303,44 @@ fun PlanteriorNavHost(
             }
         }
         composable<PlanteriorRoute.Storage> {
-            PlaceholderScreen(
-                title = stringResource(R.string.screen_storage),
-                description = stringResource(R.string.screen_storage_description),
-                bottomBar = bottomBar,
-            )
+            if (inventoryRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_storage),
+                    description = stringResource(R.string.screen_storage_description),
+                    bottomBar = bottomBar,
+                )
+            } else {
+                InventoryRoute(
+                    repository = inventoryRepository,
+                    authOwnership = inventoryAuthOwnership,
+                    onOpenMiniHome = { navController.navigate(PlanteriorRoute.MiniHome) },
+                    onOpenItem = { itemId ->
+                        navController.navigate(PlanteriorRoute.InventoryItemDetail(itemId.value))
+                    },
+                    bottomBar = bottomBar,
+                    mediaLoader = catalogMediaLoader,
+                )
+            }
+        }
+        composable<PlanteriorRoute.InventoryItemDetail> { entry ->
+            val route = entry.toRoute<PlanteriorRoute.InventoryItemDetail>()
+            if (inventoryRepository == null) {
+                PlaceholderScreen(
+                    title = "아이템 상세",
+                    description = "아이템 정보를 불러올 수 없어요.",
+                    bottomBar = bottomBar,
+                )
+            } else {
+                InventoryItemDetailRoute(
+                    repository = inventoryRepository,
+                    authOwnership = inventoryAuthOwnership,
+                    itemId = ItemId(route.itemId),
+                    onBack = { navController.popBackStack() },
+                    onOpenMiniHome = { navController.navigate(PlanteriorRoute.MiniHome) },
+                    bottomBar = bottomBar,
+                    mediaLoader = catalogMediaLoader,
+                )
+            }
         }
         composable<PlanteriorRoute.Settings> {
             val scope = rememberCoroutineScope()
@@ -435,8 +495,21 @@ fun PlanteriorNavHost(
                     onBack = { navController.popBackStack() },
                     onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
                     photoLoader =
-                        remember(collectionThumbnailLoader) {
-                            MiniHomePhotoLoader(collectionThumbnailLoader::load)
+                        remember(collectionThumbnailLoader, catalogMediaLoader) {
+                            MiniHomePhotoLoader { request ->
+                                when (request) {
+                                    is MiniHomePhotoRequest.Catalog ->
+                                        when (
+                                            val result = catalogMediaLoader.load(request.identity)
+                                        ) {
+                                            is CatalogMediaLoadResult.Loaded -> result.bitmap
+                                            is CatalogMediaLoadResult.Fallback ->
+                                                error("Catalog media fallback: ${result.reason}")
+                                        }
+                                    is MiniHomePhotoRequest.PersonalPlant ->
+                                        collectionThumbnailLoader.load(request.path)
+                                }
+                            }
                         },
                     authOwnership = miniHomeAuthOwnership,
                     onStateObserved = { observeDebugMiniHomeState(context, it) },
@@ -623,5 +696,14 @@ internal fun miniHomeAuthOwnership(
         is AuthUiState.LinkFailure -> MiniHomeAuthOwnership.Unknown
     }
 }
+
+private fun MiniHomeAuthOwnership.toInventoryOwnership(): InventoryAuthOwnership =
+    when (this) {
+        MiniHomeAuthOwnership.Restoring -> InventoryAuthOwnership.Restoring
+        MiniHomeAuthOwnership.Unknown -> InventoryAuthOwnership.Unknown
+        MiniHomeAuthOwnership.SignedOut -> InventoryAuthOwnership.SignedOut
+        MiniHomeAuthOwnership.Unmanaged -> InventoryAuthOwnership.Unmanaged
+        is MiniHomeAuthOwnership.Authenticated -> InventoryAuthOwnership.Authenticated(accountId)
+    }
 
 private const val WATERING_REFRESH_KEY = "watering.refresh-operation"

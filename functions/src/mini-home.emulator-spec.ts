@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { Timestamp, getFirestore } from "firebase-admin/firestore";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
 import { executeSaveMiniHomeLayout, MiniHomeError } from "./mini-home.js";
 
@@ -26,7 +26,7 @@ test("mini-home transaction persists one owner-scoped revision and replays exact
   try {
     await clear(firestore);
     await firestore.doc("users/user-a/personalPlants/plant-a").set({ ownerUid: "user-a" });
-    await firestore.doc("users/user-a/ownedItems/decor-a").set({ ownerUid: "user-a", itemId: "decor-a" });
+    await firestore.doc("users/user-a/ownedItems/decor-a").set(ownedItem("decor-a"));
     await firestore.doc("shopItems/decor-a").set({ publicationState: "PUBLIC", category: "DECORATION" });
 
     await assert.rejects(
@@ -130,7 +130,7 @@ test("authoritative bootstrap persists generation one and serializes concurrent 
 
     await clear(firestore);
     await firestore.doc("users/user-a/personalPlants/plant-a").set({ ownerUid: "user-a" });
-    await firestore.doc("users/user-a/ownedItems/decor-a").set({ ownerUid: "user-a", itemId: "decor-a" });
+    await firestore.doc("users/user-a/ownedItems/decor-a").set(ownedItem("decor-a"));
     await firestore.doc("shopItems/decor-a").set({ publicationState: "PUBLIC", category: "DECORATION" });
     await executeSaveMiniHomeLayout({ uid: "user-a" }, request, writer);
     await firestore.doc("users/user-a/miniHomeStates/current").delete();
@@ -144,7 +144,7 @@ test("authoritative bootstrap persists generation one and serializes concurrent 
 
     await clear(firestore);
     await firestore.doc("users/user-a/personalPlants/plant-a").set({ ownerUid: "user-a" });
-    await firestore.doc("users/user-a/ownedItems/decor-a").set({ ownerUid: "user-a", itemId: "decor-a" });
+    await firestore.doc("users/user-a/ownedItems/decor-a").set(ownedItem("decor-a"));
     await firestore.doc("shopItems/decor-a").set({ publicationState: "PUBLIC", category: "DECORATION" });
     let createReadObserved!: () => void;
     const createReadWasObserved = new Promise<void>((resolve) => { createReadObserved = resolve; });
@@ -241,7 +241,7 @@ test("authoritative read stays whole during a deterministic save race and next r
     await clear(firestore);
     await firestore.doc("users/user-a/personalPlants/plant-a").set({ ownerUid: "user-a" });
     await firestore.doc("users/user-a/personalPlants/plant-b").set({ ownerUid: "user-a" });
-    await firestore.doc("users/user-a/ownedItems/decor-a").set({ ownerUid: "user-a", itemId: "decor-a" });
+    await firestore.doc("users/user-a/ownedItems/decor-a").set(ownedItem("decor-a"));
     await firestore.doc("shopItems/decor-a").set({ publicationState: "PUBLIC", category: "DECORATION" });
     await executeSaveMiniHomeLayout({ uid: "user-a" }, request, writer);
 
@@ -419,6 +419,20 @@ test("legacy stored names migrate on server read while receipt hashes remain exa
   }
 });
 
+function ownedItem(itemId: string) {
+  const acquiredAt = Timestamp.fromDate(new Date("2026-08-12T00:00:00Z"));
+  return {
+    ownerUid: "user-a",
+    itemId,
+    acquiredAt,
+    applied: false,
+    revision: 1,
+    expectedRevision: 0,
+    idempotencyKey: "inventory-fixture-0001",
+    updatedAt: acquiredAt,
+  };
+}
+
 function present(read: Awaited<ReturnType<FirestoreMiniHomeLayoutStore["load"]>>) {
   assert.equal(read.kind, "present");
   if (read.kind !== "present") throw new Error("Expected a present mini-home layout");
@@ -426,10 +440,22 @@ function present(read: Awaited<ReturnType<FirestoreMiniHomeLayoutStore["load"]>>
 }
 
 async function clear(firestore: ReturnType<typeof getFirestore>): Promise<void> {
-  for (const collection of ["personalPlants", "ownedItems", "miniHomes", "miniHomeStates", "placements", "operations"]) {
+  for (const collection of [
+    "personalPlants",
+    "ownedItems",
+    "miniHomes",
+    "miniHomeStates",
+    "placements",
+    "operations",
+    "miniHomeProjectionPointers",
+    "miniHomeProjections",
+    "inventoryStates",
+  ]) {
     const snapshot = await firestore.collection(`users/user-a/${collection}`).get();
     await Promise.all(snapshot.docs.map((document) => document.ref.delete()));
   }
   await firestore.doc("users/user-a").delete();
-  await firestore.doc("shopItems/decor-a").delete();
+  await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await firestore.recursiveDelete(firestore.collection("catalogProjectionPointers"));
+  await firestore.recursiveDelete(firestore.collection("catalogProjections"));
 }

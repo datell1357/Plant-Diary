@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { assertFails, assertSucceeds, initializeTestEnvironment } = require("@firebase/rules-unit-testing");
@@ -15,6 +16,85 @@ const write = (ownerUid) => ({
 });
 const ts = (value) => Timestamp.fromDate(new Date(value));
 let env;
+
+const repositoryRoot = path.resolve(__dirname, "../..");
+const readRepositoryFile = (relativePath) =>
+  fs.readFileSync(path.join(repositoryRoot, relativePath), "utf8");
+
+describe("canonical QA gate contracts", () => {
+  it("keeps every emulator client aligned with the canonical fixed ports", () => {
+    const firebaseConfig = JSON.parse(readRepositoryFile("firebase.json"));
+    const ports = Object.fromEntries(
+      ["auth", "firestore", "functions", "storage"].map((service) => [
+        service,
+        firebaseConfig.emulators[service].port,
+      ]),
+    );
+    assert.deepEqual(ports, {
+      auth: 9099,
+      firestore: 8180,
+      functions: 5001,
+      storage: 9199,
+    });
+
+    const clientReferences = {
+      "app/src/main/kotlin/com/planterior/helper/auth/AuthRepositoryRuntime.kt": [
+        `auth.useEmulator("10.0.2.2", ${ports.auth})`,
+        `firestore.useEmulator("10.0.2.2", ${ports.firestore})`,
+        `functions.useEmulator("10.0.2.2", ${ports.functions})`,
+        `storage.useEmulator("10.0.2.2", ${ports.storage})`,
+      ],
+      "feature/auth/src/androidTest/kotlin/com/planterior/helper/feature/auth/AuthDebugHarnessTest.kt": [
+        `auth.useEmulator("10.0.2.2", ${ports.auth})`,
+        `firestore.useEmulator("10.0.2.2", ${ports.firestore})`,
+        `functions.useEmulator("10.0.2.2", ${ports.functions})`,
+      ],
+      "firebase-tests/test/functions-smoke.cjs": [
+        `connectAuthEmulator(auth, "http://127.0.0.1:${ports.auth}"`,
+        `connectFirestoreEmulator(firestore, "127.0.0.1", ${ports.firestore})`,
+        `connectFunctionsEmulator(functions, "127.0.0.1", ${ports.functions})`,
+      ],
+      "app/src/androidTest/kotlin/com/planterior/helper/feature/shop/InventoryScreenApi37Test.kt": [
+        `http://10.0.2.2:${ports.storage}/v0/b/`,
+      ],
+    };
+    for (const [relativePath, expectedReferences] of Object.entries(clientReferences)) {
+      const source = readRepositoryFile(relativePath);
+      for (const expectedReference of expectedReferences) {
+        assert.ok(source.includes(expectedReference), `${relativePath} is missing ${expectedReference}`);
+      }
+    }
+
+    const sourcePaths = execFileSync(
+      "git",
+      ["-c", "core.quotepath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      { cwd: repositoryRoot },
+    ).toString("utf8").split("\0").filter(Boolean);
+    const retiredPort = 8_000 + 80;
+    const retiredPortPattern = new RegExp(`\\b${retiredPort}\\b`);
+    const staleReferences = sourcePaths.filter((relativePath) =>
+      retiredPortPattern.test(readRepositoryFile(relativePath)),
+    );
+    assert.deepEqual(staleReferences, []);
+  });
+
+  it("limits deterministic gitleaks exemptions to exact emulator fixture values", () => {
+    const config = readRepositoryFile(".gitleaks.toml");
+    const description = "Deterministic mini-home emulator idempotency fixtures";
+    const start = config.indexOf(`description = "${description}"`);
+    assert.notEqual(start, -1);
+    const nextAllowlist = config.indexOf("[[allowlists]]", start);
+    const block = config.slice(start, nextAllowlist === -1 ? undefined : nextAllowlist);
+    assert.ok(block.includes('targetRules = ["generic-api-key"]'));
+    assert.ok(block.includes('condition = "AND"'));
+    assert.ok(block.includes('regexTarget = "secret"'));
+    assert.ok(block.includes("'''(?:^|/)functions/src/mini-home\\.emulator-spec\\.ts$'''"));
+    const exactFixtures = ["legacy-" + "receipt-0001", "inventory-" + "fixture-0001"];
+    assert.ok(block.includes(`'''^(?:${exactFixtures.join("|")})$'''`));
+    assert.equal(block.match(/targetRules = \["generic-api-key"\]/g)?.length, 1);
+    assert.doesNotMatch(block, /src\/(?:main|production)|paths\s*=\s*\[[^\]]*\.\*/s);
+  });
+});
 
 describe("strict server-derived Firebase contract", () => {
   it("keeps the public risk content query composite index in valid JSON", () => {

@@ -1,5 +1,12 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { ContractError, type MutationResult, type MutationStore, type OwnerMutationCommand, type ServerStateCommand } from "./contracts.js";
+import {
+  ownerProjectionDraft,
+  projectionPlant,
+  publishOwnerProjection,
+  readCatalogForWriter,
+  readOwnerForWriter,
+} from "./firestore-mini-home-projection.js";
 import { localDateTimeToInstant } from "./notification-settings.js";
 import { addLocalDays } from "./watering.js";
 
@@ -11,7 +18,10 @@ function timestampPayload(payload: Readonly<Record<string, unknown>>): Readonly<
 }
 
 export class FirestoreMutationStore implements MutationStore {
-  constructor(private readonly firestore: Firestore) {}
+  constructor(
+    private readonly firestore: Firestore,
+    private readonly now: () => Timestamp = Timestamp.now,
+  ) {}
 
   async publicPlantContentExists(contentId: string): Promise<boolean> {
     const content = await this.firestore.doc(`plantContents/${contentId}`).get();
@@ -40,6 +50,21 @@ export class FirestoreMutationStore implements MutationStore {
         return { kind: "duplicate", revision };
       }
       const document = await transaction.get(documentRef);
+      const projectionTime = this.now();
+      const projectionContext = command.collection === "personalPlants"
+        ? {
+            catalog: await readCatalogForWriter(transaction, this.firestore),
+          }
+        : null;
+      const ownerProjection = projectionContext === null
+        ? null
+        : await readOwnerForWriter(
+            transaction,
+            this.firestore,
+            command.ownerUid,
+            projectionContext.catalog,
+            projectionTime,
+          );
       const actualRevision = document.exists ? document.get("revision") : 0;
       if (typeof actualRevision !== "number") throw new ContractError("invalid-argument", "Stored revision is malformed");
       if (
@@ -56,7 +81,7 @@ export class FirestoreMutationStore implements MutationStore {
           throw new ContractError("resource-exhausted", "An account can contain at most 200 plants");
         }
       }
-      const write = { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() };
+      const write = { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: projectionTime };
       if (command.collection === "personalPlants" && "lastWateredDate" in command.payload) {
         const scheduleRef = this.firestore.doc(
           `users/${command.ownerUid}/wateringSchedules/${command.documentId}`,
@@ -144,7 +169,40 @@ export class FirestoreMutationStore implements MutationStore {
       }
       if (command.mutationType === "UPDATE") transaction.set(documentRef, write, { merge: true });
       else transaction.create(documentRef, write);
-      transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, requestHash: command.requestHash, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: FieldValue.serverTimestamp() });
+      if (projectionContext !== null && ownerProjection !== null) {
+        const projectedPlant = projectionPlant(
+          command.documentId,
+          { ...(document.data() ?? {}), ...write },
+          command.ownerUid,
+        );
+        const published = await publishOwnerProjection(
+          transaction,
+          this.firestore,
+          command.ownerUid,
+          ownerProjection.prior,
+          ownerProjectionDraft(
+            ownerProjection.draft.layout,
+            ownerProjection.draft.owned,
+            [
+              ...ownerProjection.draft.plants.filter((plant) => plant.plantId !== command.documentId),
+              projectedPlant,
+            ],
+          ),
+          projectionContext.catalog,
+          projectionTime,
+        );
+        transaction.set(
+          this.firestore.doc(`users/${command.ownerUid}/inventoryStates/current`),
+          {
+            ownerUid: command.ownerUid,
+            generation: published.inventoryGeneration,
+            snapshotHash: published.inventorySnapshotHash,
+            updatedAt: projectionTime,
+          },
+          { merge: false },
+        );
+      }
+      transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, requestHash: command.requestHash, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: projectionTime });
       return { kind: "applied", revision };
     });
   }

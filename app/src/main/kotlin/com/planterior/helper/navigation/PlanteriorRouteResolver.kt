@@ -26,7 +26,7 @@ object PlanteriorRouteResolver {
         return when (host) {
             "home" -> PlanteriorRoute.Home
             "collection" -> resolveCollection(segments)
-            "storage" -> PlanteriorRoute.Storage
+            "storage" -> resolveStorage(segments)
             "settings" -> PlanteriorRoute.Settings
             "camera" -> PlanteriorRoute.Camera
             "identify" -> resolveIdentification(segments)
@@ -74,7 +74,17 @@ object PlanteriorRouteResolver {
                 )
             is PlanteriorRoute.WeatherRisk ->
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.Weather, route)
+            is PlanteriorRoute.InventoryItemDetail ->
+                listOf(PlanteriorRoute.Home, PlanteriorRoute.Storage, route)
             else -> listOf(PlanteriorRoute.Home, route)
+        }
+
+    private fun resolveStorage(segments: List<String>): PlanteriorRoute =
+        when {
+            segments.isEmpty() -> PlanteriorRoute.Storage
+            segments.size == 2 && segments[0] == "item" && PLANT_ID_PATTERN.matches(segments[1]) ->
+                PlanteriorRoute.InventoryItemDetail(segments[1])
+            else -> PlanteriorRoute.Home
         }
 
     private fun resolveCollection(segments: List<String>): PlanteriorRoute =

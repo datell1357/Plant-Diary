@@ -2,6 +2,7 @@ package com.planterior.helper.feature.minihome
 
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
@@ -1077,6 +1078,26 @@ class MiniHomeController(
         if (editing.draft.placements.any { it.target.stableId == target.stableId }) {
             setEditing(editing.copy(issue = MiniHomePlacementIssue.ALREADY_PLACED), token)
             return
+        }
+        if (target is MiniHomePlacementTarget.Decoration) {
+            val choice = editing.decorations.singleOrNull { it.id == target.itemId }
+            if (choice == null || !choice.availableForApplication || choice.category == null) {
+                setEditing(editing.copy(issue = MiniHomePlacementIssue.ITEM_UNAVAILABLE), token)
+                return
+            }
+            val category = choice.category
+            val categoryCount =
+                editing.draft.placements.count { placement ->
+                    val itemId =
+                        (placement.target as? MiniHomePlacementTarget.Decoration)?.itemId
+                            ?: return@count false
+                    editing.decorations.singleOrNull { it.id == itemId }?.category == category
+                }
+            val limit = if (category == ItemCategory.BACKGROUND) 1 else 10
+            if (categoryCount >= limit) {
+                setEditing(editing.copy(issue = MiniHomePlacementIssue.CATEGORY_LIMIT), token)
+                return
+            }
         }
         val position =
             (0 until MiniHomeGrid.ROWS)

@@ -13,3 +13,13 @@ stopwords = [
   "ios-plan-c002-v1",
   "ios-plan-c003-v1",
 ]
+
+# These are stable idempotency identifiers, not credentials. Require the generic rule,
+# exact emulator-spec path, and exact extracted values so production paths remain scanned.
+[[allowlists]]
+description = "Deterministic mini-home emulator idempotency fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)functions/src/mini-home\.emulator-spec\.ts$''']
+regexes = ['''^(?:legacy-receipt-0001|inventory-fixture-0001)$''']

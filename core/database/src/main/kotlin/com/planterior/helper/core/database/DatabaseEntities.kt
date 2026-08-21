@@ -121,6 +121,8 @@ data class MiniHomeCacheWatermarkEntity(
     val tombstoneId: String?,
     val authoritativeAtEpochMillis: Long,
     @ColumnInfo(defaultValue = "1") val verified: Boolean,
+    val snapshotToken: String? = null,
+    val snapshotGeneration: Long? = null,
 )
 
 enum class MiniHomeCacheWatermarkKind {
@@ -139,6 +141,8 @@ data class MiniHomeCacheWatermark(
     val tombstoneId: String?,
     val authoritativeAtEpochMillis: Long,
     val verified: Boolean,
+    val snapshotToken: String? = null,
+    val snapshotGeneration: Long? = null,
 )
 
 data class CachedMiniHomeLayoutState(
@@ -147,10 +151,18 @@ data class CachedMiniHomeLayoutState(
     val placements: List<CachedMiniHomePlacementEntity>,
 )
 
+data class CachedMiniHomeSnapshotState(
+    val layout: CachedMiniHomeLayoutState?,
+    val inventory: CachedInventoryState?,
+    val coherent: Boolean,
+)
+
 sealed interface AuthoritativeMiniHomeCacheWrite {
     val accountId: String
     val generation: Long
     val authoritativeAtEpochMillis: Long
+    val snapshotToken: String?
+    val snapshotGeneration: Long?
 
     data class Layout(
         override val accountId: String,
@@ -159,6 +171,8 @@ sealed interface AuthoritativeMiniHomeCacheWrite {
         val payloadHash: String,
         val home: CachedMiniHomeEntity,
         val placements: List<CachedMiniHomePlacementEntity>,
+        override val snapshotToken: String? = null,
+        override val snapshotGeneration: Long? = null,
     ) : AuthoritativeMiniHomeCacheWrite {
         override val authoritativeAtEpochMillis: Long = home.updatedAtEpochMillis
     }
@@ -168,6 +182,8 @@ sealed interface AuthoritativeMiniHomeCacheWrite {
         override val generation: Long,
         val tombstoneId: String,
         val deletedAtEpochMillis: Long,
+        override val snapshotToken: String? = null,
+        override val snapshotGeneration: Long? = null,
     ) : AuthoritativeMiniHomeCacheWrite {
         override val authoritativeAtEpochMillis: Long = deletedAtEpochMillis
     }
@@ -182,6 +198,127 @@ sealed interface MiniHomeCacheApplyResult {
 
     data class Conflict(override val current: CachedMiniHomeLayoutState) : MiniHomeCacheApplyResult
 }
+
+@Entity(
+    tableName = "cached_shop_items",
+    primaryKeys = ["accountId", "itemId"],
+    indices = [Index(value = ["accountId", "category", "name", "itemId"])],
+)
+data class CachedShopItemEntity(
+    val accountId: String,
+    val itemId: String,
+    val name: String,
+    val description: String,
+    val category: String,
+    val assetPath: String,
+    val acquisitionCondition: String?,
+    val revision: Long,
+    val updatedAtEpochMillis: Long,
+    val assetSha256: String = "",
+    val assetByteSize: Long = 0,
+    val assetMimeType: String = "",
+    val assetWidth: Int = 0,
+    val assetHeight: Int = 0,
+    val assetMediaRevision: Long = 0,
+)
+
+@Entity(
+    tableName = "cached_owned_items",
+    primaryKeys = ["accountId", "itemId"],
+    indices = [Index(value = ["accountId", "applied", "acquiredAtEpochMillis"])],
+)
+data class CachedOwnedItemEntity(
+    val accountId: String,
+    val itemId: String,
+    val acquiredAtEpochMillis: Long,
+    val applied: Boolean,
+    val revision: Long,
+    val availability: String = "AVAILABLE",
+    val nameSnapshot: String? = null,
+    val categorySnapshot: String? = null,
+    val assetPathSnapshot: String? = null,
+    val catalogRevisionSnapshot: Long? = null,
+    val assetSha256Snapshot: String? = null,
+    val assetByteSizeSnapshot: Long? = null,
+    val assetMimeTypeSnapshot: String? = null,
+    val assetWidthSnapshot: Int? = null,
+    val assetHeightSnapshot: Int? = null,
+    val assetMediaRevisionSnapshot: Long? = null,
+)
+
+/** Durable owner-scoped ordering identity for a complete authoritative inventory snapshot. */
+@Entity(tableName = "inventory_snapshot_watermarks", primaryKeys = ["accountId"])
+data class InventorySnapshotWatermarkEntity(
+    val accountId: String,
+    val generation: Long,
+    val snapshotHash: String,
+    val registeredPlantCount: Int,
+    val loadedAtEpochMillis: Long,
+    val partial: Boolean,
+    @ColumnInfo(defaultValue = "1") val verified: Boolean,
+    val snapshotToken: String? = null,
+    val snapshotGeneration: Long? = null,
+)
+
+data class CachedInventoryState(
+    val watermark: InventorySnapshotWatermarkEntity,
+    val catalog: List<CachedShopItemEntity>,
+    val owned: List<CachedOwnedItemEntity>,
+)
+
+data class AuthoritativeInventoryCacheWrite(
+    val accountId: String,
+    val generation: Long,
+    val snapshotHash: String,
+    val registeredPlantCount: Int,
+    val loadedAtEpochMillis: Long,
+    val partial: Boolean,
+    val catalog: List<CachedShopItemEntity>,
+    val owned: List<CachedOwnedItemEntity>,
+    val snapshotToken: String? = null,
+    val snapshotGeneration: Long? = null,
+)
+
+sealed interface InventoryCacheApplyResult {
+    val current: CachedInventoryState
+
+    data class Applied(override val current: CachedInventoryState) : InventoryCacheApplyResult
+
+    data class Ignored(override val current: CachedInventoryState) : InventoryCacheApplyResult
+
+    data class Conflict(override val current: CachedInventoryState) : InventoryCacheApplyResult
+}
+
+@Entity(
+    tableName = "inventory_acquisition_operations",
+    primaryKeys = ["accountId", "operationId"],
+    indices =
+        [
+            Index(value = ["accountId", "state", "createdAtEpochMillis"]),
+            Index(
+                value =
+                    ["accountId", "feedbackDeliveryState", "createdAtEpochMillis", "operationId"]
+            ),
+        ],
+)
+data class InventoryAcquisitionOperationEntity(
+    val accountId: String,
+    val operationId: String,
+    val itemId: String,
+    val expectedCatalogRevision: Long,
+    val requestHash: String,
+    val createdAtEpochMillis: Long,
+    val state: String = "PENDING",
+    val result: String? = null,
+    val lastErrorCode: String? = null,
+    val feedbackDeliveryState: String = "NONE",
+    val feedbackAcknowledgedAtEpochMillis: Long? = null,
+    val feedbackClaimToken: String? = null,
+    val feedbackClaimControllerEpoch: Long? = null,
+    val feedbackClaimGeneration: Long? = null,
+    val feedbackClaimLeaseExpiresAtEpochMillis: Long? = null,
+    val feedbackRowVersion: Long = 0,
+)
 
 @Entity(tableName = "last_sync", primaryKeys = ["accountId", "domain"])
 data class LastSyncEntity(

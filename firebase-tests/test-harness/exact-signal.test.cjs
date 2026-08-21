@@ -42,8 +42,8 @@ test("subscribes before trigger and awaits delayed readiness exactly", async () 
 
   await Promise.resolve();
   assert.equal(settled, false);
-  events.emit("ready", { firestore: { port: 8080 } });
-  assert.deepEqual(await readiness, { firestore: { port: 8080 } });
+  events.emit("ready", { firestore: { port: 8180 } });
+  assert.deepEqual(await readiness, { firestore: { port: 8180 } });
   assert.equal(safety.cleared, true);
 });
 

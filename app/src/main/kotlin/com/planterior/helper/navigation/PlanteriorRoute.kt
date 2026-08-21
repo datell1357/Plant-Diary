@@ -42,6 +42,9 @@ sealed interface PlanteriorRoute {
     /** 앱 설정. 하단 탭 `설정`. */
     @Serializable data object Settings : TopLevel
 
+    /** 창고나 상점 카드에서 여는 아이템 상세. 계정 정보 없이 불투명 아이템 ID만 전달한다. */
+    @Serializable data class InventoryItemDetail(val itemId: String) : Authenticated
+
     /** 식물 촬영 화면. 하단 탭 가운데 카메라 액션과 홈의 식별 CTA가 연다. */
     @Serializable data object Camera : Authenticated
 

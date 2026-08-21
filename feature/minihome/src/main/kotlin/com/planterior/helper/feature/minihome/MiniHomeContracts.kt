@@ -1,6 +1,8 @@
 package com.planterior.helper.feature.minihome
 
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.CatalogMediaIdentity
+import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.OperationId
@@ -128,7 +130,16 @@ data class MiniHomePlantChoice(
     val representativePhotoPath: String?,
 )
 
-data class MiniHomeDecorationChoice(val id: ItemId, val displayName: String)
+data class MiniHomeDecorationChoice(
+    val id: ItemId,
+    val displayName: String,
+    val category: ItemCategory? = ItemCategory.DECORATION,
+    val mediaIdentity: CatalogMediaIdentity? = null,
+    val availableForApplication: Boolean = true,
+) {
+    val assetPath: String?
+        get() = mediaIdentity?.path
+}
 
 data class MiniHomeDiscardHandle(
     val accountId: AccountId,
@@ -634,6 +645,8 @@ enum class MiniHomePlacementIssue {
     OCCUPIED,
     ALREADY_PLACED,
     ROOM_FULL,
+    CATEGORY_LIMIT,
+    ITEM_UNAVAILABLE,
     INVALID_NAME,
     INVALID_REQUEST,
 }

@@ -339,8 +339,15 @@ data class RiskContentDto(
 
 data class ShopItemDto(
     val name: String,
+    val description: String,
     val category: String,
     val assetPath: String,
+    val assetSha256: String,
+    val assetByteSize: Long,
+    val assetContentType: String,
+    val assetWidth: Int,
+    val assetHeight: Int,
+    val assetMediaRevision: Long,
     val acquisitionCondition: String?,
     val publicationState: String,
     val revision: Long,

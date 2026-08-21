@@ -204,7 +204,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): 등록 식물 추가→드래그→저장→activity recreate 동일 위치; network 차단 저장 실패에서 committed 구성 유지·draft 재시도 확인. Evidence `<attemptDir>/task-13-android-app-implementation.png`.
   Commit: Y | `feat(ui): 식물 미니어처 배치와 미니홈피 저장 구현`
 
-- [ ] 14. 아이템 창고와 상점 구현
+- [x] 14. 아이템 창고와 상점 구현
   Recommended task executor category: `deep`
   What to do / Must NOT do: 배경·가구·장식 카테고리, 보유/적용 분리, 공개 상점 item·획득 조건, Success/ConditionNotMet/AlreadyOwned/Failure, atomic ownership을 구현한다. 중복 획득을 차단하고 배경 1개·가구 10개·장식 10개를 적용 한도로 강제하며 해제는 소유권을 보존한다. 결제·재화 적립은 만들지 않고 Firebase fixture의 무료/행동 조건만 해석한다.
   Parallelization: Wave 4 | Blocked by: 3, 13 | Blocks: 15, 18

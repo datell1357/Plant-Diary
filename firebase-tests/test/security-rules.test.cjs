@@ -9,6 +9,8 @@ const projectId = "demo-planterior";
 let env;
 const write = (ownerUid, revision = 1, expectedRevision = 0, idempotencyKey = "op-valid-0001") => ({ ownerUid, revision, expectedRevision, idempotencyKey, updatedAt: "2026-08-12T00:00:00Z" });
 const ts = (value) => Timestamp.fromDate(new Date(value));
+const catalogDigest = "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81";
+const mediaPath = (itemId, digest = catalogDigest) => `catalog-assets/${itemId}/${digest}.webp`;
 const collectionFixture = (collectionName) => {
   if (collectionName === "personalPlants") return { displayName: "몬스테라", registrationMethod: "MANUAL" };
   if (collectionName === "wateringSchedules") return { plantId: "plant-a", dueDate: "2026-08-12", zoneId: "Asia/Seoul", notificationCandidateActive: true, nextNotificationAt: ts("2026-08-12T00:00:00Z") };
@@ -48,7 +50,10 @@ describe("Planterior Firebase ownership contract", () => {
       storage: { rules: fs.readFileSync(path.resolve(__dirname, "../../storage.rules"), "utf8") }
     });
   });
-  beforeEach(async () => env.clearFirestore());
+  beforeEach(async () => {
+    await env.clearFirestore();
+    await env.clearStorage();
+  });
   after(async () => { if (env) await env.cleanup(); });
 
   it("allows owner CRUD and denies unauthenticated and foreign users without leaking data", async () => {
@@ -395,14 +400,225 @@ describe("Planterior Firebase ownership contract", () => {
     await assertFails(getDoc(doc(user, "riskContents/private")));
     await assertFails(getDocs(query(collection(user, "riskContents"), where("plantContentId", "==", "species-a"))));
     await assertFails(setDoc(doc(opsAdmin, "riskContents/ops-write"), { publicationState: "PUBLIC", revision: 1 }));
-    await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/public"), { publicationState: "PUBLIC", revision: 1 }));
-    await assertFails(setDoc(doc(user, "shopItems/user-write"), { publicationState: "PUBLIC", revision: 1 }));
+    const shopItem = {
+      name: "햇살 벽지",
+      description: "방을 환하게 꾸며요.",
+      category: "BACKGROUND",
+      assetPath: mediaPath("public"),
+      assetSha256: catalogDigest,
+      assetContentType: "image/webp",
+      assetByteSize: 3,
+      assetWidth: 96,
+      assetHeight: 64,
+      assetMediaRevision: 1,
+      acquisitionCondition: null,
+      publicationState: "PUBLIC",
+      revision: 1,
+      updatedAt: ts("2026-08-12T00:00:00Z"),
+    };
+    await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/public"), shopItem));
+    await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/action"), {
+      ...shopItem,
+      category: "DECORATION",
+      assetPath: mediaPath("action", "b".repeat(64)),
+      assetSha256: "b".repeat(64),
+      acquisitionCondition: "registered-plant",
+    }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/unknown-condition"), { ...shopItem, acquisitionCondition: "points-100" }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/wrong-namespace"), { ...shopItem, assetPath: "shop-items/wrong-namespace/preview.webp" }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/cross-item-asset"), { ...shopItem, assetPath: "catalog-assets/public/preview.webp" }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/wrong-extension"), { ...shopItem, assetPath: `catalog-assets/wrong-extension/${catalogDigest}.svg` }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/path-digest-mismatch"), {
+      ...shopItem,
+      assetPath: mediaPath("path-digest-mismatch", "b".repeat(64)),
+      assetSha256: "a".repeat(64),
+    }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/missing-media-contract"), {
+      name: shopItem.name,
+      description: shopItem.description,
+      category: shopItem.category,
+      assetPath: "catalog-assets/missing-media-contract/preview.webp",
+      acquisitionCondition: null,
+      publicationState: "PUBLIC",
+      revision: 1,
+      updatedAt: shopItem.updatedAt,
+    }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/wrong-media-type"), {
+      ...shopItem,
+      assetPath: "catalog-assets/wrong-media-type/preview.webp",
+      assetContentType: "image/png",
+    }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/pixel-bomb"), {
+      ...shopItem,
+      assetPath: "catalog-assets/pixel-bomb/preview.webp",
+      assetWidth: 32768,
+      assetHeight: 32768,
+    }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/extreme-aspect"), {
+      ...shopItem,
+      assetPath: "catalog-assets/extreme-aspect/preview.webp",
+      assetWidth: 32768,
+      assetHeight: 1,
+    }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/monetized"), { ...shopItem, price: 100, currency: "POINTS" }));
+    await assertFails(setDoc(doc(contentAdmin, "shopItems/public"), {
+      ...shopItem,
+      revision: 2,
+      assetByteSize: 4,
+    }));
+    await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/public"), {
+      ...shopItem,
+      revision: 2,
+      assetPath: mediaPath("public", "c".repeat(64)),
+      assetSha256: "c".repeat(64),
+      assetMediaRevision: 2,
+      updatedAt: ts("2026-08-12T00:00:01Z"),
+    }));
+    await assertFails(setDoc(doc(user, "shopItems/user-write"), shopItem));
+    await assertFails(deleteDoc(doc(user, "shopItems/public")));
+    await assertSucceeds(deleteDoc(doc(contentAdmin, "shopItems/public")));
     await env.withSecurityRulesDisabled(async (admin) => setDoc(doc(admin.firestore(), "auditLogs/audit-1"), { action: "publish" }));
     await assertSucceeds(getDoc(doc(opsAdmin, "auditLogs/audit-1")));
     await assertFails(getDoc(doc(contentAdmin, "auditLogs/audit-1")));
     await assertFails(setDoc(doc(opsAdmin, "auditLogs/client-write"), { action: "spoof" }));
     const server = env.authenticatedContext("service", { server: true }).firestore();
     await assertSucceeds(setDoc(doc(server, "auditLogs/server-write"), { action: "sync" }));
+  });
+
+  it("keeps authoritative inventory and Mini-home snapshot generations private and server-managed", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const foreign = env.authenticatedContext("user-b").firestore();
+    const state = doc(owner, "users/user-a/inventoryStates/current");
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "users/user-a/inventoryStates/current"), {
+        ownerUid: "user-a",
+        generation: 1,
+        snapshotHash: "a".repeat(64),
+      });
+    });
+    await assertFails(getDoc(state));
+    await assertFails(getDoc(doc(foreign, "users/user-a/inventoryStates/current")));
+    await assertFails(setDoc(state, {
+      ownerUid: "user-a",
+      generation: 2,
+      snapshotHash: "b".repeat(64),
+    }));
+    const snapshotState = doc(owner, "users/user-a/miniHomeSnapshotStates/current");
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "users/user-a/miniHomeSnapshotStates/current"), {
+        ownerUid: "user-a",
+        generation: 1,
+        snapshotToken: "c".repeat(64),
+      });
+    });
+    await assertFails(getDoc(snapshotState));
+    await assertFails(getDoc(doc(foreign, "users/user-a/miniHomeSnapshotStates/current")));
+    await assertFails(setDoc(snapshotState, {
+      ownerUid: "user-a",
+      generation: 2,
+      snapshotToken: "d".repeat(64),
+    }));
+    for (const path of [
+      "users/user-a/miniHomeProjectionPointers/current",
+      `users/user-a/miniHomeProjections/1-${"a".repeat(64)}`,
+      "catalogProjectionPointers/current",
+      `catalogProjections/1-${"a".repeat(64)}`,
+    ]) {
+      await env.withSecurityRulesDisabled(async (admin) => {
+        await setDoc(doc(admin.firestore(), path), { ownerUid: "user-a", schemaVersion: 1 });
+      });
+      await assertFails(getDoc(doc(owner, path)));
+      await assertFails(getDoc(doc(foreign, path)));
+      await assertFails(setDoc(doc(owner, path), { ownerUid: "user-a", schemaVersion: 1 }));
+    }
+  });
+
+  it("allows bounded catalog asset reads only for public catalog or the owning account and denies every client write", async () => {
+    const contentAdmin = env.authenticatedContext("content-admin", { contentAdmin: true }).firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const ownerStorage = env.authenticatedContext("user-a").storage();
+    const foreignStorage = env.authenticatedContext("user-b").storage();
+    const anonymousStorage = env.unauthenticatedContext().storage();
+    const catalog = {
+      name: "햇살 벽지",
+      description: "방을 환하게 꾸며요.",
+      category: "BACKGROUND",
+      assetPath: mediaPath("public"),
+      assetSha256: catalogDigest,
+      assetContentType: "image/webp",
+      assetByteSize: 3,
+      assetWidth: 96,
+      assetHeight: 64,
+      assetMediaRevision: 1,
+      acquisitionCondition: null,
+      publicationState: "PUBLIC",
+      revision: 1,
+      updatedAt: ts("2026-08-12T00:00:00Z"),
+    };
+    await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/public"), catalog));
+    await assertSucceeds(setDoc(doc(contentAdmin, "shopItems/private"), {
+      ...catalog,
+      assetPath: mediaPath("private"),
+      publicationState: "PRIVATE",
+    }));
+    await assertSucceeds(setDoc(doc(server, "users/user-a/ownedItems/private"), {
+      ...write("user-a"),
+      itemId: "private",
+      acquiredAt: ts("2026-08-12T00:00:00Z"),
+      applied: false,
+      nameSnapshot: "이전 벽지",
+      categorySnapshot: "BACKGROUND",
+      assetPathSnapshot: mediaPath("private"),
+      assetSha256Snapshot: catalogDigest,
+      assetByteSizeSnapshot: 3,
+      assetMimeTypeSnapshot: "image/webp",
+      assetWidthSnapshot: 96,
+      assetHeightSnapshot: 64,
+      assetMediaRevisionSnapshot: 1,
+      catalogRevisionSnapshot: 1,
+    }));
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "shopItems/missing-bounds"), {
+        ...catalog,
+        assetPath: "catalog-assets/missing-bounds/preview.webp",
+      });
+      await setDoc(doc(admin.firestore(), "shopItems/extreme-bounds"), {
+        ...catalog,
+        assetPath: "catalog-assets/extreme-bounds/preview.webp",
+        assetWidth: 32768,
+        assetHeight: 1,
+      });
+      const bytes = new Uint8Array([1, 2, 3]);
+      const metadata = {
+        contentType: "image/webp",
+        customMetadata: { width: "96", height: "64", sha256: catalogDigest, mediaRevision: "1" },
+      };
+      await uploadBytes(ref(admin.storage(), mediaPath("public")), bytes, metadata);
+      await uploadBytes(ref(admin.storage(), mediaPath("private")), bytes, metadata);
+      await uploadBytes(
+        ref(admin.storage(), "catalog-assets/missing-bounds/preview.webp"),
+        bytes,
+        { contentType: "image/webp" },
+      );
+      await uploadBytes(
+        ref(admin.storage(), "catalog-assets/extreme-bounds/preview.webp"),
+        bytes,
+        { contentType: "image/webp", customMetadata: { width: "32768", height: "1" } },
+      );
+    });
+
+    await assertSucceeds(getBytes(ref(anonymousStorage, mediaPath("public"))));
+    await assertSucceeds(getBytes(ref(ownerStorage, mediaPath("private"))));
+    await assertFails(getBytes(ref(anonymousStorage, "catalog-assets/missing-bounds/preview.webp")));
+    await assertFails(getBytes(ref(anonymousStorage, "catalog-assets/extreme-bounds/preview.webp")));
+    await assertFails(getBytes(ref(foreignStorage, mediaPath("private"))));
+    await assertFails(getBytes(ref(anonymousStorage, mediaPath("private"))));
+    await assertFails(uploadBytes(
+      ref(ownerStorage, "catalog-assets/public/client.webp"),
+      new Uint8Array([1]),
+      { contentType: "image/webp" },
+    ));
+    await assertFails(getBytes(ref(ownerStorage, "catalog-assets/public/nested/preview.webp")));
   });
 
   it("binds all photo storage prefixes to auth uid and metadata owner", async () => {

@@ -3,14 +3,25 @@ import { createHmac, randomUUID } from "node:crypto";
 import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { defineSecret } from "firebase-functions/params";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeCompleteAppleSignIn } from "./apple-auth.js";
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
+import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
+import { FirestoreMiniHomeSnapshotStore } from "./firestore-mini-home-snapshot-store.js";
+import { FirestoreInventoryStore } from "./firestore-inventory-store.js";
+import {
+  executeAcquireInventoryItem,
+  executeLoadInventory,
+  InventoryError,
+  type InventoryStore,
+} from "./inventory.js";
 import { executeDeleteMiniHomeLayout, executeLoadMiniHomeLayout, executeSaveMiniHomeLayout, MiniHomeError } from "./mini-home.js";
+import { executeLoadMiniHomeSnapshot, MiniHomeSnapshotError, type MiniHomeSnapshotStore } from "./mini-home-snapshot.js";
 import { FirestoreWateringCompletionStore } from "./firestore-watering-store.js";
 import {
   FirestoreNotificationSettingsStore,
@@ -57,7 +68,10 @@ if (getApps().length === 0) initializeApp();
 const firestore = getFirestore();
 const store = new FirestoreMutationStore(firestore);
 const wateringStore = new FirestoreWateringCompletionStore(firestore);
+const catalogProjectionStore = new FirestoreCatalogProjectionStore(firestore);
 const miniHomeStore = new FirestoreMiniHomeLayoutStore(firestore);
+const miniHomeSnapshotStore = new FirestoreMiniHomeSnapshotStore(firestore);
+const inventoryStore = new FirestoreInventoryStore(firestore);
 const notificationSettingsStore = new FirestoreNotificationSettingsStore(firestore);
 const wateringDeliveryStore = new FirestoreWateringDeliveryStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
@@ -93,6 +107,22 @@ function appleHttpsError(error: unknown): never {
   }
 }
 
+export function createCatalogProjectionWriteHandler(
+  rebuilder: Pick<FirestoreCatalogProjectionStore, "rebuild">,
+): () => Promise<void> {
+  return async () => {
+    await rebuilder.rebuild();
+  };
+}
+
+export const publishCatalogProjectionOnWrite = onDocumentWritten(
+  {
+    document: "shopItems/{itemId}",
+    retry: true,
+  },
+  createCatalogProjectionWriteHandler(catalogProjectionStore),
+);
+
 export const applyRevisionedOwnerWrite = onCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeOwnerMutation(request.auth === undefined ? null : { uid: request.auth.uid }, request.data, store);
@@ -124,6 +154,28 @@ export const loadMiniHomeLayout = onCall({ enforceAppCheck: true }, async (reque
     throw error;
   }
 });
+
+export function createLoadMiniHomeSnapshotCallable(store: MiniHomeSnapshotStore) {
+  return onCall({ enforceAppCheck: true }, async (request) => {
+    try {
+      return await executeLoadMiniHomeSnapshot(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        store,
+      );
+    } catch (error: unknown) {
+      if (error instanceof MiniHomeSnapshotError) {
+        throw new HttpsError(error.code, error.message, {
+          reason: error.reason,
+          ...error.details,
+        });
+      }
+      throw error;
+    }
+  });
+}
+
+export const loadMiniHomeSnapshot = createLoadMiniHomeSnapshotCallable(miniHomeSnapshotStore);
 
 export const deleteMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
   try {
@@ -164,6 +216,42 @@ export const saveMiniHomeLayout = onCall({ enforceAppCheck: true }, async (reque
       );
     }
     throw error;
+  }
+});
+
+function inventoryHttpsError(error: unknown): never {
+  if (!(error instanceof InventoryError)) throw error;
+  throw new HttpsError(error.code, error.message, {
+    reason: error.reason,
+    ...error.details,
+  });
+}
+
+export function createLoadInventoryCallable(store: InventoryStore) {
+  return onCall({ enforceAppCheck: true }, async (request) => {
+    try {
+      return await executeLoadInventory(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        store,
+      );
+    } catch (error: unknown) {
+      return inventoryHttpsError(error);
+    }
+  });
+}
+
+export const loadInventory = createLoadInventoryCallable(inventoryStore);
+
+export const acquireInventoryItem = onCall({ enforceAppCheck: true }, async (request) => {
+  try {
+    return await executeAcquireInventoryItem(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      inventoryStore,
+    );
+  } catch (error: unknown) {
+    return inventoryHttpsError(error);
   }
 });
 

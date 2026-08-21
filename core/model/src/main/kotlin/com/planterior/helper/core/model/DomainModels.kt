@@ -344,15 +344,56 @@ data class RiskGuidanceContent(
     val updatedAt: Instant,
 )
 
+data class CatalogMediaIdentity(
+    val path: String,
+    val sha256: String,
+    val byteSize: Long,
+    val mimeType: String,
+    val width: Int,
+    val height: Int,
+    val mediaRevision: Revision,
+) {
+    init {
+        require(sha256.matches(Regex("^[a-f0-9]{64}$")))
+        val match =
+            requireNotNull(
+                Regex("^catalog-assets/[A-Za-z0-9_-]{1,128}/([a-f0-9]{64})\\.(png|jpg|jpeg|webp)$")
+                    .matchEntire(path)
+            ) {
+                "Catalog media path must contain its lowercase SHA-256 identity"
+            }
+        require(match.groupValues[1] == sha256) { "Catalog media path digest differs" }
+        require(byteSize in 1..8L * 1024L * 1024L)
+        require(width in 1..32_768 && height in 1..32_768)
+        val pixels = width.toLong() * height
+        require(pixels <= 64L * 1024L * 1024L && pixels * 4L <= 256L * 1024L * 1024L)
+        require(maxOf(width, height).toLong() <= minOf(width, height).toLong() * 32L)
+        val extension = match.groupValues[2]
+        require(
+            (extension == "png" && mimeType == "image/png") ||
+                (extension in setOf("jpg", "jpeg") && mimeType == "image/jpeg") ||
+                (extension == "webp" && mimeType == "image/webp")
+        )
+        require(mediaRevision.value >= 1)
+    }
+
+    val cacheKey: String
+        get() = "$path#$sha256@${mediaRevision.value}"
+}
+
 data class ShopItem(
     val id: ItemId,
     val name: String,
+    val description: String,
     val category: ItemCategory,
-    val assetPath: String,
+    val mediaIdentity: CatalogMediaIdentity,
     val acquisitionCondition: String?,
     val publicationState: PublicationState,
     val revision: Revision,
-)
+) {
+    val assetPath: String
+        get() = mediaIdentity.path
+}
 
 data class OwnedItem(
     val itemId: ItemId,

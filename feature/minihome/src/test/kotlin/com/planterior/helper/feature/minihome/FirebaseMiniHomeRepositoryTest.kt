@@ -1,15 +1,28 @@
 package com.planterior.helper.feature.minihome
 
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import com.google.firebase.functions.FirebaseFunctionsException
+import com.planterior.helper.core.data.AuthoritativeCatalogItem
+import com.planterior.helper.core.data.AuthoritativeInventory
+import com.planterior.helper.core.data.AuthoritativeInventoryAvailability
+import com.planterior.helper.core.data.AuthoritativeOwnedCatalogSnapshot
+import com.planterior.helper.core.data.AuthoritativeOwnedItem
+import com.planterior.helper.core.data.INVENTORY_CONTRACT_VERSION
 import com.planterior.helper.core.data.InconsistentMiniHomeLayoutException
+import com.planterior.helper.core.data.authoritativeInventorySnapshotHash
+import com.planterior.helper.core.data.cacheWrite
+import com.planterior.helper.core.data.verifiedAuthoritativeInventoryOrNull
+import com.planterior.helper.core.database.AuthoritativeMiniHomeCacheWrite
 import com.planterior.helper.core.database.CachedMiniHomeEntity
+import com.planterior.helper.core.database.CachedMiniHomePlacementEntity
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkEntity
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkKind
 import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.OperationId
@@ -18,7 +31,10 @@ import com.planterior.helper.core.model.PlacementId
 import com.planterior.helper.core.model.Revision
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
@@ -388,7 +404,538 @@ class FirebaseMiniHomeRepositoryTest {
     }
 
     @Test
-    fun `offline migrated cache is visible then normal load bootstraps verified missing state`() =
+    fun `failure rereads Room winner instead of publishing cache captured before remote`() =
+        runTest {
+            val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+            val repository = FirebaseMiniHomeRepository(database, remote)
+            assertEquals(
+                Revision(1),
+                (repository.load() as MiniHomeLoadResult.Ready).committed.revision,
+            )
+            val remoteStarted = CompletableDeferred<Unit>()
+            val releaseFailure = CompletableDeferred<Unit>()
+            remote.onLoad = {
+                remoteStarted.complete(Unit)
+                releaseFailure.await()
+                throw IOException("offline after concurrent sync")
+            }
+
+            val loading = async { repository.load() }
+            remoteStarted.await()
+            applyCoherentRoomSnapshot(database, layout(2), 2)
+            releaseFailure.complete(Unit)
+
+            val loaded = loading.await() as MiniHomeLoadResult.Ready
+            assertTrue(loaded.stale)
+            assertEquals(Revision(2), loaded.committed.revision)
+            assertEquals(
+                Revision(2),
+                Revision(requireNotNull(database.cacheDao().miniHome("account-a")).revision),
+            )
+        }
+
+    @Test
+    fun `old remote success returns concurrent newer Room winner without stale decoration`() =
+        runTest {
+            val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+            val repository = FirebaseMiniHomeRepository(database, remote)
+            repository.load()
+            val remoteStarted = CompletableDeferred<Unit>()
+            val releaseSuccess = CompletableDeferred<Unit>()
+            remote.onLoad = {
+                remoteStarted.complete(Unit)
+                releaseSuccess.await()
+            }
+
+            val loading = async { repository.load() }
+            remoteStarted.await()
+            applyCoherentRoomSnapshot(database, layout(2), 2)
+            releaseSuccess.complete(Unit)
+
+            val loaded = loading.await() as MiniHomeLoadResult.Ready
+            assertFalse(loaded.stale)
+            assertEquals(Revision(2), loaded.committed.revision)
+            assertEquals("저장된 방", loaded.committed.name)
+            assertEquals(2L, database.cacheDao().miniHome("account-a")?.revision)
+        }
+
+    @Test
+    fun `owner switch at failure-time Room reread forbids old owner publication`() = runTest {
+        val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+        var gateRead = false
+        val rereadEntered = CompletableDeferred<Unit>()
+        val releaseReread = CompletableDeferred<Unit>()
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                remote,
+                beforePublicationRead = {
+                    if (gateRead) {
+                        rereadEntered.complete(Unit)
+                        releaseReread.await()
+                    }
+                },
+            )
+        repository.load()
+        remote.onLoad = { throw IOException("offline") }
+        gateRead = true
+
+        val loading = async { repository.load() }
+        rereadEntered.await()
+        remote.account = AccountId("account-b")
+        releaseReread.complete(Unit)
+
+        assertEquals(MiniHomeLoadResult.Forbidden, loading.await())
+    }
+
+    @Test
+    fun `deletion tombstone committed during failure wins over captured layout`() = runTest {
+        val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+        val repository = FirebaseMiniHomeRepository(database, remote)
+        repository.load()
+        val remoteStarted = CompletableDeferred<Unit>()
+        val releaseFailure = CompletableDeferred<Unit>()
+        remote.onLoad = {
+            remoteStarted.complete(Unit)
+            releaseFailure.await()
+            throw IOException("offline after deletion")
+        }
+
+        val loading = async { repository.load() }
+        remoteStarted.await()
+        database.withTransaction {
+            val inventory =
+                requireNotNull(
+                    database
+                        .cacheDao()
+                        .currentInventoryCache("account-a")
+                        ?.verifiedAuthoritativeInventoryOrNull(AccountId("account-a"))
+                )
+            database
+                .cacheDao()
+                .applyAuthoritativeMiniHome(
+                    AuthoritativeMiniHomeCacheWrite.Deletion(
+                        "account-a",
+                        2,
+                        "deletion-generation-two",
+                        2,
+                        snapshotToken(2),
+                        2,
+                    )
+                )
+            database
+                .cacheDao()
+                .applyAuthoritativeInventory(inventory.cacheWrite(snapshotToken(2), 2))
+        }
+        releaseFailure.complete(Unit)
+
+        val loaded = loading.await() as MiniHomeLoadResult.Ready
+        assertTrue(loaded.stale)
+        assertEquals(Revision(0), loaded.committed.revision)
+        assertEquals("나의 미니 식물원", loaded.committed.name)
+        assertNull(database.cacheDao().miniHome("account-a"))
+        assertEquals(
+            MiniHomeCacheWatermarkKind.DELETED.name,
+            database.cacheDao().miniHomeCacheWatermark("account-a")?.kind,
+        )
+    }
+
+    @Test
+    fun `failure-time atomic reread cannot publish torn layout and inventory revisions`() =
+        runTest {
+            val firstIdentity = testMiniHomeMediaIdentity("coherent-first", "first")
+            val secondIdentity = testMiniHomeMediaIdentity("coherent-second", "second")
+            val remote =
+                FakeRemote(layout(1)).apply {
+                    cacheGeneration = 1
+                    authoritativeInventory =
+                        authoritativeInventory(
+                            "coherent-first",
+                            "첫 장식",
+                            ItemCategory.DECORATION,
+                            firstIdentity,
+                            generation = 1,
+                        )
+                }
+            var watchReread = false
+            val rereadAttempted = CompletableDeferred<Unit>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    remote,
+                    beforePublicationRead = {
+                        if (watchReread) rereadAttempted.complete(Unit)
+                    },
+                )
+            repository.load()
+            val remoteStarted = CompletableDeferred<Unit>()
+            val releaseFailure = CompletableDeferred<Unit>()
+            remote.onLoad = {
+                remoteStarted.complete(Unit)
+                releaseFailure.await()
+                throw IOException("offline during coherent sync")
+            }
+            watchReread = true
+            val loading = async { repository.load() }
+            remoteStarted.await()
+
+            val layoutWritten = CompletableDeferred<Unit>()
+            val releaseInventory = CountDownLatch(1)
+            val writer =
+                async(Dispatchers.IO) {
+                    database.withTransaction {
+                        database
+                            .cacheDao()
+                            .applyAuthoritativeMiniHome(cacheLayoutWrite(layout(2), 2))
+                        layoutWritten.complete(Unit)
+                        check(releaseInventory.await(10, TimeUnit.SECONDS)) {
+                            "inventory write barrier was not released"
+                        }
+                        database
+                            .cacheDao()
+                            .applyAuthoritativeInventory(
+                                authoritativeInventory(
+                                        "coherent-second",
+                                        "둘째 장식",
+                                        ItemCategory.DECORATION,
+                                        secondIdentity,
+                                        generation = 2,
+                                    )
+                                    .cacheWrite(snapshotToken(2), 2)
+                            )
+                    }
+                }
+
+            layoutWritten.await()
+            releaseFailure.complete(Unit)
+            rereadAttempted.await()
+            releaseInventory.countDown()
+            writer.await()
+
+            val loaded = loading.await() as MiniHomeLoadResult.Ready
+            assertTrue(loaded.stale)
+            assertEquals(Revision(2), loaded.committed.revision)
+            assertEquals(listOf("coherent-second"), loaded.decorations.map { it.id.value })
+            assertFalse(loaded.decorations.single().availableForApplication)
+            assertEquals(
+                2L,
+                database.cacheDao().inventorySnapshotWatermark("account-a")?.generation,
+            )
+        }
+
+    @Test
+    fun `two concurrent failed loads both publish the newer Room winner`() = runTest {
+        val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+        val repository = FirebaseMiniHomeRepository(database, remote)
+        repository.load()
+        val firstRemoteStarted = CompletableDeferred<Unit>()
+        val releaseFirstFailure = CompletableDeferred<Unit>()
+        var delayedLoad = 0
+        remote.onLoad = {
+            delayedLoad += 1
+            if (delayedLoad == 1) {
+                firstRemoteStarted.complete(Unit)
+                releaseFirstFailure.await()
+            }
+            throw IOException("offline load $delayedLoad")
+        }
+
+        val first = async { repository.load() }
+        firstRemoteStarted.await()
+        val second = async { repository.load() }
+        applyCoherentRoomSnapshot(database, layout(2), 2)
+        releaseFirstFailure.complete(Unit)
+
+        val results = listOf(first.await(), second.await()).map { it as MiniHomeLoadResult.Ready }
+        assertTrue(results.all { it.stale })
+        assertEquals(listOf(Revision(2), Revision(2)), results.map { it.committed.revision })
+        assertEquals(2, delayedLoad)
+    }
+
+    @Test
+    fun `process restart offline fallback publishes persisted newer Room winner`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "mini-home-monotonic-fallback-restart.db"
+        context.deleteDatabase(name)
+        val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+        var first: PlanteriorDatabase? =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
+                .allowMainThreadQueries()
+                .build()
+        var second: PlanteriorDatabase? = null
+        try {
+            FirebaseMiniHomeRepository(requireNotNull(first), remote).load()
+            applyCoherentRoomSnapshot(first, layout(2), 2)
+            first.close()
+            first = null
+            remote.failLoad = true
+            second =
+                Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
+                    .allowMainThreadQueries()
+                    .build()
+
+            val loaded =
+                FirebaseMiniHomeRepository(requireNotNull(second), remote).load()
+                    as MiniHomeLoadResult.Ready
+
+            assertTrue(loaded.stale)
+            assertEquals(Revision(2), loaded.committed.revision)
+            assertEquals(2L, second.cacheDao().miniHome("account-a")?.revision)
+        } finally {
+            first?.close()
+            second?.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun `online inventory survives repository restart and restores exact digest background offline`() =
+        runTest {
+            val identity = testMiniHomeMediaIdentity("durable-background", "durable bytes")
+            val remote =
+                FakeRemote(layout(3)).apply {
+                    authoritativeInventory =
+                        authoritativeInventory(
+                            "durable-background",
+                            "지속되는 배경",
+                            ItemCategory.BACKGROUND,
+                            identity,
+                        )
+                }
+
+            val online = FirebaseMiniHomeRepository(database, remote).load()
+            remote.failLoad = true
+            val offline = FirebaseMiniHomeRepository(database, remote).load()
+
+            assertEquals(
+                identity,
+                (online as MiniHomeLoadResult.Ready).decorations.single().mediaIdentity,
+            )
+            assertEquals(
+                identity,
+                (offline as MiniHomeLoadResult.Ready).decorations.single().mediaIdentity,
+            )
+            assertTrue(offline.stale)
+            assertFalse(offline.decorations.single().availableForApplication)
+        }
+
+    @Test
+    fun `disk Room recreation restores verified inventory and layout offline`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "mini-home-inventory-restart.db"
+        context.deleteDatabase(name)
+        val remote =
+            FakeRemote(layout(5)).apply {
+                authoritativeInventory =
+                    authoritativeInventory(
+                        "restart-furniture",
+                        "재시작 가구",
+                        ItemCategory.FURNITURE,
+                        testMiniHomeMediaIdentity("restart-furniture", "restart"),
+                        generation = 6,
+                    )
+            }
+        var first: PlanteriorDatabase? =
+            Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
+                .allowMainThreadQueries()
+                .build()
+        var second: PlanteriorDatabase? = null
+        try {
+            FirebaseMiniHomeRepository(requireNotNull(first), remote).load()
+            first.close()
+            first = null
+            remote.failLoad = true
+            second =
+                Room.databaseBuilder(context, PlanteriorDatabase::class.java, name)
+                    .allowMainThreadQueries()
+                    .build()
+
+            val restored =
+                FirebaseMiniHomeRepository(requireNotNull(second), remote).load()
+                    as MiniHomeLoadResult.Ready
+
+            assertTrue(restored.stale)
+            assertEquals(Revision(5), restored.committed.revision)
+            assertEquals(ItemCategory.FURNITURE, restored.decorations.single().category)
+            assertEquals(
+                testMiniHomeMediaIdentity("restart-furniture", "restart"),
+                restored.decorations.single().mediaIdentity,
+            )
+        } finally {
+            first?.close()
+            second?.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun `same inventory generation conflict rolls back newer layout and returns coherent cache`() =
+        runTest {
+            val remote =
+                FakeRemote(layout(3)).apply {
+                    authoritativeInventory =
+                        authoritativeInventory(
+                            "stable-background",
+                            "안정 배경",
+                            ItemCategory.BACKGROUND,
+                            testMiniHomeMediaIdentity("stable-background", "stable"),
+                            generation = 2,
+                        )
+                }
+            val repository = FirebaseMiniHomeRepository(database, remote)
+            repository.load()
+            remote.layout = layout(4).copy(name = "찢어진 새 배치")
+            remote.cacheGeneration = 4
+            remote.authoritativeInventory =
+                authoritativeInventory(
+                    "conflicting-background",
+                    "충돌 배경",
+                    ItemCategory.BACKGROUND,
+                    testMiniHomeMediaIdentity("conflicting-background", "conflict"),
+                    generation = 2,
+                )
+
+            val recovered = repository.load() as MiniHomeLoadResult.Ready
+
+            assertTrue(recovered.stale)
+            assertEquals(Revision(3), recovered.committed.revision)
+            assertEquals("저장된 방", recovered.committed.name)
+            assertEquals(listOf("stable-background"), recovered.decorations.map { it.id.value })
+            assertEquals(3L, database.cacheDao().miniHome("account-a")?.revision)
+        }
+
+    @Test
+    fun `mixed envelope with delayed inventory rolls back newer layout and keeps coherent cache`() =
+        runTest {
+            val remote =
+                FakeRemote(layout(3)).apply {
+                    authoritativeInventory =
+                        authoritativeInventory(
+                            "current-decoration",
+                            "현재 장식",
+                            ItemCategory.DECORATION,
+                            testMiniHomeMediaIdentity("current-decoration", "current"),
+                            generation = 3,
+                        )
+                }
+            val repository = FirebaseMiniHomeRepository(database, remote)
+            repository.load()
+            remote.layout = layout(4).copy(name = "새 배치")
+            remote.cacheGeneration = 4
+            remote.authoritativeInventory =
+                authoritativeInventory(
+                    "delayed-decoration",
+                    "지연 장식",
+                    ItemCategory.DECORATION,
+                    testMiniHomeMediaIdentity("delayed-decoration", "delayed"),
+                    generation = 2,
+                )
+
+            val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+            assertTrue(loaded.stale)
+            assertEquals(Revision(3), loaded.committed.revision)
+            assertEquals(listOf("current-decoration"), loaded.decorations.map { it.id.value })
+            assertEquals(
+                3L,
+                database.cacheDao().inventorySnapshotWatermark("account-a")?.generation,
+            )
+        }
+
+    @Test
+    fun `offline inventory fallback preserves background removal metadata but never enables stale application`() =
+        runTest {
+            val account = AccountId("account-a")
+            val backgroundIdentity = testMiniHomeMediaIdentity("cached-background", "cached")
+            val deletedIdentity = testMiniHomeMediaIdentity("deleted-decoration", "deleted")
+            val catalog =
+                listOf(
+                    AuthoritativeCatalogItem(
+                        ItemId("cached-background"),
+                        "저장된 배경",
+                        "이전 공개 배경",
+                        ItemCategory.BACKGROUND,
+                        backgroundIdentity,
+                        null,
+                        Revision(2),
+                        20,
+                    )
+                )
+            val owned =
+                listOf(
+                    AuthoritativeOwnedItem(
+                        ItemId("cached-background"),
+                        21,
+                        true,
+                        Revision(3),
+                        AuthoritativeInventoryAvailability.AVAILABLE,
+                        null,
+                    ),
+                    AuthoritativeOwnedItem(
+                        ItemId("deleted-decoration"),
+                        10,
+                        true,
+                        Revision(4),
+                        AuthoritativeInventoryAvailability.UNAVAILABLE,
+                        AuthoritativeOwnedCatalogSnapshot(
+                            "삭제된 장식",
+                            ItemCategory.DECORATION,
+                            deletedIdentity,
+                            Revision(3),
+                        ),
+                    ),
+                )
+            val cachedInventory =
+                AuthoritativeInventory(
+                    INVENTORY_CONTRACT_VERSION,
+                    account,
+                    catalog,
+                    owned,
+                    1,
+                    21,
+                    partial = true,
+                    generation = 1,
+                    snapshotHash =
+                        authoritativeInventorySnapshotHash(
+                            account,
+                            catalog,
+                            owned,
+                            1,
+                            true,
+                        ),
+                )
+            val remote = FakeRemote(layout(3)).apply { authoritativeInventory = cachedInventory }
+            val repository = FirebaseMiniHomeRepository(database, remote)
+            repository.load()
+            remote.failLoad = true
+
+            val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+            assertTrue(loaded.stale)
+            assertEquals(2, loaded.decorations.size)
+            assertEquals(ItemCategory.BACKGROUND, loaded.decorations[0].category)
+            assertEquals(backgroundIdentity.path, loaded.decorations[0].assetPath)
+            assertTrue(loaded.decorations.none { it.availableForApplication })
+            assertEquals("삭제된 장식", loaded.decorations[1].displayName)
+
+            remote.failLoad = false
+            remote.authoritativeInventory =
+                authoritativeInventory(
+                    "fresh-background",
+                    "새로 획득한 배경",
+                    ItemCategory.BACKGROUND,
+                    testMiniHomeMediaIdentity("fresh-background", "fresh"),
+                    generation = 2,
+                )
+            val refreshed =
+                FirebaseMiniHomeRepository(database, remote).load() as MiniHomeLoadResult.Ready
+            assertFalse(refreshed.stale)
+            assertEquals(listOf("fresh-background"), refreshed.decorations.map { it.id.value })
+            assertTrue(refreshed.decorations.single().availableForApplication)
+        }
+
+    @Test
+    fun `offline migrated cache without an envelope token fails closed then online rebuilds`() =
         runTest {
             database
                 .cacheDao()
@@ -433,6 +980,7 @@ class FirebaseMiniHomeRepositoryTest {
                             cacheGeneration = 1,
                             deletionTombstoneId = "initial-missing",
                             authoritativeAtEpochMillis = 400,
+                            authoritativeInventory = emptyAuthoritativeInventory(accountId),
                         )
                     }
 
@@ -442,12 +990,11 @@ class FirebaseMiniHomeRepositoryTest {
                 }
             val repository = FirebaseMiniHomeRepository(database, remote)
 
-            val cached = repository.load() as MiniHomeLoadResult.Ready
+            assertEquals(MiniHomeLoadResult.Failed, repository.load())
+            assertNull(database.cacheDao().miniHome("account-a"))
             offline = false
             val bootstrapped = repository.load() as MiniHomeLoadResult.Ready
 
-            assertTrue(cached.stale)
-            assertEquals("migrated revision three", cached.committed.name)
             assertFalse(bootstrapped.stale)
             assertEquals(Revision(0), bootstrapped.committed.revision)
             assertNull(database.cacheDao().miniHome("account-a"))
@@ -586,32 +1133,30 @@ class FirebaseMiniHomeRepositoryTest {
         }
 
     @Test
-    fun `irrecoverable remote name cannot overwrite a valid stale cache`() = runTest {
+    fun `invalid remote cannot publish legacy cache without an envelope token`() = runTest {
         database
             .cacheDao()
             .upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "안전한 캐시", 0, 2, 2))
         val remote = FakeRemote(layout(3).copy(name = "A\u202EB"))
 
-        val loaded = FirebaseMiniHomeRepository(database, remote).load() as MiniHomeLoadResult.Ready
+        val loaded = FirebaseMiniHomeRepository(database, remote).load()
 
-        assertTrue(loaded.stale)
-        assertEquals("안전한 캐시", loaded.committed.name)
-        assertEquals("안전한 캐시", database.cacheDao().miniHome("account-a")?.name)
+        assertEquals(MiniHomeLoadResult.Failed, loaded)
+        assertNull(database.cacheDao().miniHome("account-a"))
     }
 
     @Test
-    fun `offline recoverable legacy cache is displayed as NFC and safely rewritten`() = runTest {
+    fun `offline recoverable legacy cache without an envelope token fails closed`() = runTest {
         database
             .cacheDao()
             .upsertMiniHome(CachedMiniHomeEntity("account-a", "home-a", "e\u0301", 0, 2, 2))
         val remote = FakeRemote(layout(3)).apply { failLoad = true }
 
-        val loaded = FirebaseMiniHomeRepository(database, remote).load() as MiniHomeLoadResult.Ready
+        val loaded = FirebaseMiniHomeRepository(database, remote).load()
 
         assertEquals(1, remote.loadCalls)
-        assertTrue(loaded.stale)
-        assertEquals("é", loaded.committed.name)
-        assertEquals("é", database.cacheDao().miniHome("account-a")?.name)
+        assertEquals(MiniHomeLoadResult.Failed, loaded)
+        assertNull(database.cacheDao().miniHome("account-a"))
     }
 
     @Test
@@ -2035,6 +2580,112 @@ class FirebaseMiniHomeRepositoryTest {
             )
     }
 
+    private fun authoritativeInventory(
+        itemId: String,
+        name: String,
+        category: ItemCategory,
+        identity: com.planterior.helper.core.model.CatalogMediaIdentity,
+        generation: Long = 1,
+        partial: Boolean = false,
+    ): AuthoritativeInventory {
+        val account = AccountId("account-a")
+        val catalog =
+            listOf(
+                AuthoritativeCatalogItem(
+                    ItemId(itemId),
+                    name,
+                    "$name 설명",
+                    category,
+                    identity,
+                    null,
+                    Revision(generation),
+                    generation,
+                )
+            )
+        val owned =
+            listOf(
+                AuthoritativeOwnedItem(
+                    ItemId(itemId),
+                    generation,
+                    applied = false,
+                    revision = Revision(generation),
+                    availability = AuthoritativeInventoryAvailability.AVAILABLE,
+                    catalogSnapshot = null,
+                )
+            )
+        return AuthoritativeInventory(
+            INVENTORY_CONTRACT_VERSION,
+            account,
+            catalog,
+            owned,
+            registeredPlantCount = 1,
+            loadedAtEpochMillis = generation,
+            partial = partial,
+            generation = generation,
+            snapshotHash = authoritativeInventorySnapshotHash(account, catalog, owned, 1, partial),
+        )
+    }
+
+    private suspend fun applyCoherentRoomSnapshot(
+        target: PlanteriorDatabase,
+        value: MiniHomeLayout,
+        generation: Long,
+    ) {
+        target.withTransaction {
+            val inventory =
+                requireNotNull(
+                    target
+                        .cacheDao()
+                        .currentInventoryCache("account-a")
+                        ?.verifiedAuthoritativeInventoryOrNull(AccountId("account-a"))
+                )
+            target.cacheDao().applyAuthoritativeMiniHome(cacheLayoutWrite(value, generation))
+            target
+                .cacheDao()
+                .applyAuthoritativeInventory(
+                    inventory.cacheWrite(snapshotToken(generation), generation)
+                )
+        }
+    }
+
+    private fun snapshotToken(generation: Long): String = generation.toString(16).padStart(64, '0')
+
+    private fun cacheLayoutWrite(
+        value: MiniHomeLayout,
+        generation: Long,
+    ): AuthoritativeMiniHomeCacheWrite.Layout =
+        AuthoritativeMiniHomeCacheWrite.Layout(
+            accountId = "account-a",
+            generation = generation,
+            operationId = "sync-operation-$generation",
+            payloadHash = generation.toString().padStart(64, '0'),
+            home =
+                CachedMiniHomeEntity(
+                    "account-a",
+                    value.id.value,
+                    value.name,
+                    value.placements.count { it.target is MiniHomePlacementTarget.Plant },
+                    value.revision.value,
+                    value.updatedAt.toEpochMilli(),
+                ),
+            placements =
+                value.placements.map {
+                    CachedMiniHomePlacementEntity(
+                        "account-a",
+                        it.id.value,
+                        value.id.value,
+                        (it.target as? MiniHomePlacementTarget.Plant)?.plantId?.value,
+                        (it.target as? MiniHomePlacementTarget.Decoration)?.itemId?.value,
+                        it.position.normalizedX.value,
+                        it.position.normalizedY.value,
+                        it.zIndex.value,
+                        value.revision.value,
+                    )
+                },
+            snapshotToken = snapshotToken(generation),
+            snapshotGeneration = generation,
+        )
+
     private fun request(operationId: String, draft: MiniHomeLayout) =
         MiniHomeSaveRequest(
             AccountId("account-a"),
@@ -2085,6 +2736,8 @@ class FirebaseMiniHomeRepositoryTest {
         var loadCalls = 0
         var plants = listOf(MiniHomePlantChoice(PersonalPlantId("plant-a"), "몬스테라", null))
         var decorations = emptyList<MiniHomeDecorationChoice>()
+        var authoritativeInventory =
+            emptyAuthoritativeInventory(account, maxOf(1, layout.revision.value))
         var committedOperationId: OperationId? = null
         var committedExpectedRevision: Revision? = null
         var committedPayloadHash: String? = null
@@ -2112,6 +2765,9 @@ class FirebaseMiniHomeRepositoryTest {
                 cacheOperationId =
                     committedOperationId?.value ?: "legacy-cache-${layout.revision.value}",
                 cachePayloadHash = committedPayloadHash ?: "0".repeat(64),
+                authoritativeInventory =
+                    authoritativeInventory.takeIf { it.accountId == account }
+                        ?: emptyAuthoritativeInventory(account, maxOf(1, cacheGeneration)),
             )
         }
 
@@ -2154,6 +2810,8 @@ class FirebaseMiniHomeRepositoryTest {
                 committedOperationId,
                 committedExpectedRevision,
                 committedPayloadHash,
+                authoritativeInventory =
+                    emptyAuthoritativeInventory(account, maxOf(1, layout.revision.value)),
             )
 
         override suspend fun save(request: MiniHomeSaveRequest): RemoteMiniHomeSaveResult {
@@ -2196,6 +2854,8 @@ class FirebaseMiniHomeRepositoryTest {
                 operations.lastOrNull()?.let(::OperationId),
                 if (operations.isEmpty()) null else Revision(3),
                 committedPayloadHash,
+                authoritativeInventory =
+                    emptyAuthoritativeInventory(account, maxOf(1, layout.revision.value)),
             )
         }
 
@@ -2215,3 +2875,26 @@ class FirebaseMiniHomeRepositoryTest {
         }
     }
 }
+
+private fun emptyAuthoritativeInventory(
+    accountId: AccountId,
+    generation: Long = 1,
+): AuthoritativeInventory =
+    AuthoritativeInventory(
+        contractVersion = INVENTORY_CONTRACT_VERSION,
+        accountId = accountId,
+        catalog = emptyList(),
+        owned = emptyList(),
+        registeredPlantCount = 0,
+        loadedAtEpochMillis = generation,
+        partial = false,
+        generation = generation,
+        snapshotHash =
+            authoritativeInventorySnapshotHash(
+                accountId,
+                emptyList(),
+                emptyList(),
+                registeredPlantCount = 0,
+                partial = false,
+            ),
+    )

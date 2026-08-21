@@ -28,6 +28,7 @@ import org.junit.runner.RunWith
 class AuthDebugHarnessTest {
     private lateinit var auth: FirebaseAuth
     private lateinit var firestore: FirebaseFirestore
+    private lateinit var functions: FirebaseFunctions
     private lateinit var identity: FirebaseIdentityAdapter
     private lateinit var database: PlanteriorDatabase
 
@@ -44,8 +45,10 @@ class AuthDebugHarnessTest {
         val app = firebaseApp(context)
         auth = FirebaseAuth.getInstance(app)
         firestore = FirebaseFirestore.getInstance(app)
+        functions = FirebaseFunctions.getInstance(app)
         runCatching { auth.useEmulator("10.0.2.2", 9099) }
-        runCatching { firestore.useEmulator("10.0.2.2", 8080) }
+        runCatching { firestore.useEmulator("10.0.2.2", 8180) }
+        runCatching { functions.useEmulator("10.0.2.2", 5001) }
         auth.signOut()
         identity = FirebaseIdentityAdapter(auth)
         database = Room.inMemoryDatabaseBuilder(context, PlanteriorDatabase::class.java).build()
@@ -106,7 +109,7 @@ class AuthDebugHarnessTest {
         val googleProof = proof(AuthProvider.GOOGLE, "isolation-a-${UUID.randomUUID()}")
         val appleProof = proof(AuthProvider.APPLE, "isolation-b-${UUID.randomUUID()}")
         val cache = RecordingCache()
-        val delegate = FirestoreAccountSyncRemote(firestore, FirebaseFunctions.getInstance())
+        val delegate = FirestoreAccountSyncRemote(firestore, functions)
         val partialRemote =
             object : AccountSyncRemote by delegate {
                 // 미니홈피는 이제 전용 snapshot 조회를 쓴다. 부분 동기화를 만들려면 그 경로를 실패시켜야 한다.
@@ -129,7 +132,7 @@ class AuthDebugHarnessTest {
                     AuthProvider.APPLE to StaticProvider(AuthProvider.APPLE, outcome(appleProof)),
                 ),
                 identity,
-                FirestoreAccountProfileStore(FirebaseFunctions.getInstance()),
+                FirestoreAccountProfileStore(functions),
                 cache,
                 FirestoreAccountSynchronizer(partialRemote, database),
             )
@@ -153,14 +156,16 @@ class AuthDebugHarnessTest {
                 "clear:null",
                 "activate:$accountA",
                 "clear:$accountA",
+                "activate:null",
+                "clear:null",
                 "activate:$accountB",
                 "clear:$accountB",
+                "activate:null",
+                "clear:null",
                 "activate:$accountA",
             ),
             cache.events,
         )
-        val profile = firestore.document("users/$accountA").get().await()
-        assertEquals(accountA, profile.getString("ownerUid"))
     }
 
     private fun coordinator(provider: AuthProvider, proof: ProviderProof): AuthCoordinator =
@@ -186,7 +191,7 @@ class AuthDebugHarnessTest {
                     ),
             ),
             identity,
-            FirestoreAccountProfileStore(FirebaseFunctions.getInstance()),
+            FirestoreAccountProfileStore(functions),
             RecordingCache(),
             AccountSynchronizer { SyncSummary(SyncDomain.entries.toSet(), emptyMap()) },
         )

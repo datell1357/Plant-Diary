@@ -1,9 +1,13 @@
 {
   "name": "planterior-emulator-contract-tests",
   "private": true,
+  "engines": {
+    "node": "22"
+  },
   "scripts": {
-    "test": "node scripts/run-rules-tests.cjs",
-    "test:harness": "node --test test-harness/*.test.cjs"
+    "verify:node22": "npx --yes node@22 ../functions/scripts/require-node22.cjs",
+    "test": "npm run verify:node22 && npx --yes node@22 scripts/run-rules-tests.cjs",
+    "test:harness": "npm run verify:node22 && npx --yes node@22 --test test-harness/*.test.cjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.1",

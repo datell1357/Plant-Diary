@@ -17,6 +17,24 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            functions/package-lock.json
+            firebase-tests/package-lock.json
+      - name: Install Firebase test dependencies
+        run: npm ci --prefix functions && npm ci --prefix firebase-tests
+      - name: Verify Functions unit contracts on Node 22
+        run: npm --prefix functions test
+      - name: Verify canonical Firebase Rules 41 contract on Node 22
+        run: npx --yes firebase-tools@15.20.0 emulators:exec --project demo-planterior --only firestore,storage 'npm --prefix firebase-tests test'
+      - name: Verify Functions emulator and smoke contracts on Node 22
+        run: npx --yes firebase-tools@15.20.0 emulators:exec --project demo-planterior --only auth,firestore,functions,storage 'npm --prefix functions run test:emulator && npx --yes node@22 --test firebase-tests/test/functions-smoke.cjs'
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -28,6 +46,17 @@ jobs:
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
       - name: Cache Gradle state
         uses: gradle/actions/setup-gradle@v4
+      - name: Set up Go for pinned Gitleaks
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Install Gitleaks 8.30.1
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          GOBIN="$RUNNER_TEMP/gitleaks-bin" go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+      - name: Verify security provenance and dirty-tree secrets
+        run: scripts/test-security-provenance.sh && scripts/verify-security.sh
       - name: Verify project
         run: ./gradlew projects spotlessCheck lintDebug testDebugUnitTest assembleDebug
       - name: Verify external release authentication contract

@@ -11,7 +11,64 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp|heif|heic)')
         && request.resource.metadata.ownerUid == uid;
     }
+    function validCatalogAsset(itemId, fileName) {
+      return safeSegment(itemId)
+        && safeFileName(fileName)
+        && fileName.matches('^[a-f0-9]{64}[.](png|jpg|jpeg|webp)$')
+        && resource.size > 0
+        && resource.size <= 8 * 1024 * 1024
+        && resource.contentType.matches('image/(jpeg|png|webp)')
+        && resource.metadata.keys().hasAll(['width', 'height', 'sha256', 'mediaRevision'])
+        && ((fileName == (resource.metadata.sha256 + '.png') && resource.contentType == 'image/png')
+          || ((fileName == (resource.metadata.sha256 + '.jpg') || fileName == (resource.metadata.sha256 + '.jpeg')) && resource.contentType == 'image/jpeg')
+          || (fileName == (resource.metadata.sha256 + '.webp') && resource.contentType == 'image/webp'))
+        && resource.metadata.sha256.matches('^[a-f0-9]{64}$')
+        && resource.metadata.mediaRevision.matches('^[1-9][0-9]{0,15}$')
+        && resource.metadata.width.matches('^[1-9][0-9]{0,4}$')
+        && resource.metadata.height.matches('^[1-9][0-9]{0,4}$')
+        && int(resource.metadata.width) <= 32768
+        && int(resource.metadata.height) <= 32768
+        && int(resource.metadata.width) * int(resource.metadata.height) <= 64 * 1024 * 1024
+        && int(resource.metadata.width) * int(resource.metadata.height) * 4 <= 256 * 1024 * 1024
+        && int(resource.metadata.width) <= int(resource.metadata.height) * 32
+        && int(resource.metadata.height) <= int(resource.metadata.width) * 32;
+    }
+    function publicCatalogAsset(itemId, fileName) {
+      let catalogPath = /databases/(default)/documents/shopItems/$(itemId);
+      return firestore.exists(catalogPath)
+        && firestore.get(catalogPath).data.publicationState == 'PUBLIC'
+        && firestore.get(catalogPath).data.acquisitionCondition in [null, 'registered-plant']
+        && firestore.get(catalogPath).data.assetPath == ('catalog-assets/' + itemId + '/' + fileName)
+        && firestore.get(catalogPath).data.assetSha256 == resource.metadata.sha256
+        && firestore.get(catalogPath).data.assetMediaRevision == int(resource.metadata.mediaRevision)
+        && firestore.get(catalogPath).data.assetContentType == resource.contentType
+        && firestore.get(catalogPath).data.assetByteSize == resource.size
+        && firestore.get(catalogPath).data.assetWidth == int(resource.metadata.width)
+        && firestore.get(catalogPath).data.assetHeight == int(resource.metadata.height);
+    }
+    function ownedCatalogAssetForOwner(uid, itemId, fileName) {
+      let ownedPath = /databases/(default)/documents/users/$(uid)/ownedItems/$(itemId);
+      return firestore.exists(ownedPath)
+        && firestore.get(ownedPath).data.ownerUid == uid
+        && firestore.get(ownedPath).data.itemId == itemId
+        && firestore.get(ownedPath).data.assetPathSnapshot == ('catalog-assets/' + itemId + '/' + fileName)
+        && firestore.get(ownedPath).data.assetSha256Snapshot == resource.metadata.sha256
+        && firestore.get(ownedPath).data.assetMediaRevisionSnapshot == int(resource.metadata.mediaRevision)
+        && firestore.get(ownedPath).data.assetMimeTypeSnapshot == resource.contentType
+        && firestore.get(ownedPath).data.assetByteSizeSnapshot == resource.size
+        && firestore.get(ownedPath).data.assetWidthSnapshot == int(resource.metadata.width)
+        && firestore.get(ownedPath).data.assetHeightSnapshot == int(resource.metadata.height);
+    }
+    function ownedCatalogAsset(itemId, fileName) {
+      return request.auth != null
+        && ownedCatalogAssetForOwner(request.auth.uid, itemId, fileName);
+    }
 
+    match /catalog-assets/{itemId}/{fileName} {
+      allow read: if validCatalogAsset(itemId, fileName)
+        && (publicCatalogAsset(itemId, fileName) || ownedCatalogAsset(itemId, fileName));
+      allow write: if false;
+    }
     match /identification-originals/{uid}/{requestId}/{fileName} {
       allow read, delete: if owns(uid);
       allow create, update: if owns(uid) && safeSegment(requestId) && safeFileName(fileName) && validImage(uid);

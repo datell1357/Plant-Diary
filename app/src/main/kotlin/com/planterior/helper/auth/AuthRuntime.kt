@@ -38,6 +38,9 @@ import com.planterior.helper.feature.home.HomeSyncStatus
 import com.planterior.helper.feature.home.HomeWeather
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
+import com.planterior.helper.feature.shop.CatalogMediaLoader
+import com.planterior.helper.feature.shop.InventoryRepository
+import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.feature.weather.WeatherPermissionCapabilityStore
@@ -70,11 +73,13 @@ private constructor(
     val registrationRepository: RegistrationRepository?,
     val collectionRepository: CollectionRepository?,
     val miniHomeRepository: MiniHomeRepository?,
+    val inventoryRepository: InventoryRepository?,
     val wateringRepository: WateringRepository?,
     val wateringNotificationSettingsRepository: WateringNotificationSettingsRepository?,
     val weatherRepository: WeatherRepository?,
     val weatherPermissionCapabilities: WeatherPermissionCapabilityStore?,
     val collectionThumbnailLoader: PlantThumbnailLoader,
+    val catalogMediaLoader: CatalogMediaLoader,
 ) {
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -189,11 +194,13 @@ private constructor(
                     shared.database,
                     shared.miniHomeRepository,
                 ),
+                shared.inventoryRepository,
                 shared.wateringRepository,
                 shared.wateringNotificationSettingsRepository,
                 shared.weatherRepository,
                 shared.weatherPermissionCapabilities,
                 shared.collectionThumbnailLoader,
+                shared.catalogMediaLoader,
             )
         }
 
@@ -265,7 +272,9 @@ private constructor(
                 null,
                 null,
                 null,
+                null,
                 PlaceholderPlantThumbnailLoader,
+                PlaceholderCatalogMediaLoader,
             )
         }
     }

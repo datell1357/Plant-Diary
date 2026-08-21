@@ -69,8 +69,11 @@ sealed interface AuthoritativeMiniHomeLayoutRead {
 class AuthoritativeMiniHomeLayoutReader(private val callable: MiniHomeLayoutCallable) {
     constructor(functions: FirebaseFunctions) : this(FirebaseMiniHomeLayoutCallable(functions))
 
-    suspend fun read(accountId: AccountId): AuthoritativeMiniHomeLayoutRead {
-        val response = callable.call(accountId).record("response")
+    suspend fun read(accountId: AccountId): AuthoritativeMiniHomeLayoutRead =
+        parse(accountId, callable.call(accountId))
+
+    fun parse(accountId: AccountId, value: Any?): AuthoritativeMiniHomeLayoutRead {
+        val response = value.record("response")
         return when (response.string("kind")) {
             "missing" -> {
                 response.requireExactFields(MISSING_FIELDS, "missing response")

@@ -5,6 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.text.Normalizer
+import java.time.Instant
 
 @Database(
     entities =
@@ -14,16 +15,22 @@ import java.text.Normalizer
             CachedMiniHomeEntity::class,
             CachedMiniHomePlacementEntity::class,
             MiniHomeCacheWatermarkEntity::class,
+            CachedShopItemEntity::class,
+            CachedOwnedItemEntity::class,
+            InventorySnapshotWatermarkEntity::class,
+            InventoryAcquisitionOperationEntity::class,
             OperationOutboxEntity::class,
             LastSyncEntity::class,
         ],
-    version = 14,
+    version = 20,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
     abstract fun cacheDao(): CacheDao
 
     abstract fun syncDao(): SyncDao
+
+    abstract fun inventoryDao(): InventoryDao
 }
 
 val MIGRATION_1_2 =
@@ -192,6 +199,168 @@ val MIGRATION_13_14 =
             )
         }
     }
+
+/** Adds an owner-partitioned catalog, durable ownership, and response-loss acquisition journal. */
+val MIGRATION_14_15 =
+    object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS cached_shop_items (`accountId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `category` TEXT NOT NULL, `assetPath` TEXT NOT NULL, `acquisitionCondition` TEXT, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `itemId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_cached_shop_items_accountId_category_name_itemId ON cached_shop_items (`accountId`, `category`, `name`, `itemId`)"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS cached_owned_items (`accountId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `acquiredAtEpochMillis` INTEGER NOT NULL, `applied` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `availability` TEXT NOT NULL, `nameSnapshot` TEXT, `categorySnapshot` TEXT, `assetPathSnapshot` TEXT, `catalogRevisionSnapshot` INTEGER, PRIMARY KEY(`accountId`, `itemId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_cached_owned_items_accountId_applied_acquiredAtEpochMillis ON cached_owned_items (`accountId`, `applied`, `acquiredAtEpochMillis`)"
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS inventory_acquisition_operations (`accountId` TEXT NOT NULL, `operationId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `expectedCatalogRevision` INTEGER NOT NULL, `requestHash` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, `result` TEXT, `lastErrorCode` TEXT, PRIMARY KEY(`accountId`, `operationId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_inventory_acquisition_operations_accountId_state_createdAtEpochMillis ON inventory_acquisition_operations (`accountId`, `state`, `createdAtEpochMillis`)"
+            )
+        }
+    }
+
+/** Adds durable owner-scoped terminal receipt delivery and acknowledgement state. */
+val MIGRATION_15_16 =
+    object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackDeliveryState TEXT NOT NULL DEFAULT 'NONE'"
+            )
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackAcknowledgedAtEpochMillis INTEGER"
+            )
+            val opaqueIdPattern = Regex("^[A-Za-z0-9_-]{1,128}$")
+            val deliverable = mutableListOf<Pair<String, String>>()
+            db.query(
+                    "SELECT accountId, operationId, itemId, result FROM inventory_acquisition_operations WHERE state = 'COMPLETED' AND result IS NOT NULL"
+                )
+                .use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val accountId = cursor.getString(0)
+                        val operationId = cursor.getString(1)
+                        val itemId = cursor.getString(2)
+                        val fields = cursor.getString(3).split('|')
+                        val valid = runCatching {
+                            require(
+                                fields.size == 6 && fields[0] in setOf("ACQUIRED", "ALREADY_OWNED")
+                            )
+                            require(fields[1] == accountId && fields[2] == itemId)
+                            require(opaqueIdPattern.matches(fields[1]))
+                            require(opaqueIdPattern.matches(fields[2]))
+                            require(fields[3].toLong() >= 0)
+                            require(fields[4].toLong() >= 0)
+                            Instant.ofEpochMilli(fields[5].toLong())
+                        }
+                            .isSuccess
+                        if (valid) deliverable += accountId to operationId
+                    }
+                }
+            deliverable.forEach { (accountId, operationId) ->
+                db.execSQL(
+                    "UPDATE inventory_acquisition_operations SET feedbackDeliveryState = 'UNDELIVERED' WHERE accountId = ? AND operationId = ?",
+                    arrayOf(accountId, operationId),
+                )
+            }
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_inventory_acquisition_operations_accountId_feedbackDeliveryState_createdAtEpochMillis_operationId ON inventory_acquisition_operations (`accountId`, `feedbackDeliveryState`, `createdAtEpochMillis`, `operationId`)"
+            )
+        }
+    }
+
+/** Adds durable row-versioned presentation claims with bounded leases. */
+val MIGRATION_16_17 =
+    object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackClaimToken TEXT"
+            )
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackClaimControllerEpoch INTEGER"
+            )
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackClaimGeneration INTEGER"
+            )
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackClaimLeaseExpiresAtEpochMillis INTEGER"
+            )
+            db.execSQL(
+                "ALTER TABLE inventory_acquisition_operations ADD COLUMN feedbackRowVersion INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
+
+/** Adds a durable monotonic owner inventory generation and exact snapshot identity. */
+val MIGRATION_17_18 =
+    object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS inventory_snapshot_watermarks (`accountId` TEXT NOT NULL, `generation` INTEGER NOT NULL, `snapshotHash` TEXT NOT NULL, `registeredPlantCount` INTEGER NOT NULL, `loadedAtEpochMillis` INTEGER NOT NULL, `partial` INTEGER NOT NULL, `verified` INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(`accountId`))"
+            )
+            db.execSQL(
+                "INSERT INTO inventory_snapshot_watermarks (accountId, generation, snapshotHash, registeredPlantCount, loadedAtEpochMillis, partial, verified) SELECT accountId, 0, '0000000000000000000000000000000000000000000000000000000000000000', 0, 0, 1, 0 FROM (SELECT accountId FROM cached_shop_items UNION SELECT accountId FROM cached_owned_items)"
+            )
+        }
+    }
+
+/** Purges path-only inventory state and persists complete immutable catalog media identities. */
+val MIGRATION_19_20 =
+    object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.addColumnIfMissing("mini_home_cache_watermarks", "snapshotToken", "TEXT")
+            db.addColumnIfMissing("mini_home_cache_watermarks", "snapshotGeneration", "INTEGER")
+            db.addColumnIfMissing("inventory_snapshot_watermarks", "snapshotToken", "TEXT")
+            db.addColumnIfMissing("inventory_snapshot_watermarks", "snapshotGeneration", "INTEGER")
+        }
+    }
+
+val MIGRATION_18_19 =
+    object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.addColumnIfMissing("cached_shop_items", "assetSha256", "TEXT NOT NULL DEFAULT ''")
+            db.addColumnIfMissing(
+                "cached_shop_items",
+                "assetByteSize",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            db.addColumnIfMissing("cached_shop_items", "assetMimeType", "TEXT NOT NULL DEFAULT ''")
+            db.addColumnIfMissing("cached_shop_items", "assetWidth", "INTEGER NOT NULL DEFAULT 0")
+            db.addColumnIfMissing("cached_shop_items", "assetHeight", "INTEGER NOT NULL DEFAULT 0")
+            db.addColumnIfMissing(
+                "cached_shop_items",
+                "assetMediaRevision",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
+            db.addColumnIfMissing("cached_owned_items", "assetSha256Snapshot", "TEXT")
+            db.addColumnIfMissing("cached_owned_items", "assetByteSizeSnapshot", "INTEGER")
+            db.addColumnIfMissing("cached_owned_items", "assetMimeTypeSnapshot", "TEXT")
+            db.addColumnIfMissing("cached_owned_items", "assetWidthSnapshot", "INTEGER")
+            db.addColumnIfMissing("cached_owned_items", "assetHeightSnapshot", "INTEGER")
+            db.addColumnIfMissing("cached_owned_items", "assetMediaRevisionSnapshot", "INTEGER")
+            db.execSQL("DELETE FROM cached_shop_items")
+            db.execSQL("DELETE FROM cached_owned_items")
+            db.execSQL("DELETE FROM inventory_snapshot_watermarks")
+        }
+    }
+
+private fun SupportSQLiteDatabase.addColumnIfMissing(
+    table: String,
+    column: String,
+    declaration: String,
+) {
+    val exists =
+        query("PRAGMA table_info(`$table`)").use { cursor ->
+            val nameIndex = cursor.getColumnIndex("name")
+            generateSequence { if (cursor.moveToNext()) cursor.getString(nameIndex) else null }
+                .any { it == column }
+        }
+    if (!exists) execSQL("ALTER TABLE `$table` ADD COLUMN `$column` $declaration")
+}
 
 val MIGRATION_9_10 =
     object : Migration(9, 10) {

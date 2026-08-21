@@ -97,6 +97,28 @@ class PlanteriorRouteResolverTest {
     }
 
     @Test
+    fun `inventory detail deep link accepts only one bounded opaque item identifier`() {
+        val route = PlanteriorRoute.InventoryItemDetail("item-abc_123")
+        assertEquals(
+            route,
+            PlanteriorRouteResolver.resolve("planterior://storage/item/item-abc_123"),
+        )
+        assertEquals(
+            listOf(PlanteriorRoute.Home, PlanteriorRoute.Storage, route),
+            PlanteriorRouteResolver.backStackFor(route),
+        )
+        listOf(
+                "planterior://storage/item",
+                "planterior://storage/item/item/extra",
+                "planterior://storage/item/bad.id",
+                "planterior://storage/item/" + "a".repeat(129),
+            )
+            .forEach { uri ->
+                assertEquals(PlanteriorRoute.Home, PlanteriorRouteResolver.resolve(uri))
+            }
+    }
+
+    @Test
     fun `unknown and malformed external routes fall back to home`() {
         val hostile =
             listOf(
@@ -197,6 +219,7 @@ class PlanteriorRouteResolverTest {
                 PlanteriorRoute.WeatherRisk("abc"),
                 PlanteriorRoute.PlantDetail("abc"),
                 PlanteriorRoute.WateringConfirmation("abc"),
+                PlanteriorRoute.InventoryItemDetail("item-1"),
             )
         routes.forEach { route ->
             val stack = PlanteriorRouteResolver.backStackFor(route)

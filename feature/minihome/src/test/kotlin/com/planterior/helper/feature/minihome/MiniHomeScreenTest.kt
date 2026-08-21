@@ -28,6 +28,8 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.Density
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ItemCategory
+import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
@@ -664,6 +666,104 @@ class MiniHomeScreenTest {
         compose.waitUntil(timeoutMillis = 5_000) { loads == 2 }
         compose.onNodeWithText("사진 몬스테라 배치됨").performScrollTo().assertIsDisplayed()
         assertEquals(2, loads)
+    }
+
+    @Test
+    fun `background media changes the room surface and is not rendered as a grid decoration`() {
+        val background =
+            MiniHomeDecorationChoice(
+                ItemId("background-green"),
+                "초록 벽",
+                ItemCategory.BACKGROUND,
+                "catalog-assets/background-green/room.webp",
+            )
+        val decoration =
+            MiniHomeDecorationChoice(
+                ItemId("decoration-retired"),
+                "지난 화분",
+                ItemCategory.DECORATION,
+                "catalog-assets/decoration-retired/room.webp",
+                availableForApplication = false,
+            )
+        val backgroundPlacement =
+            MiniHomePlacement(
+                PlacementId("placement-background"),
+                MiniHomePlacementTarget.Decoration(background.id),
+                GridPosition(0, 0),
+                MiniHomeZIndex(0),
+            )
+        val decorationPlacement =
+            MiniHomePlacement(
+                PlacementId("placement-decoration"),
+                MiniHomePlacementTarget.Decoration(decoration.id),
+                GridPosition(1, 1),
+                MiniHomeZIndex(1),
+            )
+        val decorated = layout().copy(placements = listOf(backgroundPlacement, decorationPlacement))
+        val loader = MiniHomePhotoLoader { request ->
+            if (
+                request is MiniHomePhotoRequest.Catalog &&
+                    request.identity.path.contains("background-green")
+            ) {
+                Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+            } else {
+                error("retired catalog media is unavailable")
+            }
+        }
+
+        compose.setContent {
+            PlanteriorTheme {
+                MiniHomeScreen(
+                    state =
+                        MiniHomeUiState.Editing(
+                            decorated,
+                            decorated,
+                            emptyList(),
+                            listOf(background, decoration),
+                            backgroundPlacement.id,
+                            OperationId("operation-background"),
+                            MiniHomeSaveState.Idle,
+                        ),
+                    session = legacySession,
+                    onBack = {},
+                    onRetryLoad = {},
+                    onBeginEditing = {},
+                    onRename = {},
+                    onAddPlant = {},
+                    onAddDecoration = {},
+                    onSelect = {},
+                    onMove = {},
+                    onMoveBy = { _, _ -> },
+                    onRemove = {},
+                    onSave = {},
+                    onDiscard = { MiniHomeDiscardResult.Consumed },
+                    onAdoptConflict = {},
+                    onOpenCollection = {},
+                    photoLoader = loader,
+                )
+            }
+        }
+
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose
+                .onAllNodesWithTag("mini-home:background-media:background-green", true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithTag(MiniHomeTestTags.BACKGROUND).assertIsDisplayed()
+        compose.onNodeWithText("선택한 배경").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag(MiniHomeTestTags.MOVE_LEFT).assertCountEquals(0)
+        compose
+            .onAllNodesWithTag(MiniHomeTestTags.placement(backgroundPlacement.id))
+            .assertCountEquals(0)
+        compose
+            .onNodeWithTag(MiniHomeTestTags.placement(decorationPlacement.id))
+            .assertIsDisplayed()
+        compose
+            .onNodeWithText("지난 화분 배치됨")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
     }
 
     @Test

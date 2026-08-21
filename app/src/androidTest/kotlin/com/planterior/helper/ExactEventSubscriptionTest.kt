@@ -682,6 +682,12 @@ class ExactEventSubscriptionTest {
                                 }
                             },
                             onTerminal = { scheduler.step("drain-cancel-terminal") },
+                            onTerminalWaitResolved = { ownsDetach ->
+                                if (ownsDetach) {
+                                    scheduler.step("drain-await-terminal-waiting")
+                                    scheduler.await("drain-await-terminal-release")
+                                }
+                            },
                         ),
                 )
             val executor = Executors.newFixedThreadPool(3)
@@ -700,6 +706,8 @@ class ExactEventSubscriptionTest {
                 duplicateFuture.get(BOUND, TimeUnit.SECONDS)
                 scheduler.await("drain-cancel-terminal")
                 closeFuture.get(BOUND, TimeUnit.SECONDS)
+                scheduler.await("drain-await-terminal-waiting")
+                scheduler.step("drain-await-terminal-release")
                 assertFutureFailure(awaitFuture, ExactEventFailure.CANCELLED)
                 assertClean(fixture)
             } finally {
@@ -1779,7 +1787,7 @@ class ExactEventSubscriptionTest {
                 ),
                 Schedule(
                     "cancellation-while-drain-waits",
-                    "po:first<dup-acquire<await<success-drain<cancel<dup-release<cancel-terminal",
+                    "po:first<dup-acquire<await<success-drain<cancel<dup-release<cancel-terminal<await-terminal-release",
                     listOf(
                         "drain-first-event",
                         "drain-duplicate-acquired",
@@ -1788,6 +1796,8 @@ class ExactEventSubscriptionTest {
                         "drain-cancellation-linearized",
                         "drain-duplicate-release",
                         "drain-cancel-terminal",
+                        "drain-await-terminal-waiting",
+                        "drain-await-terminal-release",
                     ),
                 ),
                 Schedule(

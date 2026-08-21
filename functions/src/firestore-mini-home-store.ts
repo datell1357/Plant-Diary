@@ -1,4 +1,12 @@
-import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
+import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import {
+  ownerProjectionDraft,
+  projectionOwnedItem,
+  publishOwnerProjection,
+  readCatalogForWriter,
+  readOwnerForWriter,
+  type ProjectionPublishHooks,
+} from "./firestore-mini-home-projection.js";
 import {
   MiniHomeError,
   recoverLegacyMiniHomeName,
@@ -15,17 +23,21 @@ import {
 
 const INITIAL_OWNER_GENERATION = 1;
 
-type MiniHomeReadHooks = Readonly<{
+type MiniHomeReadHooks = ProjectionPublishHooks & Readonly<{
   afterHomeRead?: (attempt: number) => Promise<void>;
+  now?: () => Timestamp;
 }>;
 
 export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHomeLayoutReader, MiniHomeLayoutDeleter {
   private loadAttempts = 0;
+  private readonly now: () => Timestamp;
 
   constructor(
     private readonly firestore: Firestore,
     private readonly readHooks: MiniHomeReadHooks = {},
-  ) {}
+  ) {
+    this.now = readHooks.now ?? Timestamp.now;
+  }
 
   async load(ownerUid: string): Promise<MiniHomeAuthoritativeRead> {
     return this.firestore.runTransaction(async (transaction) => {
@@ -175,9 +187,19 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
       const operationRef = this.firestore.doc(`${ownerRoot}/operations/${command.idempotencyKey}`);
       const homeRef = this.firestore.doc(`${ownerRoot}/miniHomes/${command.miniHomeId}`);
       const stateRef = this.firestore.doc(`${ownerRoot}/miniHomeStates/current`);
+      const inventoryStateRef = this.firestore.doc(`${ownerRoot}/inventoryStates/current`);
       const homesQuery = this.firestore.collection(`${ownerRoot}/miniHomes`).limit(2);
       const placementsQuery = this.firestore.collection(`${ownerRoot}/placements`).where("miniHomeId", "==", command.miniHomeId);
       const operation = await transaction.get(operationRef);
+      const projectionTime = this.now();
+      const catalogProjection = await readCatalogForWriter(transaction, this.firestore);
+      const ownerProjection = await readOwnerForWriter(
+        transaction,
+        this.firestore,
+        command.ownerUid,
+        catalogProjection,
+        projectionTime,
+      );
       if (operation.exists) {
         const revision = operation.get("revision");
         const expectedRevision = operation.get("expectedRevision");
@@ -211,14 +233,84 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
             { ...(details ?? {}), field: "idempotencyKey" },
           );
         }
+        const [currentHome, currentPlacements, allOwned, inventoryState] = await Promise.all([
+          transaction.get(homeRef),
+          transaction.get(placementsQuery),
+          transaction.get(this.firestore.collection(`${ownerRoot}/ownedItems`).limit(201)),
+          transaction.get(inventoryStateRef),
+        ]);
+        if (currentPlacements.size > 20 || allOwned.size > 200) {
+          malformed("Stored mini-home retry state exceeds product limits", "ownedItems");
+        }
+        if (!currentHome.exists && currentPlacements.size !== 0) {
+          malformed("Deleted mini-home retains placement rows", "placements");
+        }
+        if (currentHome.exists && currentHome.get("ownerUid") !== command.ownerUid) {
+          malformed("Stored mini-home owner is malformed", "ownerUid");
+        }
+        const appliedItemIds = new Set<string>();
+        currentPlacements.docs.forEach((document) => {
+          if (document.get("ownerUid") !== command.ownerUid) {
+            malformed("Stored placement owner is malformed", "ownerUid");
+          }
+          const itemId = document.get("itemId");
+          const plantId = document.get("plantId");
+          if ((typeof itemId === "string") === (typeof plantId === "string")) {
+            malformed("Stored placement target is malformed", "placements");
+          }
+          if (typeof itemId === "string") appliedItemIds.add(safeOpaqueId(itemId, "itemId"));
+        });
+        const projectedOwned = allOwned.docs.map((document) => {
+          const owned = ownedItemState(document, command.ownerUid);
+          const desired = currentHome.exists && appliedItemIds.has(document.id);
+          if (owned.applied !== desired) {
+            transaction.update(document.ref, {
+              applied: desired,
+              revision: owned.revision + 1,
+              expectedRevision: owned.revision,
+              idempotencyKey: command.idempotencyKey,
+              updatedAt: projectionTime,
+            });
+          }
+          return {
+            ...projectionOwnedItem(document, command.ownerUid),
+            applied: desired,
+            revision: owned.applied === desired ? owned.revision : owned.revision + 1,
+          };
+        });
+        const published = await publishOwnerProjection(
+          transaction,
+          this.firestore,
+          command.ownerUid,
+          ownerProjection.prior,
+          ownerProjectionDraft(
+            ownerProjection.draft.layout,
+            projectedOwned,
+            ownerProjection.draft.plants,
+          ),
+          catalogProjection,
+          projectionTime,
+          this.readHooks,
+        );
+        transaction.set(
+          inventoryStateRef,
+          {
+            ownerUid: command.ownerUid,
+            generation: published.inventoryGeneration,
+            snapshotHash: published.inventorySnapshotHash,
+            updatedAt: projectionTime,
+          },
+          { merge: false },
+        );
         return { kind: "duplicate", revision };
       }
 
-      const [home, homes, previousPlacements, state] = await Promise.all([
+      const [home, homes, previousPlacements, state, inventoryState] = await Promise.all([
         transaction.get(homeRef),
         transaction.get(homesQuery),
         transaction.get(placementsQuery),
         transaction.get(stateRef),
+        transaction.get(inventoryStateRef),
       ]);
       if (homes.docs.some((document) => document.id !== command.miniHomeId)) {
         throw new MiniHomeError(
@@ -257,6 +349,10 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
       type TargetRead =
         | Readonly<{ kind: "plant"; document: FirebaseFirestore.DocumentSnapshot }>
         | Readonly<{ kind: "item"; owned: FirebaseFirestore.DocumentSnapshot; catalog: FirebaseFirestore.DocumentSnapshot }>;
+      const previousItemIds = new Set(previousPlacements.docs.flatMap((document) => {
+        const itemId = document.get("itemId");
+        return typeof itemId === "string" ? [itemId] : [];
+      }));
       const targetReads: Promise<TargetRead>[] = command.placements.map(async (placement) => {
         if (placement.plantId !== null) {
           const document = await transaction.get(
@@ -272,6 +368,7 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         return { kind: "item" as const, owned, catalog };
       });
       const targets: TargetRead[] = await Promise.all(targetReads);
+      const placedItemCategories: string[] = [];
       for (const target of targets) {
         if (target.kind === "plant") {
           if (!target.document.exists || target.document.get("ownerUid") !== command.ownerUid) {
@@ -282,21 +379,60 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
               { field: "plantId" },
             );
           }
-        } else if (
-          !target.owned.exists ||
-          target.owned.get("ownerUid") !== command.ownerUid ||
-          !target.catalog.exists ||
-          target.catalog.get("publicationState") !== "PUBLIC" ||
-          !["FURNITURE", "DECORATION"].includes(target.catalog.get("category") as string)
-        ) {
+        } else {
+          const owned = ownedItemState(target.owned, command.ownerUid);
+          const publicCategory =
+            target.catalog.exists &&
+              target.catalog.get("publicationState") === "PUBLIC" &&
+              ["BACKGROUND", "FURNITURE", "DECORATION"].includes(target.catalog.get("category") as string)
+              ? target.catalog.get("category") as string
+              : null;
+          const retainedCategory =
+            previousItemIds.has(target.owned.id) && owned.applied === true
+              ? target.owned.get("categorySnapshot")
+              : null;
+          const category = publicCategory ?? retainedCategory;
+          if (!["BACKGROUND", "FURNITURE", "DECORATION"].includes(category as string)) {
+            throw new MiniHomeError(
+              "failed-precondition",
+              "A placed decoration is unavailable",
+              "UNAVAILABLE_ENTITY",
+              { field: "itemId" },
+            );
+          }
+          placedItemCategories.push(category as string);
+        }
+      }
+      const categoryLimits = new Map<string, number>([
+        ["BACKGROUND", 1],
+        ["FURNITURE", 10],
+        ["DECORATION", 10],
+      ]);
+      for (const [category, limit] of categoryLimits) {
+        if (placedItemCategories.filter((item) => item === category).length > limit) {
           throw new MiniHomeError(
             "failed-precondition",
-            "A placed decoration is unavailable",
+            "The item category application limit was exceeded",
             "UNAVAILABLE_ENTITY",
-            { field: "itemId" },
+            { field: "placements" },
           );
         }
       }
+      const allOwned = await transaction.get(
+        this.firestore.collection(`${ownerRoot}/ownedItems`).limit(201),
+      );
+      if (allOwned.size > 200) {
+        throw new MiniHomeError(
+          "data-loss",
+          "Stored ownership exceeds the product limit",
+          "MALFORMED_RESPONSE",
+          { field: "ownedItems" },
+        );
+      }
+      const ownedStates = allOwned.docs.map((document) => ({
+        document,
+        state: ownedItemState(document, command.ownerUid),
+      }));
 
       const revision = actualRevision + 1;
       const currentGeneration = state.exists
@@ -311,7 +447,11 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
           )
           : deletedGeneration(state, command.ownerUid)
         : actualRevision;
-      const generation = currentGeneration + 1;
+      const projectionBaseGeneration = Math.max(
+        currentGeneration,
+        ownerProjection.prior?.layout.generation ?? 0,
+      );
+      const generation = projectionBaseGeneration + 1;
       transaction.set(homeRef, {
         ownerUid: command.ownerUid,
         name: command.name,
@@ -322,7 +462,7 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         expectedRevision: actualRevision,
         idempotencyKey: command.idempotencyKey,
         requestHash: command.requestHash,
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: projectionTime,
       }, { merge: false });
       transaction.set(stateRef, {
         ownerUid: command.ownerUid,
@@ -332,9 +472,9 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         requestHash: command.requestHash,
         tombstoneId: null,
         revision: generation,
-        expectedRevision: currentGeneration,
+        expectedRevision: projectionBaseGeneration,
         idempotencyKey: command.idempotencyKey,
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: projectionTime,
       }, { merge: false });
       previousPlacements.docs.forEach((document) => transaction.delete(document.ref));
       command.placements.forEach((placement) => {
@@ -350,9 +490,82 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
           revision,
           expectedRevision: actualRevision,
           idempotencyKey: command.idempotencyKey,
-          updatedAt: FieldValue.serverTimestamp(),
+          updatedAt: projectionTime,
         }, { merge: false });
       });
+      const appliedItemIds = new Set(
+        command.placements.flatMap((placement) => placement.itemId === null ? [] : [placement.itemId]),
+      );
+      const projectedOwned = ownedStates.map(({ document, state: owned }) => {
+        const desired = appliedItemIds.has(document.id);
+        if (owned.applied !== desired) {
+          transaction.update(document.ref, {
+            applied: desired,
+            revision: owned.revision + 1,
+            expectedRevision: owned.revision,
+            idempotencyKey: command.idempotencyKey,
+            updatedAt: projectionTime,
+          });
+        }
+        return {
+          ...projectionOwnedItem(document, command.ownerUid),
+          applied: desired,
+          revision: owned.applied === desired ? owned.revision : owned.revision + 1,
+        };
+      });
+      const projectedLayout = {
+        kind: "present" as const,
+        ownerUid: command.ownerUid,
+        generation,
+        miniHomeId: command.miniHomeId,
+        name: command.name,
+        placedPlantCount: command.placements.filter((placement) => placement.plantId !== null).length,
+        placementCount: command.placements.length,
+        revision,
+        expectedRevision: actualRevision,
+        idempotencyKey: command.idempotencyKey,
+        requestHash: command.requestHash,
+        updatedAtEpochMillis: projectionTime.toMillis(),
+        placements: command.placements.map((placement) => ({
+          placementId: placement.placementId,
+          ownerUid: command.ownerUid,
+          miniHomeId: command.miniHomeId,
+          layoutRevision: revision,
+          plantId: placement.plantId,
+          itemId: placement.itemId,
+          normalizedX: placement.normalizedX,
+          normalizedY: placement.normalizedY,
+          zIndex: placement.zIndex,
+          revision,
+          expectedRevision: actualRevision,
+          idempotencyKey: command.idempotencyKey,
+          updatedAtEpochMillis: projectionTime.toMillis(),
+        })),
+      };
+      const published = await publishOwnerProjection(
+        transaction,
+        this.firestore,
+        command.ownerUid,
+        ownerProjection.prior,
+        ownerProjectionDraft(
+          projectedLayout,
+          projectedOwned,
+          ownerProjection.draft.plants,
+        ),
+        catalogProjection,
+        projectionTime,
+        this.readHooks,
+      );
+      transaction.set(
+        inventoryStateRef,
+        {
+          ownerUid: command.ownerUid,
+          generation: published.inventoryGeneration,
+          snapshotHash: published.inventorySnapshotHash,
+          updatedAt: projectionTime,
+        },
+        { merge: false },
+      );
       transaction.create(operationRef, {
         ownerUid: command.ownerUid,
         documentPath: homeRef.path,
@@ -360,7 +573,7 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         revision,
         expectedRevision: actualRevision,
         idempotencyKey: command.idempotencyKey,
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: projectionTime,
       });
       return { kind: "applied", revision };
     });
@@ -368,21 +581,81 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
 
   async delete(command: MiniHomeDeleteCommand): Promise<Readonly<{ kind: "deleted"; generation: number; tombstoneId: string }>> {
     return this.firestore.runTransaction(async (transaction) => {
+      const projectionTime = this.now();
+      const catalogProjection = await readCatalogForWriter(transaction, this.firestore);
+      const ownerProjection = await readOwnerForWriter(
+        transaction,
+        this.firestore,
+        command.ownerUid,
+        catalogProjection,
+        projectionTime,
+      );
       const ownerRoot = `users/${command.ownerUid}`;
       const stateRef = this.firestore.doc(`${ownerRoot}/miniHomeStates/current`);
+      const inventoryStateRef = this.firestore.doc(`${ownerRoot}/inventoryStates/current`);
       const homesQuery = this.firestore.collection(`${ownerRoot}/miniHomes`).limit(2);
       const placementsQuery = this.firestore.collection(`${ownerRoot}/placements`).limit(21);
-      const [state, homes, placements] = await Promise.all([
+      const ownedQuery = this.firestore.collection(`${ownerRoot}/ownedItems`).limit(201);
+      const [state, homes, placements, allOwned, inventoryState] = await Promise.all([
         transaction.get(stateRef),
         transaction.get(homesQuery),
         transaction.get(placementsQuery),
+        transaction.get(ownedQuery),
+        transaction.get(inventoryStateRef),
       ]);
       if (homes.size > 1 || placements.size > 20) malformed("Stored mini-home deletion set is malformed", "miniHomeId");
-      if (state.exists) {
-        const parsed = authoritativeState(state, command.ownerUid);
-        if (parsed.state === "DELETED" && parsed.tombstoneId === command.tombstoneId) {
-          return { kind: "deleted", generation: parsed.generation, tombstoneId: command.tombstoneId };
-        }
+      if (allOwned.size > 200) malformed("Stored ownership exceeds the product limit", "ownedItems");
+      const ownedStates = allOwned.docs.map((document) => ({
+        document,
+        state: ownedItemState(document, command.ownerUid),
+      }));
+      const replay = state.exists
+        ? authoritativeState(state, command.ownerUid)
+        : null;
+      if (replay?.state === "DELETED" && replay.tombstoneId === command.tombstoneId) {
+        const projectedOwned = ownedStates.map(({ document, state: owned }) => {
+          if (owned.applied) {
+            transaction.update(document.ref, {
+              applied: false,
+              revision: owned.revision + 1,
+              expectedRevision: owned.revision,
+              idempotencyKey: command.tombstoneId,
+              updatedAt: projectionTime,
+            });
+          }
+          return {
+            ...projectionOwnedItem(document, command.ownerUid),
+            applied: false,
+            revision: owned.applied ? owned.revision + 1 : owned.revision,
+          };
+        });
+        const published = await publishOwnerProjection(
+          transaction,
+          this.firestore,
+          command.ownerUid,
+          ownerProjection.prior,
+          ownerProjectionDraft(
+            {
+              kind: "missing",
+              ownerUid: command.ownerUid,
+              generation: replay.generation,
+              tombstoneId: command.tombstoneId,
+              updatedAtEpochMillis: projectionTime.toMillis(),
+            },
+            projectedOwned,
+            ownerProjection.draft.plants,
+          ),
+          catalogProjection,
+          projectionTime,
+          this.readHooks,
+        );
+        transaction.set(inventoryStateRef, {
+          ownerUid: command.ownerUid,
+          generation: published.inventoryGeneration,
+          snapshotHash: published.inventorySnapshotHash,
+          updatedAt: projectionTime,
+        }, { merge: false });
+        return { kind: "deleted", generation: replay.generation, tombstoneId: command.tombstoneId };
       }
       const home = homes.docs[0];
       const currentGeneration = state.exists
@@ -399,7 +672,11 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         : home === undefined
           ? 0
           : safeInteger(home.get("revision"), "revision", 1);
-      if (command.expectedGeneration !== currentGeneration) {
+      const projectionBaseGeneration = Math.max(
+        currentGeneration,
+        ownerProjection.prior?.layout.generation ?? 0,
+      );
+      if (command.expectedGeneration !== projectionBaseGeneration) {
         throw new MiniHomeError(
           "failed-precondition",
           "Mini-home deletion generation is stale",
@@ -407,9 +684,25 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
           { field: "expectedGeneration" },
         );
       }
-      const generation = currentGeneration + 1;
+      const generation = projectionBaseGeneration + 1;
       homes.docs.forEach((document) => transaction.delete(document.ref));
       placements.docs.forEach((document) => transaction.delete(document.ref));
+      const projectedOwned = ownedStates.map(({ document, state: owned }) => {
+        if (owned.applied) {
+          transaction.update(document.ref, {
+            applied: false,
+            revision: owned.revision + 1,
+            expectedRevision: owned.revision,
+            idempotencyKey: command.tombstoneId,
+            updatedAt: projectionTime,
+          });
+        }
+        return {
+          ...projectionOwnedItem(document, command.ownerUid),
+          applied: false,
+          revision: owned.applied ? owned.revision + 1 : owned.revision,
+        };
+      });
       transaction.set(stateRef, {
         ownerUid: command.ownerUid,
         state: "DELETED",
@@ -418,16 +711,70 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         requestHash: null,
         tombstoneId: command.tombstoneId,
         revision: generation,
-        expectedRevision: currentGeneration,
+        expectedRevision: projectionBaseGeneration,
         idempotencyKey: command.tombstoneId,
-        updatedAt: FieldValue.serverTimestamp(),
+        updatedAt: projectionTime,
+      }, { merge: false });
+      const published = await publishOwnerProjection(
+        transaction,
+        this.firestore,
+        command.ownerUid,
+        ownerProjection.prior,
+        ownerProjectionDraft(
+          {
+            kind: "missing",
+            ownerUid: command.ownerUid,
+            generation,
+            tombstoneId: command.tombstoneId,
+            updatedAtEpochMillis: projectionTime.toMillis(),
+          },
+          projectedOwned,
+          ownerProjection.draft.plants,
+        ),
+        catalogProjection,
+        projectionTime,
+        this.readHooks,
+      );
+      transaction.set(inventoryStateRef, {
+        ownerUid: command.ownerUid,
+        generation: published.inventoryGeneration,
+        snapshotHash: published.inventorySnapshotHash,
+        updatedAt: projectionTime,
       }, { merge: false });
       return { kind: "deleted", generation, tombstoneId: command.tombstoneId };
     });
   }
 }
 
-type AuthoritativeState = Readonly<{
+type OwnedItemState = Readonly<{ applied: boolean; revision: number }>;
+
+function ownedItemState(
+  document: FirebaseFirestore.DocumentSnapshot,
+  ownerUid: string,
+): OwnedItemState {
+  const applied = document.get("applied");
+  const revision = document.get("revision");
+  if (
+    !document.exists ||
+    document.get("ownerUid") !== ownerUid ||
+    document.get("itemId") !== document.id ||
+    typeof applied !== "boolean" ||
+    typeof revision !== "number" ||
+    !Number.isSafeInteger(revision) ||
+    revision < 1 ||
+    document.get("acquiredAt") === undefined
+  ) {
+    throw new MiniHomeError(
+      "data-loss",
+      "Stored item ownership state is malformed",
+      "MALFORMED_RESPONSE",
+      { field: "ownedItems" },
+    );
+  }
+  return { applied, revision };
+}
+
+export type AuthoritativeState = Readonly<{
   generation: number;
   state: "ACTIVE" | "DELETED";
   miniHomeId: string | null;
@@ -438,7 +785,7 @@ type AuthoritativeState = Readonly<{
   updatedAtEpochMillis: number;
 }>;
 
-function authoritativeState(
+export function authoritativeState(
   document: FirebaseFirestore.DocumentSnapshot,
   ownerUid: string,
 ): AuthoritativeState {
@@ -472,7 +819,7 @@ function authoritativeState(
   };
 }
 
-function activeGeneration(
+export function activeGeneration(
   document: FirebaseFirestore.DocumentSnapshot,
   ownerUid: string,
   miniHomeId: string,
@@ -493,57 +840,57 @@ function activeGeneration(
   return state.generation;
 }
 
-function deletedGeneration(document: FirebaseFirestore.DocumentSnapshot, ownerUid: string): number {
+export function deletedGeneration(document: FirebaseFirestore.DocumentSnapshot, ownerUid: string): number {
   const state = authoritativeState(document, ownerUid);
   if (state.state !== "DELETED") malformed("Mini-home layout is missing for active state", "state");
   return state.generation;
 }
 
-function malformed(message: string, field: string): never {
+export function malformed(message: string, field: string): never {
   throw new MiniHomeError("data-loss", message, "MALFORMED_RESPONSE", { field });
 }
 
-function safeInteger(value: unknown, field: string, minimum: number): number {
+export function safeInteger(value: unknown, field: string, minimum: number): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
     malformed(`Stored ${field} is malformed`, field);
   }
   return value;
 }
 
-function safeHash(value: unknown, field: string): string {
+export function safeHash(value: unknown, field: string): string {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
     malformed(`Stored ${field} is malformed`, field);
   }
   return value;
 }
 
-function safeOpaqueId(value: unknown, field: string): string {
+export function safeOpaqueId(value: unknown, field: string): string {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
     malformed(`Stored ${field} is malformed`, field);
   }
   return value;
 }
 
-function safeOperationId(value: unknown, field: string): string {
+export function safeOperationId(value: unknown, field: string): string {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(value)) {
     malformed(`Stored ${field} is malformed`, field);
   }
   return value;
 }
 
-function optionalOpaqueId(value: unknown, field: string): string | null {
+export function optionalOpaqueId(value: unknown, field: string): string | null {
   if (value === null) return null;
   return safeOpaqueId(value, field);
 }
 
-function finiteCoordinate(value: unknown, field: string): number {
+export function finiteCoordinate(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
     malformed(`Stored ${field} is malformed`, field);
   }
   return value;
 }
 
-function boundedPlacementIds(value: unknown, expectedCount: number): readonly string[] {
+export function boundedPlacementIds(value: unknown, expectedCount: number): readonly string[] {
   if (!Array.isArray(value) || value.length !== expectedCount) {
     malformed("Stored placement IDs do not match placementCount", "placementIds");
   }
@@ -552,7 +899,7 @@ function boundedPlacementIds(value: unknown, expectedCount: number): readonly st
   return ids;
 }
 
-function timestampMillis(value: unknown, field: string): number {
+export function timestampMillis(value: unknown, field: string): number {
   if (value === null || typeof value !== "object" || !("toMillis" in value)) {
     malformed(`Stored ${field} is malformed`, field);
   }

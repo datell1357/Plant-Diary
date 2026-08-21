@@ -1,0 +1,972 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 19,
+    "identityHash": "70d4e55a0f4025b3dd1d1f1a71270570",
+    "entities": [
+      {
+        "tableName": "cached_plants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `plantId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `representativePhotoPath` TEXT, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `contentId` TEXT, `registrationMethod` TEXT NOT NULL, `location` TEXT, `note` TEXT, `lastWateredDate` TEXT, `detailsComplete` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `plantId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plantId",
+            "columnName": "plantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "representativePhotoPath",
+            "columnName": "representativePhotoPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentId",
+            "columnName": "contentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "registrationMethod",
+            "columnName": "registrationMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "location",
+            "columnName": "location",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastWateredDate",
+            "columnName": "lastWateredDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detailsComplete",
+            "columnName": "detailsComplete",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "plantId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_plants_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_plants_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cached_watering_schedules",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `scheduleId` TEXT NOT NULL, `plantId` TEXT NOT NULL, `dueDate` TEXT NOT NULL, `reminderTime` TEXT, `zoneId` TEXT NOT NULL, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `enabled` INTEGER, PRIMARY KEY(`accountId`, `scheduleId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scheduleId",
+            "columnName": "scheduleId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plantId",
+            "columnName": "plantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueDate",
+            "columnName": "dueDate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reminderTime",
+            "columnName": "reminderTime",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "scheduleId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_watering_schedules_accountId_plantId",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "plantId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_watering_schedules_accountId_plantId` ON `${TABLE_NAME}` (`accountId`, `plantId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cached_mini_homes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `miniHomeId` TEXT NOT NULL, `name` TEXT NOT NULL, `placedPlantCount` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "miniHomeId",
+            "columnName": "miniHomeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placedPlantCount",
+            "columnName": "placedPlantCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId"
+          ]
+        }
+      },
+      {
+        "tableName": "cached_mini_home_placements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `placementId` TEXT NOT NULL, `miniHomeId` TEXT NOT NULL, `plantId` TEXT, `itemId` TEXT, `normalizedX` REAL NOT NULL, `normalizedY` REAL NOT NULL, `zIndex` INTEGER NOT NULL, `layoutRevision` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `placementId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placementId",
+            "columnName": "placementId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "miniHomeId",
+            "columnName": "miniHomeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plantId",
+            "columnName": "plantId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "normalizedX",
+            "columnName": "normalizedX",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedY",
+            "columnName": "normalizedY",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zIndex",
+            "columnName": "zIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "layoutRevision",
+            "columnName": "layoutRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "placementId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_mini_home_placements_accountId_miniHomeId_layoutRevision_zIndex",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "miniHomeId",
+              "layoutRevision",
+              "zIndex"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_mini_home_placements_accountId_miniHomeId_layoutRevision_zIndex` ON `${TABLE_NAME}` (`accountId`, `miniHomeId`, `layoutRevision`, `zIndex`)"
+          }
+        ]
+      },
+      {
+        "tableName": "mini_home_cache_watermarks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `generation` INTEGER NOT NULL, `kind` TEXT NOT NULL, `layoutRevision` INTEGER, `miniHomeId` TEXT, `operationId` TEXT, `payloadHash` TEXT, `tombstoneId` TEXT, `authoritativeAtEpochMillis` INTEGER NOT NULL, `verified` INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(`accountId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "layoutRevision",
+            "columnName": "layoutRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "miniHomeId",
+            "columnName": "miniHomeId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "payloadHash",
+            "columnName": "payloadHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tombstoneId",
+            "columnName": "tombstoneId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "authoritativeAtEpochMillis",
+            "columnName": "authoritativeAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verified",
+            "columnName": "verified",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId"
+          ]
+        }
+      },
+      {
+        "tableName": "cached_shop_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `category` TEXT NOT NULL, `assetPath` TEXT NOT NULL, `assetSha256` TEXT NOT NULL, `assetByteSize` INTEGER NOT NULL, `assetMimeType` TEXT NOT NULL, `assetWidth` INTEGER NOT NULL, `assetHeight` INTEGER NOT NULL, `assetMediaRevision` INTEGER NOT NULL, `acquisitionCondition` TEXT, `revision` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `itemId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetPath",
+            "columnName": "assetPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetSha256",
+            "columnName": "assetSha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetByteSize",
+            "columnName": "assetByteSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetMimeType",
+            "columnName": "assetMimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetWidth",
+            "columnName": "assetWidth",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetHeight",
+            "columnName": "assetHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetMediaRevision",
+            "columnName": "assetMediaRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acquisitionCondition",
+            "columnName": "acquisitionCondition",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "itemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_shop_items_accountId_category_name_itemId",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "category",
+              "name",
+              "itemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_shop_items_accountId_category_name_itemId` ON `${TABLE_NAME}` (`accountId`, `category`, `name`, `itemId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cached_owned_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `acquiredAtEpochMillis` INTEGER NOT NULL, `applied` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `availability` TEXT NOT NULL, `nameSnapshot` TEXT, `categorySnapshot` TEXT, `assetPathSnapshot` TEXT, `assetSha256Snapshot` TEXT, `assetByteSizeSnapshot` INTEGER, `assetMimeTypeSnapshot` TEXT, `assetWidthSnapshot` INTEGER, `assetHeightSnapshot` INTEGER, `assetMediaRevisionSnapshot` INTEGER, `catalogRevisionSnapshot` INTEGER, PRIMARY KEY(`accountId`, `itemId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acquiredAtEpochMillis",
+            "columnName": "acquiredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "applied",
+            "columnName": "applied",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "availability",
+            "columnName": "availability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nameSnapshot",
+            "columnName": "nameSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "categorySnapshot",
+            "columnName": "categorySnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assetPathSnapshot",
+            "columnName": "assetPathSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assetSha256Snapshot",
+            "columnName": "assetSha256Snapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assetByteSizeSnapshot",
+            "columnName": "assetByteSizeSnapshot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "assetMimeTypeSnapshot",
+            "columnName": "assetMimeTypeSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "assetWidthSnapshot",
+            "columnName": "assetWidthSnapshot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "assetHeightSnapshot",
+            "columnName": "assetHeightSnapshot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "assetMediaRevisionSnapshot",
+            "columnName": "assetMediaRevisionSnapshot",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "catalogRevisionSnapshot",
+            "columnName": "catalogRevisionSnapshot",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "itemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_owned_items_accountId_applied_acquiredAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "applied",
+              "acquiredAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_owned_items_accountId_applied_acquiredAtEpochMillis` ON `${TABLE_NAME}` (`accountId`, `applied`, `acquiredAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "inventory_snapshot_watermarks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `generation` INTEGER NOT NULL, `snapshotHash` TEXT NOT NULL, `registeredPlantCount` INTEGER NOT NULL, `loadedAtEpochMillis` INTEGER NOT NULL, `partial` INTEGER NOT NULL, `verified` INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(`accountId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "generation",
+            "columnName": "generation",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotHash",
+            "columnName": "snapshotHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "registeredPlantCount",
+            "columnName": "registeredPlantCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "loadedAtEpochMillis",
+            "columnName": "loadedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partial",
+            "columnName": "partial",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verified",
+            "columnName": "verified",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId"
+          ]
+        }
+      },
+      {
+        "tableName": "inventory_acquisition_operations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `operationId` TEXT NOT NULL, `itemId` TEXT NOT NULL, `expectedCatalogRevision` INTEGER NOT NULL, `requestHash` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, `result` TEXT, `lastErrorCode` TEXT, `feedbackDeliveryState` TEXT NOT NULL, `feedbackAcknowledgedAtEpochMillis` INTEGER, `feedbackClaimToken` TEXT, `feedbackClaimControllerEpoch` INTEGER, `feedbackClaimGeneration` INTEGER, `feedbackClaimLeaseExpiresAtEpochMillis` INTEGER, `feedbackRowVersion` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `operationId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemId",
+            "columnName": "itemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedCatalogRevision",
+            "columnName": "expectedCatalogRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestHash",
+            "columnName": "requestHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "result",
+            "columnName": "result",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastErrorCode",
+            "columnName": "lastErrorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "feedbackDeliveryState",
+            "columnName": "feedbackDeliveryState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "feedbackAcknowledgedAtEpochMillis",
+            "columnName": "feedbackAcknowledgedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feedbackClaimToken",
+            "columnName": "feedbackClaimToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "feedbackClaimControllerEpoch",
+            "columnName": "feedbackClaimControllerEpoch",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feedbackClaimGeneration",
+            "columnName": "feedbackClaimGeneration",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feedbackClaimLeaseExpiresAtEpochMillis",
+            "columnName": "feedbackClaimLeaseExpiresAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "feedbackRowVersion",
+            "columnName": "feedbackRowVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "operationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_inventory_acquisition_operations_accountId_state_createdAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "state",
+              "createdAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_acquisition_operations_accountId_state_createdAtEpochMillis` ON `${TABLE_NAME}` (`accountId`, `state`, `createdAtEpochMillis`)"
+          },
+          {
+            "name": "index_inventory_acquisition_operations_accountId_feedbackDeliveryState_createdAtEpochMillis_operationId",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "feedbackDeliveryState",
+              "createdAtEpochMillis",
+              "operationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_inventory_acquisition_operations_accountId_feedbackDeliveryState_createdAtEpochMillis_operationId` ON `${TABLE_NAME}` (`accountId`, `feedbackDeliveryState`, `createdAtEpochMillis`, `operationId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "operation_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operationId` TEXT NOT NULL, `accountId` TEXT NOT NULL, `aggregateType` TEXT NOT NULL, `aggregateId` TEXT NOT NULL, `mutationType` TEXT NOT NULL, `expectedRevision` INTEGER NOT NULL, `draftPayload` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `state` TEXT NOT NULL, `actualRevision` INTEGER, `lastErrorCode` TEXT, `failureDetails` TEXT, `committedOperationId` TEXT, `committedExpectedRevision` INTEGER, `committedRevision` INTEGER, `payloadHash` TEXT, `committedPayloadHash` TEXT, `lineageId` TEXT, `supersedesOperationId` TEXT, `rowHandleId` TEXT NOT NULL DEFAULT '', `rowVersion` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`accountId`, `operationId`))",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aggregateType",
+            "columnName": "aggregateType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aggregateId",
+            "columnName": "aggregateId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mutationType",
+            "columnName": "mutationType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedRevision",
+            "columnName": "expectedRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draftPayload",
+            "columnName": "draftPayload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualRevision",
+            "columnName": "actualRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastErrorCode",
+            "columnName": "lastErrorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureDetails",
+            "columnName": "failureDetails",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "committedOperationId",
+            "columnName": "committedOperationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "committedExpectedRevision",
+            "columnName": "committedExpectedRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "committedRevision",
+            "columnName": "committedRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "payloadHash",
+            "columnName": "payloadHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "committedPayloadHash",
+            "columnName": "committedPayloadHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lineageId",
+            "columnName": "lineageId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supersedesOperationId",
+            "columnName": "supersedesOperationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rowHandleId",
+            "columnName": "rowHandleId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "rowVersion",
+            "columnName": "rowVersion",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "operationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_operation_outbox_accountId_state_createdAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "accountId",
+              "state",
+              "createdAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_operation_outbox_accountId_state_createdAtEpochMillis` ON `${TABLE_NAME}` (`accountId`, `state`, `createdAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "last_sync",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `domain` TEXT NOT NULL, `syncedAtEpochMillis` INTEGER NOT NULL, `status` TEXT NOT NULL, `errorCode` TEXT, PRIMARY KEY(`accountId`, `domain`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "domain",
+            "columnName": "domain",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedAtEpochMillis",
+            "columnName": "syncedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "domain"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '70d4e55a0f4025b3dd1d1f1a71270570')"
+    ]
+  }
+}

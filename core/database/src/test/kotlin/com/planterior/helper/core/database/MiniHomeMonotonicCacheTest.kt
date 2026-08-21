@@ -56,6 +56,24 @@ class MiniHomeMonotonicCacheTest {
     }
 
     @Test
+    fun `higher response generation cannot regress a live layout revision`() = runTest {
+        val dao = database.cacheDao()
+        dao.applyAuthoritativeMiniHome(
+            layoutWrite(2, "operation-revision-two", "b", layoutRevision = 2)
+        )
+
+        val staleResponse =
+            dao.applyAuthoritativeMiniHome(
+                layoutWrite(3, "operation-stale-response", "c", layoutRevision = 1)
+            )
+
+        assertTrue(staleResponse is MiniHomeCacheApplyResult.Ignored)
+        assertEquals(2L, staleResponse.current.watermark.generation)
+        assertEquals(2L, staleResponse.current.home?.revision)
+        assertEquals("revision 2", staleResponse.current.home?.name)
+    }
+
+    @Test
     fun `delayed layout cannot resurrect after authoritative deletion`() = runTest {
         val dao = database.cacheDao()
         dao.applyAuthoritativeMiniHome(layoutWrite(1, "operation-revision-one", "a"))
@@ -219,6 +237,38 @@ class MiniHomeMonotonicCacheTest {
         assertTrue(delayed is MiniHomeCacheApplyResult.Ignored)
         assertEquals(MiniHomeCacheWatermarkKind.DELETED, delayed.current.watermark.kind)
         assertNull(delayed.current.home)
+    }
+
+    @Test
+    fun `mismatched envelope tokens never form a Room snapshot and are purged`() = runTest {
+        val dao = database.cacheDao()
+        dao.applyAuthoritativeMiniHome(
+            layoutWrite(2, "operation-revision-two", "b")
+                .copy(
+                    snapshotToken = "a".repeat(64),
+                    snapshotGeneration = 7,
+                )
+        )
+        dao.applyAuthoritativeInventory(
+            AuthoritativeInventoryCacheWrite(
+                accountId = "account-a",
+                generation = 3,
+                snapshotHash = "c".repeat(64),
+                registeredPlantCount = 0,
+                loadedAtEpochMillis = 300,
+                partial = false,
+                catalog = emptyList(),
+                owned = emptyList(),
+                snapshotToken = "b".repeat(64),
+                snapshotGeneration = 7,
+            )
+        )
+
+        val torn = dao.currentMiniHomeSnapshotCache("account-a")
+        assertEquals(false, torn?.coherent)
+        assertTrue(dao.purgeIncoherentMiniHomeSnapshot("account-a"))
+        assertNull(dao.currentMiniHomeCache("account-a"))
+        assertNull(dao.currentInventoryCache("account-a"))
     }
 
     @Test

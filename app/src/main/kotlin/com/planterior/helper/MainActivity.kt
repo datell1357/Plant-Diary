@@ -414,6 +414,7 @@ internal fun PlanteriorApp(
                 authRuntime?.forcedHomeAccountUid?.let {
                     MiniHomeAuthOwnership.Authenticated(AccountId(it))
                 },
+            inventoryRepository = authRuntime?.inventoryRepository,
             wateringRepository = authRuntime?.wateringRepository,
             wateringNotificationSettingsRepository =
                 authRuntime?.wateringNotificationSettingsRepository,
@@ -431,6 +432,9 @@ internal fun PlanteriorApp(
             collectionThumbnailLoader =
                 authRuntime?.collectionThumbnailLoader
                     ?: com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader,
+            catalogMediaLoader =
+                authRuntime?.catalogMediaLoader
+                    ?: com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader,
         )
     }
 }

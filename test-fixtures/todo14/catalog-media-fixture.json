@@ -1,0 +1,48 @@
+{
+  "contractVersion": 3,
+  "itemId": "api37-background",
+  "file": "todo14/catalog-background-fixture.webp",
+  "storagePath": "catalog-assets/api37-background/c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9.webp",
+  "contentType": "image/webp",
+  "byteSize": 218,
+  "sha256": "c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9",
+  "width": 96,
+  "height": 64,
+  "mediaRevision": 1,
+  "storageMetadata": {
+    "width": "96",
+    "height": "64",
+    "sha256": "c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9",
+    "mediaRevision": "1"
+  },
+  "visualEvidence": {
+    "contractVersion": 2,
+    "apiLevel": 37,
+    "deviceProfile": "pixel_7",
+    "renderer": "swiftshader_indirect",
+    "width": 1080,
+    "height": 2400,
+    "requiredIndependentWipedRuns": 3,
+    "metadataFile": "todo14/visual/todo14-api37-determinism.json",
+    "diffMetadataFile": "todo14/visual/todo14-api37-old-to-current-diff.json",
+    "files": {
+      "todo14-api37-shop.png": {
+        "file": "todo14/visual/todo14-api37-shop.png",
+        "sha256": "196877f42eb10e6c29b9a5395a4b4890d5c5b10f79d22f4d283db4590582bfef"
+      },
+      "todo14-api37-warehouse.png": {
+        "file": "todo14/visual/todo14-api37-warehouse.png",
+        "sha256": "5d63ff77c6343a38897e52822a65cf618ac4f4485acccbc53ab6b527dd4ee817"
+      },
+      "todo14-api37-item-detail.png": {
+        "file": "todo14/visual/todo14-api37-item-detail.png",
+        "sha256": "55ca1a83fe3f71b04d89d026f57c59ec286ac19832699bea70f0a6cac7ca9c3e"
+      },
+      "todo14-api37-background.png": {
+        "file": "todo14/visual/todo14-api37-background.png",
+        "sha256": "9157f71c9fd4ee6157d2f95f7853b90205c1452ae5138ceb224439a3826787c2"
+      }
+    },
+    "windowInsetsContract": "activity-enable-edge-to-edge"
+  }
+}

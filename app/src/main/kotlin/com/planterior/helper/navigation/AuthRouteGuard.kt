@@ -26,6 +26,7 @@ object AuthRouteGuard {
             PlanteriorRoute.Home -> "planterior://home"
             PlanteriorRoute.Collection -> "planterior://collection"
             PlanteriorRoute.Storage -> "planterior://storage"
+            is PlanteriorRoute.InventoryItemDetail -> "planterior://storage/item/${route.itemId}"
             PlanteriorRoute.Settings -> "planterior://settings"
             PlanteriorRoute.Camera -> "planterior://camera"
             is PlanteriorRoute.Identification -> "planterior://home"

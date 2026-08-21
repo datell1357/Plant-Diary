@@ -1,7 +1,10 @@
 package com.planterior.helper.navigation
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -11,7 +14,12 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.planterior.helper.ROBOLECTRIC_MAX_SDK
+import com.planterior.helper.core.designsystem.component.TabBarTestTag
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.CatalogMediaIdentity
+import com.planterior.helper.core.model.ItemCategory
+import com.planterior.helper.core.model.ItemId
+import com.planterior.helper.core.model.Revision
 import com.planterior.helper.feature.home.HomeMiniHomePreview
 import com.planterior.helper.feature.home.HomePlantCare
 import com.planterior.helper.feature.home.HomeRepository
@@ -21,6 +29,14 @@ import com.planterior.helper.feature.home.HomeTestTags
 import com.planterior.helper.feature.home.HomeUiState
 import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.home.HomeWeather
+import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
+import com.planterior.helper.feature.shop.InventoryAcquireRequest
+import com.planterior.helper.feature.shop.InventoryAcquireResult
+import com.planterior.helper.feature.shop.InventoryItem
+import com.planterior.helper.feature.shop.InventoryLoadResult
+import com.planterior.helper.feature.shop.InventoryRepository
+import com.planterior.helper.feature.shop.InventorySnapshot
+import com.planterior.helper.feature.shop.InventoryTestTags
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -46,6 +62,8 @@ class PlanteriorNavigationTest {
     private fun start(
         target: PlanteriorRoute = PlanteriorRoute.Home,
         homeViewModel: HomeViewModel? = null,
+        inventoryRepository: InventoryRepository? = null,
+        miniHomeAuthOwnership: MiniHomeAuthOwnership? = null,
     ) {
         composeRule.setContent {
             PlanteriorTheme {
@@ -59,6 +77,8 @@ class PlanteriorNavigationTest {
                     startRoute = backStack.first(),
                     authRouteGuardEnabled = false,
                     homeViewModel = homeViewModel,
+                    inventoryRepository = inventoryRepository,
+                    miniHomeAuthOwnershipOverride = miniHomeAuthOwnership,
                 )
             }
         }
@@ -199,6 +219,100 @@ class PlanteriorNavigationTest {
         composeRule.waitForIdle()
 
         assertEquals(PlanteriorRoute.Home, currentRoute())
+    }
+
+    @Test
+    fun `inventory card opens typed detail and back returns to warehouse`() {
+        val item =
+            InventoryItem(
+                ItemId("detail-item"),
+                "초록 의자",
+                "미니홈피를 꾸미는 의자",
+                ItemCategory.FURNITURE,
+                CatalogMediaIdentity(
+                    "catalog-assets/detail-item/${"a".repeat(64)}.webp",
+                    "a".repeat(64),
+                    4,
+                    "image/webp",
+                    1,
+                    1,
+                    Revision(1),
+                ),
+                null,
+                Revision(1),
+                Instant.parse("2026-08-20T00:00:00Z"),
+            )
+        val repository =
+            object : InventoryRepository {
+                override suspend fun load(): InventoryLoadResult =
+                    InventoryLoadResult.Ready(
+                        InventorySnapshot(
+                            com.planterior.helper.core.model.AccountId("owner-a"),
+                            listOf(item),
+                            emptyList(),
+                            1,
+                            Instant.parse("2026-08-20T00:00:00Z"),
+                        ),
+                        stale = false,
+                    )
+
+                override suspend fun acquire(
+                    request: InventoryAcquireRequest
+                ): InventoryAcquireResult = error("not used")
+
+                override suspend fun markReceiptPresented(
+                    claim: com.planterior.helper.feature.shop.InventoryReceiptClaim
+                ): com.planterior.helper.feature.shop.InventoryReceiptPresentationResult =
+                    error("not used")
+            }
+        start(
+            inventoryRepository = repository,
+            miniHomeAuthOwnership =
+                MiniHomeAuthOwnership.Authenticated(
+                    com.planterior.helper.core.model.AccountId("owner-a")
+                ),
+        )
+        composeRule.onNodeWithContentDescription("창고").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(InventoryTestTags.SHOP).performClick()
+        composeRule
+            .onNodeWithTag(InventoryTestTags.detailLink(item.id))
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(PlanteriorRoute.InventoryItemDetail(item.id.value), currentRoute())
+        composeRule.onNodeWithTag(InventoryTestTags.DETAIL).assertIsDisplayed()
+        composeRule.onAllNodesWithTag(TabBarTestTag).assertCountEquals(1)
+        composeRule.onNodeWithContentDescription("창고").assertIsSelected()
+
+        composeRule.onNodeWithContentDescription("창고").performClick()
+        composeRule.waitForIdle()
+        assertEquals(PlanteriorRoute.Storage, currentRoute())
+        composeRule.onNodeWithTag(InventoryTestTags.SHOP).assertIsSelected()
+
+        composeRule
+            .onNodeWithTag(InventoryTestTags.detailLink(item.id))
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("홈").performClick()
+        composeRule.waitForIdle()
+        assertEquals(PlanteriorRoute.Home, currentRoute())
+        composeRule.onNodeWithContentDescription("창고").performClick()
+        composeRule.waitForIdle()
+        assertEquals(PlanteriorRoute.Storage, currentRoute())
+        composeRule.onNodeWithTag(InventoryTestTags.SHOP).assertIsSelected()
+
+        composeRule
+            .onNodeWithTag(InventoryTestTags.detailLink(item.id))
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(InventoryTestTags.DETAIL_BACK).performClick()
+        composeRule.waitForIdle()
+        assertEquals(PlanteriorRoute.Storage, currentRoute())
+        composeRule.onNodeWithTag(InventoryTestTags.SHOP).assertIsSelected()
     }
 
     @Test

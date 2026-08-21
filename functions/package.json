@@ -7,8 +7,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test lib/**/*.test.js",
-    "test:emulator": "export METADATA_SERVER_DETECTION=none && npm run build && node --test --test-concurrency=1 lib/**/*.emulator-spec.js"
+    "verify:node22": "npx --yes node@22 scripts/require-node22.cjs",
+    "test": "npm run verify:node22 && npm run build && npx --yes node@22 --test lib/**/*.test.js",
+    "test:emulator": "export METADATA_SERVER_DETECTION=none && npm run verify:node22 && npm run build && npx --yes node@22 --test --test-concurrency=1 lib/**/*.emulator-spec.js"
   },
   "dependencies": {
     "firebase-admin": "14.2.0",

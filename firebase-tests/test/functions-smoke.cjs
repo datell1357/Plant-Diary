@@ -40,7 +40,7 @@ async function main() {
   const firestore = getFirestore(app);
   const functions = getFunctions(app, "us-central1");
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
-  connectFirestoreEmulator(firestore, "127.0.0.1", 8080);
+  connectFirestoreEmulator(firestore, "127.0.0.1", 8180);
   connectFunctionsEmulator(functions, "127.0.0.1", 5001);
   const callableUrl =
     `http://127.0.0.1:5001/${projectId}/us-central1/applyRevisionedOwnerWrite`;
@@ -78,6 +78,15 @@ async function main() {
   const snapshot = await getDoc(doc(firestore, `users/${credential.user.uid}/personalPlants/callable-plant`));
   assert.equal(snapshot.data().ownerUid, credential.user.uid);
   assert.equal(snapshot.data().revision, 1);
+
+  const loadMiniHomeSnapshot = httpsCallable(functions, "loadMiniHomeSnapshot");
+  const combined = await loadMiniHomeSnapshot({ expectedOwnerUid: credential.user.uid });
+  assert.equal(combined.data.contractVersion, 1);
+  assert.equal(combined.data.ownerUid, credential.user.uid);
+  assert.match(combined.data.snapshotToken, /^[a-f0-9]{64}$/);
+  assert.equal(combined.data.layout.kind, "missing");
+  assert.equal(combined.data.inventory.registeredPlantCount, 1);
+  assert.equal(combined.data.plants.length, 1);
 
   const adminApp = initializeAdminApp({ projectId }, "apple-callback-smoke");
   const adminFirestore = getAdminFirestore(adminApp);
@@ -149,7 +158,7 @@ async function main() {
   assert.equal(errorCallback.headers.get("location"), "planterior://auth/apple?error=cancelled");
   await deleteAdminApp(adminApp);
 
-  console.log(`FUNCTIONS_QA appCheck=valid missingAppCheck=rejected ownerDerived=true revision=${snapshot.data().revision} duplicate=${duplicate.data.kind} conflict=${conflict.data.kind} appleStandardCallback=accepted appleReplay=rejected appleError=accepted`);
+  console.log(`FUNCTIONS_QA appCheck=valid missingAppCheck=rejected ownerDerived=true atomicMiniHomeSnapshot=${combined.data.snapshotGeneration} revision=${snapshot.data().revision} duplicate=${duplicate.data.kind} conflict=${conflict.data.kind} appleStandardCallback=accepted appleReplay=rejected appleError=accepted`);
   await deleteApp(app);
 }
 

@@ -15,6 +15,12 @@ import com.planterior.helper.core.database.MIGRATION_10_11
 import com.planterior.helper.core.database.MIGRATION_11_12
 import com.planterior.helper.core.database.MIGRATION_12_13
 import com.planterior.helper.core.database.MIGRATION_13_14
+import com.planterior.helper.core.database.MIGRATION_14_15
+import com.planterior.helper.core.database.MIGRATION_15_16
+import com.planterior.helper.core.database.MIGRATION_16_17
+import com.planterior.helper.core.database.MIGRATION_17_18
+import com.planterior.helper.core.database.MIGRATION_18_19
+import com.planterior.helper.core.database.MIGRATION_19_20
 import com.planterior.helper.core.database.MIGRATION_1_2
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
@@ -33,6 +39,9 @@ import com.planterior.helper.feature.minihome.FirebaseMiniHomeRemoteDataSource
 import com.planterior.helper.feature.minihome.FirebaseMiniHomeRepository
 import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
 import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
+import com.planterior.helper.feature.shop.FirebaseCatalogMediaLoader
+import com.planterior.helper.feature.shop.FirebaseInventoryRemoteDataSource
+import com.planterior.helper.feature.shop.FirebaseInventoryRepository
 import com.planterior.helper.feature.watering.FirebaseWateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.FirebaseWateringRemoteDataSource
 import com.planterior.helper.feature.watering.OutboxWateringRepository
@@ -54,11 +63,13 @@ private constructor(
     val registrationRepository: FirebaseRegistrationRepository,
     val collectionRepository: FirebaseCollectionRepository,
     val miniHomeRepository: FirebaseMiniHomeRepository,
+    val inventoryRepository: FirebaseInventoryRepository,
     val wateringRepository: OutboxWateringRepository,
     val wateringNotificationSettingsRepository: FirebaseWateringNotificationSettingsRepository,
     val weatherRepository: FirebaseWeatherRepository,
     val weatherPermissionCapabilities: SharedPreferencesWeatherPermissionCapabilityStore,
     val collectionThumbnailLoader: FirebasePlantThumbnailLoader,
+    val catalogMediaLoader: FirebaseCatalogMediaLoader,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
 
@@ -66,7 +77,10 @@ private constructor(
         get() = database.isOpen
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) database.close()
+        if (closed.compareAndSet(false, true)) {
+            catalogMediaLoader.close()
+            database.close()
+        }
     }
 
     companion object {
@@ -81,7 +95,7 @@ private constructor(
             val storage = FirebaseStorage.getInstance(app)
             if (BuildConfig.DEBUG && emulatorsConnected.compareAndSet(false, true)) {
                 auth.useEmulator("10.0.2.2", 9099)
-                firestore.useEmulator("10.0.2.2", 8080)
+                firestore.useEmulator("10.0.2.2", 8180)
                 functions.useEmulator("10.0.2.2", 5001)
                 storage.useEmulator("10.0.2.2", 9199)
             }
@@ -105,6 +119,12 @@ private constructor(
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
+                        MIGRATION_14_15,
+                        MIGRATION_15_16,
+                        MIGRATION_16_17,
+                        MIGRATION_17_18,
+                        MIGRATION_18_19,
+                        MIGRATION_19_20,
                     )
                     .build()
             return try {
@@ -150,13 +170,18 @@ private constructor(
                     collectionRepository,
                     FirebaseMiniHomeRepository(
                         database,
-                        FirebaseMiniHomeRemoteDataSource(auth, firestore, functions),
+                        FirebaseMiniHomeRemoteDataSource(auth, functions),
+                    ),
+                    FirebaseInventoryRepository(
+                        database,
+                        FirebaseInventoryRemoteDataSource(auth, functions),
                     ),
                     wateringRepository,
                     FirebaseWateringNotificationSettingsRepository(auth, firestore, functions),
                     weatherRepository,
                     SharedPreferencesWeatherPermissionCapabilityStore(applicationContext),
                     FirebasePlantThumbnailLoader(storage),
+                    FirebaseCatalogMediaLoader(storage),
                 )
             } catch (error: Throwable) {
                 database.close()
