@@ -175,7 +175,7 @@ extension SettingsDeletionUITests {
         attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
     }
 
-    private func figmaSettingsApp() -> XCUIApplication {
+    func figmaSettingsApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
@@ -185,7 +185,7 @@ extension SettingsDeletionUITests {
         return app
     }
 
-    private func openFigmaSettings(in app: XCUIApplication) {
+    func openFigmaSettings(in app: XCUIApplication) {
         let settings = app.buttons["tab.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         settings.tap()

@@ -150,6 +150,7 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
             plantTab.frame.maxX,
             "category tabs must not overlap at AX5"
         )
+        assertCategoryCaptionsStayOnOneLine(in: app)
         let screen = app.windows.element(boundBy: 0).frame
         for identifier in [
             "minihome.save", "minihome.editor.reset", "minihome.editor.tray.0"

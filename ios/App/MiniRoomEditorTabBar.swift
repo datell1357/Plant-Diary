@@ -11,8 +11,10 @@ struct MiniRoomEditorTabBar: View {
 
     private static let underlineHeight: CGFloat = 2
     /// Minimum readable tab width once Dynamic Type stops the labels fitting
-    /// five-across; beyond this the strip scrolls instead of colliding.
-    private static let scrollingTabWidth: CGFloat = 64
+    /// five-across; beyond this the strip scrolls instead of colliding. This is
+    /// a FLOOR, not a fixed width: clamping the column to it split every
+    /// two-syllable Korean caption one syllable per line at AX5.
+    private static let scrollingTabMinimumWidth: CGFloat = 64
 
     var body: some View {
         Group {
@@ -21,7 +23,10 @@ struct MiniRoomEditorTabBar: View {
                     HStack(spacing: PlanteriorSpacing.small) {
                         ForEach(MiniRoomCategory.allCases) { category in
                             tab(category)
-                                .frame(width: Self.scrollingTabWidth)
+                                .frame(
+                                    minWidth: Self.scrollingTabMinimumWidth
+                                )
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .padding(.horizontal, PlanteriorSpacing.small)
