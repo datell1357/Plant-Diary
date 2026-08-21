@@ -120,6 +120,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertTrue(status.exists)
         XCTAssertFalse(row.frame.intersects(add.frame))
         XCTAssertGreaterThan(status.frame.width, status.frame.height)
+        assertTitleStaysInsideContentColumn(in: app)
         attachScreenshot(named: "collection-list-korean-ax5")
         app.buttons["collection.row.0"].tap()
         XCTAssertTrue(app.scrollViews["plant.detail.screen"].waitForExistence(timeout: 5))

@@ -103,7 +103,11 @@ public struct PlanteriorStatusPill: View {
         Text(title)
             .font(PlanteriorTypography.microLabel)
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            // The pill keeps its single line, but must stay COMPRESSIBLE: at
+            // accessibility sizes an unbreakable pill forces its whole row
+            // wider than the screen, which pushes every sibling - including
+            // the page header - past the content inset.
+            .minimumScaleFactor(0.6)
             .foregroundStyle(variant.foreground.color)
             .padding(.horizontal, PlanteriorSpacing.medium)
             .padding(.vertical, PlanteriorSpacing.extraSmall)
