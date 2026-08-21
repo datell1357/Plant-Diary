@@ -37,6 +37,15 @@ extension PlantCareDetailView {
         }
     }
 
+    @ViewBuilder var saveFeedbackLabel: some View {
+        if let saveFeedback {
+            Label(saveFeedback, systemImage: "checkmark.circle.fill")
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .accessibilityIdentifier("plant.detail.save-success")
+        }
+    }
+
     var timelineSection: some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
             Text("건강 기록")
@@ -111,6 +120,7 @@ extension PlantCareDetailView {
     }
 
     func persistEdits() {
+        saveFeedback = nil
         guard let todayCalendarDate else {
             saveError = "현재 날짜를 확인하지 못했어요."
             return
@@ -128,6 +138,7 @@ extension PlantCareDetailView {
                 today: todayCalendarDate
             )
             saveError = nil
+            saveFeedback = "변경사항을 저장했어요."
         } catch PlantCareValidationError.invalidLocation {
             saveError = "위치는 50자 이하로 입력해 주세요."
         } catch PlantCareValidationError.invalidMemo {

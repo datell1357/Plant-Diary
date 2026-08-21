@@ -25,6 +25,14 @@ extension LocalPlantCollectionStore {
     }
 }
 
+struct CollectionCareSummary: Equatable {
+    let total: Int
+    let overdue: Int
+    let dueToday: Int
+    let upcoming: Int
+    let unconfigured: Int
+}
+
 enum CollectionViewState: String {
     case loading
     case content

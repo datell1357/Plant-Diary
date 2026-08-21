@@ -40,7 +40,7 @@ extension PlantCareDetailView {
         nickname = plant.displayName
         location = plant.location ?? ""
         privateMemo = plant.privateMemo ?? ""
-        notes = collection.healthNotes[index] ?? []
+        notes = collection.healthNotes(at: index)
         wateringIntervalDays = collection.wateringIntervalDays(at: index)
         if let plantID = collection.weatherPlantID(at: index) {
             weatherAlertsEnabled = LocalWeatherAlertStore.shared.plantEnabled(for: plantID)

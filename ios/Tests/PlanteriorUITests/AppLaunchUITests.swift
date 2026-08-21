@@ -30,7 +30,7 @@ final class AppLaunchUITests: XCTestCase {
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.open-detail"].waitForExistence(timeout: 5))
         app.buttons["collection.open-detail"].tap()
-        XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
 
         app.buttons["tab.home"].tap()
         XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
@@ -45,13 +45,13 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["milestones.screen"].waitForExistence(timeout: 5))
 
         app.buttons["tab.collection"].tap()
-        XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
 
         app.buttons["tab.camera"].tap()
         XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
         app.buttons["capture.close"].tap()
         XCTAssertTrue(app.otherElements["capture.camera"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.otherElements["collection.detail"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
     }
 
     func testEveryPrimaryNavigationControlIsReachable() {

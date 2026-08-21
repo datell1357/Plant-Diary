@@ -11,37 +11,31 @@ struct PlantCollectionView: View {
     @FocusState private var searchFocused: Bool
     @Environment(\.sizeCategory) var sizeCategory
     let careCalendar = PlantCareCalendar()
-
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: PlanteriorSpacing.medium) {
-                header
-                searchField
-                if !isTrueEmptyCollection {
-                    HStack {
-                        Spacer()
-                        addPlantButton
-                    }
-                }
-                ScrollView {
-                    VStack(spacing: PlanteriorSpacing.small) {
-                        stateBanner
-                        if isTrueEmptyCollection {
-                            trueEmptyState
-                        } else if filteredPlants.isEmpty {
-                            searchEmptyState
-                        } else {
-                            summaryBanner
-                            plantRows
-                        }
-                    }
-                    .padding(.bottom, PlanteriorSpacing.large)
-                }
-                .accessibilityIdentifier("collection.screen")
+        VStack(spacing: PlanteriorSpacing.medium) {
+            header
+            searchField
+            if !isTrueEmptyCollection {
+                addPlantButton.frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.top, PlanteriorSpacing.small)
+            ScrollView {
+                VStack(spacing: PlanteriorSpacing.small) {
+                    stateBanner
+                    if isTrueEmptyCollection {
+                        trueEmptyState
+                    } else if filteredPlants.isEmpty {
+                        searchEmptyState
+                    } else {
+                        summaryBanner
+                        plantRows
+                    }
+                }
+                .padding(.bottom, PlanteriorSpacing.large)
+            }
+            .accessibilityIdentifier("collection.screen")
         }
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .padding(.top, PlanteriorSpacing.small)
         .background(PlanteriorPalette.canvas.color)
         .toolbar(.hidden, for: .navigationBar)
         .task {
@@ -139,9 +133,10 @@ struct PlantCollectionView: View {
                         .font(PlanteriorTypography.cardTitle)
                         .foregroundStyle(PlanteriorPalette.textPrimary.color)
                         .accessibilityIdentifier("collection.summary.title")
-                    Text("오늘의 돌봄 상태를 한눈에 확인해 보세요")
+                    Text(summarySubtitle)
                         .font(PlanteriorTypography.caption)
                         .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        .accessibilityIdentifier("collection.summary.subtitle")
                 }
                 Spacer(minLength: 0)
             }
@@ -171,6 +166,12 @@ struct PlantCollectionView: View {
 
     private var collectionCount: Int {
         collection.plants.filter { $0.displayName != "비공개 식물" }.count
+    }
+
+    private var summarySubtitle: String {
+        guard let today else { return "물 주기 일정을 확인해 보세요" }
+        let summary = collection.careSummary(today: today)
+        return "오늘 돌봄 \(summary.dueToday)개 · 설정 필요 \(summary.unconfigured)개"
     }
 
     private var isTrueEmptyCollection: Bool {

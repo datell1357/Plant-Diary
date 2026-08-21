@@ -20,6 +20,7 @@ struct PlantCareDetailView: View {
     @State var weatherAlertsEnabled = true
     @State var showsDeleteConfirmation = false
     @State var saveError: String?
+    @State var saveFeedback: String?
     @State private var showsEditing = true
 
     var body: some View {
@@ -35,6 +36,7 @@ struct PlantCareDetailView: View {
                     editingSection
                 }
                 timelineSection
+                saveFeedbackLabel
                 if let saveError {
                     Text(saveError)
                         .font(PlanteriorTypography.supporting)

@@ -16,6 +16,8 @@ struct AppRouteDestination: View {
             }
         case .miniHome:
             MiniHomeView(accountID: accountScopeID)
+        case .tabDetail(.collection):
+            CollectionCareSummaryView()
         case .tabDetail(.settings):
             MilestoneProgressView()
         case .identificationDraft:

@@ -2,6 +2,34 @@ import PlanteriorData
 import PlanteriorDomain
 
 extension LocalPlantCollectionStore {
+    func careSummary(today: CalendarDate) -> CollectionCareSummary {
+        var overdue = 0
+        var dueToday = 0
+        var upcoming = 0
+        var unconfigured = 0
+        for (index, plant) in plants.enumerated() {
+            let status = wateringStatus(
+                at: index,
+                lastWateredOn: plant.lastWateredOn,
+                today: today,
+                intervalDays: wateringIntervalDays(at: index)
+            )
+            switch status {
+            case .overdue: overdue += 1
+            case .due: dueToday += 1
+            case .upcoming: upcoming += 1
+            case .unavailable: unconfigured += 1
+            }
+        }
+        return CollectionCareSummary(
+            total: plants.count,
+            overdue: overdue,
+            dueToday: dueToday,
+            upcoming: upcoming,
+            unconfigured: unconfigured
+        )
+    }
+
     func wateringIntervalDays(at index: Int) -> Int {
         guard plants.indices.contains(index) else {
             return 10

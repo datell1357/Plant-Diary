@@ -14,9 +14,9 @@ struct PlantCareEdits {
 final class LocalPlantCollectionStore: ObservableObject {
     static let shared = LocalPlantCollectionStore()
     @Published var plants: [PlantRegistrationDraft] = []
-    @Published private(set) var weatherPlantIDs: [PersonalPlantID] = []
+    @Published var weatherPlantIDs: [PersonalPlantID] = []
     @Published private(set) var completedPlantIDs: Set<PersonalPlantID> = []
-    @Published var healthNotes: [Int: [String]] = [:]
+    @Published var healthNotesByPlantID: [String: [String]] = [:]
     @Published private(set) var scrollAnchor: Int?
     @Published var snapshotState = CollectionViewState.content
     @Published private(set) var saveError: String?
@@ -63,28 +63,15 @@ final class LocalPlantCollectionStore: ObservableObject {
     private func restore() {
         plants = []
         weatherPlantIDs = []
-        healthNotes = [:]
+        healthNotesByPlantID = [:]
         scrollAnchor = nil
         if let data = defaults.data(forKey: plantsKey) {
             plants = (try? JSONDecoder().decode([PlantRegistrationDraft].self, from: data)) ?? []
         }
-        if let data = defaults.data(forKey: notesKey) {
-            healthNotes = (try? JSONDecoder().decode(
-                [Int: [String]].self,
-                from: data
-            )) ?? [:]
-        }
         let rawIDs = defaults.stringArray(forKey: weatherPlantIDsKey) ?? []
         weatherPlantIDs = rawIDs.compactMap { try? PersonalPlantID.parse($0) }
-        while weatherPlantIDs.count < plants.count {
-            let rawValue = "local_\(UUID().uuidString)"
-            if let plantID = try? PersonalPlantID.parse(rawValue) {
-                weatherPlantIDs.append(plantID)
-            }
-        }
-        if weatherPlantIDs.count > plants.count {
-            weatherPlantIDs = Array(weatherPlantIDs.prefix(plants.count))
-        }
+        reconcilePlantIdentities()
+        restoreHealthNotes()
         persist()
         restoreScrollAnchor()
     }
@@ -107,13 +94,14 @@ final class LocalPlantCollectionStore: ObservableObject {
     }
 
     func remove(at index: Int) {
-        guard plants.indices.contains(index) else {
+        guard plants.indices.contains(index), weatherPlantIDs.indices.contains(index) else {
             return
         }
+        let removedID = weatherPlantIDs[index].rawValue
         plants.remove(at: index)
         weatherPlantIDs.remove(at: index)
-        healthNotes[index] = nil
-        defaults.set(true, forKey: "collection.\(accountID).tombstone.\(index)")
+        healthNotesByPlantID[removedID] = nil
+        defaults.set(true, forKey: "collection.\(accountID).tombstone.\(removedID)")
         persist()
     }
 
@@ -162,11 +150,6 @@ final class LocalPlantCollectionStore: ObservableObject {
         saveError = nil
     }
 
-    func addHealthNote(_ note: String, at index: Int) {
-        healthNotes[index, default: []].append(note)
-        persist()
-    }
-
     func presentationIdentity(at index: Int) -> String? {
         guard plants.indices.contains(index) else { return nil }
         return plants[index].plantID?.rawValue ?? weatherPlantID(at: index)?.rawValue
@@ -192,7 +175,7 @@ final class LocalPlantCollectionStore: ObservableObject {
             forKey: plantsKey
         )
         defaults.set(
-            try? JSONEncoder().encode(healthNotes),
+            try? JSONEncoder().encode(healthNotesByPlantID),
             forKey: notesKey
         )
         defaults.set(weatherPlantIDs.map(\.rawValue), forKey: weatherPlantIDsKey)

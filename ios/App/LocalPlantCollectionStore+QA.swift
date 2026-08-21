@@ -32,8 +32,7 @@ extension LocalPlantCollectionStore {
             else {
                 return
             }
-            plants.removeAll()
-            healthNotes.removeAll()
+            resetQAFixtureData()
             if ProcessInfo.processInfo.environment[
                 "QA_HOME_CARE_VARIANTS"
             ] == "1" {
@@ -56,6 +55,7 @@ extension LocalPlantCollectionStore {
                     ),
                     qaDraft(id: "local-3", name: "미설정 식물", lastWateredOn: nil)
                 ]
+                reconcilePlantIdentities()
                 persist()
                 return
             }
@@ -74,8 +74,15 @@ extension LocalPlantCollectionStore {
                     id: "local-2", name: "비공개 식물", lastWateredOn: nil
                 ))
             }
+            reconcilePlantIdentities()
             persist()
         #endif
+    }
+
+    private func resetQAFixtureData() {
+        plants.removeAll()
+        resetPlantIdentities()
+        healthNotesByPlantID.removeAll()
     }
 
     private func qaDraft(
