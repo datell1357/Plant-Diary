@@ -44,7 +44,9 @@ public actor KeychainSessionMetadataStore: SessionMetadataPersisting {
     }
 
     public func clear() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        var query = baseQuery
+        query.removeValue(forKey: kSecAttrAccessible as String)
+        let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainSessionMetadataError.delete(status)
         }
