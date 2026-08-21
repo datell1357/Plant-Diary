@@ -39,7 +39,7 @@ struct MiniRoomEditorFooter: View {
             identifier: "minihome.editor.undo",
             action: undo
         )
-        Spacer(minLength: PlanteriorSpacing.small)
+        .frame(maxWidth: .infinity, alignment: .leading)
         action(
             title: "초기화",
             systemImage: "arrow.triangle.2.circlepath",
@@ -47,6 +47,7 @@ struct MiniRoomEditorFooter: View {
             identifier: "minihome.editor.reset",
             action: reset
         )
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func action(
@@ -63,7 +64,7 @@ struct MiniRoomEditorFooter: View {
                 Text(title)
                     .font(PlanteriorTypography.supporting)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.75)
             }
             .foregroundStyle(
                 enabled

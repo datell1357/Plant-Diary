@@ -35,11 +35,11 @@ enum StorageItemPresentation {
     static func description(for item: ShopItem) -> String {
         switch item.category {
         case .background:
-            "미니홈의 분위기를 편안하게 바꾸는 배경 아이템이에요."
+            "미니홈의 분위기를 편안하게 바꾸는 배경 아이템\u{2060}이에요."
         case .furniture:
-            "식물과 자연스럽게 어울리는 따뜻한 가구 아이템이에요."
+            "식물과 자연스럽게 어울리는 따뜻한 가구 아이템\u{2060}이에요."
         case .decoration:
-            "미니홈에 작은 포인트를 더하는 장식 아이템이에요."
+            "미니홈에 작은 포인트를 더하는 장식 아이템\u{2060}이에요."
         }
     }
 

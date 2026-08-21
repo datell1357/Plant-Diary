@@ -48,8 +48,8 @@ struct PlantSymptomRemedyView: View {
         SymptomGuidance(
             icon: "🌿",
             title: "잎이 축 처져요",
-            cause: "수분이 부족하거나 뿌리가 오래 젖어 있을 때 나타날 수 있어요.",
-            action: "흙 속 수분을 확인한 뒤 상태에 맞춰 물 주기 일정을 조정하세요."
+            cause: "수분이 부족하거나 뿌리가 오래 젖어 있을\u{00A0}때 나타날 수 있어요.",
+            action: "흙 속 수분을 확인한 뒤 상태에 맞춰 물 주기 일정을 조정\u{2060}하세요."
         ),
         SymptomGuidance(
             icon: "☀️",

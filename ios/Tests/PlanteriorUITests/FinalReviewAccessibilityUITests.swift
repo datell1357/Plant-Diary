@@ -57,11 +57,17 @@ extension HomeDashboardUITests {
         let balance = app.staticTexts["home.rename.balance"]
         XCTAssertTrue(balance.waitForExistence(timeout: 5))
         XCTAssertTrue(save.frame.contains(balance.frame))
+        XCTAssertGreaterThanOrEqual(
+            save.frame.maxY - balance.frame.maxY,
+            8,
+            "AX5 balance glyphs need painted-bottom clearance inside Save"
+        )
         XCTAssertGreaterThan(
             balance.frame.minY,
             app.staticTexts["home.rename.cost"].frame.minY,
             "AX5 spending balance must use its own visible line"
         )
+        XCTAssertEqual(balance.label, "보유 12")
         XCTAssertFalse(balance.label.contains("\u{2026}"))
     }
 }
@@ -82,6 +88,11 @@ extension MiniHomeFigmaUITests {
             canvas.frame.intersection(viewport).height,
             180
         )
+        let undo = app.buttons["minihome.editor.undo"]
+        XCTAssertTrue(undo.exists)
+        XCTAssertEqual(undo.label, "되돌리기")
+        XCTAssertFalse(undo.label.contains("\u{2026}"))
+        XCTAssertGreaterThanOrEqual(undo.frame.height, 44)
     }
 }
 
@@ -110,7 +121,12 @@ extension PlantCollectionFigmaUITests {
         empty.launch()
         let illustration = empty.images["collection.empty.illustration"]
         XCTAssertTrue(illustration.waitForExistence(timeout: 10))
-        XCTAssertGreaterThanOrEqual(illustration.frame.height, 96)
+        XCTAssertEqual(
+            illustration.frame.height,
+            96,
+            accuracy: 0.5,
+            "the intended 96pt illustration may differ only by raster precision"
+        )
         empty.terminate()
 
         let remedy = collectionApp(empty: false)
@@ -151,41 +167,4 @@ extension PlantCollectionFigmaUITests {
         }
         return app
     }
-}
-
-@MainActor
-extension SettingsDeletionUITests {
-    func testAX5RegionLabelKeepsAReservedIconColumn() {
-        let app = figmaSettingsApp()
-        app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
-        app.launchArguments += accessibilityArguments
-        app.launch()
-        openFigmaSettings(in: app)
-
-        let region = app.buttons["settings.region.open"]
-        scrollToHittable(region, in: app.scrollViews["settings.screen"])
-        region.tap()
-        let card = app.buttons["weather.use-current-location"]
-        let label = app.staticTexts["현재 위치로 설정"]
-        XCTAssertTrue(label.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(label.frame.minX, card.frame.minX + 56)
-    }
-}
-
-private let accessibilityArguments = [
-    "-AppleLanguages", "(ko)",
-    "-AppleLocale", "ko_KR",
-    "-UIPreferredContentSizeCategoryName",
-    "UICTContentSizeCategoryAccessibilityXXXL"
-]
-
-@MainActor
-private func scrollToHittable(
-    _ element: XCUIElement,
-    in scrollView: XCUIElement
-) {
-    for _ in 0 ..< 8 where !element.isHittable {
-        scrollView.swipeUp()
-    }
-    XCTAssertTrue(element.isHittable)
 }

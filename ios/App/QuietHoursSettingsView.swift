@@ -30,7 +30,7 @@ struct QuietHoursSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
                 toggleCard
-                Text("설정한 시간 동안 물 주기, 영양제 주기 등 일상적인 식물 관리 알림 및 푸시가 발송되지 않습니다.")
+                Text("설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다.")
                     .font(PlanteriorTypography.caption)
                     .foregroundStyle(PlanteriorPalette.textSecondary.color)
                     .fixedSize(horizontal: false, vertical: true)
