@@ -1,0 +1,7 @@
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+functions/lib/
+functions/node_modules/
+functions/*.tsbuildinfo

@@ -1,0 +1,21 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "ios-account-deletion",
+      "ignore": [
+        "node_modules",
+        "lib/**/*.test.js",
+        "lib/**/*.test.js.map",
+        "lib/**/*.emulator-spec.js",
+        "lib/**/*.emulator-spec.js.map",
+        "src/**/*.test.ts",
+        "src/**/*.emulator-spec.ts",
+        "src/test-support.ts"
+      ],
+      "predeploy": [
+        "pnpm --dir \"$RESOURCE_DIR\" run verify:deploy"
+      ]
+    }
+  ]
+}

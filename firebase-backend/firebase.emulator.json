@@ -1,0 +1,25 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "ios-account-deletion",
+      "ignore": ["node_modules", "lib/**/*.test.js", "lib/**/*.emulator-spec.js"]
+    }
+  ],
+  "firestore": {
+    "rules": "emulator/firestore.rules"
+  },
+  "storage": {
+    "rules": "emulator/storage.rules"
+  },
+  "emulators": {
+    "auth": { "port": 9299 },
+    "eventarc": { "port": 9400 },
+    "functions": { "port": 5201 },
+    "firestore": { "port": 8280 },
+    "pubsub": { "port": 8185 },
+    "storage": { "port": 9399 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}
