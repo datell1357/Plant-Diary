@@ -48,6 +48,7 @@ struct QuietHoursSettingsView: View {
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle("알림 금지 시간 설정")
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .toolbar {
             if showsCloseButton {
                 ToolbarItem(placement: .cancellationAction) {
@@ -66,7 +67,7 @@ struct QuietHoursSettingsView: View {
     private var toggleCard: some View {
         PlanteriorCard {
             HStack(spacing: PlanteriorSpacing.medium) {
-                iconWell("clock")
+                PlanteriorIconWell(systemImage: "clock")
                 Toggle("알림 금지 시간 사용", isOn: $enabled)
                     .font(PlanteriorTypography.body.weight(.medium))
                     .tint(PlanteriorPalette.accent.color)
@@ -79,7 +80,11 @@ struct QuietHoursSettingsView: View {
         PlanteriorCard {
             VStack(spacing: 0) {
                 timePicker("시작 시간", selection: $startDate, id: "quiet-hours.start")
-                Divider().padding(.leading, PlanteriorControl.iconWellSize + 12)
+                Divider().padding(
+                    .leading,
+                    PlanteriorControl.iconWellSize(for: sizeCategory)
+                        + PlanteriorSpacing.medium
+                )
                 timePicker("종료 시간", selection: $endDate, id: "quiet-hours.end")
             }
         }
@@ -141,15 +146,6 @@ struct QuietHoursSettingsView: View {
             .disabled(!enabled)
             .accessibilityIdentifier(id)
         }
-    }
-
-    private func iconWell(_ systemName: String) -> some View {
-        Image(systemName: systemName)
-            .foregroundStyle(PlanteriorPalette.accent.color)
-            .frame(width: 32, height: 32)
-            .background(PlanteriorPalette.accentSurface.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.small))
-            .accessibilityHidden(true)
     }
 
     private var saveBar: some View {

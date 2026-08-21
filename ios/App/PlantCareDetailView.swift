@@ -49,6 +49,7 @@ struct PlantCareDetailView: View {
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle(trimmedNickname)
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .toolbar(.visible, for: .navigationBar)
         .toolbar {
             Button {

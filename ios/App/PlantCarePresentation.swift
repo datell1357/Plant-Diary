@@ -74,8 +74,8 @@ extension PlantCollectionView {
                 .resizable()
                 .scaledToFit()
                 .frame(
-                    width: sizeCategory.isAccessibilityCategory ? 24 : 120,
-                    height: sizeCategory.isAccessibilityCategory ? 24 : 120
+                    width: sizeCategory.isAccessibilityCategory ? 100 : 120,
+                    height: sizeCategory.isAccessibilityCategory ? 100 : 120
                 )
                 .padding(sizeCategory.isAccessibilityCategory ? 0 : 20)
                 .background(PlanteriorPalette.subtle.color)

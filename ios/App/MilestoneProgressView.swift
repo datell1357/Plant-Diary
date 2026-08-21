@@ -34,6 +34,7 @@ struct MilestoneProgressView: View {
         .environment(\.sizeCategory, effectiveSizeCategory)
         .navigationTitle("꾸미기 마일스톤")
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .accessibilityIdentifier("milestones.screen")
         .toolbar { qaMenu }
         .task(id: accountID) {

@@ -67,6 +67,12 @@ public enum PlanteriorControl {
     public static let rowHeight: CGFloat = 56
     public static let iconWellSize: CGFloat = 32
     public static let hairline: CGFloat = 1
+
+    public static func iconWellSize(
+        for sizeCategory: ContentSizeCategory
+    ) -> CGFloat {
+        sizeCategory.isAccessibilityCategory ? minimumTarget : iconWellSize
+    }
 }
 
 public enum PlanteriorMotion {

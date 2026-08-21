@@ -13,6 +13,11 @@ extension SettingsDeletionUITests {
         XCTAssertTrue(app.staticTexts["계정"].exists)
         XCTAssertTrue(app.staticTexts["앱 버전"].exists)
         let weatherAlerts = app.switches["settings.alerts.weather-enabled"]
+        let settingsScroll = app.scrollViews["settings.screen"]
+        for _ in 0 ..< 8 where !weatherAlerts.isHittable {
+            settingsScroll.swipeUp()
+        }
+        XCTAssertTrue(weatherAlerts.isHittable)
         let initialWeatherValue = weatherAlerts.value as? String
         weatherAlerts.tap()
         let weatherChanged = XCTNSPredicateExpectation(
@@ -169,9 +174,7 @@ extension SettingsDeletionUITests {
         let save = app.buttons["quiet-hours.save"]
         XCTAssertTrue(save.isHittable)
         save.tap()
-        XCTAssertTrue(
-            app.buttons["settings.quiet-hours.open"].waitForExistence(timeout: 5)
-        )
+        XCTAssertTrue(app.buttons["settings.quiet-hours.open"].waitForExistence(timeout: 5))
         attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
     }
 

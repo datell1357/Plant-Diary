@@ -9,6 +9,7 @@ import SwiftUI
 struct IdentificationFlowView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sizeCategory) var sizeCategory
     let revisePhoto: (() -> Void)?
     let completeRegistration: (() -> Void)?
     @State var state = IdentificationState.pending

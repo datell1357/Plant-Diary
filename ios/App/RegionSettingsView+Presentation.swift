@@ -37,11 +37,11 @@ extension RegionSettingsView {
             selectedCode = nil
             weather.requestLocationPermission()
         } label: {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                Image(systemName: "location.fill")
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
+            HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.medium) {
+                PlanteriorIconWell(systemImage: "location.fill")
+                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                        dimensions[VerticalAlignment.center]
+                    }
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                     Text("현재 위치로 설정")
                         .font(PlanteriorTypography.cardTitle)

@@ -29,7 +29,7 @@ extension SettingsView {
     ) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: PlanteriorSpacing.medium) {
-                iconWell(icon)
+                PlanteriorIconWell(systemImage: icon)
                 Toggle(title, isOn: isOn)
                     .tint(PlanteriorPalette.accent.color)
                     .accessibilityIdentifier(id)
@@ -76,7 +76,7 @@ extension SettingsView {
     ) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: PlanteriorSpacing.medium) {
-                iconWell(icon)
+                PlanteriorIconWell(systemImage: icon)
                 Text(title)
                     .font(PlanteriorTypography.body)
                     .foregroundStyle(PlanteriorPalette.textPrimary.color)
@@ -93,7 +93,7 @@ extension SettingsView {
             }
             VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                 HStack(spacing: PlanteriorSpacing.medium) {
-                    iconWell(icon)
+                    PlanteriorIconWell(systemImage: icon)
                     Text(title)
                         .font(PlanteriorTypography.body)
                         .foregroundStyle(PlanteriorPalette.textPrimary.color)
@@ -120,15 +120,6 @@ extension SettingsView {
         Image(systemName: "chevron.right")
             .font(PlanteriorTypography.caption)
             .foregroundStyle(PlanteriorPalette.textTertiary.color)
-            .accessibilityHidden(true)
-    }
-
-    func iconWell(_ name: String) -> some View {
-        Image(systemName: name)
-            .foregroundStyle(PlanteriorPalette.accent.color)
-            .frame(width: 32, height: 32)
-            .background(PlanteriorPalette.accentSurface.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.small))
             .accessibilityHidden(true)
     }
 

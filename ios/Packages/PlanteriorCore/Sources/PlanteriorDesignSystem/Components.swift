@@ -168,6 +168,7 @@ public struct PlanteriorGroupedSurface<Content: View>: View {
 }
 
 public struct PlanteriorIconWell: View {
+    @Environment(\.sizeCategory) private var sizeCategory
     private let systemImage: String
 
     public init(systemImage: String) {
@@ -175,12 +176,25 @@ public struct PlanteriorIconWell: View {
     }
 
     public var body: some View {
+        let side = PlanteriorControl.iconWellSize(for: sizeCategory)
         Image(systemName: systemImage)
             .font(PlanteriorTypography.supporting)
             .foregroundStyle(PlanteriorPalette.accent.color)
-            .frame(width: PlanteriorControl.iconWellSize, height: PlanteriorControl.iconWellSize)
+            .frame(width: side, height: side)
             .background(PlanteriorPalette.accentSurface.color)
             .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.small))
             .accessibilityHidden(true)
+    }
+}
+
+public extension View {
+    @ViewBuilder
+    func planteriorInlineNavigationChrome() -> some View {
+        #if os(iOS)
+            toolbarBackground(PlanteriorPalette.canvas.color, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        #else
+            self
+        #endif
     }
 }

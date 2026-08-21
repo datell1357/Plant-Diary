@@ -11,19 +11,25 @@ extension InventoryView {
         } label: {
             VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                 ZStack(alignment: .topLeading) {
-                    Image(StorageItemPresentation.asset(for: item))
-                        .resizable()
-                        .scaledToFill()
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(1, contentMode: .fit)
-                        .background(PlanteriorPalette.subtle.color)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-                        )
-                        .accessibilityLabel("\(item.name) 이미지")
-                        .accessibilityIdentifier(
-                            "storage.image.\(item.id.rawValue)"
-                        )
+                    GeometryReader { geometry in
+                        Image(StorageItemPresentation.asset(for: item))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(
+                                width: geometry.size.width,
+                                height: geometry.size.height
+                            )
+                            .clipped()
+                            .accessibilityLabel("\(item.name) 이미지")
+                            .accessibilityIdentifier(
+                                "storage.image.\(item.id.rawValue)"
+                            )
+                    }
+                    .aspectRatio(1, contentMode: .fit)
+                    .background(PlanteriorPalette.subtle.color)
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
+                    )
                     if applied {
                         PlanteriorStatusPill("적용 중", variant: .accent)
                             .padding(PlanteriorSpacing.extraSmall)

@@ -58,6 +58,7 @@ struct RegionSettingsView: View {
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle("관리 지역 설정")
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .toolbar {
             if showsCloseButton {
                 ToolbarItem(placement: .topBarLeading) {

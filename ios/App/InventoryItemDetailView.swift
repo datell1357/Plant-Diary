@@ -27,6 +27,7 @@ struct InventoryItemDetailView: View {
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle("아이템 상세")
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("storage.detail.\(item.id.rawValue)")
         .safeAreaInset(edge: .bottom) {

@@ -52,6 +52,16 @@ struct DesignTokenTests {
     }
 
     @Test
+    func iconWellGeometryScalesForAccessibilityCategories() {
+        #expect(PlanteriorControl.iconWellSize(for: .large) == 32)
+        #expect(
+            PlanteriorControl.iconWellSize(
+                for: .accessibilityExtraExtraExtraLarge
+            ) >= PlanteriorControl.minimumTarget
+        )
+    }
+
+    @Test
     func typographyRolesBindToDynamicTypeStyles() {
         #expect(PlanteriorTypography.screenTitle == Font.headline.weight(.semibold))
         #expect(PlanteriorTypography.pageTitle == Font.title3.weight(.bold))

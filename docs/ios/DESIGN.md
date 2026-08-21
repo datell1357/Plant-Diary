@@ -83,7 +83,13 @@ multiple 402x874 screens; those values are not in-app gutters.
 The 48pt Figma phone radius and 1pt device border are presentation chrome and
 must not be applied to the app window. In-app radii are 8, 12, 16, 20, 24,
 and full-pill.
-Safe areas, keyboard avoidance, and system bars remain native.
+Safe areas, keyboard avoidance, and system bars remain native. Fixed action
+regions compose as a scroll-body shell: the body owns vertical scrolling and
+its safe-area inset reserves the action region inside that scroll owner
+(StyleGallery `scroll-body-shell`). Responsive media uses the `frame` contract:
+its aspect ratio and a meaningful minimum block size survive AX5. Every inline
+navigation title uses an opaque Canvas toolbar background so body content never
+renders through navigation chrome.
 
 ## 5. Components
 
@@ -157,6 +163,10 @@ Safe areas, keyboard avoidance, and system bars remain native.
 
 - Structure: grouped settings cards with 44pt rows, leading semantic icon,
   title, current value or toggle, and disclosure where navigation follows.
+- Icon frame: every settings icon composes `PlanteriorIconWell`; the shared
+  square scales with Dynamic Type and reserves its own column. Local fixed-size
+  icon wells are not permitted (StyleGallery `icon-frame`). Wrapped labels align
+  from their first text baseline and cannot enter the icon column.
 - Quiet hours: enable switch, start/end selectors, explanatory copy, warning,
   and fixed save action.
 - Region: search, current-location action, current region, recent regions, and
@@ -166,6 +176,9 @@ Safe areas, keyboard avoidance, and system bars remain native.
 
 - Camera: full black surface with close, centered photo viewport, library,
   shutter, and camera-switch controls.
+- Sticky completion actions belong to the screen's `ScrollView` safe-area inset,
+  never an outer wrapper, so hero, selected detail, and alternate content can
+  scroll entirely above the rendered action region at every Dynamic Type size.
 - Photo review: image-led confirmation with identify and retake actions.
 - Identifying: same photo context with a calm leaf progress treatment.
 - Result: hero photo, confidence/species summary, alternative candidates, and
@@ -177,7 +190,8 @@ Safe areas, keyboard avoidance, and system bars remain native.
 - Structure: close/title/save header, room canvas, category tab strip,
   horizontally scrolling item selector, undo/reset footer.
 - Canvas: room remains the visual focus and supports touch plus VoiceOver move
-  actions.
+  actions. At AX5 it retains at least 180pt of visible height; the room scroll
+  region grows before fixed tray/footer strips can collapse the canvas.
 - State: clean, dirty, saving, error, conflict, and unsaved-dismissal recovery.
 
 ## 6. Motion and interaction

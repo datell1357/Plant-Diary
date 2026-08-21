@@ -82,6 +82,7 @@ struct PlantSymptomRemedyView: View {
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle("증상 대처법")
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .toolbar(.visible, for: .navigationBar)
         .accessibilityIdentifier("remedy.screen")
     }

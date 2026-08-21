@@ -101,7 +101,10 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         attachScreenshot(named: "storage-detail-402x874")
 
         let apply = app.buttons["storage.detail.apply.item-chair"]
-        waitForHittable(apply)
+        scrollToHittable(
+            apply,
+            in: app.scrollViews["storage.detail.item-chair"]
+        )
         apply.tap()
         XCTAssertTrue(
             app.staticTexts["storage.detail.status"]

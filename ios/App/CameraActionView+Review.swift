@@ -28,9 +28,9 @@ extension CameraActionView {
                 .padding(.horizontal, PlanteriorSpacing.large)
                 .padding(.vertical, PlanteriorSpacing.large)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            reviewActions
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                reviewActions
+            }
         }
         .background(PlanteriorPalette.canvas.color)
         .accessibilityElement(children: .contain)
@@ -76,7 +76,7 @@ extension CameraActionView {
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity)
-                .frame(height: 420)
+                .frame(height: sizeCategory.isAccessibilityCategory ? 232 : 420)
                 .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
                 .accessibilityIdentifier("photo.review")
                 .accessibilityLabel("촬영한 식물 사진")
@@ -85,7 +85,7 @@ extension CameraActionView {
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity)
-                .frame(height: 420)
+                .frame(height: sizeCategory.isAccessibilityCategory ? 232 : 420)
                 .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
                 .accessibilityIdentifier("photo.review")
                 .accessibilityLabel("촬영한 식물 사진")

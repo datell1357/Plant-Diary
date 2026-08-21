@@ -16,6 +16,16 @@ extension InventoryUITestSupport where Self: XCTestCase {
         )
     }
 
+    func scrollToHittable(
+        _ element: XCUIElement,
+        in scrollView: XCUIElement
+    ) {
+        for _ in 0 ..< 8 where !element.isHittable {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable)
+    }
+
     func waitForShopRows(
         _ expected: [String],
         in app: XCUIApplication,

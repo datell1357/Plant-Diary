@@ -33,6 +33,7 @@ struct SettingsView: View {
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle("설정")
         .navigationBarTitleDisplayMode(.inline)
+        .planteriorInlineNavigationChrome()
         .task {
             AnalyticsRecorder.shared.record(.screenViewed(.settings))
             mountPresentedAccount()

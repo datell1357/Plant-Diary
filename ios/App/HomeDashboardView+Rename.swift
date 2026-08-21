@@ -107,13 +107,37 @@ extension HomeDashboardView {
 
     private var saveButton: some View {
         Button(action: commitRename) {
-            HStack(spacing: PlanteriorSpacing.extraSmall) {
-                Text("저장")
-                    .font(PlanteriorTypography.body.weight(.semibold))
-                costAffordance
+            if effectiveSizeCategory.isAccessibilityCategory {
+                VStack(spacing: PlanteriorSpacing.extraSmall) {
+                    Text("저장")
+                        .font(PlanteriorTypography.body.weight(.semibold))
+                    switch renameQuote {
+                    case .free:
+                        costAffordance
+                    case let .paid(cost, balance), let .insufficient(cost, balance):
+                        HStack(spacing: PlanteriorSpacing.extraSmall) {
+                            Image(systemName: "circlebadge.fill")
+                                .foregroundStyle(PlanteriorPalette.warning.color)
+                                .accessibilityHidden(true)
+                            Text("\(cost)")
+                                .accessibilityIdentifier("home.rename.cost")
+                        }
+                        Text("보유 \(balance)")
+                            .accessibilityIdentifier("home.rename.balance")
+                    }
+                }
+                .padding(.vertical, PlanteriorSpacing.small)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: PlanteriorControl.primaryButtonHeight)
+            } else {
+                HStack(spacing: PlanteriorSpacing.extraSmall) {
+                    Text("저장")
+                        .font(PlanteriorTypography.body.weight(.semibold))
+                    costAffordance
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: PlanteriorControl.primaryButtonHeight)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: PlanteriorControl.primaryButtonHeight)
         }
         .buttonStyle(.plain)
         .foregroundStyle(PlanteriorPalette.textOnAccent.color)

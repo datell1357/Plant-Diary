@@ -18,9 +18,9 @@ extension IdentificationFlowView {
                 .padding(.horizontal, PlanteriorSpacing.large)
                 .padding(.vertical, PlanteriorSpacing.large)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            resultActions(candidates)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                resultActions(candidates)
+            }
         }
         .background(PlanteriorPalette.canvas.color)
         .accessibilityElement(children: .contain)
@@ -58,11 +58,12 @@ extension IdentificationFlowView {
 
     @ViewBuilder
     private var resultHero: some View {
+        let height: CGFloat = sizeCategory.isAccessibilityCategory ? 140 : 220
         if let data = submittedPhoto, let image = UIImage(data: data) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
-                .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
+                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
                 .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
                 .accessibilityIdentifier("capture.result.hero")
                 .accessibilityLabel("식별한 식물 사진")
@@ -70,7 +71,7 @@ extension IdentificationFlowView {
             Image(.capturePreview)
                 .resizable()
                 .scaledToFill()
-                .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220)
+                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
                 .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
                 .accessibilityIdentifier("capture.result.hero")
                 .accessibilityLabel("식별한 식물 사진")

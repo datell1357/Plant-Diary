@@ -8,6 +8,7 @@ import SwiftUI
 /// the black camera chrome, step 2 the photo review. Steps 3–4 are owned by
 /// `IdentificationFlowView`, which this view hands off to on consent.
 struct CameraActionView: View {
+    @Environment(\.sizeCategory) var sizeCategory
     let dismiss: () -> Void
     let complete: () -> Void
     let manualRegistration: () -> Void

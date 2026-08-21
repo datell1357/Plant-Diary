@@ -13,6 +13,7 @@ struct MiniHomeEditorView: View {
     @ObservedObject var inventory: InventoryRepository
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.sizeCategory) private var sizeCategory
     @State var errorMessage: String?
     @State var showsUnsavedPrompt = false
     @State var showsConflictPrompt = false
@@ -24,23 +25,19 @@ struct MiniHomeEditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             MiniRoomEditorHeader(close: requestClose, save: save)
-            roomScrollRegion
-            MiniRoomEditorTabBar(
-                selection: $category,
-                reduceMotion: reduceMotion
-            )
-            MiniRoomEditorTray(
-                entries: trayEntries,
-                selectedEntryID: selectedEntryID,
-                emptyMessage: trayEmptyMessage,
-                select: place
-            )
-            MiniRoomEditorFooter(
-                canUndo: store.canUndoDraft,
-                canReset: store.hasUnsavedChanges,
-                undo: undo,
-                reset: reset
-            )
+            if sizeCategory.isAccessibilityCategory {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        roomContent
+                        editorControls
+                    }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .accessibilityIdentifier("minihome.editor")
+            } else {
+                roomScrollRegion
+                editorControls
+            }
         }
         .background(PlanteriorPalette.canvas.color)
         .navigationBarHidden(true)
@@ -64,33 +61,55 @@ struct MiniHomeEditorView: View {
     }
 
     private var roomScrollRegion: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                roomNameField
-                if let draft = store.draft {
-                    MiniHomeEditorCanvas(
-                        room: draft,
-                        placementAsset: asset(for:),
-                        placementLabel: label(for:),
-                        move: moveByDrag,
-                        moveBy: moveBy
-                    )
-                }
-                MiniHomeEditorStatusStrip(
-                    stateLabel: stateLabel,
-                    errorMessage: errorMessage,
-                    conflictState: store.state,
-                    addPlant: { showsPlantPicker = true },
-                    resolveConflict: { showsConflictPrompt = true }
+        ScrollView { roomContent }
+            .scrollBounceBehavior(.basedOnSize)
+            .accessibilityIdentifier("minihome.editor")
+    }
+
+    private var roomContent: some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+            roomNameField
+            if let draft = store.draft {
+                MiniHomeEditorCanvas(
+                    room: draft,
+                    placementAsset: asset(for:),
+                    placementLabel: label(for:),
+                    move: moveByDrag,
+                    moveBy: moveBy
                 )
             }
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.top, PlanteriorSpacing.large)
-            .padding(.bottom, PlanteriorSpacing.section)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            MiniHomeEditorStatusStrip(
+                stateLabel: stateLabel,
+                errorMessage: errorMessage,
+                conflictState: store.state,
+                addPlant: { showsPlantPicker = true },
+                resolveConflict: { showsConflictPrompt = true }
+            )
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .accessibilityIdentifier("minihome.editor")
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .padding(.top, PlanteriorSpacing.large)
+        .padding(.bottom, PlanteriorSpacing.section)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var editorControls: some View {
+        MiniRoomEditorTabBar(
+            selection: $category,
+            reduceMotion: reduceMotion
+        )
+        MiniRoomEditorTray(
+            entries: trayEntries,
+            selectedEntryID: selectedEntryID,
+            emptyMessage: trayEmptyMessage,
+            select: place
+        )
+        MiniRoomEditorFooter(
+            canUndo: store.canUndoDraft,
+            canReset: store.hasUnsavedChanges,
+            undo: undo,
+            reset: reset
+        )
     }
 
     private var roomNameField: some View {
