@@ -36,7 +36,7 @@ extension IdentificationFlowView {
                 .accessibilityIdentifier("capture.result.title")
             HStack {
                 Button {
-                    dismiss()
+                    returnToReviewedPhoto()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 18, weight: .semibold))

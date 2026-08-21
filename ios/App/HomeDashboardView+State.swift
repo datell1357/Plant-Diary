@@ -79,6 +79,7 @@ extension HomeDashboardView {
         LocalWeatherAlertStore.shared.mount(accountID: accountID)
         weatherRuntime.mount(accountID: accountID)
         weatherRuntime.reloadAlertPreferences()
+        renameAllowance = allowanceStore.load()
         reload()
     }
 

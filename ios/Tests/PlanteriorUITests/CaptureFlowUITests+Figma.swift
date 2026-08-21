@@ -131,7 +131,19 @@ final class CaptureFlowUITests: XCTestCase {
         app.buttons["identification.candidate.1"].tap()
         app.buttons["capture.result.register"].tap()
         XCTAssertTrue(app.navigationBars["식물 등록"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["registration.submit"].exists)
+
+        let name = app.textFields["registration.name"]
+        XCTAssertEqual(name.value as? String, "몬스테라 아단소니")
+        let search = app.textFields["registration.search"]
+        XCTAssertEqual(search.value as? String, "몬스테라 아단소니")
+        search.tap()
+        search.typeText(" 검색")
+        XCTAssertEqual(
+            name.value as? String,
+            "몬스테라 아단소니",
+            "public-species search must not overwrite the personal display name"
+        )
+        XCTAssertTrue(app.buttons["registration.submit"].isEnabled)
     }
 }
 

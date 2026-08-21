@@ -6,28 +6,35 @@ import SwiftUI
 struct PlantRegistrationView: View {
     let method: RegistrationMethod
     let candidate: IdentificationCandidate?
+    let onRegistered: (() -> Void)?
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
-    @State private var name = ""
+    @State private var speciesSearch: String
+    @State private var name: String
     @State private var lastWatered = Date()
     @State private var usesLastWateredDate = false
     @State private var saved = false
     private let plantCalendar = PlantCareCalendar()
     @State private var representativePhoto: Data?
     @State private var showsDuplicate = false
-    @State private var openedExisting = false
+    @State private var existingRoute: DuplicatePlantRoute?
     @State private var editedIdentification = false
 
     init(
         method: RegistrationMethod = .manual,
-        candidate: IdentificationCandidate? = nil
+        candidate: IdentificationCandidate? = nil,
+        onRegistered: (() -> Void)? = nil
     ) {
         self.method = method
         self.candidate = candidate
+        self.onRegistered = onRegistered
+        let candidateName = candidate?.species.koreanName ?? ""
+        _speciesSearch = State(initialValue: candidateName)
+        _name = State(initialValue: candidateName)
     }
 
     var body: some View {
         Form {
-            TextField("공개 식물 검색", text: $name)
+            TextField("공개 식물 검색", text: $speciesSearch)
                 .accessibilityIdentifier("registration.search")
             TextField("식물 이름", text: $name)
                 .accessibilityIdentifier("registration.name")
@@ -87,14 +94,20 @@ struct PlantRegistrationView: View {
             "이미 등록한 식물이에요",
             isPresented: $showsDuplicate
         ) {
-            Button("기존 식물 열기") { openedExisting = true }
+            Button("기존 식물 열기") { openExistingDuplicate() }
                 .accessibilityIdentifier("registration.open-existing")
             Button("한 개 더 등록") { persist() }
             Button("취소", role: .cancel) {}
         }
-        .navigationDestination(isPresented: $openedExisting) {
-            Text("기존 식물 상세")
-                .accessibilityIdentifier("registration.existing-detail")
+        .navigationDestination(item: $existingRoute) { route in
+            if let index = collection.index(
+                forRouteTarget: route.target.rawValue
+            ) {
+                PlantCareDetailView(index: index)
+            } else {
+                Text("기존 식물을 찾을 수 없어요.")
+                    .accessibilityIdentifier("route.unavailable")
+            }
         }
     }
 
@@ -131,10 +144,28 @@ struct PlantRegistrationView: View {
         )
         saved = true
         Task { await IdentificationDraftStore.shared.clear() }
+        onRegistered?()
+    }
+
+    private func openExistingDuplicate() {
+        guard let rawValue = candidate?.plantID.rawValue,
+              let target = PlantRouteTarget(rawValue: rawValue)
+        else {
+            return
+        }
+        existingRoute = DuplicatePlantRoute(target: target)
     }
 
     private var calendarDate: CalendarDate? {
         try? plantCalendar.calendarDate(from: lastWatered)
+    }
+}
+
+private struct DuplicatePlantRoute: Identifiable, Hashable {
+    let target: PlantRouteTarget
+
+    var id: String {
+        target.rawValue
     }
 }
 

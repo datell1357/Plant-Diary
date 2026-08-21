@@ -55,7 +55,6 @@ struct HomeRenameAllowanceStore {
     private let usedKey: String
     private let balanceKey: String
     private let seededKey: String
-    private let titleKey: String
     private let qaAppliedKey: String
 
     init(accountID: String?, defaults: UserDefaults = .standard) {
@@ -64,18 +63,7 @@ struct HomeRenameAllowanceStore {
         usedKey = "home.\(scope).rename.used-free"
         balanceKey = "home.\(scope).rename.balance"
         seededKey = "home.\(scope).rename.seeded"
-        titleKey = "home.\(scope).rename.title"
         qaAppliedKey = "home.\(scope).rename.qa-applied"
-    }
-
-    /// The explicitly renamed room title, if the user has ever renamed. Distinct
-    /// from the committed `MiniHome.name`, which may come from the room editor.
-    var renamedTitle: String? {
-        defaults.string(forKey: titleKey)
-    }
-
-    func saveRenamedTitle(_ title: String) {
-        defaults.set(title, forKey: titleKey)
     }
 
     func load() -> HomeRenameAllowance {
@@ -113,7 +101,7 @@ struct HomeRenameAllowanceStore {
     #if DEBUG
         /// Clears the account-scoped rename state so QA runs stay isolated.
         func resetForQA() {
-            for key in [usedKey, balanceKey, seededKey, titleKey, qaAppliedKey] {
+            for key in [usedKey, balanceKey, seededKey, qaAppliedKey] {
                 defaults.removeObject(forKey: key)
             }
         }
@@ -134,7 +122,6 @@ struct HomeRenameAllowanceStore {
             }
             defaults.set(stamp, forKey: qaAppliedKey)
             defaults.set(true, forKey: seededKey)
-            defaults.removeObject(forKey: titleKey)
             switch mode {
             case "free":
                 defaults.set(false, forKey: usedKey)

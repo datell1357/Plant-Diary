@@ -105,12 +105,15 @@ final class AppLaunchUITests: XCTestCase {
         app.buttons["identification.candidate.1"].tap()
         app.buttons["capture.result.register"].tap()
         XCTAssertTrue(app.navigationBars["식물 등록"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["registration.submit"].isEnabled)
-        app.textFields["registration.name"].tap()
-        app.textFields["registration.name"].typeText("몬스테라")
+        XCTAssertEqual(
+            app.textFields["registration.name"].value as? String,
+            "몬스테라 아단소니"
+        )
         XCTAssertTrue(app.buttons["registration.submit"].isEnabled)
         app.buttons["registration.submit"].tap()
-        XCTAssertTrue(app.staticTexts["registration.saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.navigationBars["식물 등록"].waitForNonExistence(timeout: 5)
+        )
         app.terminate()
 
         let collectionApp = XCUIApplication()

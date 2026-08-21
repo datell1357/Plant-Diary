@@ -24,7 +24,6 @@ struct HomeDashboardView: View {
         hasUsedFreeRename: false,
         balance: 0
     )
-    @State var renamedRoomTitle: String?
     @FocusState var isRenameFieldFocused: Bool
     let calendar = PlantCareCalendar()
 
@@ -68,7 +67,6 @@ struct HomeDashboardView: View {
             miniHomeRepository.seedQAIfNeeded()
             resetRenameStateForQAIfNeeded()
             renameAllowance = allowanceStore.load()
-            renamedRoomTitle = allowanceStore.renamedTitle
             notificationState = await NotificationRuntimeState.current()
             await weatherRuntime.refresh(plants: collection.weatherPlantIDs)
             reload()

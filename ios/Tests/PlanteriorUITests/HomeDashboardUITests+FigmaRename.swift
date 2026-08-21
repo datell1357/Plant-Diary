@@ -123,7 +123,7 @@ extension HomeDashboardUITests {
             "keyboard submission must not commit a paid rename"
         )
         XCTAssertEqual(app.staticTexts["home.rename.balance"].label, "보유 12")
-        XCTAssertEqual(app.buttons["home.room.title"].label, "민지의 미니 식물원 🏡")
+        XCTAssertEqual(app.buttons["home.room.title"].label, "초록 방 🏡")
     }
 
     /// §6.9: an unaffordable rename is disabled rather than silently failing.

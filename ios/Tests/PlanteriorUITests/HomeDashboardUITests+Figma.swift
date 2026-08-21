@@ -27,7 +27,7 @@ extension HomeDashboardUITests {
 
         let title = app.buttons["home.room.title"]
         XCTAssertTrue(title.exists, "room title must be tappable to rename")
-        XCTAssertEqual(title.label, "민지의 미니 식물원 🏡")
+        XCTAssertEqual(title.label, "초록 방 🏡")
 
         XCTAssertTrue(app.images["home.room.hero"].exists)
         XCTAssertTrue(app.staticTexts["home.weather.warning"].exists)

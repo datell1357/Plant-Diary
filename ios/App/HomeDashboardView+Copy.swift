@@ -47,10 +47,10 @@ extension HomeDashboardView {
         return "\(value)℃"
     }
 
-    /// §6.2 title row. Defaults to the owner-derived name; an explicit rename
-    /// (§6.9) overrides it and is what persists.
+    /// §6.2 title row. A committed `MiniHome.name` is the only persisted room
+    /// title; owner-derived copy is used only before a room exists.
     var roomTitle: String {
-        if let name = renamedRoomTitle, !name.isEmpty {
+        if let name = store.miniHome?.name, !name.isEmpty {
             return name
         }
         return authenticationState == .authenticated

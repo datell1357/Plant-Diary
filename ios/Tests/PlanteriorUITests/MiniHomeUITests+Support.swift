@@ -49,10 +49,8 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
     }
 
     /// Committed-only projection contract on the current live surfaces.
-    /// `home.minhome.label` was retired with the Figma Home rebuild (7600231);
-    /// Home now projects the committed room through `home.room.hero`, and the
-    /// MiniHome screen renders the committed name itself. Both are asserted so
-    /// this stays stronger than the single retired label it replaces.
+    /// Home and MiniHome must both render the same committed `MiniHome.name`;
+    /// a rename sidecar or owner-derived fallback cannot mask the saved model.
     func waitForCommittedRoom(
         named name: String,
         in app: XCUIApplication
@@ -60,6 +58,17 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         XCTAssertTrue(
             app.images["home.room.hero"].waitForExistence(timeout: 10),
             "Home must keep projecting the committed room"
+        )
+        let homeTitle = app.buttons["home.room.title"]
+        XCTAssertTrue(homeTitle.waitForExistence(timeout: 10))
+        let projected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "\(name) 🏡"),
+            object: homeTitle
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [projected], timeout: 10),
+            .completed,
+            "Home title must project committed MiniHome.name: \(homeTitle.label)"
         )
         app.buttons["home.room.decorate"].tap()
         let committedName = app.staticTexts["minihome.committed.name"]

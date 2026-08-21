@@ -9,6 +9,8 @@ import SwiftUI
 struct IdentificationFlowView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let revisePhoto: (() -> Void)?
+    let completeRegistration: (() -> Void)?
     @State var state = IdentificationState.pending
     @State var selectedCandidate: IdentificationCandidate?
     @State var showsRegistration = false
@@ -18,6 +20,14 @@ struct IdentificationFlowView: View {
     private let coordinator = PlantIdentificationCoordinator(
         service: LocalPlantIdentificationService()
     )
+
+    init(
+        revisePhoto: (() -> Void)? = nil,
+        completeRegistration: (() -> Void)? = nil
+    ) {
+        self.revisePhoto = revisePhoto
+        self.completeRegistration = completeRegistration
+    }
 
     var body: some View {
         stateContent
@@ -29,11 +39,16 @@ struct IdentificationFlowView: View {
             .navigationDestination(isPresented: $showsRegistration) {
                 PlantRegistrationView(
                     method: .identified,
-                    candidate: selectedCandidate
+                    candidate: selectedCandidate,
+                    onRegistered: completeRegistration
                 )
             }
             .navigationDestination(isPresented: $showsManualRegistration) {
-                PlantRegistrationView()
+                PlantRegistrationView(
+                    method: .identified,
+                    candidate: selectedCandidate,
+                    onRegistered: completeRegistration
+                )
             }
             .task { await identifyDraft() }
     }
@@ -52,15 +67,26 @@ struct IdentificationFlowView: View {
                 showsRegistration = selectedCandidate != nil
             }
             .accessibilityIdentifier("capture.result.register")
-            Button("직접 수정하기") { showsManualRegistration = true }
-                .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .frame(minHeight: PlanteriorControl.minimumTarget)
-                .accessibilityIdentifier("identification.manual")
+            Button("직접 수정하기") {
+                selectedCandidate = selectedCandidate ?? candidates.items.first
+                showsManualRegistration = selectedCandidate != nil
+            }
+            .font(PlanteriorTypography.caption)
+            .foregroundStyle(PlanteriorPalette.accent.color)
+            .frame(minHeight: PlanteriorControl.minimumTarget)
+            .accessibilityIdentifier("identification.manual")
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.bottom, PlanteriorSpacing.large)
         .background(PlanteriorPalette.canvas.color)
+    }
+
+    func returnToReviewedPhoto() {
+        if let revisePhoto {
+            revisePhoto()
+        } else {
+            dismiss()
+        }
     }
 
     var effectiveReduceMotion: Bool {

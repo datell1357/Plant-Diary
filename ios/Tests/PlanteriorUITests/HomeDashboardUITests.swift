@@ -166,7 +166,11 @@ final class HomeDashboardUITests: XCTestCase {
             "AX5 header must reflow so 안녕하세요 is not split mid-word"
         )
         let metadata = app.staticTexts["home.greeting.meta"]
-        XCTAssertGreaterThanOrEqual(metadata.frame.width, 260)
+        XCTAssertLessThanOrEqual(
+            metadata.frame.height,
+            60,
+            "AX5 metadata must remain a single line rather than orphaning its final unit"
+        )
         for _ in 0 ..< 4 {
             app.swipeUp()
         }

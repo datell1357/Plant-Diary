@@ -11,6 +11,7 @@ struct CameraActionView: View {
     let dismiss: () -> Void
     let complete: () -> Void
     let manualRegistration: () -> Void
+    let restoresReviewedPhoto: Bool
     @State var pickerItem: PhotosPickerItem?
     @State var draft: NormalizedPhoto?
     @State var errorMessage: String?
@@ -19,6 +20,18 @@ struct CameraActionView: View {
     @State var showsAcknowledgement = false
     @State var cameraDenied = false
     private let consent = PhotoConsentCoordinator(transfer: IdentificationDraftStore.shared)
+
+    init(
+        dismiss: @escaping () -> Void,
+        complete: @escaping () -> Void,
+        manualRegistration: @escaping () -> Void,
+        restoresReviewedPhoto: Bool = false
+    ) {
+        self.dismiss = dismiss
+        self.complete = complete
+        self.manualRegistration = manualRegistration
+        self.restoresReviewedPhoto = restoresReviewedPhoto
+    }
 
     var body: some View {
         Group {
@@ -29,7 +42,7 @@ struct CameraActionView: View {
             }
         }
         .task {
-            loadQAFixtureIfPresent()
+            await restoreReviewedPhoto()
         }
         .photosPicker(isPresented: $showsLibrary, selection: $pickerItem, matching: .images)
         .onChange(of: pickerItem) { _, item in
@@ -150,7 +163,8 @@ struct CameraActionView: View {
         }
     }
 
-    private func loadQAFixtureIfPresent() {
+    @MainActor
+    private func restoreReviewedPhoto() async {
         #if DEBUG
             switch ProcessInfo.processInfo.environment["QA_PHOTO_FIXTURE"] {
             case "valid":
@@ -163,5 +177,13 @@ struct CameraActionView: View {
                 break
             }
         #endif
+        guard draft == nil,
+              restoresReviewedPhoto,
+              let retained = await IdentificationDraftStore.shared.load()
+        else {
+            return
+        }
+        draft = retained
+        await consent.review(retained)
     }
 }

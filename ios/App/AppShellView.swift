@@ -10,7 +10,7 @@ struct AppShellView: View {
     @State var showsLogin = false
     @State private var showsOnboarding = OnboardingState.shouldPresent
     @State private var captureDestination: AppRoute?
-
+    @State private var restoresReviewedPhoto = false
     init() {
         #if DEBUG
             if ProcessInfo.processInfo.environment["QA_INITIAL_TAB"] == "collection" {
@@ -84,20 +84,28 @@ struct AppShellView: View {
             ),
             onDismiss: {
                 captureDestination = nil
+                restoresReviewedPhoto = false
                 Task { await IdentificationDraftStore.shared.clear() }
             },
             content: {
                 NavigationStack {
                     switch captureDestination {
-                    case .identificationDraft:
-                        IdentificationFlowView()
-                    case .manualRegistration:
-                        PlantRegistrationView()
+                    case .identificationDraft: IdentificationFlowView(
+                            revisePhoto: {
+                                restoresReviewedPhoto = true
+                                captureDestination = nil
+                            },
+                            completeRegistration: { navigation.dismissCamera() }
+                        )
+                    case .manualRegistration: PlantRegistrationView(
+                            onRegistered: { navigation.dismissCamera() }
+                        )
                     default:
                         CameraActionView(
                             dismiss: { navigation.dismissCamera() },
                             complete: { captureDestination = .identificationDraft },
-                            manualRegistration: { captureDestination = .manualRegistration }
+                            manualRegistration: { captureDestination = .manualRegistration },
+                            restoresReviewedPhoto: restoresReviewedPhoto
                         )
                     }
                 }
@@ -132,7 +140,6 @@ struct AppShellView: View {
         }
     }
 
-    /// Signed-out tab taps present login without changing tab or stack.
     private func requestTab(_ tab: AppTab) {
         guard navigation.requestTab(tab, authentication: authenticationState) == .proceed
         else {

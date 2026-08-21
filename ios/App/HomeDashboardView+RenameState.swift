@@ -31,7 +31,6 @@ extension HomeDashboardView {
             }
             UserDefaults.standard.set(token, forKey: key)
             allowanceStore.resetForQA()
-            renamedRoomTitle = nil
         #endif
     }
 
@@ -43,7 +42,6 @@ extension HomeDashboardView {
         }
         renameDraft = ""
         renameAllowance = allowanceStore.load()
-        renamedRoomTitle = allowanceStore.renamedTitle
         isRenamePresented = true
         isRenameFieldFocused = true
     }
@@ -69,9 +67,7 @@ extension HomeDashboardView {
             return
         }
         allowanceStore.save(allowance)
-        allowanceStore.saveRenamedTitle(name)
         renameAllowance = allowance
-        renamedRoomTitle = name
         reload()
         dismissRename()
     }
