@@ -9,7 +9,6 @@ struct MiniRoomEditorFooter: View {
     let canReset: Bool
     let undo: () -> Void
     let reset: () -> Void
-    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
         content
@@ -23,19 +22,11 @@ struct MiniRoomEditorFooter: View {
             }
     }
 
-    /// Korean action labels must not be split mid-word. Once Dynamic Type
-    /// stops both fitting side by side, they stack instead of wrapping.
-    @ViewBuilder
+    /// Korean action labels stay atomic and scale within the fixed footer
+    /// rather than adding a second row that would collapse the room viewport.
     private var content: some View {
-        if sizeCategory.isAccessibilityCategory {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                actions
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            HStack(spacing: PlanteriorSpacing.small) {
-                actions
-            }
+        HStack(spacing: PlanteriorSpacing.small) {
+            actions
         }
     }
 
@@ -48,9 +39,7 @@ struct MiniRoomEditorFooter: View {
             identifier: "minihome.editor.undo",
             action: undo
         )
-        if !sizeCategory.isAccessibilityCategory {
-            Spacer(minLength: PlanteriorSpacing.small)
-        }
+        Spacer(minLength: PlanteriorSpacing.small)
         action(
             title: "초기화",
             systemImage: "arrow.triangle.2.circlepath",
@@ -73,7 +62,8 @@ struct MiniRoomEditorFooter: View {
                     .font(PlanteriorTypography.caption)
                 Text(title)
                     .font(PlanteriorTypography.supporting)
-                    .fixedSize(horizontal: true, vertical: true)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             .foregroundStyle(
                 enabled

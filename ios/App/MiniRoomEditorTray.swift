@@ -9,6 +9,7 @@ struct MiniRoomEditorTray: View {
     let selectedEntryID: String?
     let emptyMessage: String
     let select: (MiniRoomTrayEntry) -> Void
+    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
         Group {
@@ -40,7 +41,12 @@ struct MiniRoomEditorTray: View {
                 .scrollClipDisabled()
             }
         }
-        .padding(.vertical, PlanteriorSpacing.medium)
+        .padding(
+            .vertical,
+            sizeCategory.isAccessibilityCategory
+                ? PlanteriorSpacing.small
+                : PlanteriorSpacing.medium
+        )
         .frame(maxWidth: .infinity)
         .background(PlanteriorPalette.surface.color)
         .accessibilityElement(children: .contain)
@@ -56,6 +62,7 @@ struct MiniRoomTrayCard: View {
     @Environment(\.sizeCategory) private var sizeCategory
 
     private static let tileSide: CGFloat = 72
+    private static let accessibilityTileSide: CGFloat = 56
     private static let badgeSide: CGFloat = 22
     private static let selectedBorder: CGFloat = 2
 
@@ -81,7 +88,7 @@ struct MiniRoomTrayCard: View {
             .resizable()
             .scaledToFit()
             .padding(PlanteriorSpacing.small)
-            .frame(width: Self.tileSide, height: Self.tileSide)
+            .frame(width: tileSide, height: tileSide)
             .background(
                 selected
                     ? PlanteriorPalette.accentSurface.color
@@ -107,6 +114,12 @@ struct MiniRoomTrayCard: View {
                 }
             }
             .accessibilityIdentifier("minihome.editor.tray.image.\(index)")
+    }
+
+    private var tileSide: CGFloat {
+        sizeCategory.isAccessibilityCategory
+            ? Self.accessibilityTileSide
+            : Self.tileSide
     }
 
     /// Korean captions must never be forced to wrap mid-word, so at the

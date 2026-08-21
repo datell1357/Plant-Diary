@@ -75,7 +75,12 @@ struct MiniRoomEditorTabBar: View {
             )
             .frame(maxWidth: .infinity)
             .frame(minHeight: PlanteriorControl.minimumTarget)
-            .padding(.vertical, PlanteriorSpacing.small)
+            .padding(
+                .vertical,
+                sizeCategory.isAccessibilityCategory
+                    ? 0
+                    : PlanteriorSpacing.small
+            )
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 Rectangle()
