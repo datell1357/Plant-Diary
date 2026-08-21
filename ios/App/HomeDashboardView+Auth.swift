@@ -48,6 +48,8 @@ extension HomeDashboardView {
             Text(greetingMeta)
                 .font(PlanteriorTypography.caption)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .accessibilityIdentifier("home.greeting.meta")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
