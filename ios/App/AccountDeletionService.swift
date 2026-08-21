@@ -16,6 +16,14 @@ protocol AccountDeletionServicing: Sendable {
         ownerID: AccountID,
         workflow: AccountDeletionWorkflow
     ) async throws -> AccountDeletionWorkflow
+    func recover(
+        ownerID: AccountID,
+        requestID: DeletionRequestID
+    ) async throws -> AccountDeletionWorkflow
+}
+
+enum AccountDeletionServiceError: Error {
+    case recoveryUnavailable
 }
 
 struct QAAccountDeletionService: AccountDeletionServicing {
@@ -61,5 +69,14 @@ struct QAAccountDeletionService: AccountDeletionServicing {
             scheduledAt: workflow.scheduledAt,
             status: .cancelled
         )
+    }
+
+    func recover(
+        ownerID: AccountID,
+        requestID: DeletionRequestID
+    ) throws -> AccountDeletionWorkflow {
+        _ = ownerID
+        _ = requestID
+        throw AccountDeletionServiceError.recoveryUnavailable
     }
 }

@@ -85,7 +85,7 @@ struct AppShellView: View {
             onDismiss: {
                 captureDestination = nil
                 restoresReviewedPhoto = false
-                Task { await IdentificationDraftStore.shared.clear() }
+                Task { try? await IdentificationDraftStore.shared.clear() }
             },
             content: {
                 NavigationStack {

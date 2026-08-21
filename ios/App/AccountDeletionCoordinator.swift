@@ -21,26 +21,29 @@ final class AccountDeletionCoordinator: ObservableObject {
     let allowsTrustedFake: Bool
     private let ownerID: AccountID?
     private let service: any AccountDeletionServicing
-    private let onCompleted: () async -> [String]
+    private let pendingStore: PendingAccountDeletionStore
+    private let onCompleted: (AccountID) async -> [String]
 
     init(
         allowsTrustedFake: Bool,
         ownerID: AccountID?,
         now: Int64,
         service: (any AccountDeletionServicing)? = nil,
-        onCompleted: @escaping () async -> [String] = { [] }
+        pendingStore: PendingAccountDeletionStore = .shared,
+        onCompleted: @escaping (AccountID) async -> [String] = { _ in [] }
     ) {
         self.allowsTrustedFake = allowsTrustedFake
         self.ownerID = ownerID
         self.service = service ?? (allowsTrustedFake
             ? QAAccountDeletionService(now: now)
             : FirebaseAccountDeletionService())
+        self.pendingStore = pendingStore
         self.onCompleted = onCompleted
     }
 
     func preview() async {
         guard let ownerID else {
-            message = "인증된 계정을 확인할 수 없음"
+            await recoverPendingWorkflow()
             return
         }
         do {
@@ -51,6 +54,9 @@ final class AccountDeletionCoordinator: ObservableObject {
             }
             scope = snapshot.scope
             workflow = snapshot.workflow
+            if let workflow = snapshot.workflow {
+                rememberPending(workflow)
+            }
             message = "서버 계산 삭제 범위 확인됨"
             await finalizeIfCompleted()
         } catch {
@@ -83,6 +89,9 @@ final class AccountDeletionCoordinator: ObservableObject {
         }
         do {
             workflow = try await service.request(ownerID: ownerID, scope: scope)
+            if let workflow {
+                rememberPending(workflow)
+            }
             requestCount += 1
             message = "삭제 요청 접수됨 · 7일 유예"
             await finalizeIfCompleted()
@@ -98,6 +107,9 @@ final class AccountDeletionCoordinator: ObservableObject {
                 ownerID: ownerID,
                 workflow: workflow
             )
+            if let cancelled = self.workflow {
+                pendingStore.clear(matching: cancelled)
+            }
             message = "삭제 요청 취소됨"
         } catch {
             message = "삭제 요청을 취소하지 못함"
@@ -133,12 +145,48 @@ final class AccountDeletionCoordinator: ObservableObject {
         await finalizeIfCompleted()
     }
 
+    private func recoverPendingWorkflow() async {
+        guard let pending = pendingStore.load() else {
+            message = "인증된 계정을 확인할 수 없음"
+            return
+        }
+        do {
+            let recovered = try await service.recover(
+                ownerID: pending.ownerID,
+                requestID: pending.requestID
+            )
+            guard recovered.ownerID == pending.ownerID,
+                  recovered.requestID == pending.requestID
+            else {
+                message = "삭제 요청 소유자가 일치하지 않음"
+                return
+            }
+            scope = recovered.scope
+            workflow = recovered
+            await finalizeIfCompleted()
+        } catch {
+            message = "삭제 상태를 복구하지 못함"
+        }
+    }
+
+    private func rememberPending(_ workflow: AccountDeletionWorkflow) {
+        guard !allowsTrustedFake else { return }
+        if workflow.status == .cancelled {
+            pendingStore.clear(matching: workflow)
+        } else {
+            pendingStore.save(workflow)
+        }
+    }
+
     private func finalizeIfCompleted() async {
         guard let workflow,
               AccountDeletionPolicy.allowsLocalCleanup(workflow),
               cleanupCount == 0 else { return }
-        cleanupReceipts = await onCompleted()
+        cleanupReceipts = await onCompleted(workflow.ownerID)
         cleanupCount = Set(cleanupReceipts) == Self.requiredCleanupReceipts ? 1 : 0
+        if cleanupCount == 1 {
+            pendingStore.clear(matching: workflow)
+        }
         message = cleanupCount == 1
             ? "삭제 완료 · 로컬 정리 승인됨"
             : "삭제 완료 · 로컬 정리 실패"

@@ -71,11 +71,15 @@ struct OperationalPrivacyTests {
     @Test
     func productionDeletionUsesAuthenticatedOwnerAndCreatesRequest() async throws {
         let ownerID = try AccountID.parse("production-delete-owner")
+        let defaults = try #require(UserDefaults(
+            suiteName: "OperationalPrivacyTests.deletion.\(UUID().uuidString)"
+        ))
         let coordinator = AccountDeletionCoordinator(
             allowsTrustedFake: false,
             ownerID: ownerID,
             now: 1000,
-            service: QAAccountDeletionService(now: 1000)
+            service: QAAccountDeletionService(now: 1000),
+            pendingStore: PendingAccountDeletionStore(defaults: defaults)
         )
 
         await coordinator.preview()
@@ -101,7 +105,7 @@ struct OperationalPrivacyTests {
             ownerID: ownerID,
             now: 1000,
             service: QAAccountDeletionService(now: 1000),
-            onCompleted: { Array(partialReceipts) }
+            onCompleted: { _ in Array(partialReceipts) }
         )
 
         await coordinator.preview()

@@ -6,6 +6,7 @@ const PROJECT_ID = "demo-planterior-ios-deletion"
 const REGION = "us-central1"
 const FUNCTION_NAMES = [
   "previewAccountDeletion",
+  "recoverAccountDeletion",
   "requestAccountDeletion",
   "cancelAccountDeletion",
 ] as const

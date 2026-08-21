@@ -143,7 +143,7 @@ struct PlantRegistrationView: View {
             )
         )
         saved = true
-        Task { await IdentificationDraftStore.shared.clear() }
+        Task { try? await IdentificationDraftStore.shared.clear() }
         onRegistered?()
     }
 

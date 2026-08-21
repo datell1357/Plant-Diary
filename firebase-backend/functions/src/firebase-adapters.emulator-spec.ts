@@ -9,6 +9,7 @@ import {
   canonicalDeletionScope,
   GRACE_SECONDS,
   OwnerIdSchema,
+  RECEIPT_RETENTION_SECONDS,
 } from "./deletion-contract.js"
 import { runDueAccountDeletions } from "./deletion-execution.js"
 import { requestAccountDeletion } from "./deletion-service.js"
@@ -141,6 +142,22 @@ test("scheduled execution removes only account-owned Firestore Storage and Auth 
         error instanceof FirebaseAuthError && error.code === "auth/user-not-found",
     )
     assert.equal((await store.load(ownerID))?.status, "COMPLETED")
+    assert.equal(
+      await store.purgeExpiredCompleted({
+        nowSeconds: NOW + RECEIPT_RETENTION_SECONDS - 1,
+        limit: 20,
+      }),
+      0,
+    )
+    assert.equal((await store.load(ownerID))?.status, "COMPLETED")
+    assert.equal(
+      await store.purgeExpiredCompleted({
+        nowSeconds: NOW + RECEIPT_RETENTION_SECONDS,
+        limit: 20,
+      }),
+      1,
+    )
+    assert.equal(await store.load(ownerID), null)
   } finally {
     await deleteApp(app)
   }

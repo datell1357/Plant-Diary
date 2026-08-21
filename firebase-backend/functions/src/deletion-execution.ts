@@ -46,6 +46,7 @@ async function executeClaimed(
     requestID: workflow.requestID,
     succeededCategories: CLEANUP_ORDER.filter((category) => succeeded.has(category)),
     failedCategories: failed,
+    nowSeconds: dependencies.clock.nowSeconds(),
   })
   return failed.length === 0
 }
@@ -53,8 +54,10 @@ async function executeClaimed(
 export async function runDueAccountDeletions(
   dependencies: ExecutionDependencies,
 ): Promise<ExecutionSummary> {
+  const nowSeconds = dependencies.clock.nowSeconds()
+  await dependencies.store.purgeExpiredCompleted({ nowSeconds, limit: SCAN_LIMIT })
   const claimed = await dependencies.store.claimDue({
-    nowSeconds: dependencies.clock.nowSeconds(),
+    nowSeconds,
     leaseSeconds: EXECUTION_LEASE_SECONDS,
     limit: SCAN_LIMIT,
   })

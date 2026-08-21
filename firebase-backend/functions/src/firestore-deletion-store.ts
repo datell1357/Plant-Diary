@@ -1,21 +1,24 @@
 import type { DocumentReference, Firestore } from "firebase-admin/firestore"
 import { z } from "zod"
+import { isClaimable } from "./deletion-claim-policy.js"
 import {
   type CancelDeletionCommand,
   type ClaimDueCommand,
   type CreateDeletionCommand,
-  type DeletionStatus,
   type DeletionStore,
   type DeletionWorkflow,
   DeletionWorkflowSchema,
   type FinishDeletionCommand,
   type OwnerId,
+  type PurgeDeletionReceiptsCommand,
+  RECEIPT_RETENTION_SECONDS,
 } from "./deletion-contract.js"
 
 const StoredDeletionSchema = z
   .object({
     workflow: DeletionWorkflowSchema,
     nextAttemptAt: z.number().int().nonnegative().nullable(),
+    receiptExpiresAt: z.number().int().nonnegative().nullable().optional(),
   })
   .strict()
   .readonly()
@@ -33,26 +36,6 @@ function parseStored(value: unknown): StoredDeletion {
     })
   }
   return parsed.data
-}
-
-function assertNever(value: never): never {
-  throw new DeletionPersistenceError(`Unsupported deletion status: ${String(value)}`)
-}
-
-function isClaimable(status: DeletionStatus, leaseExpired: boolean): boolean {
-  switch (status) {
-    case "RECEIVED":
-    case "FAILED":
-    case "PARTIALLY_FAILED":
-      return true
-    case "PROCESSING":
-      return leaseExpired
-    case "COMPLETED":
-    case "CANCELLED":
-      return false
-    default:
-      return assertNever(status)
-  }
 }
 
 export class FirestoreDeletionStore implements DeletionStore {
@@ -74,6 +57,7 @@ export class FirestoreDeletionStore implements DeletionStore {
       const stored = StoredDeletionSchema.parse({
         workflow: command.workflow,
         nextAttemptAt: command.workflow.scheduledAt,
+        receiptExpiresAt: null,
       })
       transaction.set(reference, stored)
       return command.workflow
@@ -97,7 +81,7 @@ export class FirestoreDeletionStore implements DeletionStore {
         ...stored.workflow,
         status: "CANCELLED",
       })
-      transaction.set(reference, { workflow, nextAttemptAt: null })
+      transaction.set(reference, { workflow, nextAttemptAt: null, receiptExpiresAt: null })
       return workflow
     })
   }
@@ -141,9 +125,41 @@ export class FirestoreDeletionStore implements DeletionStore {
       transaction.set(reference, {
         workflow,
         nextAttemptAt: status === "COMPLETED" ? null : stored.nextAttemptAt,
+        receiptExpiresAt:
+          status === "COMPLETED"
+            ? command.nowSeconds + RECEIPT_RETENTION_SECONDS
+            : (stored.receiptExpiresAt ?? null),
       })
       return workflow
     })
+  }
+
+  async purgeExpiredCompleted(command: PurgeDeletionReceiptsCommand): Promise<number> {
+    const expired = await this.firestore
+      .collection("accountDeletionRequests")
+      .where("receiptExpiresAt", "<=", command.nowSeconds)
+      .limit(command.limit)
+      .get()
+    const purged = await Promise.all(
+      expired.docs.map((document) =>
+        this.firestore.runTransaction(async (transaction) => {
+          const snapshot = await transaction.get(document.ref)
+          if (!snapshot.exists) return false
+          const stored = parseStored(snapshot.data())
+          if (
+            stored.workflow.status !== "COMPLETED" ||
+            stored.receiptExpiresAt === undefined ||
+            stored.receiptExpiresAt === null ||
+            stored.receiptExpiresAt > command.nowSeconds
+          ) {
+            return false
+          }
+          transaction.delete(document.ref)
+          return true
+        }),
+      ),
+    )
+    return purged.filter(Boolean).length
   }
 
   private reference(ownerID: OwnerId): DocumentReference {
@@ -173,6 +189,7 @@ export class FirestoreDeletionStore implements DeletionStore {
       transaction.set(reference, {
         workflow,
         nextAttemptAt: command.nowSeconds + command.leaseSeconds,
+        receiptExpiresAt: stored.receiptExpiresAt ?? null,
       })
       return workflow
     })

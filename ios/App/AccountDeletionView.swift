@@ -12,7 +12,7 @@ struct AccountDeletionView: View {
 
     init(
         ownerID: AccountID?,
-        onCompleted: @escaping () async -> [String] = { [] }
+        onCompleted: @escaping (AccountID) async -> [String] = { _ in [] }
     ) {
         let allowsFake: Bool
         #if DEBUG

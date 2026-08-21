@@ -148,18 +148,30 @@
         public func delete(for accountID: AccountID) async throws {
             containers[accountID] = nil
             let fileName = AccountStoreLocation.fileName(for: accountID)
-            guard let urls = try? FileManager.default.contentsOfDirectory(
-                at: rootDirectory,
-                includingPropertiesForKeys: nil
-            ) else {
+            let urls: [URL]
+            do {
+                urls = try FileManager.default.contentsOfDirectory(
+                    at: rootDirectory,
+                    includingPropertiesForKeys: nil
+                )
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
                 return
             }
-            for url in urls {
-                let isStoreFile = url.lastPathComponent == fileName
-                    || url.lastPathComponent.hasPrefix("\(fileName)-")
-                guard isStoreFile else { continue }
+            for url in urls where Self.isStoreFile(url, fileName: fileName) {
                 try FileManager.default.removeItem(at: url)
             }
+            let remaining = try FileManager.default.contentsOfDirectory(
+                at: rootDirectory,
+                includingPropertiesForKeys: nil
+            )
+            guard !remaining.contains(where: { Self.isStoreFile($0, fileName: fileName) }) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        }
+
+        private nonisolated static func isStoreFile(_ url: URL, fileName: String) -> Bool {
+            url.lastPathComponent == fileName
+                || url.lastPathComponent.hasPrefix("\(fileName)-")
         }
     }
 #endif

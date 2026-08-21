@@ -31,6 +31,22 @@ struct SwiftDataAccountCacheTests {
 
     @Test
     @MainActor
+    func deletionFailsWhenStoreDirectoryCannotBeEnumerated() async throws {
+        let accountID = try AccountID.parse("failed-delete-account")
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "PlanteriorDeletionFailure-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("not-a-directory".utf8).write(to: root)
+        let cache = SwiftDataAccountCache(rootDirectory: root)
+
+        await #expect(throws: (any Error).self) {
+            try await cache.delete(for: accountID)
+        }
+        #expect(FileManager.default.fileExists(atPath: root.path))
+    }
+
+    @Test
+    @MainActor
     func deletionDiscardPhysicallyDestroysAccountStore() async throws {
         let accountID = try AccountID.parse("delete-account")
         let root = FileManager.default.temporaryDirectory

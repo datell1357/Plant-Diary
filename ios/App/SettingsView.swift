@@ -82,9 +82,8 @@ struct SettingsView: View {
         .sheet(isPresented: $showsDeletion) {
             let ownerID = accountScopeID.flatMap { try? AccountID.parse($0) }
             NavigationStack {
-                AccountDeletionView(ownerID: ownerID) {
-                    guard let ownerID else { return [] }
-                    return await performDeletionCleanup(ownerID: ownerID)
+                AccountDeletionView(ownerID: ownerID) { completedOwnerID in
+                    await performDeletionCleanup(ownerID: completedOwnerID)
                 }
             }
         }
@@ -117,35 +116,7 @@ struct SettingsView: View {
     }
 
     func performDeletionCleanup(ownerID: AccountID) async -> [String] {
-        var receipts: [String] = []
-        if await auth.sync.destroyLocalStore(for: ownerID) {
-            receipts.append(contentsOf: ["swiftdata", "sync"])
-        }
-        await IdentificationDraftStore.shared.clear()
-        if await IdentificationDraftStore.shared.load() == nil {
-            receipts.append("media")
-        }
-
-        let notificationCenter = UNUserNotificationCenter.current()
-        notificationCenter.removeAllPendingNotificationRequests()
-        notificationCenter.removeAllDeliveredNotifications()
-        receipts.append("notifications")
-
-        if Self.clearAccountDefaults(ownerID: ownerID) {
-            receipts.append("userdefaults")
-        }
-
-        let session = await auth.completeDeletionSignOut()
-        if session.firebaseSignedOut {
-            receipts.append("auth")
-        }
-        if session.metadataCleared {
-            receipts.append("keychain")
-        }
-        if !auth.isSignedIn, auth.accountID == nil {
-            receipts.append("routes")
-        }
-        return receipts
+        await AccountDeletionLocalCleanup.perform(ownerID: ownerID, auth: auth)
     }
 
     static func clearAccountDefaults(

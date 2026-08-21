@@ -12,6 +12,7 @@ import {
   GRACE_SECONDS,
   PreviewInputSchema,
   RECENT_AUTH_SECONDS,
+  RecoveryInputSchema,
   RequestIdSchema,
   RequestInputSchema,
   requireOwner,
@@ -54,6 +55,18 @@ export async function previewAccountDeletion(
     scope: canonicalDeletionScope(command.ownerID),
     workflow: await store.load(command.ownerID),
   }
+}
+
+export async function recoverAccountDeletion(
+  input: unknown,
+  store: DeletionStore,
+): Promise<Readonly<{ workflow: DeletionWorkflow }>> {
+  const command = parseBoundary(RecoveryInputSchema, input)
+  const workflow = await store.load(command.ownerID)
+  if (workflow === null || workflow.requestID !== command.requestID) {
+    throw new DeletionError("permission-denied", "Deletion recovery capability is invalid")
+  }
+  return { workflow }
 }
 
 export async function requestAccountDeletion(

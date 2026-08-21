@@ -49,6 +49,20 @@ struct FirebaseAccountDeletionService: AccountDeletionServicing {
         return try decode(payload["workflow"] ?? payload)
     }
 
+    func recover(
+        ownerID: AccountID,
+        requestID: DeletionRequestID
+    ) async throws -> AccountDeletionWorkflow {
+        let payload = try await call(
+            "recoverAccountDeletion",
+            values: [
+                "ownerID": ownerID.rawValue,
+                "requestID": requestID.rawValue
+            ]
+        )
+        return try decode(payload["workflow"] ?? payload)
+    }
+
     private func call(
         _ name: String,
         values: [String: Any]

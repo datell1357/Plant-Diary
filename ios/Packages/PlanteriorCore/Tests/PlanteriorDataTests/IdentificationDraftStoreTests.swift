@@ -57,6 +57,26 @@ struct IdentificationDraftStoreTests {
     }
 
     @Test
+    func clearPropagatesRemovalFailureAndLeavesDraftOnDisk() async throws {
+        let suite = "IdentificationDraftStoreTests.failure.\(UUID().uuidString)"
+        let root = draftRoot(suite)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writer = IdentificationDraftStore(suiteName: suite, rootDirectory: root)
+        await writer.mount(accountID: "account-a")
+        await writer.transfer(privatePhoto)
+        let relaunched = IdentificationDraftStore(
+            suiteName: suite,
+            rootDirectory: root,
+            removeItem: { _ in throw CocoaError(.fileWriteUnknown) }
+        )
+
+        await #expect(throws: (any Error).self) {
+            try await relaunched.clear(accountID: "account-a")
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).count == 1)
+    }
+
+    @Test
     func expiresPersistedDraftAtTwentyFourHours() async throws {
         let suite = "IdentificationDraftStoreTests.expiry.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

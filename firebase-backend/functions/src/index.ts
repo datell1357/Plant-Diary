@@ -16,6 +16,7 @@ import { runDueAccountDeletions } from "./deletion-execution.js"
 import {
   cancelAccountDeletion as cancelDeletion,
   previewAccountDeletion as previewDeletion,
+  recoverAccountDeletion as recoverDeletion,
   requestAccountDeletion as requestDeletion,
 } from "./deletion-service.js"
 import { FirebaseAccountCleaner } from "./firebase-account-cleaner.js"
@@ -55,6 +56,15 @@ function authContext(auth: CallableRequest<unknown>["auth"]): AuthContext | null
 export const previewAccountDeletion = onCall(callableOptions, async (request) => {
   try {
     return await previewDeletion(authContext(request.auth), request.data, store)
+  } catch (error: unknown) {
+    if (error instanceof DeletionError) throw new HttpsError(error.code, error.message)
+    throw error
+  }
+})
+
+export const recoverAccountDeletion = onCall(callableOptions, async (request) => {
+  try {
+    return await recoverDeletion(request.data, store)
   } catch (error: unknown) {
     if (error instanceof DeletionError) throw new HttpsError(error.code, error.message)
     throw error

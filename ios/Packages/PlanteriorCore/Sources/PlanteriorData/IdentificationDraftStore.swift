@@ -12,6 +12,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
 
     private let defaults: UserDefaults
     private let rootDirectory: URL
+    private let removeItem: @Sendable (URL) throws -> Void
     private var mountedAccountID: String?
     private var draft: StoredDraft?
     private let legacyStorageKey = "identification.draft"
@@ -22,6 +23,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
             for: .cachesDirectory,
             in: .userDomainMask
         )[0].appending(path: "IdentificationDrafts", directoryHint: .isDirectory)
+        removeItem = { try FileManager.default.removeItem(at: $0) }
     }
 
     public init(suiteName: String) {
@@ -31,11 +33,23 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
                 path: "IdentificationDrafts-\(Self.fileComponent(suiteName))",
                 directoryHint: .isDirectory
             )
+        removeItem = { try FileManager.default.removeItem(at: $0) }
     }
 
     public init(suiteName: String, rootDirectory: URL) {
         defaults = UserDefaults(suiteName: suiteName) ?? .standard
         self.rootDirectory = rootDirectory
+        removeItem = { try FileManager.default.removeItem(at: $0) }
+    }
+
+    init(
+        suiteName: String,
+        rootDirectory: URL,
+        removeItem: @escaping @Sendable (URL) throws -> Void
+    ) {
+        defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        self.rootDirectory = rootDirectory
+        self.removeItem = removeItem
     }
 
     public func mount(accountID: String?) {
@@ -46,7 +60,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
             return
         }
         if mountedAccountID != nil {
-            clear()
+            try? clear()
         }
         mountedAccountID = accountID
         removeDrafts(except: accountID)
@@ -75,18 +89,30 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
               draft.ownerID == mountedAccountID,
               now.timeIntervalSince(draft.createdAt) < Self.retentionInterval
         else {
-            clear()
+            try? clear()
             return nil
         }
         return draft.photo
     }
 
-    public func clear() {
-        draft = nil
+    public func clear() throws {
         guard let mountedAccountID else {
+            draft = nil
             return
         }
-        try? FileManager.default.removeItem(at: draftURL(for: mountedAccountID))
+        try clear(accountID: mountedAccountID)
+    }
+
+    public func clear(accountID: String) throws {
+        if mountedAccountID == accountID {
+            draft = nil
+        }
+        let url = draftURL(for: accountID)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try removeItem(url)
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
     }
 
     private func restore(now: Date) {
@@ -97,7 +123,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
               stored.ownerID == mountedAccountID,
               now.timeIntervalSince(stored.createdAt) < Self.retentionInterval
         else {
-            clear()
+            try? clear()
             return
         }
         draft = stored
@@ -118,7 +144,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
             )
         } catch {
             draft = nil
-            try? FileManager.default.removeItem(at: url)
+            try? removeItem(url)
         }
     }
 
@@ -137,7 +163,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
             return
         }
         for url in urls where url.standardizedFileURL.path != retainedPath {
-            try? FileManager.default.removeItem(at: url)
+            try? removeItem(url)
         }
     }
 

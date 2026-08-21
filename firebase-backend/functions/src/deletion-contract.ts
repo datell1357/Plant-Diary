@@ -5,6 +5,7 @@ export const SCOPE_VERSION = "planterior-account-deletion/v1" as const
 export const GRACE_SECONDS = 7 * 24 * 60 * 60
 export const RECENT_AUTH_SECONDS = 5 * 60
 export const EXECUTION_LEASE_SECONDS = 10 * 60
+export const RECEIPT_RETENTION_SECONDS = 30 * 24 * 60 * 60
 
 export const CLEANUP_ORDER = [
   "FIRESTORE_ACCOUNT_DATA",
@@ -88,6 +89,7 @@ export const CancelInputSchema = z
   })
   .strict()
   .readonly()
+export const RecoveryInputSchema = CancelInputSchema
 
 export type AuthContext = Readonly<{
   uid: OwnerId
@@ -115,6 +117,12 @@ export type FinishDeletionCommand = Readonly<{
   requestID: RequestId
   succeededCategories: readonly CleanupCategory[]
   failedCategories: readonly CleanupCategory[]
+  nowSeconds: number
+}>
+
+export type PurgeDeletionReceiptsCommand = Readonly<{
+  nowSeconds: number
+  limit: number
 }>
 
 export interface Clock {
@@ -131,6 +139,7 @@ export interface DeletionStore {
   cancel(command: CancelDeletionCommand): Promise<DeletionWorkflow | null>
   claimDue(command: ClaimDueCommand): Promise<readonly DeletionWorkflow[]>
   finish(command: FinishDeletionCommand): Promise<DeletionWorkflow>
+  purgeExpiredCompleted(command: PurgeDeletionReceiptsCommand): Promise<number>
 }
 
 export interface AccountCleaner {

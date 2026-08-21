@@ -7,6 +7,7 @@ import SwiftUI
 
 @main
 struct PlanteriorApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var auth = AuthRuntime()
 
     init() {
@@ -30,6 +31,11 @@ struct PlanteriorApp: App {
                 .environmentObject(auth)
                 .task {
                     await auth.restore()
+                    await AccountDeletionRecoveryRuntime.refresh(auth: auth)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    Task { await AccountDeletionRecoveryRuntime.refresh(auth: auth) }
                 }
                 .onOpenURL {
                     _ = GIDSignIn.sharedInstance.handle($0)

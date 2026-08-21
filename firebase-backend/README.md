@@ -10,18 +10,25 @@ The Node 22, `us-central1` codebase exports:
 - `previewAccountDeletion` (callable, authenticated, App Check enforced)
 - `requestAccountDeletion` (callable, authenticated, App Check enforced, auth age at most 5 minutes)
 - `cancelAccountDeletion` (callable, authenticated, App Check enforced)
+- `recoverAccountDeletion` (callable, opaque request capability, App Check enforced)
 - `executeDueAccountDeletions` (scheduled every 15 minutes)
 
-Every callable requires `ownerID == auth.uid`. The canonical v1 scope is owner-bound and SHA-256
-hashed over the ordered machine categories. A request is transactionally idempotent while active,
-and its immutable schedule is exactly 604,800 seconds after receipt. Cancellation is atomic and is
-allowed only while the request is `RECEIVED` and before `scheduledAt`.
+Authenticated callables require `ownerID == auth.uid`; recovery instead requires the exact opaque
+owner/request capability. The canonical v1 scope is owner-bound and SHA-256 hashed over the ordered
+machine categories. A request is transactionally idempotent while active, and its immutable schedule
+is exactly 604,800 seconds after receipt. Cancellation is atomic and is allowed only while the request
+is `RECEIVED` and before `scheduledAt`.
+
+The iOS client retains only the pending owner and opaque request IDs. It checks status while
+foregrounded and can recover an authoritative completion after Auth deletion without an Auth token.
+A mismatched capability reveals no workflow.
 
 The scheduled worker claims due requests with a 10-minute lease. It removes the account-owned user
 document tree, global notification/share records selected by exact owner fields, known Storage
 prefixes, and finally Firebase Auth. Auth is never removed after an earlier category fails. Failed
 categories remain retryable, successful categories are not repeated, and the request receipt stays
-outside `users/{uid}` so interrupted cleanup can resume.
+outside `users/{uid}` so interrupted cleanup can resume. Completed receipts receive an exact 30-day
+expiry and the same scheduled worker removes them at or after that deadline.
 
 ## Local verification
 
@@ -75,7 +82,6 @@ firebase deploy \
 - v1 deletes only the documented `users/{uid}` tree, `notificationEndpointOwners`, `publicShares`,
   and Storage prefixes `identification-originals/{uid}/`, `plant-photos/{uid}/`, and
   `share-images/{uid}/`. New global collections or buckets must be added to a new scope version.
-- Completed operational receipts remain in `accountDeletionRequests`; no retention/TTL policy is
-  configured by this functions-only package.
-- The current iOS client must observe `COMPLETED` before Auth deletion invalidates its session to run
-  its completion-gated local cleanup; this package does not add client polling.
+- Completed operational receipts remain recoverable for 30 days, then scheduled scans permanently
+  remove them. This is application-enforced retention rather than a separately configured Firestore
+  TTL policy.

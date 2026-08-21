@@ -9,7 +9,9 @@ import type {
   DeletionWorkflow,
   FinishDeletionCommand,
   OwnerId,
+  PurgeDeletionReceiptsCommand,
 } from "./deletion-contract.js"
+import { RECEIPT_RETENTION_SECONDS } from "./deletion-contract.js"
 
 export class FixedClock implements Clock {
   constructor(private readonly value: number) {}
@@ -37,6 +39,7 @@ export class InMemoryDeletionStore implements DeletionStore {
   private readonly workflows = new Map<OwnerId, DeletionWorkflow>()
   private readonly pending = new Set<OwnerId>()
   private readonly leases = new Map<OwnerId, number>()
+  private readonly receiptExpirations = new Map<OwnerId, number>()
 
   get requestCount(): number {
     return this.workflows.size
@@ -59,6 +62,7 @@ export class InMemoryDeletionStore implements DeletionStore {
     if (existing !== undefined && existing.status !== "CANCELLED") return existing
     this.workflows.set(command.workflow.ownerID, command.workflow)
     this.pending.add(command.workflow.ownerID)
+    this.receiptExpirations.delete(command.workflow.ownerID)
     return command.workflow
   }
 
@@ -122,8 +126,25 @@ export class InMemoryDeletionStore implements DeletionStore {
     }
     this.workflows.set(command.ownerID, workflow)
     this.leases.delete(command.ownerID)
-    if (status === "COMPLETED") this.pending.delete(command.ownerID)
+    if (status === "COMPLETED") {
+      this.pending.delete(command.ownerID)
+      this.receiptExpirations.set(command.ownerID, command.nowSeconds + RECEIPT_RETENTION_SECONDS)
+    }
     return workflow
+  }
+
+  async purgeExpiredCompleted(command: PurgeDeletionReceiptsCommand): Promise<number> {
+    let purged = 0
+    for (const [ownerID, expiresAt] of this.receiptExpirations) {
+      if (purged >= command.limit) break
+      if (expiresAt > command.nowSeconds) continue
+      this.receiptExpirations.delete(ownerID)
+      this.workflows.delete(ownerID)
+      this.leases.delete(ownerID)
+      this.pending.delete(ownerID)
+      purged += 1
+    }
+    return purged
   }
 }
 

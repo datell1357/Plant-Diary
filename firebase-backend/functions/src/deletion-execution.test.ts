@@ -6,6 +6,7 @@ import {
   type CleanupCategory,
   canonicalDeletionScope,
   OwnerIdSchema,
+  RECEIPT_RETENTION_SECONDS,
 } from "./deletion-contract.js"
 import { runDueAccountDeletions } from "./deletion-execution.js"
 import { requestAccountDeletion } from "./deletion-service.js"
@@ -112,6 +113,36 @@ test("scheduled retry skips completed cleanup and finishes the previously failed
   assert.deepEqual(result, { claimed: 1, completed: 1, pendingRetry: 0 })
   assert.deepEqual(cleaner.calls, ["ACCOUNT_MEDIA", "AUTH_ACCOUNT"])
   assert.equal(store.currentWorkflow(OWNER)?.status, "COMPLETED")
+})
+
+test("completed receipt is retained before and purged at the exact bounded deadline", async () => {
+  // Given
+  const store = await pendingStore()
+  await runDueAccountDeletions({
+    store,
+    cleaner: new InMemoryAccountCleaner(),
+    clock: new FixedClock(DUE),
+  })
+
+  // When
+  await runDueAccountDeletions({
+    store,
+    cleaner: new InMemoryAccountCleaner(),
+    clock: new FixedClock(DUE + RECEIPT_RETENTION_SECONDS - 1),
+  })
+
+  // Then
+  assert.equal(store.currentWorkflow(OWNER)?.status, "COMPLETED")
+
+  // When
+  await runDueAccountDeletions({
+    store,
+    cleaner: new InMemoryAccountCleaner(),
+    clock: new FixedClock(DUE + RECEIPT_RETENTION_SECONDS),
+  })
+
+  // Then
+  assert.equal(store.currentWorkflow(OWNER), null)
 })
 
 test("scheduled retry reclaims an expired processing lease after an interrupted run", async () => {
