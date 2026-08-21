@@ -13,7 +13,6 @@ struct MiniHomeEditorView: View {
     @ObservedObject var inventory: InventoryRepository
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-    @Environment(\.sizeCategory) private var sizeCategory
     @State var errorMessage: String?
     @State var showsUnsavedPrompt = false
     @State var showsConflictPrompt = false
@@ -25,19 +24,8 @@ struct MiniHomeEditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             MiniRoomEditorHeader(close: requestClose, save: save)
-            if sizeCategory.isAccessibilityCategory {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        roomContent
-                        editorControls
-                    }
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .accessibilityIdentifier("minihome.editor")
-            } else {
-                roomScrollRegion
-                editorControls
-            }
+            roomScrollRegion
+            editorControls
         }
         .background(PlanteriorPalette.canvas.color)
         .navigationBarHidden(true)
