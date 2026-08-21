@@ -8,7 +8,10 @@ struct AccountDeletionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.sizeCategory) private var sizeCategory
     @EnvironmentObject private var auth: AuthRuntime
-    @StateObject private var coordinator: AccountDeletionCoordinator
+    @StateObject var coordinator: AccountDeletionCoordinator
+    #if DEBUG
+        @State var recoveryArtifactStatus: String?
+    #endif
 
     init(
         ownerID: AccountID?,
@@ -46,6 +49,12 @@ struct AccountDeletionView: View {
                 actionButtons
                 #if DEBUG
                     qaButtons
+                    if let recoveryArtifactStatus {
+                        Text(recoveryArtifactStatus)
+                            .accessibilityIdentifier(
+                                "account-deletion.artifact-\(recoveryArtifactStatus)"
+                            )
+                    }
                 #endif
                 Text("로컬 정리 \(coordinator.cleanupCount)회")
                     .accessibilityIdentifier(
@@ -76,6 +85,12 @@ struct AccountDeletionView: View {
         }
         .accessibilityIdentifier("account-deletion.screen")
         .task { await coordinator.preview() }
+        #if DEBUG
+            .onChange(of: coordinator.cleanupCount) { _, cleanupCount in
+                guard cleanupCount == 1 else { return }
+                Task { await writeRecoveryArtifact() }
+            }
+        #endif
     }
 
     private var failedCategories: [String] {
@@ -152,22 +167,6 @@ struct AccountDeletionView: View {
         } else {
             coordinator.reportReauthenticationFailure()
         }
-    }
-
-    private var qaButtons: some View {
-        HStack {
-            Button("부분 실패") {
-                coordinator.simulatePartialFailure()
-            }
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .accessibilityIdentifier("account-deletion.qa.partial")
-            Button("완료") {
-                Task { await coordinator.simulateCompletion() }
-            }
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .accessibilityIdentifier("account-deletion.qa.complete")
-        }
-        .frame(minHeight: PlanteriorControl.minimumTarget)
     }
 
     private var effectiveSizeCategory: ContentSizeCategory {
