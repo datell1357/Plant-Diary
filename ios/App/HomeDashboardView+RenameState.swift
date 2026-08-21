@@ -82,20 +82,7 @@ extension HomeDashboardView {
             accountID: accountScopeID,
             now: now
         )
-        guard let current = repository.load() else {
-            return false
-        }
-        let draft = MiniHome(
-            id: current.id,
-            name: name,
-            placements: current.placements,
-            revision: current.revision,
-            updatedAt: current.updatedAt
-        )
-        guard let outcome = try? repository.save(
-            draft: draft,
-            expectedRevision: current.revision
-        ) else {
+        guard let outcome = try? repository.rename(name) else {
             return false
         }
         if case .committed = outcome {

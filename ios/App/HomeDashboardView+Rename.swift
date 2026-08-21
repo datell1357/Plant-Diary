@@ -110,7 +110,7 @@ extension HomeDashboardView {
             if effectiveSizeCategory.isAccessibilityCategory {
                 VStack(spacing: PlanteriorSpacing.extraSmall) {
                     Text("저장")
-                        .font(PlanteriorTypography.body.weight(.semibold))
+                        .font(PlanteriorTypography.supporting.weight(.semibold))
                     switch renameQuote {
                     case .free:
                         costAffordance
@@ -122,12 +122,18 @@ extension HomeDashboardView {
                             Text("\(cost)")
                                 .accessibilityIdentifier("home.rename.cost")
                         }
+                        .font(PlanteriorTypography.caption)
                         Text("보유 \(balance)")
+                            .font(PlanteriorTypography.caption)
                             .accessibilityIdentifier("home.rename.balance")
+                        Color.clear
+                            .frame(height: PlanteriorSpacing.medium)
+                            .accessibilityHidden(true)
                     }
                 }
-                .padding(.vertical, PlanteriorSpacing.small)
+                .padding(.vertical, PlanteriorSpacing.medium)
                 .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(minHeight: PlanteriorControl.primaryButtonHeight)
             } else {
                 HStack(spacing: PlanteriorSpacing.extraSmall) {

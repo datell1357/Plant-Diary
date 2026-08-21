@@ -35,6 +35,21 @@ struct LocalMiniHomeRepository {
         return try? JSONDecoder().decode(MiniHome.self, from: data)
     }
 
+    func rename(_ name: String) throws -> MiniHomeSaveOutcome {
+        let current = load()
+        guard let initial = current ?? newRoom(named: name) else {
+            return .failed
+        }
+        let draft = MiniHome(
+            id: initial.id,
+            name: name,
+            placements: initial.placements,
+            revision: initial.revision,
+            updatedAt: initial.updatedAt
+        )
+        return try save(draft: draft, expectedRevision: initial.revision)
+    }
+
     func save(
         draft: MiniHome,
         expectedRevision: Revision
@@ -72,6 +87,21 @@ struct LocalMiniHomeRepository {
         )
         try persist(committed)
         return .committed(committed)
+    }
+
+    private func newRoom(named name: String) -> MiniHome? {
+        guard let now,
+              let id = try? MiniHomeID.parse("local-mini-home")
+        else {
+            return nil
+        }
+        return MiniHome(
+            id: id,
+            name: name,
+            placements: [],
+            revision: .zero,
+            updatedAt: now
+        )
     }
 
     private func persist(_ room: MiniHome) throws {
