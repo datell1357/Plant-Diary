@@ -97,11 +97,16 @@ final class LocalPlantCollectionStore: ObservableObject {
         guard plants.indices.contains(index), weatherPlantIDs.indices.contains(index) else {
             return
         }
-        let removedID = weatherPlantIDs[index].rawValue
+        let removedID = weatherPlantIDs[index]
         plants.remove(at: index)
         weatherPlantIDs.remove(at: index)
-        healthNotesByPlantID[removedID] = nil
-        defaults.set(true, forKey: "collection.\(accountID).tombstone.\(removedID)")
+        completedPlantIDs.remove(removedID)
+        notificationSchedules.cancel(for: removedID)
+        healthNotesByPlantID[removedID.rawValue] = nil
+        defaults.set(
+            true,
+            forKey: "collection.\(accountID).tombstone.\(removedID.rawValue)"
+        )
         persist()
     }
 

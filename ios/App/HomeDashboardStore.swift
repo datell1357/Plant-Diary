@@ -12,7 +12,12 @@ final class HomeDashboardStore: ObservableObject {
     @Published private(set) var miniHome: MiniHome?
     @Published private(set) var plannedNotificationCount = 0
     @Published private(set) var globalNotificationTime = "09:00"
+    private var plantIDs: [PersonalPlantID] = []
     private var completedPlantIDs: Set<PersonalPlantID> = []
+
+    func updatePlantIDs(_ plantIDs: [PersonalPlantID]) {
+        self.plantIDs = plantIDs
+    }
 
     func updateCompletedPlantIDs(_ plantIDs: Set<PersonalPlantID>) {
         completedPlantIDs = plantIDs
@@ -25,11 +30,8 @@ final class HomeDashboardStore: ObservableObject {
         miniHome: MiniHome?,
         notificationState: NotificationRuntimeState
     ) {
-        let candidates: [HomeCareCandidate] = plants.enumerated().compactMap { index, plant in
-            guard let plantID = try? PersonalPlantID.parse("local-\(index)") else {
-                return nil
-            }
-            return HomeCareCandidate(
+        let candidates = zip(plantIDs, plants).map { plantID, plant in
+            HomeCareCandidate(
                 plantID: plantID,
                 displayName: plant.displayName,
                 lastWateredDate: plant.lastWateredOn,

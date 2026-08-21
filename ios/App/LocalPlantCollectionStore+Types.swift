@@ -11,7 +11,7 @@ extension LocalPlantCollectionStore {
     func personalPlant(at index: Int) throws -> PersonalPlant {
         let draft = plants[index]
         return try PersonalPlant(
-            id: PersonalPlantID.parse("local-\(index)"),
+            id: personalPlantID(at: index),
             displayName: draft.displayName,
             contentID: draft.plantID,
             registrationMethod: draft.registrationMethod,

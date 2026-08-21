@@ -18,6 +18,7 @@ struct LocalPlantCollectionStoreTests {
         let baseline = try CalendarDate.parse("2026-08-01")
         store.plants = [wateringDraft(lastWateredOn: baseline)]
         let plantID = try PersonalPlantID.parse("local-0")
+        store.weatherPlantIDs = [plantID]
         let preference = try NotificationPreference(
             enabled: true,
             time: LocalTime.parse("09:00")

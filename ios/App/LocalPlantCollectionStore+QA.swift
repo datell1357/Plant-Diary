@@ -55,7 +55,7 @@ extension LocalPlantCollectionStore {
                     ),
                     qaDraft(id: "local-3", name: "미설정 식물", lastWateredOn: nil)
                 ]
-                reconcilePlantIdentities()
+                installQAFixtureIdentities()
                 persist()
                 return
             }
@@ -74,9 +74,18 @@ extension LocalPlantCollectionStore {
                     id: "local-2", name: "비공개 식물", lastWateredOn: nil
                 ))
             }
-            reconcilePlantIdentities()
+            installQAFixtureIdentities()
             persist()
         #endif
+    }
+
+    private func installQAFixtureIdentities() {
+        weatherPlantIDs = plants.compactMap { plant in
+            guard let contentID = plant.plantID else {
+                return nil
+            }
+            return try? PersonalPlantID.parse("qa-\(contentID.rawValue)")
+        }
     }
 
     private func resetQAFixtureData() {

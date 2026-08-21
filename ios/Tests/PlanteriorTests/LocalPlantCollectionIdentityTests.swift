@@ -71,6 +71,66 @@ struct LocalPlantCollectionIdentityTests {
     }
 
     @Test
+    func wateringAndHomeIdentityStayWithSurvivorAfterReorderAndDeletion() throws {
+        // Given
+        let (_, store) = try makeStore()
+        store.save(draft(
+            named: "첫 번째",
+            lastWateredOn: "2026-08-01",
+            intervalDays: 10
+        ))
+        store.save(draft(
+            named: "두 번째",
+            lastWateredOn: "2026-08-01",
+            intervalDays: 10
+        ))
+        let firstID = try #require(store.weatherPlantID(at: 0))
+        let secondID = try #require(store.weatherPlantID(at: 1))
+        let today = try CalendarDate.parse("2026-08-11")
+
+        // When
+        _ = try store.recordWateredToday(at: 1, today: today, intervalDays: 10)
+        store.movePlant(from: 1, to: 0)
+        store.remove(at: 1)
+        let home = HomeDashboardStore()
+        home.updatePlantIDs(store.weatherPlantIDs)
+        home.updateCompletedPlantIDs(store.completedPlantIDs)
+        home.reload(
+            plants: store.plants,
+            today: today,
+            weather: .unavailable,
+            miniHome: nil,
+            notificationState: .initial
+        )
+
+        // Then
+        #expect(try store.personalPlantID(at: 0) == secondID)
+        #expect(store.completedPlantIDs == [secondID])
+        #expect(!store.completedPlantIDs.contains(firstID))
+        #expect(home.snapshot.careItems.map(\.plantID) == [secondID])
+    }
+
+    @Test
+    func stablePlantIdentityRemainsAccountScopedAcrossRemounts() throws {
+        // Given
+        let (_, store) = try makeStore()
+        store.mount(accountID: "account-a")
+        store.save(draft(named: "A의 식물"))
+        let accountAID = try #require(store.weatherPlantID(at: 0))
+
+        // When
+        store.mount(accountID: "account-b")
+        store.save(draft(named: "B의 식물"))
+        let accountBID = try #require(store.weatherPlantID(at: 0))
+        store.mount(accountID: "account-a")
+
+        // Then
+        #expect(accountAID != accountBID)
+        #expect(store.weatherPlantID(at: 0) == accountAID)
+        #expect(store.plants.map(\.displayName) == ["A의 식물"])
+    }
+
+    @Test
     func collectionSummaryIsDerivedFromWateringModels() throws {
         let (_, store) = try makeStore()
         store.plants = [
@@ -79,6 +139,7 @@ struct LocalPlantCollectionIdentityTests {
             draft(named: "예정", lastWateredOn: "2026-08-10", intervalDays: 5),
             draft(named: "미설정")
         ]
+        store.reconcilePlantIdentities()
 
         let summary = try store.careSummary(today: CalendarDate.parse("2026-08-11"))
 

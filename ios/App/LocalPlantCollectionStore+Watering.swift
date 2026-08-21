@@ -128,6 +128,9 @@ extension LocalPlantCollectionStore {
     }
 
     func personalPlantID(at index: Int) throws -> PersonalPlantID {
-        try PersonalPlantID.parse("local-\(index)")
+        guard let plantID = weatherPlantID(at: index) else {
+            throw WateringScheduleError.scheduleUnavailable
+        }
+        return plantID
     }
 }
