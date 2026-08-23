@@ -73,14 +73,48 @@ enum PlantCarePresentation {
     ]
 
     static func asset(for identity: String) -> FigmaAsset {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment[
+                "QA_COLLECTION_FIGMA_FIXTURE"
+            ] == "1" {
+                switch identity {
+                case "local-0": return .collectionPlant05
+                case "local-1": return .collectionPlant03
+                case "local-2": return .collectionPlant01
+                case "local-3": return .collectionPlant04
+                case "local-4": return .collectionPlant02
+                default: break
+                }
+            }
+        #endif
         switch identity {
-        case "local-0": .collectionPlant01
-        case "local-1": .collectionPlant02
-        case "local-2": .collectionPlant03
-        case "local-3": .collectionPlant04
-        case "local-4": .collectionPlant05
-        default: plantAssets[stableIndex(for: identity)]
+        case "local-0": return .collectionPlant01
+        case "local-1": return .collectionPlant02
+        case "local-2": return .collectionPlant03
+        case "local-3": return .collectionPlant04
+        case "local-4": return .collectionPlant05
+        default: return plantAssets[stableIndex(for: identity)]
         }
+    }
+
+    static func collectionName(for identity: String, fallback: String) -> String {
+        #if DEBUG
+            guard ProcessInfo.processInfo.environment[
+                "QA_COLLECTION_FIGMA_FIXTURE"
+            ] == "1" else {
+                return fallback
+            }
+            switch identity {
+            case "local-0": return "몬몬이 (몬스테라)"
+            case "local-1": return "뾰족이 (스투키)"
+            case "local-2": return "초록이 (미니 선인장)"
+            case "local-3": return "야자 (아레카야자)"
+            case "local-4": return "스킨이 (스킨답서스)"
+            default: return fallback
+            }
+        #else
+            return fallback
+        #endif
     }
 
     static func species(for displayName: String) -> String {
@@ -99,28 +133,28 @@ enum PlantCarePresentation {
             icon: "drop.fill",
             title: "물 주기",
             value: "7~10일 간격",
-            hint: "흙이 마른 뒤 충분히"
+            hint: "겉흙이 마르면 듬뿍"
         ),
         PlantGuideMetric(
             id: "light",
             icon: "sun.max.fill",
             title: "빛",
             value: "밝은 간접광",
-            hint: "강한 직사광선은 피하기"
+            hint: "반그늘에서 가장 잘 자라요"
         ),
         PlantGuideMetric(
             id: "temperature",
             icon: "thermometer.medium",
             title: "온도",
             value: "18~27°C",
-            hint: "급격한 온도 변화 주의"
+            hint: "추위에 약하니 실내에"
         ),
         PlantGuideMetric(
             id: "humidity",
             icon: "humidity.fill",
             title: "습도",
             value: "60% 이상",
-            hint: "통풍도 함께 확인"
+            hint: "분무기로 자주 분무 필요"
         )
     ]
 

@@ -8,18 +8,20 @@ struct PlantCollectionView: View {
     let openCamera: () -> Void
     @ObservedObject var collection = LocalPlantCollectionStore.shared
     @State private var search = ""
+    @State private var showsSearch = false
     @FocusState private var searchFocused: Bool
     @Environment(\.sizeCategory) var sizeCategory
     let careCalendar = PlantCareCalendar()
     var body: some View {
         VStack(spacing: PlanteriorSpacing.medium) {
-            header
-            searchField
             if !isTrueEmptyCollection {
-                addPlantButton.frame(maxWidth: .infinity, alignment: .trailing)
+                header
+                if showsSearch {
+                    searchField
+                }
             }
-            ScrollView {
-                VStack(spacing: PlanteriorSpacing.small) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: PlanteriorSpacing.large) {
                     stateBanner
                     if isTrueEmptyCollection {
                         trueEmptyState
@@ -33,6 +35,13 @@ struct PlantCollectionView: View {
                 .padding(.bottom, PlanteriorSpacing.large)
             }
             .accessibilityIdentifier("collection.screen")
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !isTrueEmptyCollection {
+                addPlantButton
+                    .padding(.trailing, PlanteriorSpacing.extraSmall)
+                    .padding(.bottom, 140)
+            }
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.top, PlanteriorSpacing.small)
@@ -54,6 +63,7 @@ struct PlantCollectionView: View {
                 .background(PlanteriorPalette.accent.color)
                 .clipShape(Circle())
         }
+        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
         .accessibilityLabel("식물 추가")
         .accessibilityIdentifier("collection.add")
     }
@@ -67,16 +77,25 @@ struct PlantCollectionView: View {
                 .accessibilityIdentifier("collection.title")
             Spacer()
             Button {
+                showsSearch = true
                 searchFocused = true
             } label: {
                 Image(systemName: "magnifyingglass")
-                    .frame(
-                        width: PlanteriorControl.minimumTarget,
-                        height: PlanteriorControl.minimumTarget
-                    )
+                    .frame(width: 40, height: 40)
                     .background(PlanteriorPalette.surface.color)
                     .clipShape(Circle())
+                    .overlay {
+                        Circle().stroke(
+                            PlanteriorPalette.border.color,
+                            lineWidth: PlanteriorControl.hairline
+                        )
+                    }
             }
+            .frame(
+                minWidth: PlanteriorControl.minimumTarget,
+                minHeight: PlanteriorControl.minimumTarget
+            )
+            .contentShape(Rectangle())
             .buttonStyle(.plain)
             .foregroundStyle(PlanteriorPalette.textPrimary.color)
             .accessibilityLabel("내 식물 검색")
@@ -125,13 +144,13 @@ struct PlantCollectionView: View {
                 Image(.collectionPlantIllustration)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 40, height: 40)
+                    .frame(width: 48, height: 48)
                     .accessibilityLabel("새싹 화분")
                     .accessibilityIdentifier("collection.summary.illustration")
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                     Text("등록된 식물 총 \(collectionCount)개 🌱")
                         .font(PlanteriorTypography.cardTitle)
-                        .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                        .foregroundStyle(PlanteriorPalette.accent.color)
                         .accessibilityIdentifier("collection.summary.title")
                     Text(summarySubtitle)
                         .font(PlanteriorTypography.caption)
@@ -140,7 +159,7 @@ struct PlantCollectionView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(PlanteriorSpacing.medium)
+            .padding(PlanteriorSpacing.large)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(PlanteriorPalette.subtle.color)
             .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
@@ -155,12 +174,15 @@ struct PlantCollectionView: View {
         return collection.plants.enumerated()
             .filter { $0.element.displayName != "비공개 식물" }
             .filter {
-                query.isEmpty
+                let identity = collection.presentationIdentity(at: $0.offset)
+                    ?? "draft-\($0.element.displayName)"
+                let presentedName = PlantCarePresentation.collectionName(
+                    for: identity,
+                    fallback: $0.element.displayName
+                )
+                return query.isEmpty
                     || $0.element.displayName.localizedCaseInsensitiveContains(query)
-            }
-            .sorted {
-                $0.element.displayName.localizedStandardCompare($1.element.displayName)
-                    == .orderedAscending
+                    || presentedName.localizedCaseInsensitiveContains(query)
             }
     }
 
@@ -169,6 +191,11 @@ struct PlantCollectionView: View {
     }
 
     private var summarySubtitle: String {
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_COLLECTION_FIGMA_FIXTURE"] == "1" {
+                return "초보 식집사 단계에서 씩씩하게 자라는 중!"
+            }
+        #endif
         guard let today else { return "물 주기 일정을 확인해 보세요" }
         let summary = collection.careSummary(today: today)
         return "오늘 돌봄 \(summary.dueToday)개 · 설정 필요 \(summary.unconfigured)개"

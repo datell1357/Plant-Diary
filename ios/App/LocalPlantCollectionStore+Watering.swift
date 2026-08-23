@@ -68,20 +68,22 @@ extension LocalPlantCollectionStore {
         today: CalendarDate,
         intervalDays: Int
     ) throws -> WateringCompletionResult {
-        guard
-            plants.indices.contains(index),
-            let lastWateredOn = plants[index].lastWateredOn
-        else {
+        guard plants.indices.contains(index) else {
             throw WateringScheduleError.scheduleUnavailable
         }
         let plantID = try personalPlantID(at: index)
+        let lastWateredOn = plants[index].lastWateredOn
         var coordinator = WateringScheduleCoordinator(today: today)
         try coordinator.setSchedule(
             plantID: plantID,
-            lastWateredDate: lastWateredOn,
+            lastWateredDate: lastWateredOn ?? today,
             intervalDays: intervalDays
         )
-        let result = try coordinator.recordWateredToday(for: plantID)
+        let result: WateringCompletionResult = if lastWateredOn == nil {
+            .recorded(today)
+        } else {
+            try coordinator.recordWateredToday(for: plantID)
+        }
         markWateringCompleted(for: plantID)
         let current = plants[index]
         plants[index] = PlantRegistrationDraft(

@@ -14,11 +14,14 @@ final class PlantCollectionUITests: XCTestCase {
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
         app.buttons["collection.row.0"].tap()
+        app.buttons["plant.detail.edit"].tap()
 
         let nextDate = app.staticTexts["watering.next-date"]
         XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
         XCTAssertTrue(nextDate.label.contains("2026-08-11"))
-        let completeButton = app.buttons["watering.complete"]
+        let completeButton = app.otherElements[
+            "plant.detail.watering-card"
+        ].buttons["watering.complete"]
         XCTAssertTrue(completeButton.isHittable)
         completeButton.tap()
         expectation(
@@ -45,27 +48,33 @@ final class PlantCollectionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["collection.row.1"].waitForExistence(timeout: 5))
         app.buttons["collection.row.1"].tap()
 
-        XCTAssertTrue(
-            app.staticTexts["watering.missing-date"].waitForExistence(timeout: 5)
-        )
-        let setTodayButton = app.buttons["watering.set-today"]
-        XCTAssertTrue(setTodayButton.exists)
-        XCTAssertFalse(app.staticTexts["watering.next-date"].exists)
-        XCTAssertTrue(app.otherElements["app.shell"].exists)
-        XCTAssertTrue(app.buttons["tab.collection"].exists)
-        attachScreenshot(named: "task-11-watering-missing-date")
-
-        setTodayButton.tap()
-        let nextDate = app.staticTexts["watering.next-date"]
-        XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
-        XCTAssertTrue(nextDate.label.contains("2026-08-21"))
         let completeButton = app.buttons["watering.complete"]
+        XCTAssertTrue(completeButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(completeButton.isEnabled)
+        XCTAssertTrue(completeButton.isHittable)
+        XCTAssertEqual(app.staticTexts["watering.compact-date"].label, "기록 없음")
         completeButton.tap()
         expectation(
             for: NSPredicate(format: "label CONTAINS %@", "기록했어요"),
             evaluatedWith: completeButton
         )
         waitForExpectations(timeout: 5)
+        XCTAssertEqual(
+            app.staticTexts["watering.compact-date"].label,
+            "2026. 08. 11 (0일 전)"
+        )
+
+        app.buttons["plant.detail.edit"].tap()
+        XCTAssertFalse(app.staticTexts["watering.missing-date"].exists)
+        XCTAssertTrue(
+            app.staticTexts["watering.last-date"].label.contains("2026-08-11")
+        )
+        let nextDate = app.staticTexts["watering.next-date"]
+        XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
+        XCTAssertTrue(nextDate.label.contains("2026-08-21"))
+        XCTAssertTrue(app.otherElements["app.shell"].exists)
+        XCTAssertTrue(app.buttons["tab.collection"].exists)
+        attachScreenshot(named: "task-11-watering-first-baseline")
     }
 
     func testWateringDraftDateUpdatesScheduleBeforeSave() {
@@ -81,6 +90,7 @@ final class PlantCollectionUITests: XCTestCase {
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
         app.buttons["collection.row.0"].tap()
+        app.buttons["plant.detail.edit"].tap()
 
         let nextDate = app.staticTexts["watering.next-date"]
         XCTAssertTrue(nextDate.waitForExistence(timeout: 5))
@@ -96,6 +106,7 @@ final class PlantCollectionUITests: XCTestCase {
         app.launch()
 
         app.buttons["tab.collection"].tap()
+        app.buttons["collection.search.action"].tap()
         XCTAssertTrue(app.textFields["collection.search"].waitForExistence(timeout: 5))
         app.textFields["collection.search"].tap()
         app.textFields["collection.search"].typeText("몬\n")
@@ -109,6 +120,7 @@ final class PlantCollectionUITests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         app.buttons["collection.row.0"].tap()
+        app.buttons["plant.detail.edit"].tap()
 
         XCTAssertTrue(app.textFields["plant.detail.nickname"].waitForExistence(timeout: 5))
         app.textFields["plant.detail.location"].tap()
@@ -143,6 +155,7 @@ final class PlantCollectionUITests: XCTestCase {
         app.launch()
 
         app.buttons["tab.collection"].tap()
+        app.buttons["collection.search.action"].tap()
         let search = app.textFields["collection.search"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()

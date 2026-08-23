@@ -44,6 +44,44 @@ struct PlantCareCalendar {
             )
         )
     }
+
+    func normalizedDaysBetween(
+        _ start: CalendarDate,
+        _ end: CalendarDate
+    ) -> Int? {
+        var normalizedCalendar = Calendar(identifier: .gregorian)
+        normalizedCalendar.timeZone = .gmt
+        guard
+            let startDate = normalizedDate(start, calendar: normalizedCalendar),
+            let endDate = normalizedDate(end, calendar: normalizedCalendar)
+        else {
+            return nil
+        }
+        return normalizedCalendar.dateComponents(
+            [.day],
+            from: startDate,
+            to: endDate
+        ).day
+    }
+
+    private func normalizedDate(
+        _ calendarDate: CalendarDate,
+        calendar: Calendar
+    ) -> Date? {
+        let components = calendarDate.rawValue
+            .split(separator: "-")
+            .compactMap { Int($0) }
+        guard components.count == 3 else { return nil }
+        return calendar.date(
+            from: DateComponents(
+                calendar: calendar,
+                timeZone: calendar.timeZone,
+                year: components[0],
+                month: components[1],
+                day: components[2]
+            )
+        )
+    }
 }
 
 extension PlantCollectionView {

@@ -34,6 +34,46 @@ extension LocalPlantCollectionStore {
             }
             resetQAFixtureData()
             if ProcessInfo.processInfo.environment[
+                "QA_COLLECTION_FIGMA_FIXTURE"
+            ] == "1" {
+                plants = [
+                    qaDraft(
+                        id: "local-0",
+                        name: "몬스테라",
+                        lastWateredOn: try? CalendarDate.parse("2026-05-15"),
+                        wateringIntervalDays: 4,
+                        privateMemo: "최근에 새 잎이 돋아나기 시작했어요! 잎 끝이 마르지 않게 저녁마다 습도 관리를 위한 스프레이를 분무해주고 있습니다. 🌿"
+                    ),
+                    qaDraft(
+                        id: "local-1",
+                        name: "스투키",
+                        lastWateredOn: try? CalendarDate.parse("2026-05-12"),
+                        wateringIntervalDays: 10
+                    ),
+                    qaDraft(
+                        id: "local-2",
+                        name: "미니 선인장",
+                        lastWateredOn: try? CalendarDate.parse("2026-05-03"),
+                        wateringIntervalDays: 30
+                    ),
+                    qaDraft(
+                        id: "local-3",
+                        name: "아레카야자",
+                        lastWateredOn: try? CalendarDate.parse("2026-05-11"),
+                        wateringIntervalDays: 10
+                    ),
+                    qaDraft(
+                        id: "local-4",
+                        name: "스킨답서스",
+                        lastWateredOn: try? CalendarDate.parse("2026-05-14"),
+                        wateringIntervalDays: 10
+                    )
+                ]
+                installQAFixtureIdentities()
+                persist()
+                return
+            }
+            if ProcessInfo.processInfo.environment[
                 "QA_HOME_CARE_VARIANTS"
             ] == "1" {
                 plants = [
@@ -98,7 +138,8 @@ extension LocalPlantCollectionStore {
         id: String,
         name: String,
         lastWateredOn: CalendarDate?,
-        wateringIntervalDays: Int = 10
+        wateringIntervalDays: Int = 10,
+        privateMemo: String? = nil
     ) -> PlantRegistrationDraft {
         PlantRegistrationDraft(
             plantID: try? PlantContentID.parse(id),
@@ -106,7 +147,8 @@ extension LocalPlantCollectionStore {
             representativePhoto: nil,
             lastWateredOn: lastWateredOn,
             wateringIntervalDays: wateringIntervalDays,
-            registrationMethod: .manual
+            registrationMethod: .manual,
+            privateMemo: privateMemo
         )
     }
 }

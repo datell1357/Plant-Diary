@@ -26,7 +26,66 @@ enum WateringFeedback {
 }
 
 extension PlantCareDetailView {
-    var wateringSection: some View {
+    var compactWateringCard: some View {
+        HStack(spacing: PlanteriorSpacing.medium) {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                Text("마지막 물 주기")
+                    .font(PlanteriorTypography.caption)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                Text(compactWateringDate)
+                    .font(PlanteriorTypography.cardTitle)
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .accessibilityIdentifier("watering.compact-date")
+            }
+            Spacer(minLength: PlanteriorSpacing.small)
+            Button(action: recordWateredToday) {
+                Text(wateringFeedback == nil ? "물 주기 완료" : wateringButtonTitle)
+                    .font(PlanteriorTypography.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .padding(.horizontal, PlanteriorSpacing.large)
+                    .frame(height: 32)
+                    .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+                    .background(PlanteriorPalette.accent.color)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: PlanteriorControl.minimumTarget)
+            .accessibilityIdentifier("watering.complete")
+            .accessibilityValue(wateringFeedback?.title ?? "기록 전")
+        }
+        .padding(.horizontal, PlanteriorSpacing.medium)
+        .frame(maxWidth: .infinity, minHeight: 64)
+        .background(PlanteriorPalette.surface.color)
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                .stroke(
+                    PlanteriorPalette.border.color,
+                    lineWidth: PlanteriorControl.hairline
+                )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("plant.detail.watering-card")
+    }
+
+    private var compactWateringDate: String {
+        guard let calendarDate else { return "기록 없음" }
+        let formatted = calendarDate.rawValue
+            .split(separator: "-")
+            .joined(separator: ". ")
+        guard let todayCalendarDate,
+              let dayDistance = plantCalendar.normalizedDaysBetween(
+                calendarDate,
+                todayCalendarDate
+              )
+        else {
+            return formatted
+        }
+        let elapsedDays = max(dayDistance, 0)
+        return "\(formatted) (\(elapsedDays)일 전)"
+    }
+
+    var wateringEditorSection: some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
             Text("물 주기 일정")
                 .font(PlanteriorTypography.sectionTitle)
@@ -70,8 +129,6 @@ extension PlantCareDetailView {
                         LocalizedStringKey(wateringButtonTitle),
                         action: recordWateredToday
                     )
-                    .disabled(lastWateredOn == nil)
-                    .opacity(lastWateredOn == nil ? 0.55 : 1)
                     .accessibilityIdentifier("watering.complete")
                     .accessibilityValue(wateringFeedback?.title ?? "기록 전")
                 }

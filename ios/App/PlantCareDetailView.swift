@@ -1,3 +1,4 @@
+import Foundation
 import PlanteriorData
 import PlanteriorDesignSystem
 import PlanteriorDomain
@@ -21,18 +22,20 @@ struct PlantCareDetailView: View {
     @State var showsDeleteConfirmation = false
     @State var saveError: String?
     @State var saveFeedback: String?
-    @State private var showsEditing = true
+    @State private var showsEditing = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
                 hero
-                titleSummary
-                wateringSection
                 guideSection
+                compactWateringCard
+                memoSection
                 remedyLink
                 weatherSection
                 if showsEditing {
+                    titleSummary
+                    wateringEditorSection
                     editingSection
                 }
                 timelineSection
@@ -46,7 +49,8 @@ struct PlantCareDetailView: View {
                 deleteAction
             }
             .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.vertical, PlanteriorSpacing.small)
+            .padding(.top, -PlanteriorSpacing.small)
+            .padding(.bottom, PlanteriorSpacing.small)
         }
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle(trimmedNickname)
@@ -117,7 +121,7 @@ struct PlantCareDetailView: View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
             Text("식물 가이드 및 관리 기준")
                 .font(PlanteriorTypography.sectionTitle)
-            LazyVGrid(columns: guideColumns, spacing: PlanteriorSpacing.medium) {
+            LazyVGrid(columns: guideColumns, spacing: PlanteriorSpacing.small) {
                 ForEach(PlantCarePresentation.guideMetrics) { metric in
                     PlanteriorCard {
                         VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
@@ -130,12 +134,64 @@ struct PlantCareDetailView: View {
                                 .font(PlanteriorTypography.microLabel)
                                 .foregroundStyle(PlanteriorPalette.textTertiary.color)
                         }
+                        .padding(.vertical, -PlanteriorSpacing.extraSmall)
                     }
                 }
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plant.detail.guide")
+    }
+
+    private var memoSection: some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+            Text("관리 메모")
+                .font(PlanteriorTypography.sectionTitle)
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                Text(
+                    privateMemo.isEmpty
+                        ? "아직 작성한 관리 메모가 없어요."
+                        : privateMemo
+                )
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .fixedSize(horizontal: false, vertical: true)
+                if let memoUpdatedOn {
+                    Text("수정일: \(memoUpdatedOn)")
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                        .accessibilityIdentifier("plant.detail.memo-updated")
+                }
+            }
+            .padding(PlanteriorSpacing.medium)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PlanteriorPalette.surface.color)
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+            .overlay {
+                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                    .stroke(
+                        PlanteriorPalette.border.color,
+                        lineWidth: PlanteriorControl.hairline
+                    )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("plant.detail.memo")
+    }
+
+    private var memoUpdatedOn: String? {
+        #if DEBUG
+            guard let value = ProcessInfo.processInfo.environment[
+                "QA_PLANT_DETAIL_UPDATED_ON"
+            ] else {
+                return nil
+            }
+            let components = value.split(separator: "-")
+            guard components.count == 3 else { return nil }
+            return "\(components[0]). \(components[1]). \(components[2])"
+        #else
+            return nil
+        #endif
     }
 
     private var remedyLink: some View {
@@ -182,7 +238,7 @@ struct PlantCareDetailView: View {
     private var guideColumns: [GridItem] {
         let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
         return Array(
-            repeating: GridItem(.flexible(), spacing: PlanteriorSpacing.medium),
+            repeating: GridItem(.flexible(), spacing: 10),
             count: count
         )
     }
