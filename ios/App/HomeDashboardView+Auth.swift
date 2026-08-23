@@ -15,7 +15,7 @@ extension HomeDashboardView {
                 }
                 greetingStack
             } else {
-                HStack(spacing: PlanteriorSpacing.medium) {
+                HStack(spacing: 10) {
                     profileAvatar
                     greetingStack
                     Spacer(minLength: PlanteriorSpacing.small)
@@ -24,6 +24,7 @@ extension HomeDashboardView {
             }
             titleRow
         }
+        .padding(.horizontal, PlanteriorSpacing.extraSmall)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.header")
     }
@@ -41,7 +42,7 @@ extension HomeDashboardView {
     private var greetingStack: some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
             Text("안녕하세요, \(profileName)님!")
-                .font(PlanteriorTypography.heroGreeting)
+                .font(PlanteriorTypography.sectionTitle.weight(.bold))
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .accessibilityIdentifier("home.greeting")
                 .accessibilityAddTraits(.isHeader)
@@ -60,14 +61,19 @@ extension HomeDashboardView {
             Image(systemName: "bell.badge")
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .frame(width: 40, height: 40)
+                .background(PlanteriorPalette.surface.color)
+                .clipShape(Circle())
                 .frame(
                     width: PlanteriorControl.minimumTarget,
                     height: PlanteriorControl.minimumTarget
                 )
-                .background(PlanteriorPalette.surface.color)
-                .clipShape(Circle())
         }
         .buttonStyle(.plain)
+        .frame(
+            width: PlanteriorControl.minimumTarget,
+            height: PlanteriorControl.minimumTarget
+        )
         .accessibilityLabel("알림 설정")
         .accessibilityIdentifier("home.notifications")
     }
@@ -128,10 +134,5 @@ extension HomeDashboardView {
                     .accessibilityIdentifier("home.auth.signing-in")
             }
         }
-    }
-
-    var identifyButton: some View {
-        PlanteriorPrimaryButton("식물 촬영 시작", action: openCamera)
-            .accessibilityIdentifier("home.identify")
     }
 }

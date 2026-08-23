@@ -16,7 +16,7 @@ extension HomeDashboardView {
             .accessibilityLabel("\(roomTitle) 미리보기")
             .overlay(alignment: .topLeading) {
                 roomAction(
-                    systemImage: "leaf",
+                    systemImage: "chair.lounge.fill",
                     label: "미니홈 꾸미기",
                     identifier: "home.room.decorate",
                     action: requestMiniHomeOpen
@@ -24,7 +24,7 @@ extension HomeDashboardView {
             }
             .overlay(alignment: .topTrailing) {
                 roomAction(
-                    systemImage: "square.and.arrow.up",
+                    systemImage: "lamp.floor.fill",
                     label: "미니홈 공유",
                     identifier: "home.room.share",
                     action: requestMiniHomeOpen
@@ -43,15 +43,16 @@ extension HomeDashboardView {
             Image(systemName: systemImage)
                 .font(PlanteriorTypography.caption)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .frame(width: 32, height: 32)
+                .background(PlanteriorPalette.surface.color)
+                .clipShape(Circle())
                 .frame(
                     width: PlanteriorControl.minimumTarget,
                     height: PlanteriorControl.minimumTarget
                 )
-                .background(PlanteriorPalette.surface.color)
-                .clipShape(Circle())
         }
         .buttonStyle(.plain)
-        .padding(PlanteriorSpacing.medium)
+        .padding(10)
         .accessibilityLabel(label)
         .accessibilityIdentifier(identifier)
     }

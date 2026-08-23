@@ -23,6 +23,11 @@ extension HomeDashboardView {
         guard authenticationState == .authenticated else {
             return "위치 미설정 · - °C"
         }
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_HOME_FIXTURE"] == "1" {
+                return "서울 성동구 · 28°C"
+            }
+        #endif
         let region = weatherRuntime.effectiveRegionName ?? "위치 미설정"
         guard let temperature = weatherTemperatureText else {
             return "\(region) · - °C"
@@ -61,14 +66,26 @@ extension HomeDashboardView {
     /// §6.4 amber banner copy; geometry is identical across auth states.
     var weatherWarningText: String {
         guard authenticationState == .authenticated else {
-            return "로그인하면 내 지역의 날씨 기반 식물 관리 알림을 받을 수 있어요!"
+            return "로그인하면 내 지역의 날씨 기반 식물 관리 알림을 받을\u{00A0}수\u{00A0}있어요!"
         }
+        #if DEBUG
+            if ProcessInfo.processInfo.environment["QA_HOME_FIXTURE"] == "1" {
+                return "오늘 기온이 35°C로 높아요! 강한 직사광선을 피해 통풍이 잘되는 그늘로 식물을 피해주세요."
+            }
+        #endif
         return "오늘 기온이 높아요! 강한 직사광선을 피해 통풍이 잘되는 그늘로 식물을 피해주세요."
     }
 
     /// §6.5 count chip: "오늘 N개" when signed in, "0개" in the zero state.
     var careBadgeText: String {
-        let count = store.snapshot.careItems.count
+        let count = store.snapshot.careItems.reduce(into: 0) { count, item in
+            switch item.status {
+            case .overdue, .due:
+                count += 1
+            case .upcoming, .unavailable:
+                break
+            }
+        }
         guard authenticationState == .authenticated, count > 0 else {
             return "0개"
         }

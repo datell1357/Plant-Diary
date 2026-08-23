@@ -9,11 +9,12 @@ extension HomeDashboardView {
     var renameDialog: some View {
         if isRenamePresented {
             ZStack {
-                Color.black.opacity(0.45)
+                Color.black.opacity(PlanteriorOpacity.dimmer)
                     .ignoresSafeArea()
                     .onTapGesture(perform: dismissRename)
                     .accessibilityHidden(true)
                 dialogCard
+                    .offset(y: 26)
             }
             .transition(
                 effectiveReduceMotion ? .identity : .opacity
@@ -35,7 +36,7 @@ extension HomeDashboardView {
             }
         }
         .padding(PlanteriorSpacing.extraLarge)
-        .frame(width: 330)
+        .frame(width: PlanteriorLayout.modalWidth)
         .background(PlanteriorPalette.surface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
         .accessibilityElement(children: .contain)
@@ -89,7 +90,7 @@ extension HomeDashboardView {
             .textFieldStyle(.plain)
             .font(PlanteriorTypography.body)
             .padding(.horizontal, PlanteriorSpacing.large)
-            .frame(height: PlanteriorControl.primaryButtonHeight)
+            .frame(height: 48)
             .background(PlanteriorPalette.surface.color)
             .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
             .overlay {
@@ -107,43 +108,25 @@ extension HomeDashboardView {
 
     private var saveButton: some View {
         Button(action: commitRename) {
-            if effectiveSizeCategory.isAccessibilityCategory {
-                VStack(spacing: PlanteriorSpacing.extraSmall) {
-                    Text("저장")
-                        .font(PlanteriorTypography.supporting.weight(.semibold))
-                    switch renameQuote {
-                    case .free:
+            Group {
+                if effectiveSizeCategory.isAccessibilityCategory {
+                    VStack(spacing: PlanteriorSpacing.extraSmall) {
+                        Text("저장")
+                            .font(PlanteriorTypography.supporting.weight(.semibold))
                         costAffordance
-                    case let .paid(cost, balance), let .insufficient(cost, balance):
-                        HStack(spacing: PlanteriorSpacing.extraSmall) {
-                            Image(systemName: "circlebadge.fill")
-                                .foregroundStyle(PlanteriorPalette.warning.color)
-                                .accessibilityHidden(true)
-                            Text("\(cost)")
-                                .accessibilityIdentifier("home.rename.cost")
-                        }
-                        .font(PlanteriorTypography.caption)
-                        Text("보유 \(balance)")
-                            .font(PlanteriorTypography.caption)
-                            .accessibilityIdentifier("home.rename.balance")
-                        Color.clear
-                            .frame(height: PlanteriorSpacing.medium)
-                            .accessibilityHidden(true)
                     }
+                    .padding(.vertical, PlanteriorSpacing.small)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    HStack(spacing: PlanteriorSpacing.extraSmall) {
+                        Text("저장")
+                            .font(PlanteriorTypography.body.weight(.semibold))
+                        costAffordance
+                    }
+                    .frame(height: 42)
                 }
-                .padding(.vertical, PlanteriorSpacing.medium)
-                .frame(maxWidth: .infinity)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: PlanteriorControl.primaryButtonHeight)
-            } else {
-                HStack(spacing: PlanteriorSpacing.extraSmall) {
-                    Text("저장")
-                        .font(PlanteriorTypography.body.weight(.semibold))
-                    costAffordance
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: PlanteriorControl.primaryButtonHeight)
             }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
         .foregroundStyle(PlanteriorPalette.textOnAccent.color)
@@ -154,6 +137,7 @@ extension HomeDashboardView {
         )
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
         .disabled(!renameQuote.isAffordable)
+        .accessibilityValue(renameAccessibilityValue)
         .accessibilityIdentifier("home.rename.save")
     }
 
@@ -165,19 +149,23 @@ extension HomeDashboardView {
                 .font(PlanteriorTypography.caption)
                 .foregroundStyle(PlanteriorPalette.textOnAccent.color.opacity(0.7))
                 .accessibilityIdentifier("home.rename.cost")
-        case let .paid(cost, balance), let .insufficient(cost, balance):
-            Image(systemName: "circlebadge.fill")
-                .font(PlanteriorTypography.caption)
+        case let .paid(cost, _), let .insufficient(cost, _):
+            Image(systemName: "circle.fill")
+                .font(.system(size: 9))
                 .foregroundStyle(PlanteriorPalette.warning.color)
                 .accessibilityIdentifier("home.rename.cost.coin")
-                .accessibilityHidden(true)
             Text("\(cost)")
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .accessibilityIdentifier("home.rename.cost")
-            Text("보유 \(balance)")
-                .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.textOnAccent.color.opacity(0.7))
-                .accessibilityIdentifier("home.rename.balance")
+        }
+    }
+
+    private var renameAccessibilityValue: String {
+        switch renameQuote {
+        case .free:
+            return "1회 무료"
+        case let .paid(_, balance), let .insufficient(_, balance):
+            return "보유 \(balance)"
         }
     }
 }

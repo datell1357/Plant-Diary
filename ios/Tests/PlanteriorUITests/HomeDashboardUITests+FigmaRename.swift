@@ -30,15 +30,19 @@ extension HomeDashboardUITests {
         XCTAssertTrue(close.exists)
         XCTAssertTrue(save.exists)
 
-        // §6.9 geometry: 330 card, 52 input, 52 primary, 32 close.
-        XCTAssertEqual(dialog.frame.width, 330, accuracy: 1)
-        XCTAssertEqual(input.frame.height, 52, accuracy: 2)
-        XCTAssertEqual(save.frame.height, 52, accuracy: 2)
+        // §6.9 geometry: 320 card, 48 input, 42 primary, 32 close.
+        XCTAssertEqual(dialog.frame.width, 320, accuracy: 1)
+        XCTAssertEqual(input.frame.height, 48, accuracy: 2)
+        XCTAssertEqual(save.frame.height, 42, accuracy: 2)
         XCTAssertEqual(close.frame.width, 32, accuracy: 2)
         XCTAssertGreaterThan(input.frame.minY, close.frame.minY)
         XCTAssertGreaterThan(save.frame.minY, input.frame.minY)
 
         XCTAssertEqual(app.staticTexts["home.rename.cost"].label, "(1회 무료)")
+        XCTAssertFalse(
+            app.keyboards.element.exists,
+            "the reference dialog presents without stealing focus"
+        )
 
         input.tap()
         input.typeText("민지의 정원")
@@ -64,17 +68,19 @@ extension HomeDashboardUITests {
 
         XCTAssertEqual(app.staticTexts["home.rename.cost"].label, "5")
         XCTAssertTrue(app.images["home.rename.cost.coin"].exists)
-        let balance = app.staticTexts["home.rename.balance"]
-        XCTAssertTrue(balance.exists)
-        XCTAssertEqual(balance.label, "보유 12")
+        XCTAssertFalse(
+            app.staticTexts["home.rename.balance"].exists,
+            "the paid reference shows only the five-credit price"
+        )
+        XCTAssertEqual(app.buttons["home.rename.save"].value as? String, "보유 12")
+        XCTAssertFalse(app.keyboards.element.exists)
 
         // Dismissing must never charge.
         app.buttons["home.rename.close"].tap()
         XCTAssertTrue(renameDialog(app).waitForNonExistence(timeout: 5))
         app.buttons["home.room.title"].tap()
-        XCTAssertTrue(app.staticTexts["home.rename.balance"].waitForExistence(timeout: 5))
         XCTAssertEqual(
-            app.staticTexts["home.rename.balance"].label,
+            app.buttons["home.rename.save"].value as? String,
             "보유 12",
             "closing the dialog must not silently charge"
         )
@@ -87,8 +93,7 @@ extension HomeDashboardUITests {
         XCTAssertEqual(app.buttons["home.room.title"].label, "이끼 정원 🏡")
 
         app.buttons["home.room.title"].tap()
-        XCTAssertTrue(app.staticTexts["home.rename.balance"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["home.rename.balance"].label, "보유 7")
+        XCTAssertEqual(app.buttons["home.rename.save"].value as? String, "보유 7")
         app.buttons["home.rename.close"].tap()
         app.terminate()
 
@@ -122,8 +127,8 @@ extension HomeDashboardUITests {
             dialog.waitForExistence(timeout: 2),
             "keyboard submission must not commit a paid rename"
         )
-        XCTAssertEqual(app.staticTexts["home.rename.balance"].label, "보유 12")
-        XCTAssertEqual(app.buttons["home.room.title"].label, "초록 방 🏡")
+        XCTAssertEqual(app.buttons["home.rename.save"].value as? String, "보유 12")
+        XCTAssertEqual(app.buttons["home.room.title"].label, "민지의 미니 식물원 🏡")
     }
 
     /// §6.9: an unaffordable rename is disabled rather than silently failing.

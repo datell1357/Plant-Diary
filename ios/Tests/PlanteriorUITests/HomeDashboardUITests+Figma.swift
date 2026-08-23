@@ -22,26 +22,49 @@ extension HomeDashboardUITests {
         XCTAssertTrue(app.images["home.avatar"].exists)
         XCTAssertTrue(app.staticTexts["home.greeting"].exists)
         XCTAssertEqual(app.staticTexts["home.greeting"].label, "안녕하세요, 민지님!")
-        XCTAssertTrue(app.staticTexts["home.greeting.meta"].exists)
+        XCTAssertEqual(
+            app.staticTexts["home.greeting.meta"].label,
+            "서울 성동구 · 28°C"
+        )
         XCTAssertTrue(app.buttons["home.notifications"].exists)
 
         let title = app.buttons["home.room.title"]
         XCTAssertTrue(title.exists, "room title must be tappable to rename")
-        XCTAssertEqual(title.label, "초록 방 🏡")
+        XCTAssertEqual(title.label, "민지의 미니 식물원 🏡")
 
-        XCTAssertTrue(app.images["home.room.hero"].exists)
+        let hero = app.images["home.room.hero"]
+        XCTAssertTrue(hero.exists)
+        XCTAssertEqual(hero.frame.minX, 16, accuracy: 1)
+        XCTAssertEqual(hero.frame.width, 370, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(hero.frame.height, 326)
+        XCTAssertLessThanOrEqual(hero.frame.height, 330)
         XCTAssertTrue(app.staticTexts["home.weather.warning"].exists)
 
         XCTAssertTrue(app.staticTexts["home.care.header"].exists)
         XCTAssertEqual(app.staticTexts["home.care.header"].label, "오늘의 식물 관리")
         XCTAssertTrue(app.staticTexts["home.care.badge"].exists)
-        // The QA collection fixture registers two plants.
-        XCTAssertEqual(app.staticTexts["home.care.badge"].label, "오늘 2개")
-        XCTAssertTrue(app.staticTexts["home.care.row.0"].exists)
+        XCTAssertEqual(app.staticTexts["home.care.badge"].label, "오늘 1개")
+        XCTAssertEqual(
+            app.staticTexts["home.care.row.0"].label,
+            "몬몬이 (몬스테라)"
+        )
+        XCTAssertEqual(
+            app.staticTexts["home.care.status.0"].label,
+            "오늘 물 주는 날"
+        )
+        XCTAssertTrue(app.images["home.care.media.0"].exists)
+        XCTAssertEqual(
+            app.staticTexts["home.care.row.1"].label,
+            "뾰족이 (스투키)"
+        )
+        XCTAssertEqual(app.staticTexts["home.care.status.1"].label, "3일 후 물주기")
+        XCTAssertEqual(app.staticTexts["home.care.trailing.1"].label, "D-3")
+        XCTAssertTrue(app.images["home.care.media.1"].exists)
         XCTAssertTrue(app.buttons["home.care.more"].exists)
+        XCTAssertFalse(app.buttons["home.identify"].exists)
 
         assertSingleVerticalScrollOwner(app)
-        assertMinimumTargets(app, identifiers: ["home.notifications", "home.room.title"])
+        assertMinimumTargets(app, identifiers: ["home.room.title"])
     }
 
     // MARK: - home.loggedOut
@@ -52,6 +75,8 @@ extension HomeDashboardUITests {
     func testLoggedOutHomeKeepsFigmaBodyVisibleWithLoginLink() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "0"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launch()
 
         XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 10))
@@ -65,11 +90,17 @@ extension HomeDashboardUITests {
         XCTAssertTrue(app.staticTexts["home.weather.warning"].exists)
         XCTAssertEqual(
             app.staticTexts["home.weather.warning"].label,
-            "로그인하면 내 지역의 날씨 기반 식물 관리 알림을 받을 수 있어요!"
+            "로그인하면 내 지역의 날씨 기반 식물 관리 알림을 받을\u{00A0}수\u{00A0}있어요!"
         )
 
         XCTAssertEqual(app.staticTexts["home.care.badge"].label, "0개")
         XCTAssertTrue(app.staticTexts["home.care.empty"].exists)
+
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "home-logged-out-blocker"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
         XCTAssertFalse(
             app.buttons["home.care.more"].exists,
             "§6.5: the trailing schedule action is absent in the zero state"

@@ -53,7 +53,8 @@ final class HomeDashboardUITests: XCTestCase {
             loggedOut.staticTexts["home.greeting"].label,
             "안녕하세요, 게스트님!"
         )
-        XCTAssertTrue(loggedOut.buttons["home.identify"].exists)
+        XCTAssertFalse(loggedOut.buttons["home.identify"].exists)
+        XCTAssertTrue(loggedOut.buttons["tab.camera"].exists)
         attachScreenshot(
             app: loggedOut,
             named: "task-12-home-logged-out"
@@ -68,7 +69,8 @@ final class HomeDashboardUITests: XCTestCase {
             signingIn.descendants(matching: .any)["home.auth.signing-in"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(signingIn.buttons["home.identify"].exists)
+        XCTAssertFalse(signingIn.buttons["home.identify"].exists)
+        XCTAssertTrue(signingIn.buttons["tab.camera"].exists)
         attachScreenshot(
             app: signingIn,
             named: "task-12-home-signing-in"

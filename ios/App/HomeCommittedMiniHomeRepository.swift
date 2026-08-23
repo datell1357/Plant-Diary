@@ -46,7 +46,7 @@ struct HomeCommittedMiniHomeRepository {
                 let data = try? JSONEncoder().encode(
                     MiniHome(
                         id: id,
-                        name: "초록 방",
+                        name: "민지의 미니 식물원",
                         placements: [],
                         revision: revision,
                         updatedAt: updatedAt

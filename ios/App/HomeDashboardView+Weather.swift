@@ -6,19 +6,26 @@ extension HomeDashboardView {
     /// 13 Semibold amber copy. Geometry is identical in both auth states; only
     /// the copy differs (§8.3).
     var weatherWarningBanner: some View {
-        PlanteriorCard(variant: .warning) {
-            HStack(alignment: .top, spacing: PlanteriorSpacing.medium) {
-                Image(systemName: "exclamationmark.shield")
-                    .font(PlanteriorTypography.supporting)
-                    .foregroundStyle(PlanteriorPalette.warning.color)
-                    .frame(width: 20, height: 20)
-                    .accessibilityHidden(true)
-                Text(weatherWarningText)
-                    .font(PlanteriorTypography.caption.weight(.semibold))
-                    .foregroundStyle(PlanteriorPalette.warning.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("home.weather.warning")
-            }
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: "exclamationmark.shield")
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.warning.color)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+            Text(weatherWarningText)
+                .font(PlanteriorTypography.caption.weight(.semibold))
+                .foregroundStyle(PlanteriorPalette.warning.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("home.weather.warning")
+        }
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 64)
+        .background(Color(red: 254.0 / 255, green: 243.0 / 255, blue: 199.0 / 255))
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                .stroke(Color(red: 252.0 / 255, green: 211.0 / 255, blue: 77.0 / 255))
         }
     }
 

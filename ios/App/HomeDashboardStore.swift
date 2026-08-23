@@ -30,7 +30,8 @@ final class HomeDashboardStore: ObservableObject {
         miniHome: MiniHome?,
         notificationState: NotificationRuntimeState
     ) {
-        let candidates = zip(plantIDs, plants).map { plantID, plant in
+        let candidates = referenceCareCandidates ?? zip(plantIDs, plants).map {
+            plantID, plant in
             HomeCareCandidate(
                 plantID: plantID,
                 displayName: plant.displayName,
@@ -52,6 +53,34 @@ final class HomeDashboardStore: ObservableObject {
             snapshot: snapshot,
             notificationState: notificationState
         )
+    }
+
+    private var referenceCareCandidates: [HomeCareCandidate]? {
+        #if DEBUG
+            guard ProcessInfo.processInfo.environment["QA_HOME_FIXTURE"] == "1",
+                  plantIDs.count >= 2,
+                  let firstWatering = try? CalendarDate.parse("2026-08-01"),
+                  let secondWatering = try? CalendarDate.parse("2026-08-04")
+            else {
+                return nil
+            }
+            return [
+                HomeCareCandidate(
+                    plantID: plantIDs[0],
+                    displayName: "몬몬이 (몬스테라)",
+                    lastWateredDate: firstWatering,
+                    intervalDays: 10
+                ),
+                HomeCareCandidate(
+                    plantID: plantIDs[1],
+                    displayName: "뾰족이 (스투키)",
+                    lastWateredDate: secondWatering,
+                    intervalDays: 10
+                )
+            ]
+        #else
+            return nil
+        #endif
     }
 
     private func plannedNotifications(

@@ -38,25 +38,34 @@ struct HomeDashboardView: View {
 
     private var homeSurface: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 homeHeader
                 signingInIndicator
                 miniHomeSection
+                    .padding(.top, -19)
                 weatherWarningBanner
+                    .padding(.top, PlanteriorSpacing.large)
                 careSection
+                    .padding(.top, 9)
                 if authenticationState == .authenticated {
-                    identifyButton
                     weatherSection
                         .id("home.weather.section")
+                        .padding(.top, PlanteriorSpacing.huge)
                     notificationSection
+                        .padding(.top, PlanteriorSpacing.huge)
                     syncSection
-                } else {
-                    identifyButton
+                        .padding(.top, PlanteriorSpacing.huge)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            .padding(.top, -8)
+            .padding(.bottom, PlanteriorSpacing.large)
         }
+        .contentMargins(
+            .horizontal,
+            PlanteriorLayout.contentGutter,
+            for: .scrollContent
+        )
         .accessibilityIdentifier("home.screen")
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveSizeCategory)

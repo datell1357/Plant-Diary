@@ -42,8 +42,8 @@ extension HomeDashboardView {
         }
         renameDraft = ""
         renameAllowance = allowanceStore.load()
+        isRenameFieldFocused = false
         isRenamePresented = true
-        isRenameFieldFocused = true
     }
 
     /// Focus restores to the room title so VoiceOver never lands on nothing.

@@ -27,7 +27,7 @@ extension HomeDashboardUITests {
         app.launch()
 
         openRenameDialog(app)
-        XCTAssertTrue(app.staticTexts["home.rename.balance"].exists)
+        XCTAssertFalse(app.staticTexts["home.rename.balance"].exists)
         attachFigmaScreenshot(named: "home-rename-paid")
     }
 
