@@ -1,6 +1,6 @@
 import { Timestamp, type DocumentSnapshot, type Firestore } from "firebase-admin/firestore";
 import {
-  ensureCatalogPublished,
+  catalogProjectionForPublishedOwner,
   ownerProjectionDraft,
   projectionOwnedItem,
   projectionSnapshot,
@@ -47,22 +47,17 @@ export class FirestoreInventoryStore implements InventoryStore {
         catalogSource,
         readTime,
       );
-      const catalog = await ensureCatalogPublished(
-        transaction,
-        this.firestore,
-        catalogSource,
-        readTime,
-      );
       const published = await publishOwnerProjection(
         transaction,
         this.firestore,
         ownerUid,
         owner.prior,
         owner.draft,
-        catalog,
+        catalogSource,
         readTime,
         this.projectionHooks,
       );
+      const catalog = catalogProjectionForPublishedOwner(published, catalogSource);
       transaction.set(
         this.firestore.doc(`users/${ownerUid}/inventoryStates/current`),
         inventoryStatePayload(
@@ -114,6 +109,7 @@ export class FirestoreInventoryStore implements InventoryStore {
       ]);
       let result: InventoryAcquireResult;
       let nextOwned = owner.draft.owned;
+      let ownershipPayload: Readonly<Record<string, unknown>> | null = null;
       if (ownedDocument.exists) {
         const owned = projectionOwnedItem(ownedDocument, command.ownerUid);
         result = {
@@ -157,7 +153,7 @@ export class FirestoreInventoryStore implements InventoryStore {
           ...owner.draft.owned.filter((item) => item.itemId !== command.itemId),
           projectedOwned,
         ];
-        transaction.create(ownedRef, {
+        ownershipPayload = {
           ownerUid: command.ownerUid,
           itemId: command.itemId,
           acquiredAt,
@@ -176,7 +172,7 @@ export class FirestoreInventoryStore implements InventoryStore {
           expectedRevision: 0,
           idempotencyKey: command.operationId,
           updatedAt: acquiredAt,
-        });
+        };
       }
 
       const published = await publishOwnerProjection(
@@ -189,6 +185,7 @@ export class FirestoreInventoryStore implements InventoryStore {
         acquiredAt,
         this.projectionHooks,
       );
+      if (ownershipPayload !== null) transaction.create(ownedRef, ownershipPayload);
       transaction.set(
         stateRef,
         inventoryStatePayload(

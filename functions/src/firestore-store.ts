@@ -82,6 +82,7 @@ export class FirestoreMutationStore implements MutationStore {
         }
       }
       const write = { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: projectionTime };
+      let commitScheduleWrite: (() => void) | null = null;
       if (command.collection === "personalPlants" && "lastWateredDate" in command.payload) {
         const scheduleRef = this.firestore.doc(
           `users/${command.ownerUid}/wateringSchedules/${command.documentId}`,
@@ -137,7 +138,7 @@ export class FirestoreMutationStore implements MutationStore {
             settings.get("wateringEnabled") === true &&
             (!preference.exists || preference.get("enabled") !== false) &&
             typeof defaultTime === "string";
-          transaction.set(
+          commitScheduleWrite = () => transaction.set(
             scheduleRef,
             {
               ownerUid: command.ownerUid,
@@ -164,11 +165,9 @@ export class FirestoreMutationStore implements MutationStore {
             { merge: false },
           );
         } else if (schedule.exists) {
-          transaction.delete(scheduleRef);
+          commitScheduleWrite = () => transaction.delete(scheduleRef);
         }
       }
-      if (command.mutationType === "UPDATE") transaction.set(documentRef, write, { merge: true });
-      else transaction.create(documentRef, write);
       if (projectionContext !== null && ownerProjection !== null) {
         const projectedPlant = projectionPlant(
           command.documentId,
@@ -202,6 +201,9 @@ export class FirestoreMutationStore implements MutationStore {
           { merge: false },
         );
       }
+      commitScheduleWrite?.();
+      if (command.mutationType === "UPDATE") transaction.set(documentRef, write, { merge: true });
+      else transaction.create(documentRef, write);
       transaction.create(operationRef, { ownerUid: command.ownerUid, documentPath: command.documentPath, requestHash: command.requestHash, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: projectionTime });
       return { kind: "applied", revision };
     });

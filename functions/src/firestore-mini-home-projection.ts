@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   Timestamp,
+  type DocumentReference,
   type DocumentSnapshot,
   type Firestore,
   type QueryDocumentSnapshot,
@@ -60,6 +61,13 @@ type CatalogProjection = Readonly<{
   catalog: readonly InventoryCatalogItem[];
   partial: boolean;
   rejectedCount: number;
+}>;
+
+type CatalogPublicationPlan = Readonly<{
+  published: CatalogProjection;
+  projectionRef: DocumentReference | null;
+  immutablePayload: Readonly<Record<string, unknown>> | null;
+  now: Timestamp;
 }>;
 
 type OwnerProjectionDraft = Readonly<{
@@ -332,21 +340,16 @@ export async function readAndRefreshPublishedOwnerProjection(
     now,
   );
   await hooks.afterPointerRead?.(owner.prior?.generation ?? 0);
-  const catalog = await ensureCatalogPublished(
-    transaction,
-    firestore,
-    catalogSource,
-    now,
-  );
   const published = await publishOwnerProjection(
     transaction,
     firestore,
     ownerUid,
     owner.prior,
     owner.draft,
-    catalog,
+    catalogSource,
     now,
   );
+  const catalog = catalogProjectionForPublishedOwner(published, catalogSource);
   return { owner: published, catalog };
 }
 
@@ -360,7 +363,16 @@ export async function publishOwnerProjection(
   now: Timestamp,
   hooks: ProjectionPublishHooks = {},
 ): Promise<PublishedOwnerProjection> {
-  const catalog = await ensureCatalogPublished(transaction, firestore, catalogInput, now);
+  const catalogPlan = await prepareCatalogPublication(
+    transaction,
+    firestore,
+    catalogInput,
+    catalogInput.catalog,
+    catalogInput.partial,
+    catalogInput.rejectedCount,
+    now,
+  );
+  const catalog = catalogPlan.published;
   if (catalog.projectionId === null) projectionMalformed("Catalog projection was not published", "catalogProjectionId");
   const normalizedOwned = [...draft.owned].sort(ownedOrder);
   const normalizedPlants = [...draft.plants].sort((left, right) => left.plantId.localeCompare(right.plantId));
@@ -375,6 +387,7 @@ export async function publishOwnerProjection(
     prior.catalogProjectionId === catalog.projectionId &&
     prior.catalogToken === catalog.token
   ) {
+    await commitCatalogPublication(transaction, firestore, catalogPlan);
     return prior;
   }
   const generation = (prior?.generation ?? 0) + 1;
@@ -394,25 +407,36 @@ export async function publishOwnerProjection(
     partial: catalog.partial || inventory.partial,
   };
   const projectionRef = firestore.doc(`users/${ownerUid}/miniHomeProjections/${projectionId}`);
-  transaction.create(projectionRef, {
-    schemaVersion: PROJECTION_SCHEMA_VERSION,
-    ownerUid,
-    projectionId,
-    generation,
-    projectionToken,
-    catalogProjectionId: catalog.projectionId,
-    catalogToken: catalog.token,
-    layout: draft.layout,
-    owned: normalizedOwned,
-    plants: normalizedPlants,
-    layoutPlacementCount: draft.layout.kind === "present" ? draft.layout.placements.length : 0,
-    ownedCount: normalizedOwned.length,
-    plantCount: normalizedPlants.length,
-    inventoryGeneration,
-    inventorySnapshotHash: inventory.snapshotHash,
-    partial: catalog.partial || inventory.partial,
-    createdAt: now,
-  });
+  const existing = await transaction.get(projectionRef);
+  if (existing.exists) {
+    const parsed = parseOwnerProjectionDocument(existing, ownerUid, projectionId);
+    validateOwnerProjection(parsed, catalog);
+    if (canonicalJson(parsed) !== canonicalJson(published)) {
+      projectionMalformed("Immutable Mini-home projection collides with the candidate", "projection");
+    }
+  }
+  await commitCatalogPublication(transaction, firestore, catalogPlan);
+  if (!existing.exists) {
+    transaction.create(projectionRef, {
+      schemaVersion: PROJECTION_SCHEMA_VERSION,
+      ownerUid,
+      projectionId,
+      generation,
+      projectionToken,
+      catalogProjectionId: catalog.projectionId,
+      catalogToken: catalog.token,
+      layout: draft.layout,
+      owned: normalizedOwned,
+      plants: normalizedPlants,
+      layoutPlacementCount: draft.layout.kind === "present" ? draft.layout.placements.length : 0,
+      ownedCount: normalizedOwned.length,
+      plantCount: normalizedPlants.length,
+      inventoryGeneration,
+      inventorySnapshotHash: inventory.snapshotHash,
+      partial: catalog.partial || inventory.partial,
+      createdAt: now,
+    });
+  }
   await hooks.beforePointerSwap?.(projectionId);
   transaction.set(ownerPointerRef(firestore, ownerUid), {
     schemaVersion: PROJECTION_SCHEMA_VERSION,
@@ -497,7 +521,7 @@ export function projectionSnapshot(
 }
 
 export const MINI_HOME_PROJECTION_MAX_DOCUMENT_READS = 5;
-export const MINI_HOME_PROJECTION_BOOTSTRAP_MAX_DOCUMENT_READS = 429;
+export const MINI_HOME_PROJECTION_BOOTSTRAP_MAX_DOCUMENT_READS = 431;
 
 async function publishCatalogProjection(
   transaction: Transaction,
@@ -509,6 +533,28 @@ async function publishCatalogProjection(
   now: Timestamp,
   hooks: CatalogProjectionRebuildHooks = {},
 ): Promise<CatalogProjection> {
+  const plan = await prepareCatalogPublication(
+    transaction,
+    firestore,
+    prior,
+    catalog,
+    partial,
+    rejectedCount,
+    now,
+  );
+  await commitCatalogPublication(transaction, firestore, plan, hooks);
+  return plan.published;
+}
+
+async function prepareCatalogPublication(
+  transaction: Transaction,
+  firestore: Firestore,
+  prior: CatalogProjection,
+  catalog: readonly InventoryCatalogItem[],
+  partial: boolean,
+  rejectedCount: number,
+  now: Timestamp,
+): Promise<CatalogPublicationPlan> {
   if (catalog.length > MAX_CATALOG_ITEMS) projectionExhausted("Catalog projection exceeds the 100 item bound", "catalog");
   const ordered = [...catalog].sort(catalogOrder);
   if (
@@ -518,48 +564,99 @@ async function publishCatalogProjection(
     projectionMalformed("Catalog rejection metadata is malformed", "rejectedCount");
   }
   const token = catalogToken(ordered, partial, rejectedCount);
-  if (prior.projectionId !== null && prior.token === token) return prior;
+  if (prior.projectionId !== null && prior.token === token) {
+    return { published: prior, projectionRef: null, immutablePayload: null, now };
+  }
   const generation = prior.generation + 1;
   const projectionId = `${generation}-${token}`;
-  transaction.create(firestore.doc(`catalogProjections/${projectionId}`), {
-    schemaVersion: CATALOG_PROJECTION_SCHEMA_VERSION,
-    projectionId,
-    generation,
-    catalogToken: token,
-    itemCount: ordered.length,
-    rejectedCount,
-    partial,
-    catalog: ordered.map((item) => ({
-      itemId: item.itemId,
-      name: item.name,
-      description: item.description,
-      category: item.category,
-      assetPath: item.mediaIdentity.path,
-      assetSha256: item.mediaIdentity.sha256,
-      assetByteSize: item.mediaIdentity.byteSize,
-      assetContentType: item.mediaIdentity.mimeType,
-      assetWidth: item.mediaIdentity.width,
-      assetHeight: item.mediaIdentity.height,
-      assetMediaRevision: item.mediaIdentity.mediaRevision,
-      acquisitionCondition: item.acquisitionCondition,
-      publicationState: "PUBLIC",
-      revision: item.revision,
-      updatedAt: Timestamp.fromMillis(item.updatedAtEpochMillis),
-    })),
-    createdAt: now,
-  });
-  await hooks.beforePointerSwap?.(projectionId);
+  const published = { projectionId, generation, token, catalog: ordered, partial, rejectedCount };
+  const projectionRef = firestore.doc(`catalogProjections/${projectionId}`);
+  const existing = await transaction.get(projectionRef);
+  if (existing.exists) {
+    const parsed = parseCatalogProjectionDocument(existing, projectionId);
+    if (
+      parsed.generation !== generation ||
+      parsed.token !== token ||
+      parsed.partial !== partial ||
+      parsed.rejectedCount !== rejectedCount ||
+      canonicalJson(parsed.catalog) !== canonicalJson(ordered)
+    ) {
+      projectionMalformed("Immutable catalog projection collides with the candidate", "catalogProjection");
+    }
+  }
+  return {
+    published,
+    projectionRef,
+    immutablePayload: existing.exists ? null : {
+      schemaVersion: CATALOG_PROJECTION_SCHEMA_VERSION,
+      projectionId,
+      generation,
+      catalogToken: token,
+      itemCount: ordered.length,
+      rejectedCount,
+      partial,
+      catalog: ordered.map((item) => ({
+        itemId: item.itemId,
+        name: item.name,
+        description: item.description,
+        category: item.category,
+        assetPath: item.mediaIdentity.path,
+        assetSha256: item.mediaIdentity.sha256,
+        assetByteSize: item.mediaIdentity.byteSize,
+        assetContentType: item.mediaIdentity.mimeType,
+        assetWidth: item.mediaIdentity.width,
+        assetHeight: item.mediaIdentity.height,
+        assetMediaRevision: item.mediaIdentity.mediaRevision,
+        acquisitionCondition: item.acquisitionCondition,
+        publicationState: "PUBLIC",
+        revision: item.revision,
+        updatedAt: Timestamp.fromMillis(item.updatedAtEpochMillis),
+      })),
+      createdAt: now,
+    },
+    now,
+  };
+}
+
+async function commitCatalogPublication(
+  transaction: Transaction,
+  firestore: Firestore,
+  plan: CatalogPublicationPlan,
+  hooks: CatalogProjectionRebuildHooks = {},
+): Promise<void> {
+  if (plan.projectionRef === null || plan.published.projectionId === null) return;
+  if (plan.immutablePayload !== null) transaction.create(plan.projectionRef, plan.immutablePayload);
+  await hooks.beforePointerSwap?.(plan.published.projectionId);
   transaction.set(firestore.doc("catalogProjectionPointers/current"), {
     schemaVersion: CATALOG_PROJECTION_SCHEMA_VERSION,
-    projectionId,
-    generation,
-    catalogToken: token,
-    itemCount: ordered.length,
-    rejectedCount,
-    partial,
-    updatedAt: now,
+    projectionId: plan.published.projectionId,
+    generation: plan.published.generation,
+    catalogToken: plan.published.token,
+    itemCount: plan.published.catalog.length,
+    rejectedCount: plan.published.rejectedCount,
+    partial: plan.published.partial,
+    updatedAt: plan.now,
   }, { merge: false });
-  return { projectionId, generation, token, catalog: ordered, partial, rejectedCount };
+}
+
+export function catalogProjectionForPublishedOwner(
+  owner: PublishedOwnerProjection,
+  source: CatalogProjection,
+): CatalogProjection {
+  const separator = owner.catalogProjectionId.indexOf("-");
+  const generation = Number(owner.catalogProjectionId.slice(0, separator));
+  if (
+    !Number.isSafeInteger(generation) || generation < 1 ||
+    owner.catalogProjectionId !== `${generation}-${owner.catalogToken}`
+  ) {
+    projectionMalformed("Published owner catalog identity is malformed", "catalogProjectionId");
+  }
+  return {
+    ...source,
+    projectionId: owner.catalogProjectionId,
+    generation,
+    token: owner.catalogToken,
+  };
 }
 
 function catalogPointerState(pointer: DocumentSnapshot): CatalogProjection {
@@ -666,6 +763,26 @@ async function readOwnerFromPointer(
   const document = await transaction.get(
     firestore.doc(`users/${ownerUid}/miniHomeProjections/${projectionId}`),
   );
+  const parsed = parseOwnerProjectionDocument(document, ownerUid, projectionId);
+  if (
+    pointer.get("schemaVersion") !== PROJECTION_SCHEMA_VERSION ||
+    pointer.get("ownerUid") !== ownerUid ||
+    pointer.get("projectionId") !== projectionId ||
+    pointer.get("generation") !== parsed.generation ||
+    pointer.get("projectionToken") !== parsed.token ||
+    pointer.get("catalogProjectionId") !== parsed.catalogProjectionId ||
+    pointer.get("catalogToken") !== parsed.catalogToken
+  ) {
+    projectionMalformed("Mini-home projection pointer is torn", "projectionPointer");
+  }
+  return parsed;
+}
+
+function parseOwnerProjectionDocument(
+  document: DocumentSnapshot,
+  ownerUid: string,
+  projectionId: string,
+): PublishedOwnerProjection {
   if (!document.exists) projectionMalformed("Mini-home projection document is missing", "projection");
   const generation = positiveInteger(document.get("generation"), "projectionGeneration");
   const token = requireHash(document.get("projectionToken"), "projectionToken");
@@ -687,22 +804,12 @@ async function readOwnerFromPointer(
     document.get("schemaVersion") !== PROJECTION_SCHEMA_VERSION ||
     document.get("ownerUid") !== ownerUid ||
     document.get("projectionId") !== projectionId ||
+    projectionId !== `${generation}-${token}` ||
     document.get("layoutPlacementCount") !== placementCount ||
     document.get("ownedCount") !== owned.length ||
     document.get("plantCount") !== plants.length
   ) {
-    projectionMalformed("Mini-home projection count or owner is corrupt", "projection");
-  }
-  if (
-    pointer.get("schemaVersion") !== PROJECTION_SCHEMA_VERSION ||
-    pointer.get("ownerUid") !== ownerUid ||
-    pointer.get("projectionId") !== projectionId ||
-    pointer.get("generation") !== generation ||
-    pointer.get("projectionToken") !== token ||
-    pointer.get("catalogProjectionId") !== catalogProjectionId ||
-    pointer.get("catalogToken") !== catalogTokenValue
-  ) {
-    projectionMalformed("Mini-home projection pointer is torn", "projectionPointer");
+    projectionMalformed("Mini-home projection count, identity, or owner is corrupt", "projection");
   }
   return {
     projectionId,

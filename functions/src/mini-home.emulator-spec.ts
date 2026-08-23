@@ -455,7 +455,7 @@ async function clear(firestore: ReturnType<typeof getFirestore>): Promise<void> 
     await Promise.all(snapshot.docs.map((document) => document.ref.delete()));
   }
   await firestore.doc("users/user-a").delete();
-  await firestore.recursiveDelete(firestore.collection("shopItems"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjectionPointers"));
   await firestore.recursiveDelete(firestore.collection("catalogProjections"));
+  await firestore.doc("catalogProjectionPointers/current").delete();
+  await firestore.recursiveDelete(firestore.collection("shopItems"));
 }

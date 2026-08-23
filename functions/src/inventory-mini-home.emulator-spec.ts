@@ -240,7 +240,7 @@ async function seedItem(
 
 async function clear(firestore: ReturnType<typeof getFirestore>) {
   await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("shopItems"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjectionPointers"));
   await firestore.recursiveDelete(firestore.collection("catalogProjections"));
+  await firestore.doc("catalogProjectionPointers/current").delete();
+  await firestore.recursiveDelete(firestore.collection("shopItems"));
 }

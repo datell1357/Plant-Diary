@@ -32,8 +32,8 @@ test("catalog create update and delete triggers publish and snapshot load rebind
     created.close();
     assertProjection(createPointer, 1, 0, false);
 
-    await firestore.recursiveDelete(firestore.collection("catalogProjectionPointers"));
     await firestore.recursiveDelete(firestore.collection("catalogProjections"));
+    await pointerRef.delete();
     const before = await loadSnapshot(firestore);
     assert.equal((await pointerRef.get()).exists, true);
     assert.equal(before.inventory.catalog[0]?.revision, 1);
@@ -219,7 +219,7 @@ test("rebuild retries against source changes and concurrent or old events conver
     const stableToken = after.get("catalogToken");
     await firestore.doc("shopItems/race-a").set(catalogItem("race-a", 2, "latest"));
     await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
-    await Promise.all(Array.from({ length: 8 }, () =>
+    await Promise.all(Array.from({ length: 32 }, () =>
       new FirestoreCatalogProjectionStore(firestore, () => at).rebuild(),
     ));
     await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
@@ -230,12 +230,112 @@ test("rebuild retries against source changes and concurrent or old events conver
       (await firestore.collection("catalogProjections").where("catalogToken", "==", stableToken).get()).size,
       1,
     );
+    await verifyExactCatalogOrphanReuse();
+    await verifyCorruptCatalogOrphanRejection();
+    await verifyStaleCleanupOrdering();
   } finally {
     release?.();
     await clearCatalog(firestore);
     await deleteApp(app);
   }
 });
+
+async function verifyExactCatalogOrphanReuse(): Promise<void> {
+  const app = initializeApp({ projectId }, "catalog-orphan-reuse");
+  const firestore = getFirestore(app);
+  const pointerRef = firestore.doc(pointerPath);
+  try {
+    await clearCatalog(firestore);
+    const published = exactDocument(pointerRef, (snapshot) =>
+      snapshot.exists && snapshot.get("itemCount") === 1,
+    );
+    await published.ready;
+    await firestore.doc("shopItems/orphan-a").set(catalogItem("orphan-a", 1));
+    const originalPointer = await published.value;
+    published.close();
+    const projectionId = originalPointer.get("projectionId") as string;
+    const projectionRef = firestore.doc(`catalogProjections/${projectionId}`);
+    const originalProjection = await projectionRef.get();
+
+    await pointerRef.delete();
+    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+
+    const repaired = await pointerRef.get();
+    assert.equal(repaired.get("projectionId"), projectionId);
+    assert.equal(repaired.get("generation"), 1);
+    assert.deepEqual((await projectionRef.get()).data(), originalProjection.data());
+    assert.equal((await firestore.collection("catalogProjections").get()).size, 1);
+  } finally {
+    await clearCatalog(firestore);
+    await deleteApp(app);
+  }
+}
+
+async function verifyCorruptCatalogOrphanRejection(): Promise<void> {
+  const app = initializeApp({ projectId }, "catalog-orphan-corrupt");
+  const firestore = getFirestore(app);
+  const pointerRef = firestore.doc(pointerPath);
+  try {
+    await clearCatalog(firestore);
+    const published = exactDocument(pointerRef, (snapshot) =>
+      snapshot.exists && snapshot.get("itemCount") === 1,
+    );
+    await published.ready;
+    await firestore.doc("shopItems/orphan-corrupt").set(catalogItem("orphan-corrupt", 1));
+    const pointer = await published.value;
+    published.close();
+    const projectionRef = firestore.doc(`catalogProjections/${pointer.get("projectionId") as string}`);
+    const projection = await projectionRef.get();
+    const projectionData = projection.data();
+    assert.ok(projectionData);
+    await projectionRef.set({ ...projectionData, itemCount: 99 });
+    await pointerRef.delete();
+
+    await assert.rejects(
+      () => new FirestoreCatalogProjectionStore(firestore, () => at).rebuild(),
+      (error: unknown) =>
+        error instanceof Error && "code" in error && error.code === "data-loss",
+    );
+    assert.equal((await pointerRef.get()).exists, false);
+  } finally {
+    await clearCatalog(firestore);
+    await deleteApp(app);
+  }
+}
+
+async function verifyStaleCleanupOrdering(): Promise<void> {
+  const app = initializeApp({ projectId }, "catalog-cleanup-ordering");
+  const firestore = getFirestore(app);
+  const pointerRef = firestore.doc(pointerPath);
+  try {
+    await clearCatalog(firestore);
+    const staleProjectionQuery = await firestore.collection("catalogProjections").get();
+    await Promise.all(staleProjectionQuery.docs.map((document) => document.ref.delete()));
+    await pointerRef.delete();
+    const triggerCommitted = exactDocument(pointerRef, (snapshot) =>
+      snapshot.exists && snapshot.get("itemCount") === 1,
+    );
+    await triggerCommitted.ready;
+    await firestore.doc("shopItems/ordered-race").set(catalogItem("ordered-race", 1));
+    const triggerPointer = await triggerCommitted.value;
+    triggerCommitted.close();
+    const orphanId = triggerPointer.get("projectionId") as string;
+
+    await pointerRef.delete();
+    await Promise.all(staleProjectionQuery.docs.map((document) => document.ref.delete()));
+    assert.equal((await pointerRef.get()).exists, false);
+    assert.equal((await firestore.doc(`catalogProjections/${orphanId}`).get()).exists, true);
+
+    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+    const repaired = await pointerRef.get();
+    assert.equal(repaired.get("projectionId"), orphanId);
+    assert.equal(repaired.get("generation"), 1);
+    assert.equal((await firestore.collection("catalogProjections").get()).size, 1);
+  } finally {
+    await clearCatalog(firestore);
+    await deleteApp(app);
+  }
+}
 
 test("pointer-missing rebuild bootstraps up to one hundred items and rejects the one hundred first", async () => {
   const app = initializeApp({ projectId }, "catalog-trigger-bound");
@@ -362,8 +462,7 @@ async function loadSnapshot(firestore: ReturnType<typeof getFirestore>) {
 
 async function clearCatalog(firestore: ReturnType<typeof getFirestore>): Promise<void> {
   await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("shopItems"));
-  await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
-  await firestore.recursiveDelete(firestore.collection("catalogProjectionPointers"));
   await firestore.recursiveDelete(firestore.collection("catalogProjections"));
+  await firestore.doc(pointerPath).delete();
+  await firestore.recursiveDelete(firestore.collection("shopItems"));
 }

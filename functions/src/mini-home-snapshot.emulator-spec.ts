@@ -125,11 +125,69 @@ test("published projection is immutable and a missing owner pointer bootstraps f
     assert.equal(bootstrapped.layout.kind, "present");
     if (bootstrapped.layout.kind === "present") assert.equal(bootstrapped.layout.revision, 2);
     assert.equal((await pointerRef.get()).exists, true);
+    await verifyExactOwnerOrphanReuse();
+    await verifyCorruptOwnerOrphanRejection();
   } finally {
     await clear(firestore);
     await deleteApp(app);
   }
 });
+
+async function verifyExactOwnerOrphanReuse(): Promise<void> {
+  const app = initializeApp({ projectId }, "owner-orphan-reuse");
+  const firestore = getFirestore(app);
+  const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
+  try {
+    await clear(firestore);
+    const store = new FirestoreMiniHomeSnapshotStore(firestore, { now: () => at });
+    const original = await executeLoadMiniHomeSnapshot({ uid: ownerUid }, readRequest, store);
+    const pointer = await pointerRef.get();
+    const projectionId = pointer.get("projectionId") as string;
+    const projectionRef = firestore.doc(`users/${ownerUid}/miniHomeProjections/${projectionId}`);
+    const originalProjection = await projectionRef.get();
+
+    await pointerRef.delete();
+    const repaired = await executeLoadMiniHomeSnapshot({ uid: ownerUid }, readRequest, store);
+
+    assert.equal(repaired.snapshotToken, original.snapshotToken);
+    assert.equal(repaired.snapshotGeneration, 1);
+    assert.equal((await pointerRef.get()).get("projectionId"), projectionId);
+    assert.deepEqual((await projectionRef.get()).data(), originalProjection.data());
+    assert.equal((await firestore.collection(`users/${ownerUid}/miniHomeProjections`).get()).size, 1);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+}
+
+async function verifyCorruptOwnerOrphanRejection(): Promise<void> {
+  const app = initializeApp({ projectId }, "owner-orphan-corrupt");
+  const firestore = getFirestore(app);
+  const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
+  try {
+    await clear(firestore);
+    const store = new FirestoreMiniHomeSnapshotStore(firestore, { now: () => at });
+    await executeLoadMiniHomeSnapshot({ uid: ownerUid }, readRequest, store);
+    const pointer = await pointerRef.get();
+    const projectionRef = firestore.doc(
+      `users/${ownerUid}/miniHomeProjections/${pointer.get("projectionId") as string}`,
+    );
+    const projection = await projectionRef.get();
+    const projectionData = projection.data();
+    assert.ok(projectionData);
+    await projectionRef.set({ ...projectionData, plantCount: 99 });
+    await pointerRef.delete();
+
+    await assert.rejects(
+      () => executeLoadMiniHomeSnapshot({ uid: ownerUid }, readRequest, store),
+      (error: unknown) => error instanceof MiniHomeSnapshotError && error.code === "data-loss",
+    );
+    assert.equal((await pointerRef.get()).exists, false);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+}
 
 test("projection pointer count and digest corruption fail closed", async () => {
   const app = initializeApp({ projectId }, "mini-home-projection-corruption");
@@ -391,7 +449,7 @@ async function seedItem(firestore: ReturnType<typeof getFirestore>, itemId: stri
 
 async function clear(firestore: ReturnType<typeof getFirestore>) {
   await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("shopItems"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjectionPointers"));
   await firestore.recursiveDelete(firestore.collection("catalogProjections"));
+  await firestore.doc("catalogProjectionPointers/current").delete();
+  await firestore.recursiveDelete(firestore.collection("shopItems"));
 }

@@ -263,15 +263,6 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         const projectedOwned = allOwned.docs.map((document) => {
           const owned = ownedItemState(document, command.ownerUid);
           const desired = currentHome.exists && appliedItemIds.has(document.id);
-          if (owned.applied !== desired) {
-            transaction.update(document.ref, {
-              applied: desired,
-              revision: owned.revision + 1,
-              expectedRevision: owned.revision,
-              idempotencyKey: command.idempotencyKey,
-              updatedAt: projectionTime,
-            });
-          }
           return {
             ...projectionOwnedItem(document, command.ownerUid),
             applied: desired,
@@ -292,6 +283,19 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
           projectionTime,
           this.readHooks,
         );
+        allOwned.docs.forEach((document) => {
+          const owned = ownedItemState(document, command.ownerUid);
+          const desired = currentHome.exists && appliedItemIds.has(document.id);
+          if (owned.applied !== desired) {
+            transaction.update(document.ref, {
+              applied: desired,
+              revision: owned.revision + 1,
+              expectedRevision: owned.revision,
+              idempotencyKey: command.idempotencyKey,
+              updatedAt: projectionTime,
+            });
+          }
+        });
         transaction.set(
           inventoryStateRef,
           {
@@ -452,61 +456,11 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         ownerProjection.prior?.layout.generation ?? 0,
       );
       const generation = projectionBaseGeneration + 1;
-      transaction.set(homeRef, {
-        ownerUid: command.ownerUid,
-        name: command.name,
-        placedPlantCount: command.placements.filter((placement) => placement.plantId !== null).length,
-        placementCount: command.placements.length,
-        placementIds: command.placements.map((placement) => placement.placementId),
-        revision,
-        expectedRevision: actualRevision,
-        idempotencyKey: command.idempotencyKey,
-        requestHash: command.requestHash,
-        updatedAt: projectionTime,
-      }, { merge: false });
-      transaction.set(stateRef, {
-        ownerUid: command.ownerUid,
-        state: "ACTIVE",
-        miniHomeId: command.miniHomeId,
-        layoutRevision: revision,
-        requestHash: command.requestHash,
-        tombstoneId: null,
-        revision: generation,
-        expectedRevision: projectionBaseGeneration,
-        idempotencyKey: command.idempotencyKey,
-        updatedAt: projectionTime,
-      }, { merge: false });
-      previousPlacements.docs.forEach((document) => transaction.delete(document.ref));
-      command.placements.forEach((placement) => {
-        transaction.set(this.firestore.doc(`${ownerRoot}/placements/${placement.placementId}`), {
-          ownerUid: command.ownerUid,
-          miniHomeId: command.miniHomeId,
-          layoutRevision: revision,
-          plantId: placement.plantId,
-          itemId: placement.itemId,
-          normalizedX: placement.normalizedX,
-          normalizedY: placement.normalizedY,
-          zIndex: placement.zIndex,
-          revision,
-          expectedRevision: actualRevision,
-          idempotencyKey: command.idempotencyKey,
-          updatedAt: projectionTime,
-        }, { merge: false });
-      });
       const appliedItemIds = new Set(
         command.placements.flatMap((placement) => placement.itemId === null ? [] : [placement.itemId]),
       );
       const projectedOwned = ownedStates.map(({ document, state: owned }) => {
         const desired = appliedItemIds.has(document.id);
-        if (owned.applied !== desired) {
-          transaction.update(document.ref, {
-            applied: desired,
-            revision: owned.revision + 1,
-            expectedRevision: owned.revision,
-            idempotencyKey: command.idempotencyKey,
-            updatedAt: projectionTime,
-          });
-        }
         return {
           ...projectionOwnedItem(document, command.ownerUid),
           applied: desired,
@@ -556,6 +510,59 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         projectionTime,
         this.readHooks,
       );
+      transaction.set(homeRef, {
+        ownerUid: command.ownerUid,
+        name: command.name,
+        placedPlantCount: command.placements.filter((placement) => placement.plantId !== null).length,
+        placementCount: command.placements.length,
+        placementIds: command.placements.map((placement) => placement.placementId),
+        revision,
+        expectedRevision: actualRevision,
+        idempotencyKey: command.idempotencyKey,
+        requestHash: command.requestHash,
+        updatedAt: projectionTime,
+      }, { merge: false });
+      transaction.set(stateRef, {
+        ownerUid: command.ownerUid,
+        state: "ACTIVE",
+        miniHomeId: command.miniHomeId,
+        layoutRevision: revision,
+        requestHash: command.requestHash,
+        tombstoneId: null,
+        revision: generation,
+        expectedRevision: projectionBaseGeneration,
+        idempotencyKey: command.idempotencyKey,
+        updatedAt: projectionTime,
+      }, { merge: false });
+      previousPlacements.docs.forEach((document) => transaction.delete(document.ref));
+      command.placements.forEach((placement) => {
+        transaction.set(this.firestore.doc(`${ownerRoot}/placements/${placement.placementId}`), {
+          ownerUid: command.ownerUid,
+          miniHomeId: command.miniHomeId,
+          layoutRevision: revision,
+          plantId: placement.plantId,
+          itemId: placement.itemId,
+          normalizedX: placement.normalizedX,
+          normalizedY: placement.normalizedY,
+          zIndex: placement.zIndex,
+          revision,
+          expectedRevision: actualRevision,
+          idempotencyKey: command.idempotencyKey,
+          updatedAt: projectionTime,
+        }, { merge: false });
+      });
+      ownedStates.forEach(({ document, state: owned }) => {
+        const desired = appliedItemIds.has(document.id);
+        if (owned.applied !== desired) {
+          transaction.update(document.ref, {
+            applied: desired,
+            revision: owned.revision + 1,
+            expectedRevision: owned.revision,
+            idempotencyKey: command.idempotencyKey,
+            updatedAt: projectionTime,
+          });
+        }
+      });
       transaction.set(
         inventoryStateRef,
         {
@@ -613,22 +620,11 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         ? authoritativeState(state, command.ownerUid)
         : null;
       if (replay?.state === "DELETED" && replay.tombstoneId === command.tombstoneId) {
-        const projectedOwned = ownedStates.map(({ document, state: owned }) => {
-          if (owned.applied) {
-            transaction.update(document.ref, {
-              applied: false,
-              revision: owned.revision + 1,
-              expectedRevision: owned.revision,
-              idempotencyKey: command.tombstoneId,
-              updatedAt: projectionTime,
-            });
-          }
-          return {
-            ...projectionOwnedItem(document, command.ownerUid),
-            applied: false,
-            revision: owned.applied ? owned.revision + 1 : owned.revision,
-          };
-        });
+        const projectedOwned = ownedStates.map(({ document, state: owned }) => ({
+          ...projectionOwnedItem(document, command.ownerUid),
+          applied: false,
+          revision: owned.applied ? owned.revision + 1 : owned.revision,
+        }));
         const published = await publishOwnerProjection(
           transaction,
           this.firestore,
@@ -649,6 +645,17 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
           projectionTime,
           this.readHooks,
         );
+        ownedStates.forEach(({ document, state: owned }) => {
+          if (owned.applied) {
+            transaction.update(document.ref, {
+              applied: false,
+              revision: owned.revision + 1,
+              expectedRevision: owned.revision,
+              idempotencyKey: command.tombstoneId,
+              updatedAt: projectionTime,
+            });
+          }
+        });
         transaction.set(inventoryStateRef, {
           ownerUid: command.ownerUid,
           generation: published.inventoryGeneration,
@@ -685,36 +692,11 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         );
       }
       const generation = projectionBaseGeneration + 1;
-      homes.docs.forEach((document) => transaction.delete(document.ref));
-      placements.docs.forEach((document) => transaction.delete(document.ref));
-      const projectedOwned = ownedStates.map(({ document, state: owned }) => {
-        if (owned.applied) {
-          transaction.update(document.ref, {
-            applied: false,
-            revision: owned.revision + 1,
-            expectedRevision: owned.revision,
-            idempotencyKey: command.tombstoneId,
-            updatedAt: projectionTime,
-          });
-        }
-        return {
-          ...projectionOwnedItem(document, command.ownerUid),
-          applied: false,
-          revision: owned.applied ? owned.revision + 1 : owned.revision,
-        };
-      });
-      transaction.set(stateRef, {
-        ownerUid: command.ownerUid,
-        state: "DELETED",
-        miniHomeId: null,
-        layoutRevision: null,
-        requestHash: null,
-        tombstoneId: command.tombstoneId,
-        revision: generation,
-        expectedRevision: projectionBaseGeneration,
-        idempotencyKey: command.tombstoneId,
-        updatedAt: projectionTime,
-      }, { merge: false });
+      const projectedOwned = ownedStates.map(({ document, state: owned }) => ({
+        ...projectionOwnedItem(document, command.ownerUid),
+        applied: false,
+        revision: owned.applied ? owned.revision + 1 : owned.revision,
+      }));
       const published = await publishOwnerProjection(
         transaction,
         this.firestore,
@@ -735,6 +717,31 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
         projectionTime,
         this.readHooks,
       );
+      homes.docs.forEach((document) => transaction.delete(document.ref));
+      placements.docs.forEach((document) => transaction.delete(document.ref));
+      ownedStates.forEach(({ document, state: owned }) => {
+        if (owned.applied) {
+          transaction.update(document.ref, {
+            applied: false,
+            revision: owned.revision + 1,
+            expectedRevision: owned.revision,
+            idempotencyKey: command.tombstoneId,
+            updatedAt: projectionTime,
+          });
+        }
+      });
+      transaction.set(stateRef, {
+        ownerUid: command.ownerUid,
+        state: "DELETED",
+        miniHomeId: null,
+        layoutRevision: null,
+        requestHash: null,
+        tombstoneId: command.tombstoneId,
+        revision: generation,
+        expectedRevision: projectionBaseGeneration,
+        idempotencyKey: command.tombstoneId,
+        updatedAt: projectionTime,
+      }, { merge: false });
       transaction.set(inventoryStateRef, {
         ownerUid: command.ownerUid,
         generation: published.inventoryGeneration,
