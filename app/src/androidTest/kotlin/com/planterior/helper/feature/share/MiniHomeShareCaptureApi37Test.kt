@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -28,11 +29,13 @@ import com.planterior.helper.feature.minihome.MiniHomePlantChoice
 import com.planterior.helper.feature.minihome.MiniHomeZIndex
 import com.planterior.helper.feature.minihome.PlaceholderMiniHomePhotoLoader
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -112,17 +115,35 @@ class MiniHomeShareCaptureApi37Test {
     fun privatePhotoCompletionCannotChangeExportBytesOrInvokeTheLoader() {
         val loader = ControlledPhotoLoader()
         val handle = mountCaptureSurface(loader)
-
-        val beforeCompletion = runBlocking {
+        val captured = runBlocking {
             handle.awaitRecorded(token)
-            handle.encode(token)
+            // This is the sole GraphicsLayer readback. Keep this immutable capture for every later encode.
+            handle.layer.toImageBitmap()
         }
-        compose.runOnIdle { loader.complete() }
-        compose.waitForIdle()
-        val afterCompletion = runBlocking { handle.encode(token) }
+        val capturedBitmap = captured.asAndroidBitmap()
 
-        assertArrayEquals(beforeCompletion, afterCompletion)
-        assertEquals(0, loader.calls.get())
+        try {
+            assertEquals(0, loader.calls.get())
+            compose.runOnIdle { assertTrue(loader.complete()) }
+            compose.waitForIdle()
+            assertEquals(0, loader.calls.get())
+
+            val first = MiniHomeShareImageEncoder.encode(captured)
+            val second = MiniHomeShareImageEncoder.encode(captured)
+            assertArrayEquals(first, second)
+
+            val decoded = BitmapFactory.decodeByteArray(first, 0, first.size)
+            try {
+                assertEquals(MiniHomeShareImage.WIDTH_PX, decoded.width)
+                assertEquals(MiniHomeShareImage.HEIGHT_PX, decoded.height)
+                assertPngHasNoMetadata(first)
+            } finally {
+                decoded.recycle()
+            }
+        } finally {
+            capturedBitmap.recycle()
+            loader.recycleIfNotDelivered()
+        }
     }
 
     @Test
@@ -175,6 +196,7 @@ class MiniHomeShareCaptureApi37Test {
 
     private class ControlledPhotoLoader : MiniHomePhotoLoader {
         val calls = AtomicInteger()
+        private val delivered = AtomicBoolean()
         private val bitmap =
             Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
                 eraseColor(Color.MAGENTA)
@@ -183,11 +205,38 @@ class MiniHomeShareCaptureApi37Test {
 
         override suspend fun load(request: MiniHomePhotoRequest): Bitmap {
             calls.incrementAndGet()
-            return result.await()
+            return result.await().also { delivered.set(true) }
         }
 
-        fun complete() {
-            result.complete(bitmap)
+        fun complete(): Boolean = result.complete(bitmap)
+
+        fun recycleIfNotDelivered() {
+            if (!delivered.get()) bitmap.recycle()
         }
+    }
+
+    private fun assertPngHasNoMetadata(bytes: ByteArray) {
+        val chunks = pngChunkTypes(bytes)
+        assertFalse("eXIf must not be present", "eXIf" in chunks)
+        assertFalse("tEXt must not be present", "tEXt" in chunks)
+        assertFalse("iTXt must not be present", "iTXt" in chunks)
+        assertFalse("zTXt must not be present", "zTXt" in chunks)
+        assertFalse("tIME must not be present", "tIME" in chunks)
+        assertFalse("iCCP must not be present", "iCCP" in chunks)
+    }
+
+    private fun pngChunkTypes(bytes: ByteArray): Set<String> {
+        val types = mutableSetOf<String>()
+        var offset = 8
+        while (offset + 8 <= bytes.size) {
+            val length =
+                ((bytes[offset].toInt() and 0xFF) shl 24) or
+                    ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+                    ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+                    (bytes[offset + 3].toInt() and 0xFF)
+            types += String(bytes, offset + 4, 4, Charsets.US_ASCII)
+            offset += 12 + length
+        }
+        return types
     }
 }
