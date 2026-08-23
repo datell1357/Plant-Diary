@@ -8,6 +8,8 @@
 local.properties
 *.iml
 captures/
+__pycache__/
+*.pyc
 *.jks
 *.keystore
 # Local Firebase Emulator Suite artifacts
