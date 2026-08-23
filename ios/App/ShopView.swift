@@ -6,54 +6,84 @@ import SwiftUI
 struct ShopView: View {
     @Environment(\.sizeCategory) private var sizeCategory
     let entries: [InventoryCatalogEntry]
-    let hasMore: Bool
-    let loadMore: () -> Void
     let acquire: (ShopItem) -> Void
     let showDetail: (ShopItem) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
-            if !entries.isEmpty {
-                Text("공개 아이템 \(entries.count)개")
-                    .font(PlanteriorTypography.caption)
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .accessibilityIdentifier("shop.ready")
-            }
+        Group {
             if entries.isEmpty {
                 Text("조건에 맞는 공개 아이템이 없어요.")
                     .font(PlanteriorTypography.supporting)
                     .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .padding(.horizontal, PlanteriorSpacing.extraLarge)
                     .accessibilityIdentifier("shop.empty")
             } else {
-                LazyVGrid(columns: columns, spacing: PlanteriorSpacing.medium) {
+                LazyVGrid(
+                    columns: columns,
+                    alignment: .leading,
+                    spacing: 12
+                ) {
                     ForEach(entries, id: \.item.id) { entry in
                         shopCard(entry)
                     }
                 }
-                if hasMore {
-                    PlanteriorSecondaryButton("더 보기", action: loadMore)
-                        .accessibilityIdentifier("shop.load-more")
-                }
+                .padding(.horizontal, PlanteriorSpacing.large)
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("shop.screen")
+        .accessibilityLabel("아이템 상점 상품 목록")
+        .accessibilityIdentifier("shop.ready")
     }
 
     private var columns: [GridItem] {
-        let count = sizeCategory.isAccessibilityCategory ? 1 : 2
+        if sizeCategory.isAccessibilityCategory {
+            return [GridItem(.flexible())]
+        }
         return Array(
-            repeating: GridItem(.flexible(), spacing: PlanteriorSpacing.medium),
-            count: count
+            repeating: GridItem(.fixed(173), spacing: 12),
+            count: 2
         )
     }
 
     private func shopCard(_ entry: InventoryCatalogEntry) -> some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-            shopItemButton(entry)
-            acquireButton(entry)
+        VStack(alignment: .leading, spacing: 3) {
+            Button {
+                showDetail(entry.item)
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Image(StorageItemPresentation.asset(for: entry.item))
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 153, height: 110)
+                        .clipped()
+                        .background(PlanteriorPalette.subtle.color)
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
+                        )
+                        .accessibilityLabel("\(entry.item.name) 이미지")
+                        .accessibilityIdentifier(
+                            "shop.image.\(entry.item.id.rawValue)"
+                        )
+                    Text(entry.item.name)
+                        .font(PlanteriorTypography.cardTitle)
+                        .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("shop.row.\(entry.item.id.rawValue)")
+            .accessibilityLabel(entry.item.name)
+            .accessibilityValue(
+                "\(StorageItemPresentation.categoryName(entry.item.category)), " +
+                    eligibilityText(entry)
+            )
+
+            acquireStatus(entry)
         }
-        .padding(PlanteriorSpacing.small)
+        .padding(9)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(PlanteriorPalette.surface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .overlay {
@@ -63,81 +93,90 @@ struct ShopView: View {
                     lineWidth: PlanteriorControl.hairline
                 )
         }
+        .frame(maxWidth: sizeCategory.isAccessibilityCategory ? .infinity : 173)
+        .frame(height: 180)
+        .overlay(alignment: .topLeading) {
+            promotionalBadge(entry)
+                .padding(.leading, PlanteriorSpacing.large)
+                .padding(.top, 96)
+        }
     }
 
-    private func shopItemButton(
+    private func acquireStatus(
         _ entry: InventoryCatalogEntry
     ) -> some View {
         Button {
-            showDetail(entry.item)
+            acquire(entry.item)
         } label: {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                Image(StorageItemPresentation.asset(for: entry.item))
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity)
-                    .aspectRatio(4 / 3, contentMode: .fit)
-                    .background(PlanteriorPalette.subtle.color)
-                    .clipShape(
-                        RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-                    )
-                    .accessibilityLabel("\(entry.item.name) 이미지")
-                    .accessibilityIdentifier(
-                        "shop.image.\(entry.item.id.rawValue)"
-                    )
-                Text(entry.item.name)
-                    .font(PlanteriorTypography.cardTitle)
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                PlanteriorStatusPill(
-                    LocalizedStringKey(statusText(entry)),
-                    variant: statusVariant(entry.eligibility)
-                )
-            }
+            Text(eligibilityText(entry))
+                .font(PlanteriorTypography.microLabel)
+                .lineLimit(1)
+                .foregroundStyle(statusForeground(entry))
+                .padding(.horizontal, PlanteriorSpacing.small)
+                .frame(height: 20)
+                .background(statusBackground(entry))
+                .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("shop.row.\(entry.item.id.rawValue)")
-        .accessibilityLabel(entry.item.name)
-        .accessibilityValue(
-            "\(StorageItemPresentation.categoryName(entry.item.category)), " +
-                statusText(entry)
+        .frame(
+            minWidth: PlanteriorControl.minimumTarget,
+            minHeight: PlanteriorControl.minimumTarget
         )
+        .contentShape(Rectangle())
+        .padding(.vertical, -12)
+        .disabled(entry.eligibility != .eligible)
+        .accessibilityIdentifier(
+            "shop.acquire.\(entry.item.id.rawValue)"
+        )
+        .accessibilityLabel("\(entry.item.name) 획득")
+        .accessibilityValue(eligibilityText(entry))
     }
 
-    private func acquireButton(
+    @ViewBuilder
+    private func promotionalBadge(
         _ entry: InventoryCatalogEntry
     ) -> some View {
-        Button("획득") { acquire(entry.item) }
-            .buttonStyle(.borderless)
-            .font(PlanteriorTypography.caption.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .foregroundStyle(PlanteriorPalette.accent.color)
-            .background(PlanteriorPalette.accentSurface.color)
-            .clipShape(
-                RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-            )
-            .disabled(entry.eligibility != .eligible)
-            .opacity(entry.eligibility == .eligible ? 1 : 0.55)
-            .accessibilityIdentifier(
-                "shop.acquire.\(entry.item.id.rawValue)"
-            )
-            .accessibilityLabel("\(entry.item.name) 획득")
-            .accessibilityValue(statusText(entry))
+        let badge = StorageItemPresentation.shopBadge(for: entry.item)
+        if !badge.isEmpty {
+            Text(badge)
+                .font(PlanteriorTypography.microLabel)
+                .lineLimit(1)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .padding(.horizontal, PlanteriorSpacing.small)
+                .frame(height: 20)
+                .background(PlanteriorPalette.subtle.color)
+                .clipShape(Capsule())
+                .allowsHitTesting(false)
+                .accessibilityLabel("\(entry.item.name) 프로모션, \(badge)")
+                .accessibilityIdentifier(
+                    "shop.promo.\(entry.item.id.rawValue)"
+                )
+        }
     }
 
-    private func statusText(_ entry: InventoryCatalogEntry) -> String {
+    private func eligibilityText(_ entry: InventoryCatalogEntry) -> String {
         StorageItemPresentation.eligibilityText(entry.eligibility)
     }
 
-    private func statusVariant(
-        _ eligibility: InventoryAcquisitionEligibility
-    ) -> PlanteriorStatusVariant {
-        switch eligibility {
-        case .eligible: .tonal
-        case .conditionNotMet: .warning
-        case .alreadyOwned: .neutral
+    private func statusForeground(_ entry: InventoryCatalogEntry) -> Color {
+        switch entry.eligibility {
+        case .alreadyOwned:
+            PlanteriorPalette.accent.color
+        case .eligible:
+            PlanteriorPalette.textOnAccent.color
+        case .conditionNotMet:
+            PlanteriorPalette.warning.color
+        }
+    }
+
+    private func statusBackground(_ entry: InventoryCatalogEntry) -> Color {
+        switch entry.eligibility {
+        case .alreadyOwned:
+            PlanteriorPalette.successSurface.color
+        case .eligible:
+            PlanteriorPalette.accent.color
+        case .conditionNotMet:
+            PlanteriorPalette.warningSurface.color
         }
     }
 }

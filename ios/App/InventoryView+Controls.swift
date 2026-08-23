@@ -13,127 +13,152 @@ extension InventoryView {
                     mode == .warehouse ? "storage.title" : "shop.title"
                 )
             Spacer(minLength: PlanteriorSpacing.small)
-            if mode == .shop {
-                Button {
-                    sortDescending.toggle()
-                    visibleItemLimit = 2
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .frame(
-                            width: PlanteriorControl.minimumTarget,
-                            height: PlanteriorControl.minimumTarget
+            Button {
+                mode = mode == .warehouse ? .shop : .warehouse
+                category = nil
+                seasonalOnly = false
+                visibleItemLimit = Self.initialVisibleItemLimit
+            } label: {
+                Image(systemName: mode == .warehouse ? "archivebox" : "shippingbox")
+                    .font(PlanteriorTypography.supporting.weight(.semibold))
+                    .frame(width: 32, height: 32)
+                    .background(PlanteriorPalette.surface.color)
+                    .clipShape(Circle())
+                    .overlay {
+                        Circle().stroke(
+                            PlanteriorPalette.border.color,
+                            lineWidth: PlanteriorControl.hairline
                         )
-                        .background(PlanteriorPalette.surface.color)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .accessibilityLabel(
-                    sortDescending ? "이름 오름차순" : "이름 내림차순"
-                )
-                .accessibilityIdentifier("shop.sort")
+                    }
             }
+            .buttonStyle(.plain)
+            .frame(
+                width: PlanteriorControl.minimumTarget,
+                height: PlanteriorControl.minimumTarget
+            )
+            .foregroundStyle(PlanteriorPalette.textPrimary.color)
+            .accessibilityLabel(mode == .warehouse ? "아이템 상점 열기" : "나의 창고 열기")
+            .accessibilityIdentifier(
+                mode == .warehouse
+                    ? "storage.mode.shop"
+                    : "storage.mode.warehouse"
+            )
         }
+        .padding(.horizontal, PlanteriorSpacing.extraLarge)
+        .frame(height: 44)
+    }
+
+    var shopCredit: some View {
+        (Text("보유 크레딧 ")
+            .foregroundStyle(PlanteriorPalette.accent.color)
+            + Text(" 🪙 1,250")
+            .foregroundStyle(PlanteriorPalette.warning.color))
+            .font(PlanteriorTypography.supporting.weight(.semibold))
+            .frame(width: 179, height: 38)
+            .background(PlanteriorPalette.warningSurface.color)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule().stroke(
+                    PlanteriorPalette.border.color,
+                    lineWidth: PlanteriorControl.hairline
+                )
+            }
+            .padding(.top, 7)
+            .accessibilityIdentifier("shop.credit")
+            .accessibilityAddTraits(.isStaticText)
     }
 
     var categoryFilters: some View {
-        LazyVGrid(columns: categoryColumns, spacing: PlanteriorSpacing.small) {
-            categoryButton("전체", category: nil)
-            categoryButton("배경", category: .background)
-            categoryButton("가구", category: .furniture)
-            categoryButton("소품", category: .decoration)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: PlanteriorSpacing.small) {
+                categoryButton("전체", category: nil, identifier: "all")
+                categoryButton("배경", category: .background, identifier: "background")
+                categoryButton("가구", category: .furniture, identifier: "furniture")
+                categoryButton("장식", category: .decoration, identifier: "decoration")
+                if mode == .shop {
+                    seasonalButton
+                }
+            }
+            .padding(.horizontal, PlanteriorSpacing.extraLarge)
         }
+        .frame(height: 53)
     }
 
     var storageColumns: [GridItem] {
-        let count = effectiveSizeCategory.isAccessibilityCategory ? 1 : 3
-        return Array(
-            repeating: GridItem(.flexible(), spacing: PlanteriorSpacing.medium),
-            count: count
-        )
-    }
-
-    private var categoryColumns: [GridItem] {
-        let count = effectiveSizeCategory.isAccessibilityCategory ? 2 : 4
-        return Array(
-            repeating: GridItem(.flexible(), spacing: PlanteriorSpacing.small),
-            count: count
-        )
-    }
-
-    var modeSelector: some View {
-        HStack(spacing: PlanteriorSpacing.small) {
-            modeButton("창고", mode: .warehouse)
-            modeButton("상점", mode: .shop)
+        if effectiveSizeCategory.isAccessibilityCategory {
+            return [GridItem(.flexible())]
         }
-        .padding(PlanteriorSpacing.extraSmall)
-        .background(PlanteriorPalette.subtle.color)
-        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
+        return Array(
+            repeating: GridItem(.fixed(110), spacing: 10),
+            count: 3
+        )
+    }
+
+    private var seasonalButton: some View {
+        filterButton(
+            "시즌 한정",
+            selected: seasonalOnly,
+            width: 72,
+            identifier: "seasonal"
+        ) {
+            category = nil
+            seasonalOnly.toggle()
+            visibleItemLimit = Self.initialVisibleItemLimit
+        }
     }
 
     private func categoryButton(
         _ title: String,
-        category selectedCategory: ItemCategory?
+        category selectedCategory: ItemCategory?,
+        identifier: String
     ) -> some View {
-        Button(title) {
+        filterButton(
+            title,
+            selected: !seasonalOnly && category == selectedCategory,
+            width: 56,
+            identifier: identifier
+        ) {
             category = selectedCategory
-            visibleItemLimit = 2
+            seasonalOnly = false
+            visibleItemLimit = Self.initialVisibleItemLimit
         }
-        .buttonStyle(StorageChipStyle(selected: category == selectedCategory))
-        .accessibilityIdentifier(
-            "storage.category." +
-                (selectedCategory?.rawValue.lowercased() ?? "all")
-        )
-        .accessibilityAddTraits(
-            category == selectedCategory ? .isSelected : []
-        )
     }
 
-    private func modeButton(
+    private func filterButton(
         _ title: String,
-        mode selectedMode: InventoryMode
+        selected: Bool,
+        width: CGFloat,
+        identifier: String,
+        action: @escaping () -> Void
     ) -> some View {
-        Button(title) {
-            mode = selectedMode
-            visibleItemLimit = 2
-        }
-        .buttonStyle(StorageChipStyle(selected: mode == selectedMode))
-        .accessibilityIdentifier(
-            selectedMode == .warehouse
-                ? "storage.mode.warehouse"
-                : "storage.mode.shop"
-        )
-        .accessibilityAddTraits(mode == selectedMode ? .isSelected : [])
-    }
-}
-
-private struct StorageChipStyle: ButtonStyle {
-    let selected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(PlanteriorTypography.caption.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .foregroundStyle(
-                selected
-                    ? PlanteriorPalette.textOnAccent.color
-                    : PlanteriorPalette.textSecondary.color
-            )
-            .background(
-                selected
-                    ? PlanteriorPalette.accent.color
-                    : PlanteriorPalette.surface.color
-            )
-            .clipShape(Capsule())
-            .overlay {
-                if !selected {
-                    Capsule().stroke(
-                        PlanteriorPalette.border.color,
-                        lineWidth: PlanteriorControl.hairline
-                    )
+        Button(action: action) {
+            Text(title)
+                .font(PlanteriorTypography.caption.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(
+                    selected
+                        ? PlanteriorPalette.textOnAccent.color
+                        : PlanteriorPalette.textSecondary.color
+                )
+                .frame(width: width, height: 31)
+                .background(
+                    selected
+                        ? PlanteriorPalette.accent.color
+                        : PlanteriorPalette.surface.color
+                )
+                .clipShape(Capsule())
+                .overlay {
+                    if !selected {
+                        Capsule().stroke(
+                            PlanteriorPalette.border.color,
+                            lineWidth: PlanteriorControl.hairline
+                        )
+                    }
                 }
-            }
-            .opacity(configuration.isPressed ? 0.75 : 1)
+        }
+        .buttonStyle(.plain)
+        .frame(width: width, height: PlanteriorControl.minimumTarget)
+        .accessibilityIdentifier("storage.category.\(identifier)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

@@ -32,69 +32,99 @@ extension InventoryRepository {
         ownedItems = []
     }
 
-    private static func qaFixture(
-        now: Instant?
-    ) -> InventorySnapshot? {
+    private static func qaFixture(now: Instant?) -> InventorySnapshot? {
         guard let now,
-              let revision = try? Revision.parse(1),
-              let chairID = try? ItemID.parse("item-chair"),
-              let lampID = try? ItemID.parse("item-lamp"),
-              let wallID = try? ItemID.parse("item-green-wall")
+              let revision = try? Revision.parse(1)
         else {
             return nil
         }
-        return InventorySnapshot(
-            catalog: qaCatalog(
-                revision: revision,
-                chairID: chairID,
-                lampID: lampID,
-                wallID: wallID
+
+        let catalog: [ShopItem?] = [
+            qaItem("item-mini-shelf", "미니 책장", .furniture, .draft, revision),
+            qaItem("item-small-rug", "작은 러그", .decoration, .draft, revision),
+            qaItem("item-window-frame", "창문 프레임", .decoration, .draft, revision),
+            qaItem("item-flower-stand", "화분 거치대", .furniture, .draft, revision),
+            qaItem("item-lamp", "감성 조명", .decoration, .draft, revision),
+            qaItem("item-wall-art", "벽 그림", .decoration, .draft, revision),
+            qaItem("item-chair", "미니 테이블", .furniture, .draft, revision),
+            qaItem("item-cushion", "쿠션", .decoration, .draft, revision),
+            qaItem("item-book-cart", "북 카트", .furniture, .draft, revision),
+            qaItem("item-plant-rack", "식물 선반", .furniture, .draft, revision),
+            qaItem("item-round-mat", "원형 매트", .decoration, .draft, revision),
+            qaItem("item-cozy-rug", "포근한 러그", .furniture, .public, revision),
+            qaItem("item-vintage-lamp", "빈티지 스탠드 조명", .decoration, .public, revision),
+            qaItem("item-green-wall", "체크무늬 커튼 창문", .background, .public, revision),
+            qaItem("item-succulent-pot", "귀여운 다육이 화분", .decoration, .public, revision),
+            qaItem(
+                "item-christmas-tree",
+                "크리스마스 트리",
+                .decoration,
+                .public,
+                revision,
+                "winter-season"
             ),
-            ownedItems: [
-                OwnedItem(
-                    itemID: chairID,
-                    acquiredAt: now,
-                    applied: false,
-                    revision: revision
-                )
-            ]
+            qaItem(
+                "item-autumn-frame",
+                "가을 단풍 벽장식",
+                .decoration,
+                .public,
+                revision,
+                "autumn-season"
+            )
+        ]
+        let resolvedCatalog = catalog.compactMap(\.self)
+        guard resolvedCatalog.count == catalog.count else {
+            return nil
+        }
+
+        let ownedIDs = [
+            "item-mini-shelf", "item-small-rug", "item-window-frame",
+            "item-flower-stand", "item-lamp", "item-wall-art", "item-chair",
+            "item-cushion", "item-book-cart", "item-plant-rack",
+            "item-round-mat", "item-cozy-rug"
+        ]
+        let appliedIDs = Set([
+            "item-mini-shelf", "item-small-rug", "item-flower-stand"
+        ])
+        let ownedItems = ownedIDs.compactMap { rawID -> OwnedItem? in
+            guard let itemID = try? ItemID.parse(rawID) else {
+                return nil
+            }
+            return OwnedItem(
+                itemID: itemID,
+                acquiredAt: now,
+                applied: appliedIDs.contains(rawID),
+                revision: revision
+            )
+        }
+        guard ownedItems.count == ownedIDs.count else {
+            return nil
+        }
+        return InventorySnapshot(
+            catalog: resolvedCatalog,
+            ownedItems: ownedItems
         )
     }
 
-    private static func qaCatalog(
-        revision: Revision,
-        chairID: ItemID,
-        lampID: ItemID,
-        wallID: ItemID
-    ) -> [ShopItem] {
-        [
-            ShopItem(
-                id: wallID,
-                name: "초록 벽지",
-                category: .background,
-                assetPath: "items/green-wall.png",
-                acquisitionCondition: nil,
-                publicationState: .public,
-                revision: revision
-            ),
-            ShopItem(
-                id: chairID,
-                name: "원목 의자",
-                category: .furniture,
-                assetPath: "items/chair.png",
-                acquisitionCondition: nil,
-                publicationState: .public,
-                revision: revision
-            ),
-            ShopItem(
-                id: lampID,
-                name: "새싹 조명",
-                category: .decoration,
-                assetPath: "items/lamp.png",
-                acquisitionCondition: "registered-plant",
-                publicationState: .public,
-                revision: revision
-            )
-        ]
+    private static func qaItem(
+        _ rawID: String,
+        _ name: String,
+        _ category: ItemCategory,
+        _ publicationState: PublicationState,
+        _ revision: Revision,
+        _ acquisitionCondition: String? = nil
+    ) -> ShopItem? {
+        guard let itemID = try? ItemID.parse(rawID) else {
+            return nil
+        }
+        return ShopItem(
+            id: itemID,
+            name: name,
+            category: category,
+            assetPath: "items/\(rawID).png",
+            acquisitionCondition: acquisitionCondition,
+            publicationState: publicationState,
+            revision: revision
+        )
     }
 }

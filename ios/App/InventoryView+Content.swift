@@ -6,22 +6,33 @@ import SwiftUI
 extension InventoryView {
     var warehouse: some View {
         let items = warehouseItems
-        return VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
-            Text("보유 아이템 \(items.count)개")
+        return VStack(alignment: .leading, spacing: 0) {
+            (Text("보유 아이템 ")
+                .foregroundColor(PlanteriorPalette.textSecondary.color)
+                + Text("\(items.count)개")
+                .foregroundColor(PlanteriorPalette.accent.color)
+                .bold())
                 .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .frame(height: 35, alignment: .center)
+                .padding(.horizontal, PlanteriorSpacing.extraLarge)
                 .accessibilityIdentifier("storage.count")
             if items.isEmpty {
                 Text("보유한 아이템이 없어요.")
                     .font(PlanteriorTypography.supporting)
                     .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .padding(.horizontal, PlanteriorSpacing.extraLarge)
                     .accessibilityIdentifier("storage.empty")
             } else {
-                LazyVGrid(columns: storageColumns, spacing: PlanteriorSpacing.medium) {
+                LazyVGrid(
+                    columns: storageColumns,
+                    alignment: .leading,
+                    spacing: 10
+                ) {
                     ForEach(items, id: \.id) { item in
                         warehouseCard(item)
                     }
                 }
+                .padding(.horizontal, PlanteriorSpacing.large)
             }
         }
     }
@@ -35,11 +46,18 @@ extension InventoryView {
     }
 
     var shopEntries: [InventoryCatalogEntry] {
-        let entries = repository.entries(
+        repository.entries(
             category: category,
             metConditions: metConditions
         )
-        return sortDescending ? Array(entries.reversed()) : entries
+        .filter {
+            !seasonalOnly || StorageItemPresentation.isSeasonal($0.item)
+        }
+        .sorted {
+            let first = StorageItemPresentation.shopOrder($0.item)
+            let second = StorageItemPresentation.shopOrder($1.item)
+            return sortDescending ? first > second : first < second
+        }
     }
 
     var shopPage: InventoryCatalogPage {

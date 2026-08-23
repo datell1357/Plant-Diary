@@ -2,118 +2,234 @@ import XCTest
 
 @MainActor
 final class InventoryUITests: XCTestCase, InventoryUITestSupport {
-    func testCatalogFilterSortAndDetail() {
-        let app = inventoryApp(shopMode: true)
+    func testWarehouseMatchesReferenceCatalogAndGrid() {
+        let app = inventoryApp()
         app.launch()
         openStorage(in: app)
-        openShop(in: app)
-        assertFigmaShopSurface(in: app)
-        attachScreenshot(named: "storage-shop-402x874")
 
-        let firstPage = assertInitialShopPage(in: app)
-        let ascending = firstPage + ["shop.row.item-green-wall"]
-        let descending = Array(ascending.reversed())
-        waitForShopRows(ascending, in: app) {
-            app.buttons["shop.load-more"].tap()
+        XCTAssertEqual(app.staticTexts["storage.title"].label, "나의 창고")
+        XCTAssertEqual(app.staticTexts["storage.count"].label, "보유 아이템 12개")
+        XCTAssertFalse(app.buttons["storage.mode.warehouse"].exists)
+
+        let ownedItems = [
+            "item-mini-shelf", "item-small-rug", "item-window-frame",
+            "item-flower-stand", "item-lamp", "item-wall-art",
+            "item-chair", "item-cushion", "item-book-cart",
+            "item-plant-rack", "item-round-mat", "item-cozy-rug"
+        ]
+        for itemID in ownedItems {
+            XCTAssertTrue(
+                app.buttons["storage.row.\(itemID)"].waitForExistence(timeout: 5),
+                "missing warehouse fixture item \(itemID)"
+            )
         }
-        waitForShopRows(Array(descending.prefix(2)), in: app) {
-            app.buttons["shop.sort"].tap()
+        for itemID in ["item-mini-shelf", "item-small-rug", "item-flower-stand"] {
+            XCTAssertTrue(app.staticTexts["storage.applied.\(itemID)"].exists)
         }
-        waitForShopRows(descending, in: app) {
-            app.buttons["shop.load-more"].tap()
+
+        let first = app.buttons["storage.row.item-mini-shelf"].frame
+        let second = app.buttons["storage.row.item-small-rug"].frame
+        XCTAssertEqual(first.width, 110, accuracy: 1)
+        XCTAssertEqual(second.width, 110, accuracy: 1)
+        XCTAssertEqual(second.minX - first.maxX, 10, accuracy: 1)
+        attachScreenshot(named: "storage-warehouse-402x874")
+
+        let last = app.buttons["storage.row.item-cozy-rug"]
+        scrollToHittable(last, in: app.scrollViews["storage.screen"])
+        XCTAssertTrue(last.isHittable, "all 12 owned items remain scroll-reachable")
+    }
+
+    func testShopMatchesReferenceCreditFiltersAndProducts() {
+        let app = inventoryApp(shopMode: true)
+        app.launch()
+        waitForShopReady(in: app)
+
+        XCTAssertEqual(app.staticTexts["shop.title"].label, "아이템 상점")
+        XCTAssertEqual(app.staticTexts["shop.credit"].label, "보유 크레딧  🪙 1,250")
+        XCTAssertFalse(app.buttons["storage.mode.shop"].exists)
+        for filter in ["all", "background", "furniture", "decoration", "seasonal"] {
+            XCTAssertTrue(app.buttons["storage.category.\(filter)"].exists)
         }
-        waitForShopRows(["shop.row.item-lamp"], in: app) {
-            app.buttons["storage.category.decoration"].tap()
-        }
-        let lamp = app.buttons["shop.row.item-lamp"]
-        waitForHittable(lamp)
-        let detail = app.scrollViews["storage.detail.item-lamp"]
-        waitForElement(detail) {
-            lamp.tap()
-        }
-        assertFigmaDetailSurface(itemID: "item-lamp", in: app)
-        attachScreenshot(named: "storage-detail-shop-402x874")
-        let condition = app.staticTexts["storage.detail.condition"]
+
+        let products = shopProductIDs
+        waitForShopRows(products.map { "shop.row.\($0)" }, in: app)
         XCTAssertEqual(
-            condition.label,
-            "등록한 식물이 있어야 획득할 수 있어요."
+            app.buttons.matching(
+                NSPredicate(format: "identifier BEGINSWITH 'shop.row.'")
+            ).count,
+            6
         )
-        let conditionToken = condition.value as? String
-        XCTAssertEqual(conditionToken, "registered-plant")
-        attachCatalogEvidence(
-            firstPage: firstPage,
-            ascending: ascending,
-            descending: descending,
-            condition: condition,
-            conditionToken: conditionToken ?? ""
+        XCTAssertEqual(
+            app.images["shop.image.item-cozy-rug"].frame.height,
+            110,
+            accuracy: 1
+        )
+        let eligible = app.buttons["shop.acquire.item-vintage-lamp"]
+        let owned = app.buttons["shop.acquire.item-cozy-rug"]
+        XCTAssertEqual(eligible.value as? String, "획득 가능")
+        XCTAssertEqual(owned.value as? String, "보유 중")
+        XCTAssertTrue(eligible.isEnabled)
+        XCTAssertFalse(owned.isEnabled)
+        XCTAssertGreaterThanOrEqual(eligible.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(eligible.frame.height, 44)
+        XCTAssertEqual(
+            app.staticTexts["shop.promo.item-green-wall"].label,
+            "체크무늬 커튼 창문 프로모션, 🌱 7일 연속 출석"
+        )
+        attachScreenshot(named: "storage-shop-402x874")
+    }
+
+    func testLampDetailMatchesReferenceHeroFavoriteAndContext() {
+        let app = inventoryApp()
+        app.launch()
+        openStorage(in: app)
+
+        let lamp = app.buttons["storage.row.item-lamp"]
+        XCTAssertTrue(lamp.waitForExistence(timeout: 5))
+        lamp.tap()
+
+        let detail = app.scrollViews["storage.detail.item-lamp"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["storage.detail.title"].label, "감성 조명")
+        XCTAssertEqual(
+            app.images["storage.detail.hero.item-lamp"].frame.height,
+            220,
+            accuracy: 1
+        )
+        XCTAssertTrue(app.buttons["storage.detail.favorite.item-lamp"].exists)
+        XCTAssertEqual(app.staticTexts["storage.detail.status"].label, "보관 중")
+        XCTAssertEqual(
+            app.staticTexts["storage.detail.context.title"].label,
+            "내 방 벽면에 걸기"
+        )
+        XCTAssertEqual(app.staticTexts["storage.detail.category"].label, "장식")
+        attachScreenshot(named: "storage-detail-402x874")
+    }
+
+    func testCatalogFilterSortAndDetail() {
+        let firstPageApp = inventoryApp(shopMode: true)
+        firstPageApp.launchEnvironment["QA_INVENTORY_VISIBLE_LIMIT"] = "2"
+        firstPageApp.launch()
+        waitForShopReady(in: firstPageApp)
+        waitForShopRows(
+            ["shop.row.item-cozy-rug", "shop.row.item-vintage-lamp"],
+            in: firstPageApp
+        )
+        firstPageApp.terminate()
+
+        let descendingApp = inventoryApp(shopMode: true)
+        descendingApp.launchEnvironment["QA_INVENTORY_SORT"] = "descending"
+        descendingApp.launch()
+        waitForShopReady(in: descendingApp)
+        let descending = shopProductIDs.reversed().map { "shop.row.\($0)" }
+        waitForShopRows(Array(descending), in: descendingApp)
+
+        let winter = descendingApp.buttons["shop.acquire.item-christmas-tree"]
+        let autumn = descendingApp.buttons["shop.acquire.item-autumn-frame"]
+        XCTAssertFalse(winter.isEnabled)
+        XCTAssertFalse(autumn.isEnabled)
+        XCTAssertEqual(winter.value as? String, "조건 미충족 · 조건 확인 필요")
+        XCTAssertEqual(autumn.value as? String, "조건 미충족 · 조건 확인 필요")
+        XCTAssertEqual(
+            descendingApp.staticTexts["shop.promo.item-christmas-tree"].label,
+            "크리스마스 트리 프로모션, ❄️ 겨울 시즌 한정"
+        )
+        XCTAssertEqual(
+            descendingApp.staticTexts["shop.promo.item-autumn-frame"].label,
+            "가을 단풍 벽장식 프로모션, 🍁 가을 시즌 한정"
+        )
+
+        let seasonal = descendingApp.buttons["storage.category.seasonal"]
+        waitForShopRows(
+            ["shop.row.item-autumn-frame", "shop.row.item-christmas-tree"],
+            in: descendingApp
+        ) {
+            seasonal.tap()
+        }
+        waitForShopRows(Array(descending), in: descendingApp) {
+            seasonal.tap()
+        }
+
+        let vintage = descendingApp.buttons["shop.row.item-vintage-lamp"]
+        let detail = descendingApp.scrollViews["storage.detail.item-vintage-lamp"]
+        waitForElement(detail) { vintage.tap() }
+        XCTAssertTrue(
+            descendingApp.images["storage.detail.hero.item-vintage-lamp"].exists
         )
     }
 
     func testAcquireRetryApplyRemovePreservesOwnership() {
-        let app = inventoryApp(
-            failFirstAcquisition: true,
-            shopMode: true
-        )
+        let app = inventoryApp(failFirstAcquisition: true, shopMode: true)
         app.launch()
-        openStorage(in: app)
-        openShop(in: app)
-        let acquisition = acquireWall(in: app)
-        attachJSON(
-            [
-                "firstFeedback": acquisition.failure,
-                "retryFeedback": acquisition.success,
-                "retryEnabled": true,
-                "duplicatePolicy": "InventoryPolicyTests"
-            ],
-            named: "task-15-acquisition-retry"
-        )
+        waitForShopReady(in: app)
+        openBackgroundShop(in: app)
 
-        let placement = applyAndRemoveWall(
-            in: app,
-            previousFeedback: acquisition.success
-        )
-        attachJSON(
-            [
-                "appliedFeedback": placement.applied,
-                "removedFeedback": placement.removed,
-                "ownedRow": placement.ownedRow,
-                "applyControl": placement.applyControl,
-                "limits": ["background": 1, "furniture": 10, "decoration": 10]
-            ],
-            named: "task-15-placement"
-        )
-        attachScreenshot(named: "task-15-inventory")
+        let acquire = app.buttons["shop.acquire.item-green-wall"]
+        XCTAssertTrue(acquire.isEnabled)
+        let failure = triggerAndReadMessage(in: app, previous: nil) {
+            acquire.tap()
+        }
+        XCTAssertEqual(failure, "획득하지 못했어요. 다시 시도해 주세요.")
+        let success = triggerAndReadMessage(in: app, previous: failure) {
+            acquire.tap()
+        }
+        XCTAssertEqual(success, "창고에 추가했어요 · 체크무늬 커튼 창문")
+        XCTAssertFalse(acquire.isEnabled, "owned items cannot be acquired twice")
+
+        openWarehouse(in: app)
+        let ownedRow = app.buttons["storage.row.item-green-wall"]
+        scrollToHittable(ownedRow, in: app.scrollViews["storage.screen"])
+        ownedRow.tap()
+
+        let apply = app.buttons["storage.detail.apply.item-green-wall"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5))
+        let applied = triggerAndReadMessage(in: app, previous: success) {
+            apply.tap()
+        }
+        XCTAssertEqual(applied, "미니홈에 적용했어요 · 체크무늬 커튼 창문")
+        XCTAssertEqual(app.staticTexts["storage.detail.status"].label, "적용 중")
+
+        app.terminate()
+        app.launch()
+        waitForShopReady(in: app)
+        openWarehouse(in: app)
+        let restoredRow = app.buttons["storage.row.item-green-wall"]
+        scrollToHittable(restoredRow, in: app.scrollViews["storage.screen"])
+        restoredRow.tap()
+        XCTAssertEqual(app.staticTexts["storage.detail.status"].label, "적용 중")
+
+        let remove = app.buttons["storage.detail.remove.item-green-wall"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        let removed = triggerAndReadMessage(in: app, previous: nil) {
+            remove.tap()
+        }
+        XCTAssertEqual(removed, "미니홈에서 제거했어요 · 체크무늬 커튼 창문")
+        app.buttons["storage.detail.back"].tap()
+        XCTAssertTrue(restoredRow.waitForExistence(timeout: 5))
+
+        app.terminate()
+        app.launch()
+        waitForShopReady(in: app)
+        openBackgroundShop(in: app)
+        XCTAssertFalse(app.buttons["shop.acquire.item-green-wall"].isEnabled)
     }
 
     func testWarehouseGridDetailAndPlacementUseFigmaSurface() {
         let app = inventoryApp()
         app.launch()
         openStorage(in: app)
-        assertFigmaWarehouseSurface(in: app)
-        attachScreenshot(named: "storage-warehouse-402x874")
 
         let chair = app.buttons["storage.row.item-chair"]
+        XCTAssertTrue(chair.waitForExistence(timeout: 5))
+        chair.tap()
         let detail = app.scrollViews["storage.detail.item-chair"]
-        waitForElement(detail) {
-            chair.tap()
-        }
-        assertFigmaDetailSurface(itemID: "item-chair", in: app)
-        attachScreenshot(named: "storage-detail-402x874")
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
 
         let apply = app.buttons["storage.detail.apply.item-chair"]
-        scrollToHittable(
-            apply,
-            in: app.scrollViews["storage.detail.item-chair"]
-        )
+        scrollToHittable(apply, in: detail)
         apply.tap()
-        XCTAssertTrue(
-            app.staticTexts["storage.detail.status"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertEqual(
-            app.staticTexts["storage.detail.status"].label,
-            "적용 중"
-        )
+        XCTAssertEqual(app.staticTexts["storage.detail.status"].label, "적용 중")
+        XCTAssertTrue(app.buttons["storage.detail.remove.item-chair"].exists)
     }
 
     func testReduceMotionWarehouseEvidence() {
@@ -121,10 +237,40 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
         app.launch()
         openStorage(in: app)
-        assertFigmaWarehouseSurface(in: app)
-        XCTAssertTrue(
-            app.otherElements["app.shell.reduce-motion"].exists
-        )
+
+        XCTAssertTrue(app.otherElements["app.shell.reduce-motion"].exists)
+        XCTAssertEqual(app.staticTexts["storage.count"].label, "보유 아이템 12개")
+        XCTAssertTrue(app.buttons["storage.row.item-mini-shelf"].exists)
         attachScreenshot(named: "storage-warehouse-reduce-motion-light")
+    }
+
+    private var shopProductIDs: [String] {
+        [
+            "item-cozy-rug", "item-vintage-lamp", "item-green-wall",
+            "item-succulent-pot", "item-christmas-tree", "item-autumn-frame"
+        ]
+    }
+
+    private func waitForShopReady(in app: XCUIApplication) {
+        XCTAssertTrue(
+            app.scrollViews["storage.screen"].waitForExistence(timeout: 10)
+        )
+        let ready = app.descendants(matching: .any)
+            .matching(identifier: "shop.ready")
+            .firstMatch
+        XCTAssertTrue(ready.waitForExistence(timeout: 10))
+    }
+
+    private func openBackgroundShop(in app: XCUIApplication) {
+        waitForShopRows(["shop.row.item-green-wall"], in: app) {
+            app.buttons["storage.category.background"].tap()
+        }
+    }
+
+    private func openWarehouse(in app: XCUIApplication) {
+        let title = app.staticTexts["storage.title"]
+        waitForElement(title) {
+            app.buttons["storage.mode.warehouse"].tap()
+        }
     }
 }

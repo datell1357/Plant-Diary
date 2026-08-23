@@ -12,8 +12,9 @@ struct InventoryView: View {
     @StateObject var progression: MilestoneRepository
     @State var mode: InventoryMode
     @State var category: ItemCategory?
-    @State var sortDescending = false
-    @State var visibleItemLimit = 2
+    @State var seasonalOnly = false
+    @State var sortDescending: Bool
+    @State var visibleItemLimit: Int
     @State var message: String?
     @State var selectedItem: ShopItem?
     let now: Instant?
@@ -22,6 +23,8 @@ struct InventoryView: View {
         let now = Self.runtimeInstant()
         self.now = now
         _mode = State(initialValue: Self.initialMode)
+        _sortDescending = State(initialValue: Self.initialSortDescending)
+        _visibleItemLimit = State(initialValue: Self.initialVisibleItemLimit)
         _repository = StateObject(
             wrappedValue: InventoryRepository(
                 now: now,
@@ -40,25 +43,24 @@ struct InventoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+            VStack(alignment: .leading, spacing: 0) {
                 storageHeader
-                modeSelector
+                if mode == .shop {
+                    shopCredit
+                }
                 categoryFilters
                 if mode == .warehouse {
                     warehouse
                 } else {
                     ShopView(
                         entries: shopPage.entries,
-                        hasMore: shopPage.nextCursor != nil,
-                        loadMore: { visibleItemLimit += 2 },
                         acquire: acquire,
                         showDetail: { selectedItem = $0 }
                     )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.vertical, PlanteriorSpacing.small)
+            .padding(.top, -15)
         }
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveSizeCategory)

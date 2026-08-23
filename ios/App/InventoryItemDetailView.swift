@@ -4,6 +4,8 @@ import PlanteriorDomain
 import SwiftUI
 
 struct InventoryItemDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var isFavorite = false
     let item: ShopItem
     let eligibility: InventoryAcquisitionEligibility
     let isOwned: Bool
@@ -13,23 +15,27 @@ struct InventoryItemDetailView: View {
     let togglePlacement: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                hero
-                titleBlock
-                statusCard
-                primaryAction
-                preview
+        VStack(spacing: 0) {
+            topBar
+                .frame(height: 39)
+                .offset(y: -5)
+            ScrollView {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+                    hero
+                    titleBlock
+                        .padding(.bottom, 14)
+                    statusCard
+                        .padding(.bottom, 3)
+                    primaryAction
+                    preview
+                }
+                .padding(.horizontal, PlanteriorSpacing.extraLarge)
             }
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.vertical, PlanteriorSpacing.small)
+            .accessibilityIdentifier("storage.detail.\(item.id.rawValue)")
         }
         .background(PlanteriorPalette.canvas.color)
-        .navigationTitle("아이템 상세")
-        .navigationBarTitleDisplayMode(.inline)
-        .planteriorInlineNavigationChrome()
-        .toolbar(.visible, for: .navigationBar)
-        .accessibilityIdentifier("storage.detail.\(item.id.rawValue)")
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
             if let message {
                 Text(message)
@@ -43,13 +49,59 @@ struct InventoryItemDetailView: View {
         }
     }
 
+    private var topBar: some View {
+        PlanteriorTopBar("아이템 상세") {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(
+                        width: PlanteriorControl.minimumTarget,
+                        height: PlanteriorControl.minimumTarget
+                    )
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(PlanteriorPalette.textPrimary.color)
+            .accessibilityLabel("뒤로")
+            .accessibilityIdentifier("storage.detail.back")
+        } trailing: {
+            Button {
+                isFavorite.toggle()
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .background(PlanteriorPalette.surface.color)
+                    .clipShape(Circle())
+                    .overlay {
+                        Circle().stroke(
+                            PlanteriorPalette.border.color,
+                            lineWidth: PlanteriorControl.hairline
+                        )
+                    }
+            }
+            .buttonStyle(.plain)
+            .frame(
+                width: PlanteriorControl.minimumTarget,
+                height: PlanteriorControl.minimumTarget
+            )
+            .foregroundStyle(PlanteriorPalette.textPrimary.color)
+            .accessibilityLabel(isFavorite ? "즐겨찾기 해제" : "즐겨찾기")
+            .accessibilityIdentifier(
+                "storage.detail.favorite.\(item.id.rawValue)"
+            )
+        }
+    }
+
     private var hero: some View {
         ZStack(alignment: .topLeading) {
             Image(StorageItemPresentation.heroAsset(for: item))
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity)
-                .aspectRatio(362 / 220, contentMode: .fit)
+                .frame(height: 220)
+                .clipped()
                 .background(PlanteriorPalette.subtle.color)
                 .clipShape(
                     RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge)
@@ -58,60 +110,84 @@ struct InventoryItemDetailView: View {
                 .accessibilityIdentifier(
                     "storage.detail.hero.\(item.id.rawValue)"
                 )
-            PlanteriorStatusPill(
-                LocalizedStringKey(
-                    StorageItemPresentation.categoryName(item.category)
-                ),
-                variant: .accent
-            )
-            .padding(PlanteriorSpacing.medium)
+            Text(StorageItemPresentation.detailCategoryName(item.category))
+                .font(PlanteriorTypography.microLabel)
+                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+                .padding(.horizontal, PlanteriorSpacing.medium)
+                .frame(height: 22)
+                .background(Color.black.opacity(0.72))
+                .clipShape(Capsule())
+                .padding(PlanteriorSpacing.huge)
+                .accessibilityIdentifier("storage.detail.category")
         }
     }
 
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(item.name)
-                .font(PlanteriorTypography.pageTitle)
+                .font(.title2.weight(.bold))
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("storage.detail.title")
             Text(StorageItemPresentation.description(for: item))
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
-            Text(StorageItemPresentation.conditionDescription(for: item))
-                .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .accessibilityIdentifier("storage.detail.condition")
-                .accessibilityValue(item.acquisitionCondition ?? "none")
-        }
-    }
-
-    private var statusCard: some View {
-        PlanteriorCard(variant: isApplied ? .success : .standard) {
-            HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.small) {
-                Image(systemName: statusIcon)
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .accessibilityHidden(true)
-                Text("현재 적용 상태")
-                    .font(PlanteriorTypography.cardTitle)
-                Spacer(minLength: PlanteriorSpacing.small)
-                Text(statusText)
-                    .font(PlanteriorTypography.supporting)
+                .lineSpacing(4)
+            if item.acquisitionCondition != nil {
+                Text(StorageItemPresentation.conditionDescription(for: item))
+                    .font(PlanteriorTypography.caption)
                     .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .multilineTextAlignment(.trailing)
-                    .accessibilityIdentifier("storage.detail.status")
+                    .accessibilityIdentifier("storage.detail.condition")
+                    .accessibilityValue(item.acquisitionCondition ?? "none")
             }
         }
     }
 
+    private var statusCard: some View {
+        HStack(spacing: PlanteriorSpacing.small) {
+            Image(systemName: isOwned ? "checkmark.circle" : "lock.circle")
+                .font(PlanteriorTypography.supporting.weight(.semibold))
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .accessibilityHidden(true)
+            Text("현재 적용 상태")
+                .font(PlanteriorTypography.cardTitle)
+            Spacer(minLength: PlanteriorSpacing.small)
+            Text(statusText)
+                .font(PlanteriorTypography.supporting.weight(.semibold))
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .accessibilityIdentifier("storage.detail.status")
+        }
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .frame(maxWidth: .infinity)
+        .frame(height: 50)
+        .background(PlanteriorPalette.surface.color)
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+        .overlay {
+            RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                .stroke(
+                    PlanteriorPalette.border.color,
+                    lineWidth: PlanteriorControl.hairline
+                )
+        }
+    }
+
     private var primaryAction: some View {
-        PlanteriorPrimaryButton(LocalizedStringKey(actionTitle)) {
+        Button {
             if isOwned {
                 togglePlacement()
             } else {
                 acquire()
             }
+        } label: {
+            Text(actionTitle)
+                .font(PlanteriorTypography.body.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+        .background(PlanteriorPalette.accent.color)
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
         .disabled(!isOwned && eligibility != .eligible)
         .opacity(!isOwned && eligibility != .eligible ? 0.55 : 1)
         .accessibilityIdentifier(actionIdentifier)
@@ -119,27 +195,39 @@ struct InventoryItemDetailView: View {
     }
 
     private var preview: some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
-            Text("미니홈 적용 예시")
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+            Text("미니홈피 적용 예시")
                 .font(PlanteriorTypography.sectionTitle)
-            PlanteriorCard {
-                HStack(alignment: .center, spacing: PlanteriorSpacing.medium) {
-                    Image(.storageContext)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 48, height: 48)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: PlanteriorRadius.small)
-                        )
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                        Text("내 방 벽면에 쉽게")
-                            .font(PlanteriorTypography.cardTitle)
-                        Text("미니홈 편집에서 위치를 조정할 수 있어요.")
-                            .font(PlanteriorTypography.caption)
-                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    }
+            HStack(spacing: PlanteriorSpacing.medium) {
+                Image(.storageContext)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 48, height: 48)
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: PlanteriorRadius.small)
+                    )
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(StorageItemPresentation.contextTitle(for: item))
+                        .font(PlanteriorTypography.cardTitle)
+                        .accessibilityIdentifier("storage.detail.context.title")
+                    Text(StorageItemPresentation.contextDescription(for: item))
+                        .font(PlanteriorTypography.microLabel)
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        .lineLimit(2)
                 }
+            }
+            .padding(.horizontal, PlanteriorSpacing.medium)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 72)
+            .background(PlanteriorPalette.surface.color)
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+            .overlay {
+                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                    .stroke(
+                        PlanteriorPalette.border.color,
+                        lineWidth: PlanteriorControl.hairline
+                    )
             }
         }
     }
@@ -154,16 +242,12 @@ struct InventoryItemDetailView: View {
         return StorageItemPresentation.eligibilityText(eligibility)
     }
 
-    private var statusIcon: String {
-        isOwned ? "checkmark.circle.fill" : "lock.circle"
-    }
-
     private var actionTitle: String {
         if isApplied {
             return "미니홈에서 제거하기"
         }
         if isOwned {
-            return "미니홈에 적용하기"
+            return "미니홈피에 적용하기"
         }
         if eligibility == .eligible {
             return "창고에 추가하기"

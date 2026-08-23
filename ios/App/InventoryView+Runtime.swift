@@ -14,6 +14,27 @@ extension InventoryView {
         return .warehouse
     }
 
+    static var initialSortDescending: Bool {
+        #if DEBUG
+            return ProcessInfo.processInfo.environment[
+                "QA_INVENTORY_SORT"
+            ] == "descending"
+        #else
+            return false
+        #endif
+    }
+
+    static var initialVisibleItemLimit: Int {
+        #if DEBUG
+            if let value = ProcessInfo.processInfo.environment[
+                "QA_INVENTORY_VISIBLE_LIMIT"
+            ], let limit = Int(value) {
+                return max(limit, 1)
+            }
+        #endif
+        return 6
+    }
+
     var effectiveSizeCategory: ContentSizeCategory {
         #if DEBUG
             if ProcessInfo.processInfo.environment[
@@ -37,7 +58,7 @@ extension InventoryView {
         return try? Instant.parse(formatter.string(from: Date()))
     }
 
-    static var allowsLocalAcquisition: Bool {
+    static var usesReferenceFixture: Bool {
         #if DEBUG
             return ProcessInfo.processInfo.environment[
                 "QA_INVENTORY_FIXTURE"
@@ -45,6 +66,10 @@ extension InventoryView {
         #else
             return false
         #endif
+    }
+
+    static var allowsLocalAcquisition: Bool {
+        usesReferenceFixture
     }
 
     static var failsFirstAcquisition: Bool {
