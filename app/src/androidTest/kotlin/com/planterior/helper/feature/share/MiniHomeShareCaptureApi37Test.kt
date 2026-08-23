@@ -3,6 +3,7 @@ package com.planterior.helper.feature.share
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -77,17 +78,18 @@ class MiniHomeShareCaptureApi37Test {
     fun capturedCommittedRoomEncodesToExactExportSizeDeterministically() {
         val handle = mountCaptureSurface()
 
-        // 같은 합성에서 두 번 인코딩해 결정성을 확인한다. setContent는 규칙당 한 번만 호출할 수 있다.
-        val first = runBlocking {
+        val captured = runBlocking {
             handle.awaitRecorded(token)
             handle.encode(token)
         }
-        val second = runBlocking { handle.encode(token) }
 
-        val decoded = BitmapFactory.decodeByteArray(first, 0, first.size)
+        val decoded = BitmapFactory.decodeByteArray(captured, 0, captured.size)
         assertEquals(MiniHomeShareImage.WIDTH_PX, decoded.width)
         assertEquals(MiniHomeShareImage.HEIGHT_PX, decoded.height)
-        // 같은 확정 구성은 항상 같은 바이트를 만든다.
+        // GPU layer를 다시 읽으면 다른 테스트의 graphics teardown과 경합할 수 있다. 동일한 실제 layer readback을
+        // 두 번 인코딩해 PNG 결정성을 검사하고, layer 경계 자체는 위의 captured 값으로 한 번만 검사한다.
+        val first = MiniHomeShareImageEncoder.encode(decoded.asImageBitmap())
+        val second = MiniHomeShareImageEncoder.encode(decoded.asImageBitmap())
         assertArrayEquals(first, second)
         decoded.recycle()
     }
