@@ -23,3 +23,23 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''(?:^|/)functions/src/mini-home\.emulator-spec\.ts$''']
 regexes = ['''^(?:legacy-receipt-0001|inventory-fixture-0001)$''']
+
+# This is the exact stable HMAC output used to assert the Android/backend share contract,
+# not key material. Keep the exemption constrained to its test fixture and extracted value.
+[[allowlists]]
+description = "Deterministic mini-home share token fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)feature/share/src/test/kotlin/com/planterior/helper/feature/share/MiniHomeShareFixtures\.kt$''']
+regexes = ['''^_3-HzHiDPL_2kAV2l-4dRdsS1b6gdpWQlk0wY401NH4$''']
+
+# Generic-key entropy classifies four screenshot SHA-256 values as secrets when they
+# appear in JSON. Exempt only the exact Todo 15 visual manifests and reviewed digests.
+[[allowlists]]
+description = "Todo 15 visual manifest screenshot digests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)test-fixtures/todo15/visual/(?:reference-review|todo15-api37-(?:determinism|three-run-determinism))\.json$''']
+regexes = ['''^(?:6f3762841e1680d1bc2c82a26247b5cf1698464b51edabec31c6394a062599fd|d0ab0df99a56dd4e8f393840a6050fef715f9879c3ed5a86165ecb377463524c|f301fb7d88e0dd301a51f55bcd4800bb4cf540cff76482bbd3762492c0e84c06|2cd2e649fcd24d855eb4b55fd1b6d401bca7127377de1f3150f356fb12e05584)$''']

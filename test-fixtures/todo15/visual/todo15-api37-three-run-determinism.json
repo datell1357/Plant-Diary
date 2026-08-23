@@ -1,0 +1,52 @@
+{
+  "contractVersion": 1,
+  "sourceHead": "fe313b2dc8b27d659160e78342ea6c4076834f53",
+  "sourceTree": "9d35ebfa74016e3107fba5e667aed5ee87eee70c",
+  "device": "VerifyAdFix_pixel_7_api37_1080x2400_420dpi",
+  "renderer": "swiftshader_indirect",
+  "defaultAnimations": true,
+  "independentlyWipedRuns": 3,
+  "referencePolicy": "first-reviewed-green-run-only",
+  "failedRunPromotion": false,
+  "reference": {
+    "todo15-api37-rendering.png": "6f3762841e1680d1bc2c82a26247b5cf1698464b51edabec31c6394a062599fd",
+    "todo15-api37-ready.png": "d0ab0df99a56dd4e8f393840a6050fef715f9879c3ed5a86165ecb377463524c",
+    "todo15-api37-render-failure.png": "7c9b3b2bd6e5c5acb1dad1e8de9dd6c4231dfa7e7485fbb7855f0f227827c5f3",
+    "todo15-api37-chooser-cancelled.png": "866ca4ad8ca8c83335cfcda52bcdeeef6e59f0322804a04a04bd3f96ae67d87a",
+    "todo15-api37-active-link.png": "f301fb7d88e0dd301a51f55bcd4800bb4cf540cff76482bbd3762492c0e84c06",
+    "todo15-api37-offline-failure.png": "d34eeab9d95248f81817787e75985a64756e1064fe0b961cf4138d1c54ed2f15",
+    "todo15-api37-revoked.png": "2cd2e649fcd24d855eb4b55fd1b6d401bca7127377de1f3150f356fb12e05584",
+    "todo15-api37-active-link-font-200.png": "2ac397219965438fad9a61e6f186787ca6fb0a29e04d655d42547a510e3e7531"
+  },
+  "comparisons": [
+    {
+      "run": "run2",
+      "files": {
+        "todo15-api37-rendering.png": "6f3762841e1680d1bc2c82a26247b5cf1698464b51edabec31c6394a062599fd",
+        "todo15-api37-ready.png": "d0ab0df99a56dd4e8f393840a6050fef715f9879c3ed5a86165ecb377463524c",
+        "todo15-api37-render-failure.png": "7c9b3b2bd6e5c5acb1dad1e8de9dd6c4231dfa7e7485fbb7855f0f227827c5f3",
+        "todo15-api37-chooser-cancelled.png": "866ca4ad8ca8c83335cfcda52bcdeeef6e59f0322804a04a04bd3f96ae67d87a",
+        "todo15-api37-active-link.png": "f301fb7d88e0dd301a51f55bcd4800bb4cf540cff76482bbd3762492c0e84c06",
+        "todo15-api37-offline-failure.png": "d34eeab9d95248f81817787e75985a64756e1064fe0b961cf4138d1c54ed2f15",
+        "todo15-api37-revoked.png": "2cd2e649fcd24d855eb4b55fd1b6d401bca7127377de1f3150f356fb12e05584",
+        "todo15-api37-active-link-font-200.png": "2ac397219965438fad9a61e6f186787ca6fb0a29e04d655d42547a510e3e7531"
+      },
+      "mismatches": []
+    },
+    {
+      "run": "run3",
+      "files": {
+        "todo15-api37-rendering.png": "6f3762841e1680d1bc2c82a26247b5cf1698464b51edabec31c6394a062599fd",
+        "todo15-api37-ready.png": "d0ab0df99a56dd4e8f393840a6050fef715f9879c3ed5a86165ecb377463524c",
+        "todo15-api37-render-failure.png": "7c9b3b2bd6e5c5acb1dad1e8de9dd6c4231dfa7e7485fbb7855f0f227827c5f3",
+        "todo15-api37-chooser-cancelled.png": "866ca4ad8ca8c83335cfcda52bcdeeef6e59f0322804a04a04bd3f96ae67d87a",
+        "todo15-api37-active-link.png": "f301fb7d88e0dd301a51f55bcd4800bb4cf540cff76482bbd3762492c0e84c06",
+        "todo15-api37-offline-failure.png": "d34eeab9d95248f81817787e75985a64756e1064fe0b961cf4138d1c54ed2f15",
+        "todo15-api37-revoked.png": "2cd2e649fcd24d855eb4b55fd1b6d401bca7127377de1f3150f356fb12e05584",
+        "todo15-api37-active-link-font-200.png": "2ac397219965438fad9a61e6f186787ca6fb0a29e04d655d42547a510e3e7531"
+      },
+      "mismatches": []
+    }
+  ],
+  "byteIdentical": true
+}

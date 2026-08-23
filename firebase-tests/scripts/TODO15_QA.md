@@ -1,6 +1,6 @@
 # Todo 15 source-bound QA
 
-Todo 15 evidence is valid only for the committed HEAD and tree supplied when the run starts. Commit the QA harness first, then read both identifiers from that commit. Never copy identifiers into an old manifest or promote an old run under a new source revision.
+Todo 15 evidence is bound to the committed HEAD and tree supplied when the run starts. Commit the QA harness first, then read both identifiers from that checkpoint. The visual reference source is immutable: a later current run may have different source identifiers, and its manifest must retain those current identifiers rather than relabeling the tracked reference fixtures.
 
 ```bash
 TODO15_HEAD="$(git rev-parse HEAD)"
@@ -39,23 +39,31 @@ node firebase-tests/scripts/run-todo15-live-qa.cjs
 
 Use `--help` for the argument contract and `--self-test` for deterministic missing, malformed, and mismatch checks.
 
-## Visual promotion and comparison
+## Visual checkpoint, then current verification
 
-Promotion and comparison both require explicit expected source values. Promotion refuses a run whose manifest does not match. Verification also checks the canonical manifest, preventing old canonical evidence from being relabeled in a new result.
+Use two source checkpoints. First, run and promote the reviewed green reference. Promotion requires the reference run's identifiers and writes immutable `referenceHead`, `referenceTree`, and reviewed PNG hashes. Commit the resulting tracked fixtures without rewriting those reference fields.
 
 ```bash
+REFERENCE_HEAD="$TODO15_HEAD"
+REFERENCE_TREE="$TODO15_TREE"
 python3 firebase-tests/scripts/verify-todo15-visual.py promote \
-  --expected-head "$TODO15_HEAD" \
-  --expected-tree "$TODO15_TREE" \
+  --expected-head "$REFERENCE_HEAD" \
+  --expected-tree "$REFERENCE_TREE" \
   --reference .omo/evidence/todo15/api37/run1 \
   --canonical test-fixtures/todo15/visual
+```
 
+After committing the reference fixtures, start fresh independently wiped current runs and read the new commit identifiers. Verify requires those identifiers in each current run manifest. It independently validates that the canonical manifest and `reference-review.json` agree with the immutable reference IDs and hashes; it does not require reference and current sources to be equal.
+
+```bash
+CURRENT_HEAD="$(git rev-parse HEAD)"
+CURRENT_TREE="$(git rev-parse 'HEAD^{tree}')"
 python3 firebase-tests/scripts/verify-todo15-visual.py verify \
-  --expected-head "$TODO15_HEAD" \
-  --expected-tree "$TODO15_TREE" \
+  --expected-head "$CURRENT_HEAD" \
+  --expected-tree "$CURRENT_TREE" \
   --canonical test-fixtures/todo15/visual \
   --runs .omo/evidence/todo15/api37/run2 .omo/evidence/todo15/api37/run3 \
   --output .omo/evidence/todo15/api37/todo15-api37-three-run-determinism.json
 ```
 
-Run `python3 firebase-tests/scripts/verify-todo15-visual.py self-test` to exercise missing, malformed, mismatch, and matching source contracts without changing evidence.
+The verification output records both `referenceHead`/`referenceTree` and `currentHead`/`currentTree`. Run `python3 firebase-tests/scripts/verify-todo15-visual.py self-test` to exercise same-source, distinct-source, relabeling, current-source, and changed-PNG checks without changing evidence.
