@@ -35,10 +35,12 @@ extension RegionSettingsView {
         Button {
             usesCurrentLocation = true
             selectedCode = nil
+            weather.setManualRegion(nil)
+            onSaved()
             weather.requestLocationPermission()
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.medium) {
-                PlanteriorIconWell(systemImage: "location.fill")
+                PlanteriorIconWell(systemImage: "mappin")
                     .alignmentGuide(.firstTextBaseline) { dimensions in
                         dimensions[VerticalAlignment.center]
                     }
@@ -48,6 +50,7 @@ extension RegionSettingsView {
                     Text(currentLocationText)
                         .font(PlanteriorTypography.caption)
                         .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        .accessibilityIdentifier("weather.current-location-text")
                 }
                 Spacer(minLength: PlanteriorSpacing.small)
                 Image(
@@ -73,19 +76,13 @@ extension RegionSettingsView {
     }
 
     var regionCard: some View {
-        VStack(spacing: 0) {
+        PlanteriorGroupedSurface {
             ForEach(Array(filteredRegions.enumerated()), id: \.element.code) { index, region in
                 regionRow(region)
                 if index < filteredRegions.count - 1 {
                     Divider().padding(.leading, PlanteriorSpacing.large)
                 }
             }
-        }
-        .background(PlanteriorPalette.surface.color)
-        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
-        .overlay {
-            RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                .stroke(PlanteriorPalette.border.color, lineWidth: 1)
         }
     }
 
@@ -94,6 +91,8 @@ extension RegionSettingsView {
         return Button {
             usesCurrentLocation = false
             selectedCode = region.code
+            weather.setManualRegion(region.code)
+            onSaved()
         } label: {
             HStack(spacing: PlanteriorSpacing.medium) {
                 if selected {

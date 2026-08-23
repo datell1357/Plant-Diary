@@ -58,41 +58,17 @@ extension SettingsView {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.permission.location")
-            rowDivider
-            permissionRow(
-                "카메라",
-                value: Self.cameraText,
-                id: "settings.permission.camera"
-            )
-            rowDivider
-            permissionRow(
-                "알림",
-                value: notificationStatus,
-                id: "settings.permission.notifications"
-            )
+
         }
     }
 
     var accountGroup: some View {
         settingsGroup("계정") {
             actionRow(
-                "꾸미기 마일스톤",
-                icon: "trophy",
-                id: "settings.milestones",
-                action: openMilestones
-            )
-            rowDivider
-            actionRow(
                 "개인정보 처리방침",
                 icon: "doc.text",
                 id: "settings.privacy"
             ) { showsPrivacy = true }
-            rowDivider
-            actionRow(
-                "계정 삭제",
-                icon: "person.crop.circle.badge.minus",
-                id: "settings.delete-account"
-            ) { showsDeletion = true }
             rowDivider
             rowLabel(
                 "앱 버전",
@@ -111,6 +87,35 @@ extension SettingsView {
         }
     }
 
+    var operationalGroup: some View {
+        settingsGroup("기타 설정") {
+            actionRow(
+                "꾸미기 마일스톤",
+                icon: "trophy",
+                id: "settings.milestones",
+                action: openMilestones
+            )
+            rowDivider
+            permissionRow(
+                "카메라",
+                value: Self.cameraText,
+                id: "settings.permission.camera"
+            )
+            rowDivider
+            permissionRow(
+                "알림",
+                value: notificationStatus,
+                id: "settings.permission.notifications"
+            )
+            rowDivider
+            actionRow(
+                "계정 삭제",
+                icon: "person.crop.circle.badge.minus",
+                id: "settings.delete-account"
+            ) { showsDeletion = true }
+        }
+    }
+
     var appVersion: String {
         "v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")"
     }
@@ -118,7 +123,14 @@ extension SettingsView {
 
 extension SettingsView {
     static var locationText: String {
-        switch CLLocationManager().authorizationStatus {
+        #if DEBUG
+            switch ProcessInfo.processInfo.environment["QA_WEATHER_AUTHORIZATION"] {
+            case "full", "reduced": return "허용됨"
+            case "denied", "revoked": return "허용 안 됨"
+            default: break
+            }
+        #endif
+        return switch CLLocationManager().authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse: "허용됨"
         case .denied, .restricted: "허용 안 됨"
         case .notDetermined: "확인 필요"
@@ -138,7 +150,8 @@ extension SettingsView {
     static func fullRegionName(_ code: String?) -> String {
         switch code {
         case "manual-seoul": "서울특별시"
-        case "manual-busan": "부산광역시"
+        case "manual-busan": "경기도 성남시"
+        case "manual-haeundae": "부산광역시"
         case "manual-incheon": "인천광역시"
         case "manual-daegu": "대구광역시"
         case "manual-daejeon": "대전광역시"

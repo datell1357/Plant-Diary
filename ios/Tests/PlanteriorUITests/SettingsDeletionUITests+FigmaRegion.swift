@@ -2,6 +2,45 @@ import XCTest
 
 @MainActor
 extension SettingsDeletionUITests {
+    func testFigmaRegionUsesDeterministicSeoulStateAndPersistsSelection() {
+        let app = figmaSettingsApp()
+        app.launchArguments += [
+            "-AppleLanguages", "(ko)",
+            "-AppleLocale", "ko_KR"
+        ]
+        app.launch()
+        openFigmaSettings(in: app)
+
+        app.buttons["settings.region.open"].tap()
+        XCTAssertTrue(
+            app.scrollViews["region-settings.screen"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertEqual(
+            app.staticTexts["weather.current-location-text"].label,
+            "서울특별시 강남구 역삼동"
+        )
+        XCTAssertEqual(
+            app.buttons["weather.region-result.manual-seoul"].value as? String,
+            "선택됨"
+        )
+        XCTAssertTrue(app.buttons["weather.region.back"].isHittable)
+        XCTAssertFalse(app.buttons["weather.region.save"].exists)
+        attachScreenshot(named: "region-402x874-light")
+
+        app.buttons["weather.region-result.manual-haeundae"].tap()
+        app.buttons["weather.region.back"].tap()
+        XCTAssertTrue(
+            app.buttons["settings.region.open"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["settings.region.open"].label.contains("부산광역시"))
+        app.buttons["settings.region.open"].tap()
+        XCTAssertEqual(
+            app.buttons["weather.region-result.manual-haeundae"].value as? String,
+            "선택됨"
+        )
+    }
+
     /// Visual-matrix capture for `careSettings.region` under Korean AX5 +
     /// Reduce Motion. The default-type capture lives in `WeatherFlowUITests`,
     /// which taps `weather.open-region` on Home without scrolling; at AX5 that

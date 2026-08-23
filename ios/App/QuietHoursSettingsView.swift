@@ -27,45 +27,58 @@ struct QuietHoursSettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                toggleCard
-                Text("설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다.")
-                    .font(PlanteriorTypography.caption)
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("시간 범위 설정")
-                    .font(PlanteriorTypography.caption.weight(.semibold))
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .padding(.leading, PlanteriorSpacing.large)
-                timeCard
-                warningCard
-            }
-            .padding(PlanteriorSpacing.large)
-            .padding(.bottom, PlanteriorSpacing.large)
-        }
-        .accessibilityIdentifier("quiet-hours.screen")
-        .background(PlanteriorPalette.canvas.color)
-        .navigationTitle("알림 금지 시간 설정")
-        .navigationBarTitleDisplayMode(.inline)
-        .planteriorInlineNavigationChrome()
-        .toolbar {
-            if showsCloseButton {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left")
+        VStack(spacing: 0) {
+            topBar
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    toggleCard
+                    Text("설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다.")
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                        Text("시간 범위 설정")
+                            .font(PlanteriorTypography.caption.weight(.semibold))
+                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        timeCard
                     }
-                    .accessibilityLabel("뒤로")
+                    warningCard
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, PlanteriorSpacing.medium)
+                .padding(.bottom, PlanteriorSpacing.large)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .accessibilityIdentifier("quiet-hours.screen")
             saveBar
         }
+        .background(PlanteriorPalette.canvas.color)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var topBar: some View {
+        PlanteriorTopBar("알림 금지 시간 설정", leading: {
+            if showsCloseButton {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(
+                            width: PlanteriorControl.minimumTarget,
+                            height: PlanteriorControl.minimumTarget
+                        )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .accessibilityLabel("뒤로")
+                .accessibilityIdentifier("quiet-hours.back")
+            }
+        }, trailing: {
+            EmptyView()
+        })
     }
 
     private var toggleCard: some View {
-        PlanteriorCard {
+        PlanteriorGroupedSurface {
             HStack(spacing: PlanteriorSpacing.medium) {
                 PlanteriorIconWell(systemImage: "clock")
                 Toggle("알림 금지 시간 사용", isOn: $enabled)
@@ -73,22 +86,18 @@ struct QuietHoursSettingsView: View {
                     .tint(PlanteriorPalette.accent.color)
                     .accessibilityIdentifier("quiet-hours.enabled")
             }
+            .padding(.horizontal, PlanteriorSpacing.large)
+            .frame(minHeight: 56)
         }
     }
 
     private var timeCard: some View {
-        PlanteriorCard {
-            VStack(spacing: 0) {
-                timePicker("시작 시간", selection: $startDate, id: "quiet-hours.start")
-                Divider().padding(
-                    .leading,
-                    PlanteriorControl.iconWellSize(for: sizeCategory)
-                        + PlanteriorSpacing.medium
-                )
-                timePicker("종료 시간", selection: $endDate, id: "quiet-hours.end")
-            }
+        PlanteriorGroupedSurface {
+            timePicker("시작 시간", selection: $startDate, id: "quiet-hours.start")
+            Divider().padding(.leading, PlanteriorSpacing.large)
+            timePicker("종료 시간", selection: $endDate, id: "quiet-hours.end")
         }
-        .opacity(enabled ? 1 : 0.65)
+        .opacity(enabled ? 1 : 0.55)
     }
 
     private var warningCard: some View {
@@ -131,6 +140,10 @@ struct QuietHoursSettingsView: View {
                     alignment: .leading
                 )
                 .accessibilityLabel(title)
+                .accessibilityValue(
+                    QuietHoursPresentation.localTime(from: selection.wrappedValue)?
+                        .rawValue ?? ""
+                )
                 .accessibilityIdentifier(id)
             }
             .padding(.vertical, PlanteriorSpacing.small)
@@ -142,8 +155,13 @@ struct QuietHoursSettingsView: View {
                 displayedComponents: .hourAndMinute
             )
             .datePickerStyle(.compact)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
+            .padding(.horizontal, PlanteriorSpacing.large)
+            .frame(minHeight: 52)
             .disabled(!enabled)
+            .accessibilityValue(
+                QuietHoursPresentation.localTime(from: selection.wrappedValue)?
+                    .rawValue ?? ""
+            )
             .accessibilityIdentifier(id)
         }
     }
@@ -151,7 +169,8 @@ struct QuietHoursSettingsView: View {
     private var saveBar: some View {
         PlanteriorPrimaryButton("저장하기", action: save)
             .accessibilityIdentifier("quiet-hours.save")
-            .padding(PlanteriorSpacing.large)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 11)
             .background(PlanteriorPalette.canvas.color)
             .overlay(alignment: .top) {
                 Divider()

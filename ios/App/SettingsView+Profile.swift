@@ -5,7 +5,7 @@ extension SettingsView {
     var profileCard: some View {
         PlanteriorCard {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: PlanteriorSpacing.medium) {
+                HStack(spacing: PlanteriorSpacing.large) {
                     profileAvatar
                     VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                         HStack(spacing: PlanteriorSpacing.small) {
@@ -28,10 +28,9 @@ extension SettingsView {
     }
 
     private var profileAvatar: some View {
-        Image(systemName: "leaf.fill")
-            .font(.title2)
-            .foregroundStyle(PlanteriorPalette.accent.color)
-            .frame(width: 56, height: 56)
+        Text("🌿")
+            .font(.system(size: 28))
+            .frame(width: 60, height: 60)
             .background(PlanteriorPalette.accentSurface.color)
             .clipShape(Circle())
             .accessibilityHidden(true)

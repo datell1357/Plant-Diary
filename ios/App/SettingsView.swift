@@ -19,21 +19,25 @@ struct SettingsView: View {
     @State var wateringEnabled = true
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                profileCard
-                alertGroup
-                environmentGroup
-                accountGroup
+        VStack(spacing: 0) {
+            PlanteriorTopBar("설정")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    profileCard
+                    alertGroup
+                    environmentGroup
+                    accountGroup
+                    operationalGroup
+                }
+                .padding(.horizontal, PlanteriorSpacing.large)
+                .padding(.top, PlanteriorSpacing.extraSmall)
+                .padding(.bottom, PlanteriorSpacing.large)
             }
-            .padding(PlanteriorSpacing.large)
-            .padding(.bottom, PlanteriorSpacing.large)
+            .accessibilityIdentifier("settings.screen")
         }
-        .accessibilityIdentifier("settings.screen")
         .background(PlanteriorPalette.canvas.color)
-        .navigationTitle("설정")
-        .navigationBarTitleDisplayMode(.inline)
-        .planteriorInlineNavigationChrome()
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             AnalyticsRecorder.shared.record(.screenViewed(.settings))
             mountPresentedAccount()

@@ -10,14 +10,7 @@ extension SettingsView {
             Text(title)
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .padding(.leading, PlanteriorSpacing.large)
-            VStack(spacing: 0, content: content)
-                .background(PlanteriorPalette.surface.color)
-                .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
-                .overlay {
-                    RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                        .stroke(PlanteriorPalette.border.color, lineWidth: 1)
-                }
+            PlanteriorGroupedSurface { content() }
         }
     }
 
@@ -46,7 +39,7 @@ extension SettingsView {
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.vertical, PlanteriorSpacing.small)
-        .frame(minHeight: PlanteriorControl.rowHeight)
+        .frame(minHeight: 52)
     }
 
     func permissionRow(_ title: String, value: String, id: String) -> some View {
@@ -112,7 +105,7 @@ extension SettingsView {
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.vertical, PlanteriorSpacing.small)
-        .frame(minHeight: PlanteriorControl.rowHeight)
+        .frame(minHeight: 52)
         .contentShape(Rectangle())
     }
 

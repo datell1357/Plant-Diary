@@ -38,43 +38,51 @@ struct RegionSettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                searchField
-                currentLocationCard
-                Text("최근 검색 지역")
-                    .font(PlanteriorTypography.caption.weight(.semibold))
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .padding(.leading, PlanteriorSpacing.large)
-                    .accessibilityIdentifier("weather.recent-regions")
-                regionCard
-                #if DEBUG
-                    revokeLocationButton
-                #endif
-            }
-            .padding(PlanteriorSpacing.large)
-        }
-        .accessibilityIdentifier("region-settings.screen")
-        .background(PlanteriorPalette.canvas.color)
-        .navigationTitle("관리 지역 설정")
-        .navigationBarTitleDisplayMode(.inline)
-        .planteriorInlineNavigationChrome()
-        .toolbar {
-            if showsCloseButton {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    .accessibilityLabel("뒤로")
-                    .accessibilityIdentifier("weather.region.back")
+        VStack(spacing: 0) {
+            topBar
+            ScrollView {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+                    searchField
+                    currentLocationCard
+                    Text("최근 검색 지역")
+                        .font(PlanteriorTypography.caption.weight(.semibold))
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        .accessibilityIdentifier("weather.recent-regions")
+                    regionCard
+                    #if DEBUG
+                        revokeLocationButton
+                    #endif
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, PlanteriorSpacing.small)
+                .padding(.bottom, PlanteriorSpacing.large)
             }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("저장", action: save)
-                    .accessibilityIdentifier("weather.region.save")
-            }
+            .accessibilityIdentifier("region-settings.screen")
         }
+        .background(PlanteriorPalette.canvas.color)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var topBar: some View {
+        PlanteriorTopBar("관리 지역 설정", leading: {
+            if showsCloseButton {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(
+                            width: PlanteriorControl.minimumTarget,
+                            height: PlanteriorControl.minimumTarget
+                        )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .accessibilityLabel("뒤로")
+                .accessibilityIdentifier("weather.region.back")
+            }
+        }, trailing: {
+            EmptyView()
+        })
     }
 
     #if DEBUG
@@ -105,6 +113,13 @@ struct RegionSettingsView: View {
     }
 
     var currentLocationText: String {
+        #if DEBUG
+            if let fixture = ProcessInfo.processInfo.environment[
+                "QA_SETTINGS_LOCATION_TEXT"
+            ] {
+                return fixture
+            }
+        #endif
         if let code = weather.locationRegionCode {
             return WeatherRuntime.regionName(for: code)
         }
@@ -116,9 +131,4 @@ struct RegionSettingsView: View {
         }
     }
 
-    func save() {
-        weather.setManualRegion(usesCurrentLocation ? nil : selectedCode)
-        onSaved()
-        dismiss()
-    }
 }

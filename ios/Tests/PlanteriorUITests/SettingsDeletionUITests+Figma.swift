@@ -3,7 +3,12 @@ import XCTest
 @MainActor
 extension SettingsDeletionUITests {
     func testFigmaSettingsRootAndQuietHoursPersist() {
-        let app = figmaSettingsApp()
+        let accountID = "qa-settings-figma-\(UUID().uuidString)"
+        let app = figmaSettingsApp(accountID: accountID)
+        app.launchArguments += [
+            "-AppleLanguages", "(ko)",
+            "-AppleLocale", "ko_KR"
+        ]
         app.launch()
         openFigmaSettings(in: app)
 
@@ -11,24 +16,9 @@ extension SettingsDeletionUITests {
         XCTAssertTrue(app.staticTexts["알림 관리"].exists)
         XCTAssertTrue(app.staticTexts["지역 및 환경"].exists)
         XCTAssertTrue(app.staticTexts["계정"].exists)
-        XCTAssertTrue(app.staticTexts["앱 버전"].exists)
-        let weatherAlerts = app.switches["settings.alerts.weather-enabled"]
-        let settingsScroll = app.scrollViews["settings.screen"]
-        for _ in 0 ..< 8 where !weatherAlerts.isHittable {
-            settingsScroll.swipeUp()
-        }
-        XCTAssertTrue(weatherAlerts.isHittable)
-        let initialWeatherValue = weatherAlerts.value as? String
-        weatherAlerts.tap()
-        let weatherChanged = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value != %@", initialWeatherValue ?? ""),
-            object: weatherAlerts
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [weatherChanged], timeout: 5),
-            .completed
-        )
-        weatherAlerts.tap()
+        XCTAssertTrue(app.buttons["settings.privacy"].isHittable)
+        XCTAssertTrue(app.staticTexts["앱 버전"].isHittable)
+        XCTAssertTrue(app.buttons["auth.logout"].isHittable)
         attachScreenshot(named: "settings-402x874-light")
 
         app.buttons["settings.quiet-hours.open"].tap()
@@ -37,12 +27,18 @@ extension SettingsDeletionUITests {
                 .waitForExistence(timeout: 5)
         )
         let toggle = app.switches["quiet-hours.enabled"]
-        if toggle.value as? String != "1" {
-            toggle.tap()
-        }
-        XCTAssertTrue(app.datePickers["quiet-hours.start"].exists)
-        XCTAssertTrue(app.datePickers["quiet-hours.end"].exists)
+        let start = app.datePickers["quiet-hours.start"]
+        let end = app.datePickers["quiet-hours.end"]
+        XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertFalse(start.isEnabled)
+        XCTAssertFalse(end.isEnabled)
+        XCTAssertEqual(start.value as? String, "22:00:00")
+        XCTAssertEqual(end.value as? String, "07:00:00")
         attachScreenshot(named: "quiet-hours-402x874-light")
+
+        toggle.tap()
+        XCTAssertTrue(start.isEnabled)
+        XCTAssertTrue(end.isEnabled)
         app.buttons["quiet-hours.save"].tap()
 
         XCTAssertTrue(
@@ -54,6 +50,8 @@ extension SettingsDeletionUITests {
             app.switches["quiet-hours.enabled"].value as? String,
             "1"
         )
+        XCTAssertTrue(app.datePickers["quiet-hours.start"].isEnabled)
+        XCTAssertTrue(app.datePickers["quiet-hours.end"].isEnabled)
     }
 
     func testHomeNotificationAffordanceOpensQuietHours() {
@@ -178,13 +176,19 @@ extension SettingsDeletionUITests {
         attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
     }
 
-    func figmaSettingsApp() -> XCUIApplication {
+    func figmaSettingsApp(accountID: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launchEnvironment["QA_ACCOUNT_ID"] = accountID
+            ?? "qa-settings-\(UUID().uuidString)"
         app.launchEnvironment["QA_AUTH_PROFILE_NAME"] = "민지"
         app.launchEnvironment["QA_AUTH_PROFILE_EMAIL"] = "minji@email.com"
-        app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "denied"
+        app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "full"
+        app.launchEnvironment["QA_WEATHER_MANUAL_REGION"] = "manual-seoul"
+        app.launchEnvironment["QA_SETTINGS_LOCATION_TEXT"] =
+            "서울특별시 강남구 역삼동"
+        app.launchEnvironment["TZ"] = "Asia/Seoul"
         return app
     }
 
