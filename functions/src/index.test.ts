@@ -12,6 +12,7 @@ import {
   completeWatering,
   confirmNotificationOpened,
   createCatalogProjectionWriteHandler,
+  createMiniHomeShareLink,
   createLoadInventoryCallable,
   ensureWateringNotificationSettings,
   identifyPlant,
@@ -20,6 +21,7 @@ import {
   loadMiniHomeSnapshot,
   reconcileWateringNotificationTimezone,
   refreshWeather,
+  revokeMiniHomeShareLink,
   registerNotificationEndpoint,
   saveMiniHomeLayout,
   searchWeatherRegions,
@@ -100,6 +102,8 @@ test("all owner watering mini-home and Apple callable boundaries reject missing 
     (request, response) => completeWatering(request, response),
     (request, response) => loadMiniHomeLayout(request, response),
     (request, response) => loadMiniHomeSnapshot(request, response),
+    (request, response) => createMiniHomeShareLink(request, response),
+    (request, response) => revokeMiniHomeShareLink(request, response),
     (request, response) => saveMiniHomeLayout(request, response),
     (request, response) => loadInventory(request, response),
     (request, response) => acquireInventoryItem(request, response),
@@ -188,6 +192,15 @@ test("valid debug App Check reaches application validation on hardened callables
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
   }
+});
+
+test("share callable factories enforce App Check and bind only the create secret", () => {
+  const createEndpoint = (createMiniHomeShareLink as unknown as { __endpoint: { callableTrigger: unknown; secretEnvironmentVariables?: readonly { key: string }[] } }).__endpoint;
+  const revokeEndpoint = (revokeMiniHomeShareLink as unknown as { __endpoint: { callableTrigger: unknown; secretEnvironmentVariables?: readonly { key: string }[] } }).__endpoint;
+  assert.ok(createEndpoint.callableTrigger !== undefined);
+  assert.ok(revokeEndpoint.callableTrigger !== undefined);
+  assert.deepEqual(createEndpoint.secretEnvironmentVariables, [{ key: "MINI_HOME_SHARE_TOKEN_KEY" }]);
+  assert.equal(revokeEndpoint.secretEnvironmentVariables, undefined);
 });
 
 test("real loadInventory callable serializes the shared versioned catalog and owned contract", async () => {
@@ -336,6 +349,8 @@ test("hardened callable boundaries reject invalid App Check before application v
       (request, response) => completeWatering(request, response),
       (request, response) => loadMiniHomeLayout(request, response),
       (request, response) => loadMiniHomeSnapshot(request, response),
+      (request, response) => createMiniHomeShareLink(request, response),
+      (request, response) => revokeMiniHomeShareLink(request, response),
       (request, response) => saveMiniHomeLayout(request, response),
       (request, response) => loadInventory(request, response),
       (request, response) => acquireInventoryItem(request, response),

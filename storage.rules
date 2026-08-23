@@ -77,9 +77,9 @@ service firebase.storage {
       allow read, delete: if owns(uid);
       allow create, update: if owns(uid) && safeSegment(plantId) && safeFileName(fileName) && validImage(uid);
     }
+    // Mini-home shares are local-only static documents; no client share artifact exists.
     match /share-images/{uid}/{shareId}/{fileName} {
-      allow read, delete: if owns(uid);
-      allow create, update: if owns(uid) && safeSegment(shareId) && safeFileName(fileName) && validImage(uid);
+      allow read, write: if false;
     }
     match /{allPaths=**} { allow read, write: if false; }
   }

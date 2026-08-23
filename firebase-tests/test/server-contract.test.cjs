@@ -291,14 +291,22 @@ describe("strict server-derived Firebase contract", () => {
     await assertFails(setDoc(doc(server, "users/user-a/weatherRisks/extra"), { ...write("user-a"), plantId: "plant-a", snapshotId: "snapshot-a", type: "DRY", action: null, detectedAt: ts("2026-08-12T00:00:00Z"), active: true, privileged: true }));
   });
 
-  it("reads a Timestamp-shaped public share before expiry and denies it after expiry", async () => {
+  it("denies every client role direct access to public shares and owner share metadata", async () => {
     const server = env.authenticatedContext("service", { server: true }).firestore();
+    const owner = env.authenticatedContext("user-a").firestore();
+    const foreign = env.authenticatedContext("user-b").firestore();
     const anonymous = env.unauthenticatedContext().firestore();
-    const shape = (expiresAt) => ({ publicationState: "PUBLIC", sourceRevision: 1, snapshotPath: "share-images/user-a/share-a/share.png", expiresAt, revokedAt: null });
-    await assertSucceeds(setDoc(doc(server, "publicShares/future"), shape(ts("2099-01-01T00:00:00Z"))));
-    await assertSucceeds(getDoc(doc(anonymous, "publicShares/future")));
-    await assertSucceeds(setDoc(doc(server, "publicShares/expired"), shape(ts("2020-01-01T00:00:00Z"))));
-    await assertFails(getDoc(doc(anonymous, "publicShares/expired")));
-    await assertFails(setDoc(doc(server, "publicShares/string"), shape("2099-01-01T00:00:00Z")));
+    const publicPath = "publicShares/" + "a".repeat(64);
+    const metadataPath = "users/user-a/shareLinks/" + "s".repeat(43);
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), publicPath), { schemaVersion: 1, tokenHash: "a".repeat(64), sourceRevision: 1 });
+      await setDoc(doc(admin.firestore(), metadataPath), { schemaVersion: 1, ownerUid: "user-a", sourceRevision: 1 });
+    });
+    for (const context of [server, owner, foreign, anonymous]) {
+      await assertFails(getDoc(doc(context, publicPath)));
+      await assertFails(getDoc(doc(context, metadataPath)));
+      await assertFails(setDoc(doc(context, publicPath), { schemaVersion: 1 }));
+      await assertFails(setDoc(doc(context, metadataPath), { schemaVersion: 1 }));
+    }
   });
 });

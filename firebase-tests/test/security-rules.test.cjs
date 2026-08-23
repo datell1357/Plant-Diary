@@ -86,7 +86,7 @@ describe("Planterior Firebase ownership contract", () => {
     const collections = [
       "personalPlants", "wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings",
       "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems",
-      "shareLinks", "consents", "deletionRequests", "notificationDeliveries", "notificationHistory", "identificationRequests"
+      "consents", "deletionRequests", "notificationDeliveries", "notificationHistory", "identificationRequests"
     ];
     const owner = env.authenticatedContext("user-a").firestore();
     const server = env.authenticatedContext("service", { server: true }).firestore();
@@ -621,7 +621,7 @@ describe("Planterior Firebase ownership contract", () => {
     await assertFails(getBytes(ref(ownerStorage, "catalog-assets/public/nested/preview.webp")));
   });
 
-  it("binds all photo storage prefixes to auth uid and metadata owner", async () => {
+  it("binds private photo prefixes to auth uid and disables obsolete share-image artifacts", async () => {
     const owner = env.authenticatedContext("user-a").storage();
     const foreign = env.authenticatedContext("user-b").storage();
     const anonymous = env.unauthenticatedContext().storage();
@@ -637,7 +637,8 @@ describe("Planterior Firebase ownership contract", () => {
     const original = ref(owner, "identification-originals/user-a/request-a/original.webp");
     const share = ref(owner, "share-images/user-a/share-a/share.png");
     await assertSucceeds(uploadBytes(original, bytes, { contentType: "image/webp", customMetadata: { ownerUid: "user-a" } }));
-    await assertSucceeds(uploadBytes(share, bytes, { contentType: "image/png", customMetadata: { ownerUid: "user-a" } }));
+    await assertFails(uploadBytes(share, bytes, { contentType: "image/png", customMetadata: { ownerUid: "user-a" } }));
+    await assertFails(getBytes(share));
     await assertFails(getBytes(ref(foreign, "identification-originals/user-a/request-a/original.webp")));
     await assertFails(getBytes(ref(foreign, "share-images/user-a/share-a/share.png")));
     await assertFails(uploadBytes(ref(owner, "plant-photos/user-a/../traversal.jpg"), bytes, { contentType: "image/jpeg", customMetadata: { ownerUid: "user-a" } }));

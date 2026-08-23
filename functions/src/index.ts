@@ -13,6 +13,7 @@ import { FirestoreMutationStore } from "./firestore-store.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
 import { FirestoreMiniHomeSnapshotStore } from "./firestore-mini-home-snapshot-store.js";
+import { FirestoreMiniHomeShareStore } from "./firestore-mini-home-share-store.js";
 import { FirestoreInventoryStore } from "./firestore-inventory-store.js";
 import {
   executeAcquireInventoryItem,
@@ -22,6 +23,12 @@ import {
 } from "./inventory.js";
 import { executeDeleteMiniHomeLayout, executeLoadMiniHomeLayout, executeSaveMiniHomeLayout, MiniHomeError } from "./mini-home.js";
 import { executeLoadMiniHomeSnapshot, MiniHomeSnapshotError, type MiniHomeSnapshotStore } from "./mini-home-snapshot.js";
+import {
+  MiniHomeShareError,
+  createPublicMiniHomeShareHandler,
+  executeCreateMiniHomeShareLink,
+  executeRevokeMiniHomeShareLink,
+} from "./mini-home-share.js";
 import { FirestoreWateringCompletionStore } from "./firestore-watering-store.js";
 import {
   FirestoreNotificationSettingsStore,
@@ -71,6 +78,7 @@ const wateringStore = new FirestoreWateringCompletionStore(firestore);
 const catalogProjectionStore = new FirestoreCatalogProjectionStore(firestore);
 const miniHomeStore = new FirestoreMiniHomeLayoutStore(firestore);
 const miniHomeSnapshotStore = new FirestoreMiniHomeSnapshotStore(firestore);
+const miniHomeShareStore = new FirestoreMiniHomeShareStore(firestore);
 const inventoryStore = new FirestoreInventoryStore(firestore);
 const notificationSettingsStore = new FirestoreNotificationSettingsStore(firestore);
 const wateringDeliveryStore = new FirestoreWateringDeliveryStore(firestore);
@@ -79,6 +87,7 @@ const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
 const appleAbuseHashKey = defineSecret("APPLE_ABUSE_HASH_KEY");
 const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
 const openWeatherApiKey = defineSecret("OPENWEATHER_API_KEY");
+const miniHomeShareTokenKey = defineSecret("MINI_HOME_SHARE_TOKEN_KEY");
 const weatherStore = new FirestoreWeatherStore(firestore);
 
 function requiredEnvironment(name: "APPLE_CLIENT_ID" | "APPLE_REDIRECT_URI" | "APPLE_TEAM_ID" | "APPLE_KEY_ID"): string {
@@ -176,6 +185,63 @@ export function createLoadMiniHomeSnapshotCallable(store: MiniHomeSnapshotStore)
 }
 
 export const loadMiniHomeSnapshot = createLoadMiniHomeSnapshotCallable(miniHomeSnapshotStore);
+
+function miniHomeShareHttpsError(error: unknown): never {
+  if (!(error instanceof MiniHomeShareError)) throw error;
+  throw new HttpsError(error.code, error.message, error.details);
+}
+
+function miniHomeSharePublicEndpoint(host: string | undefined): string {
+  const configured = process.env.MINI_HOME_SHARE_PUBLIC_URL;
+  if (configured !== undefined && configured.length > 0) return configured;
+  const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
+  if (projectId === undefined || !/^[a-z][a-z0-9-]{4,29}$/.test(projectId)) {
+    throw new MiniHomeShareError("failed-precondition", "Public share endpoint is unavailable");
+  }
+  if (process.env.FUNCTIONS_EMULATOR === "true" && host !== undefined) {
+    return `http://${host}/${projectId}/us-central1/publicMiniHomeShare`;
+  }
+  return `https://us-central1-${projectId}.cloudfunctions.net/publicMiniHomeShare`;
+}
+
+export const createMiniHomeShareLink = onCall(
+  { enforceAppCheck: true, secrets: [miniHomeShareTokenKey] },
+  async (request) => {
+    try {
+      return await executeCreateMiniHomeShareLink(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        miniHomeShareStore,
+        miniHomeShareTokenKey.value(),
+        new Date(),
+        miniHomeSharePublicEndpoint(request.rawRequest.headers.host),
+      );
+    } catch (error: unknown) {
+      return miniHomeShareHttpsError(error);
+    }
+  },
+);
+
+export const revokeMiniHomeShareLink = onCall(
+  { enforceAppCheck: true },
+  async (request) => {
+    try {
+      return await executeRevokeMiniHomeShareLink(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        miniHomeShareStore,
+        new Date(),
+      );
+    } catch (error: unknown) {
+      return miniHomeShareHttpsError(error);
+    }
+  },
+);
+
+export const publicMiniHomeShare = onRequest(
+  { cors: false },
+  createPublicMiniHomeShareHandler(miniHomeShareStore),
+);
 
 export const deleteMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
   try {
