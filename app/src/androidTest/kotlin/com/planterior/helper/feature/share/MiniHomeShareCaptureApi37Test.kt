@@ -117,7 +117,8 @@ class MiniHomeShareCaptureApi37Test {
         val handle = mountCaptureSurface(loader)
         val captured = runBlocking {
             handle.awaitRecorded(token)
-            // This is the sole GraphicsLayer readback. Keep this immutable capture for every later encode.
+            // This is the sole GraphicsLayer readback. Keep this immutable capture for every
+            // later encode.
             handle.layer.toImageBitmap()
         }
         val capturedBitmap = captured.asAndroidBitmap()
