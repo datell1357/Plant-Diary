@@ -1,6 +1,8 @@
 package com.planterior.helper.feature.share
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -17,12 +19,17 @@ import com.planterior.helper.core.model.Revision
 import com.planterior.helper.feature.minihome.GridPosition
 import com.planterior.helper.feature.minihome.MiniHomeDecorationChoice
 import com.planterior.helper.feature.minihome.MiniHomeLayout
+import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
+import com.planterior.helper.feature.minihome.MiniHomePhotoRequest
 import com.planterior.helper.feature.minihome.MiniHomePlacement
 import com.planterior.helper.feature.minihome.MiniHomePlacementPolicy
 import com.planterior.helper.feature.minihome.MiniHomePlacementTarget
 import com.planterior.helper.feature.minihome.MiniHomePlantChoice
 import com.planterior.helper.feature.minihome.MiniHomeZIndex
+import com.planterior.helper.feature.minihome.PlaceholderMiniHomePhotoLoader
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -70,7 +77,14 @@ class MiniHomeShareCaptureApi37Test {
                     Revision(7),
                     Instant.ofEpochMilli(1_700_000_000_000L),
                 ),
-            plants = listOf(MiniHomePlantChoice(PersonalPlantId("plant-a"), "몬스테라", null)),
+            plants =
+                listOf(
+                    MiniHomePlantChoice(
+                        PersonalPlantId("plant-a"),
+                        "몬스테라",
+                        "users/owner-api37/plants/plant-a/private.jpg",
+                    )
+                ),
             decorations = listOf(MiniHomeDecorationChoice(ItemId("item-a"), "원목 테이블")),
         )
 
@@ -92,6 +106,23 @@ class MiniHomeShareCaptureApi37Test {
         val second = MiniHomeShareImageEncoder.encode(decoded.asImageBitmap())
         assertArrayEquals(first, second)
         decoded.recycle()
+    }
+
+    @Test
+    fun privatePhotoCompletionCannotChangeExportBytesOrInvokeTheLoader() {
+        val loader = ControlledPhotoLoader()
+        val handle = mountCaptureSurface(loader)
+
+        val beforeCompletion = runBlocking {
+            handle.awaitRecorded(token)
+            handle.encode(token)
+        }
+        compose.runOnIdle { loader.complete() }
+        compose.waitForIdle()
+        val afterCompletion = runBlocking { handle.encode(token) }
+
+        assertArrayEquals(beforeCompletion, afterCompletion)
+        assertEquals(0, loader.calls.get())
     }
 
     @Test
@@ -122,7 +153,9 @@ class MiniHomeShareCaptureApi37Test {
     }
 
     /** setContent는 규칙당 한 번만 호출할 수 있으므로 표면을 한 번 붙이고 손잡이를 돌려준다. */
-    private fun mountCaptureSurface(): MiniHomeShareCaptureHandle {
+    private fun mountCaptureSurface(
+        photoLoader: MiniHomePhotoLoader = PlaceholderMiniHomePhotoLoader
+    ): MiniHomeShareCaptureHandle {
         lateinit var handle: MiniHomeShareCaptureHandle
         compose.setContent {
             PlanteriorTheme {
@@ -132,10 +165,29 @@ class MiniHomeShareCaptureApi37Test {
                     modifier = Modifier.size(360.dp, 300.dp),
                     handle = handle,
                     captureToken = token,
+                    photoLoader = photoLoader,
                 )
             }
         }
         compose.waitForIdle()
         return handle
+    }
+
+    private class ControlledPhotoLoader : MiniHomePhotoLoader {
+        val calls = AtomicInteger()
+        private val bitmap =
+            Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(Color.MAGENTA)
+            }
+        private val result = CompletableDeferred<Bitmap>()
+
+        override suspend fun load(request: MiniHomePhotoRequest): Bitmap {
+            calls.incrementAndGet()
+            return result.await()
+        }
+
+        fun complete() {
+            result.complete(bitmap)
+        }
     }
 }

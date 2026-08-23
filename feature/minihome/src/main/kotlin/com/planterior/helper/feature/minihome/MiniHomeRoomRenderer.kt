@@ -70,6 +70,8 @@ fun MiniHomeCommittedRoom(
     decorations: List<MiniHomeDecorationChoice>,
     photoLoader: MiniHomePhotoLoader,
     modifier: Modifier = Modifier,
+    mediaPolicy: MiniHomeRendererMediaPolicy =
+        MiniHomeRendererMediaPolicy.DISPLAY_CONFIGURED_PHOTOS,
     placementTagPrefix: String? = null,
 ) {
     val backgroundPlacement = MiniHomeRoomRenderer.backgroundPlacement(layout, decorations)
@@ -86,7 +88,12 @@ fun MiniHomeCommittedRoom(
             with(density) { MiniHomeIsometricProjection(maxWidth.toPx(), maxHeight.toPx()) }
         val miniatureWidth = with(density) { projection.miniatureWidth.toDp() }
         val miniatureHeight = with(density) { projection.miniatureHeight.toDp() }
-        MiniHomeBackground(backgroundChoice, photoLoader, Modifier.fillMaxSize())
+        MiniHomeBackground(
+            choice = backgroundChoice,
+            photoLoader = photoLoader,
+            modifier = Modifier.fillMaxSize(),
+            mediaPolicy = mediaPolicy,
+        )
         MiniHomeFloor(projection, backgroundChoice != null)
         MiniHomeRoomRenderer.stagePlacements(layout, decorations).forEach { placement ->
             val anchor = projection.cellCenter(placement.position)
@@ -113,6 +120,7 @@ fun MiniHomeCommittedRoom(
                     plants = plants,
                     decorations = decorations,
                     photoLoader = photoLoader,
+                    mediaPolicy = mediaPolicy,
                     width = miniatureWidth,
                     height = miniatureHeight,
                 )
@@ -161,6 +169,8 @@ internal fun MiniHomePlacementMiniature(
     plants: List<MiniHomePlantChoice>,
     decorations: List<MiniHomeDecorationChoice>,
     photoLoader: MiniHomePhotoLoader,
+    mediaPolicy: MiniHomeRendererMediaPolicy =
+        MiniHomeRendererMediaPolicy.DISPLAY_CONFIGURED_PHOTOS,
     width: Dp,
     height: Dp,
 ) {
@@ -172,6 +182,7 @@ internal fun MiniHomePlacementMiniature(
                 name = plant?.displayName ?: target.plantId.value,
                 representativePhotoPath = plant?.representativePhotoPath,
                 photoLoader = photoLoader,
+                mediaPolicy = mediaPolicy,
                 width = width,
                 height = height,
             )
@@ -183,6 +194,7 @@ internal fun MiniHomePlacementMiniature(
                 name = decoration?.displayName ?: target.itemId.value,
                 mediaIdentity = decoration?.mediaIdentity,
                 photoLoader = photoLoader,
+                mediaPolicy = mediaPolicy,
                 width = width,
                 height = height,
             )

@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.planterior.helper.feature.minihome.MiniHomeCommittedRoom
 import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
+import com.planterior.helper.feature.minihome.MiniHomeRendererMediaPolicy
 import com.planterior.helper.feature.minihome.MiniHomeRoomRenderer
 import com.planterior.helper.feature.minihome.PlaceholderMiniHomePhotoLoader
 
@@ -63,6 +64,7 @@ fun MiniHomeShareCaptureSurface(
         plants = target.plants,
         decorations = target.decorations,
         photoLoader = photoLoader,
+        mediaPolicy = MiniHomeRendererMediaPolicy.CANONICAL_MINIATURES_ONLY,
         placementTagPrefix = MiniHomeShareTestTags.CAPTURE_PLACEMENT_PREFIX,
         modifier =
             modifier

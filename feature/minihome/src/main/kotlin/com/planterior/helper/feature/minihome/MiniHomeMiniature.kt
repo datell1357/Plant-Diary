@@ -48,6 +48,24 @@ object PlaceholderMiniHomePhotoLoader : MiniHomePhotoLoader {
         error("No mini-home photo source is configured")
 }
 
+/** Controls whether a room renderer may resolve photo media or must draw canonical miniatures. */
+enum class MiniHomeRendererMediaPolicy {
+    DISPLAY_CONFIGURED_PHOTOS,
+    CANONICAL_MINIATURES_ONLY;
+
+    internal fun personalPlantRequest(path: String?): MiniHomePhotoRequest? =
+        when (this) {
+            DISPLAY_CONFIGURED_PHOTOS -> path?.let(MiniHomePhotoRequest::PersonalPlant)
+            CANONICAL_MINIATURES_ONLY -> null
+        }
+
+    internal fun catalogRequest(identity: CatalogMediaIdentity?): MiniHomePhotoRequest? =
+        when (this) {
+            DISPLAY_CONFIGURED_PHOTOS -> identity?.let(MiniHomePhotoRequest::Catalog)
+            CANONICAL_MINIATURES_ONLY -> null
+        }
+}
+
 internal sealed interface MiniHomePhotoState {
     data object None : MiniHomePhotoState
 
@@ -96,10 +114,12 @@ internal fun PlantMiniature(
     width: Dp,
     height: Dp,
     modifier: Modifier = Modifier,
+    mediaPolicy: MiniHomeRendererMediaPolicy =
+        MiniHomeRendererMediaPolicy.DISPLAY_CONFIGURED_PHOTOS,
 ) {
     val photo =
         rememberMiniHomePhoto(
-            representativePhotoPath?.let(MiniHomePhotoRequest::PersonalPlant),
+            mediaPolicy.personalPlantRequest(representativePhotoPath),
             photoLoader,
         )
     val leaf = MaterialTheme.colorScheme.primary
@@ -224,9 +244,10 @@ internal fun DecorationMiniature(
     width: Dp,
     height: Dp,
     modifier: Modifier = Modifier,
+    mediaPolicy: MiniHomeRendererMediaPolicy =
+        MiniHomeRendererMediaPolicy.DISPLAY_CONFIGURED_PHOTOS,
 ) {
-    val photo =
-        rememberMiniHomePhoto(mediaIdentity?.let(MiniHomePhotoRequest::Catalog), photoLoader)
+    val photo = rememberMiniHomePhoto(mediaPolicy.catalogRequest(mediaIdentity), photoLoader)
     val primary = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val detail = MaterialTheme.colorScheme.onSurfaceVariant
@@ -331,13 +352,11 @@ internal fun MiniHomeBackground(
     choice: MiniHomeDecorationChoice?,
     photoLoader: MiniHomePhotoLoader,
     modifier: Modifier = Modifier,
+    mediaPolicy: MiniHomeRendererMediaPolicy =
+        MiniHomeRendererMediaPolicy.DISPLAY_CONFIGURED_PHOTOS,
 ) {
     if (choice == null) return
-    val photo =
-        rememberMiniHomePhoto(
-            choice.mediaIdentity?.let(MiniHomePhotoRequest::Catalog),
-            photoLoader,
-        )
+    val photo = rememberMiniHomePhoto(mediaPolicy.catalogRequest(choice.mediaIdentity), photoLoader)
     val base = MaterialTheme.colorScheme.primaryContainer
     val detail = MaterialTheme.colorScheme.primary
     Box(

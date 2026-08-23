@@ -1,16 +1,26 @@
 package com.planterior.helper.feature.share
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.Revision
 import com.planterior.helper.feature.minihome.MiniHomeGrid
 import com.planterior.helper.feature.minihome.MiniHomeIsometricProjection
+import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
+import com.planterior.helper.feature.minihome.MiniHomePlantChoice
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
+import kotlinx.coroutines.CompletableDeferred
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -45,6 +55,55 @@ class MiniHomeShareCaptureTest {
     }
 
     @Test
+    fun `share capture never loads personal photos and is byte identical across completion timing`() {
+        val eagerLoader = ControlledPhotoLoader(completed = true)
+        val delayedLoader = ControlledPhotoLoader(completed = false)
+        val target =
+            MiniHomeShareFixtures.target(7).let { fixture ->
+                fixture.copy(
+                    plants =
+                        listOf(
+                            MiniHomePlantChoice(
+                                fixture.plants.single().id,
+                                fixture.plants.single().displayName,
+                                "users/owner-share-1/plants/plant-a/private.jpg",
+                            )
+                        )
+                )
+            }
+        compose.setContent {
+            PlanteriorTheme {
+                Column {
+                    MiniHomeShareCaptureSurface(
+                        target = target,
+                        modifier = Modifier.size(120.dp, 100.dp),
+                        photoLoader = eagerLoader,
+                    )
+                    MiniHomeShareCaptureSurface(
+                        target = target,
+                        modifier = Modifier.size(120.dp, 100.dp),
+                        photoLoader = delayedLoader,
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val captures = compose.onAllNodesWithTag(MiniHomeShareTestTags.CAPTURE)
+        val eagerCapture = MiniHomeShareImageEncoder.encode(captures[0].captureToImage())
+        val delayedBeforeCompletion = MiniHomeShareImageEncoder.encode(captures[1].captureToImage())
+
+        compose.runOnIdle { delayedLoader.complete() }
+        compose.waitForIdle()
+        val delayedAfterCompletion = MiniHomeShareImageEncoder.encode(captures[1].captureToImage())
+
+        assertArrayEquals(eagerCapture, delayedBeforeCompletion)
+        assertArrayEquals(delayedBeforeCompletion, delayedAfterCompletion)
+        assertEquals(0, eagerLoader.calls.get())
+        assertEquals(0, delayedLoader.calls.get())
+    }
+
+    @Test
     fun `capture geometry equals the canonical mini home projection at the export size`() {
         val exportProjection =
             MiniHomeIsometricProjection(
@@ -76,5 +135,29 @@ class MiniHomeShareCaptureTest {
         assertEquals(MiniHomeShareImage.fileName(Revision(11)), request.fileName)
         assertEquals(MiniHomeShareImage.WIDTH_PX, request.widthPx)
         assertEquals(MiniHomeShareImage.HEIGHT_PX, request.heightPx)
+    }
+
+    private class ControlledPhotoLoader(completed: Boolean) : MiniHomePhotoLoader {
+        val calls = AtomicInteger()
+        private val bitmap =
+            Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(Color.MAGENTA)
+            }
+        private val result = CompletableDeferred<Bitmap>()
+
+        init {
+            if (completed) result.complete(bitmap)
+        }
+
+        override suspend fun load(
+            request: com.planterior.helper.feature.minihome.MiniHomePhotoRequest
+        ): Bitmap {
+            calls.incrementAndGet()
+            return result.await()
+        }
+
+        fun complete() {
+            result.complete(bitmap)
+        }
     }
 }

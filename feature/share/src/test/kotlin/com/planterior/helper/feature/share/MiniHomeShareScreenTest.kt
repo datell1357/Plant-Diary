@@ -88,6 +88,7 @@ class MiniHomeShareScreenTest {
             .onNodeWithTag(MiniHomeShareTestTags.PRIVACY_NOTICE)
             .performScrollTo()
             .assertIsDisplayed()
+            .assert(hasTextContaining("개인 식물 사진의 원본과 픽셀은 제외하고 미니어처로 표시해요"))
     }
 
     @Test

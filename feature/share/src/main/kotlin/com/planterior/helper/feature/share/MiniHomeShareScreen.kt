@@ -97,6 +97,7 @@ fun MiniHomeShareScreen(
             modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.large),
         ) {
+            PrivacyNotice()
             when (state) {
                 is MiniHomeShareUiState.Loading -> {
                     val loadingLabel = stringResource(R.string.mini_home_share_loading)
@@ -123,7 +124,6 @@ fun MiniHomeShareScreen(
                         zone = zone,
                     )
                 is MiniHomeShareUiState.NoTarget -> {
-                    PrivacyNotice()
                     PlanteriorStatusCard(
                         title = stringResource(R.string.mini_home_share_no_target_title),
                         body = stringResource(R.string.mini_home_share_no_target_body),
@@ -171,7 +171,6 @@ private fun ReadyBody(
     showsInAppCopyFeedback: Boolean,
     zone: ZoneId,
 ) {
-    PrivacyNotice()
     PlanteriorStatusCard(
         title = stringResource(R.string.mini_home_share_revision_title),
         body =

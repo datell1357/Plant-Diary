@@ -5,7 +5,7 @@
     <string name="mini_home_share_clip_label">미니홈 공유 링크</string>
 
     <string name="mini_home_share_notice_title">아직 아무것도 공개되지 않았어요</string>
-    <string name="mini_home_share_notice_body">아래에서 직접 실행하기 전까지는 이미지도 링크도 만들어지지 않아요. 공유는 저장된 미니홈만 담아요.</string>
+    <string name="mini_home_share_notice_body">아래에서 직접 실행하기 전까지는 이미지도 링크도 만들어지지 않아요. 공유는 저장된 미니홈만 담아요. 개인 식물 사진의 원본과 픽셀은 제외하고 미니어처로 표시해요.</string>
 
     <string name="mini_home_share_revision_title">공유할 저장본</string>
     <string name="mini_home_share_revision_body">저장 %1$s번째 구성이에요. 편집 중인 내용은 담기지 않아요.</string>

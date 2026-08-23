@@ -213,7 +213,7 @@ Your next move: MOMUS 고정밀 검토 승인 후 `/start-work android-app-imple
   QA scenarios (name the exact tool + invocation): 상점 획득→창고 반영→적용→미니홈피 표시→해제; 상점 backend 실패 중에도 도감·물 주기가 정상임을 확인. Evidence `<attemptDir>/task-14-android-app-implementation.png`.
   Commit: Y | `feat(widget): 미니홈피 아이템 창고와 상점 구현`
 
-- [ ] 15. 미니홈피 이미지와 링크 공유 구현
+- [x] 15. 미니홈피 이미지와 링크 공유 구현
   Recommended task executor category: `deep`
   What to do / Must NOT do: 마지막 저장 revision을 bitmap으로 렌더링해 FileProvider read-only URI와 Android Sharesheet로 공유한다. 링크는 Cloud Function에서 현재 revision의 개인정보 제거 snapshot과 unguessable token을 만들고 30일 `expiresAt`, revoke 상태를 적용한다. 외부 공유 취소는 앱 실패가 아니며 미저장 draft·개인 메모·사용자 ID를 공유하지 않는다.
   Parallelization: Wave 4 | Blocked by: 3, 13, 14 | Blocks: 18
