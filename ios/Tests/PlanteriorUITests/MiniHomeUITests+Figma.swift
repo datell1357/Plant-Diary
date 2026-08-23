@@ -2,12 +2,13 @@ import XCTest
 
 /// Figma `myroom-editor` (`35:4`) live surface contract. The frame's own layer
 /// skeleton is `editor-header` / `room-canvas-container` / `category-tab-bar` /
-/// `items-selector-panel` / `action-footer`, so each of those regions is
-/// asserted here as a live, hittable SwiftUI element.
+/// `items-selector-panel` / `action-footer`. The capture is taken from the
+/// initial state; scrolling must never be needed to manufacture the reference.
 @MainActor
 final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
     func testEditorRendersFigmaHeaderCanvasTabBarTrayAndFooter() {
         let app = figmaEditorApp(token: "figma-anatomy")
+        app.launchEnvironment["QA_MINIHOME_FIGMA_FIXTURE"] = "1"
         app.launch()
         openFigmaEditor(in: app)
 
@@ -24,23 +25,49 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
             XCTAssertTrue(tab.exists, "missing category tab: \(category)")
             XCTAssertGreaterThanOrEqual(tab.frame.height, 44)
         }
-        XCTAssertTrue(app.buttons["minihome.editor.tray.0"].exists)
+        let firstPlant = app.buttons["minihome.editor.tray.0"]
+        XCTAssertTrue(firstPlant.exists)
+        XCTAssertEqual(firstPlant.value as? String, "선택됨")
+        XCTAssertTrue(app.buttons["minihome.editor.tray.4"].exists)
         XCTAssertTrue(app.images["minihome.editor.tray.image.0"].exists)
         XCTAssertTrue(app.buttons["minihome.editor.undo"].exists)
         XCTAssertTrue(app.buttons["minihome.editor.reset"].exists)
 
-        // The scroll owner must clear the fixed strips: the last scrolled
-        // control cannot be cut off by the category bar.
-        app.scrollViews["minihome.editor"].swipeUp()
-        let addPlant = app.buttons["minihome.add-plant"]
-        XCTAssertTrue(addPlant.waitForExistence(timeout: 5))
-        let categoryBar = app.buttons["minihome.editor.category.plant"]
-        XCTAssertLessThanOrEqual(
-            addPlant.frame.maxY,
-            categoryBar.frame.minY,
-            "add-plant must not be clipped by the category tab bar"
-        )
+        let canvas = app.otherElements["minihome.editor.canvas"]
+        let header = app.otherElements["minihome.editor.header"]
+        let categoryBar = app.otherElements["minihome.editor.category-bar"]
+        for region in [canvas, header, categoryBar] {
+            XCTAssertTrue(region.exists, "missing editor geometry region")
+        }
+        XCTAssertEqual(canvas.frame.width, 358, accuracy: 1)
+        XCTAssertEqual(canvas.frame.height, 330, accuracy: 1)
+        XCTAssertEqual(canvas.frame.minY, 200, accuracy: 2)
+        XCTAssertEqual(categoryBar.frame.minY, 629, accuracy: 1)
+        XCTAssertEqual(categoryBar.frame.height, 54, accuracy: 1)
+        XCTAssertEqual(firstPlant.frame.minY, 700, accuracy: 1)
+        let undo = app.buttons["minihome.editor.undo"]
+        XCTAssertEqual(undo.frame.minY, 799, accuracy: 1)
+        XCTAssertLessThanOrEqual(categoryBar.frame.maxY, firstPlant.frame.minY)
+        XCTAssertLessThanOrEqual(firstPlant.frame.maxY, undo.frame.minY)
+        XCTAssertFalse(app.textFields["minihome.room-name"].exists)
+        XCTAssertFalse(app.buttons["minihome.add-plant"].exists)
         attachScreenshot(named: "mini-room-editor-402x874-light")
+
+        // Secondary operations remain available without changing the reference
+        // surface: tapping its title opens the room-settings action.
+        app.staticTexts["minihome.editor.title"].tap()
+        XCTAssertTrue(
+            app.textFields["minihome.room-name"].waitForExistence(timeout: 5)
+        )
+        let addPlant = app.buttons["minihome.add-plant"]
+        XCTAssertTrue(addPlant.isHittable)
+        XCTAssertGreaterThanOrEqual(addPlant.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(addPlant.frame.height, 44)
+        XCTAssertTrue(
+            app.windows.element(boundBy: 0).frame.contains(addPlant.frame),
+            "add-plant must remain fully visible inside room settings"
+        )
+        XCTAssertTrue(app.staticTexts["minihome.state"].exists)
     }
 
     func testTrayCategorySelectionAndTapPlaceOneRoomItem() {

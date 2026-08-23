@@ -9,17 +9,26 @@ struct MiniRoomEditorFooter: View {
     let canReset: Bool
     let undo: () -> Void
     let reset: () -> Void
+    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
         content
             .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.vertical, PlanteriorSpacing.small)
+            .padding(
+                .vertical,
+                sizeCategory.isAccessibilityCategory
+                    ? PlanteriorSpacing.small
+                    : 0
+            )
+            .frame(height: sizeCategory.isAccessibilityCategory ? nil : 38)
             .background(PlanteriorPalette.surface.color)
             .overlay(alignment: .top) {
                 Rectangle()
                     .fill(PlanteriorPalette.border.color)
                     .frame(height: PlanteriorControl.hairline)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("minihome.editor.footer")
     }
 
     /// Korean action labels stay atomic and scale within the fixed footer
@@ -66,11 +75,7 @@ struct MiniRoomEditorFooter: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(
-                enabled
-                    ? PlanteriorPalette.textSecondary.color
-                    : PlanteriorPalette.textTertiary.color
-            )
+            .foregroundStyle(PlanteriorPalette.textSecondary.color)
             .frame(minHeight: PlanteriorControl.minimumTarget)
             .contentShape(Rectangle())
         }

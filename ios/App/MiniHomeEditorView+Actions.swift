@@ -23,7 +23,23 @@ extension MiniHomeEditorView {
     }
 
     var availablePlantOptions: [PlantMiniatureOption] {
-        availablePlantIDs.enumerated().map { index, plantID in
+        #if DEBUG
+            if ProcessInfo.processInfo.environment[
+                "QA_MINIHOME_FIGMA_FIXTURE"
+            ] == "1" {
+                return [
+                    "몬스테라", "스투키", "산세베리아", "아레카야자", "고무나무"
+                ].enumerated().compactMap { index, name in
+                    guard let plantID = try? PersonalPlantID.parse(
+                        "figma-room-plant-\(index)"
+                    ) else {
+                        return nil
+                    }
+                    return PlantMiniatureOption(id: plantID, name: name)
+                }
+            }
+        #endif
+        return availablePlantIDs.enumerated().map { index, plantID in
             PlantMiniatureOption(
                 id: plantID,
                 name: collection.plants.indices.contains(index)
@@ -132,9 +148,12 @@ extension MiniHomeEditorView {
             try store.save()
             if case .conflicted = store.state {
                 showsConflictPrompt = true
+            } else if case .failed = store.state {
+                showsRoomSettings = true
             }
         } catch {
             errorMessage = "저장하지 못했어요. 초안은 그대로 남아 있어요."
+            showsRoomSettings = true
         }
     }
 

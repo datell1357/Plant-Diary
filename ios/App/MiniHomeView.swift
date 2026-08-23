@@ -72,7 +72,7 @@ struct MiniHomeView: View {
             inventory.mount(accountID: accountID)
             inventory.seedQAIfNeeded()
         }
-        .sheet(isPresented: $showsEditor) {
+        .fullScreenCover(isPresented: $showsEditor) {
             MiniHomeEditorView(store: store, inventory: inventory)
                 .environment(\.sizeCategory, effectiveSizeCategory)
         }

@@ -42,7 +42,7 @@ struct MiniHomeEditorCanvas: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
             .coordinateSpace(name: Self.coordinateSpace)
         }
         .aspectRatio(Self.aspectRatio, contentMode: .fit)
@@ -66,7 +66,7 @@ struct MiniHomeEditorCanvas: View {
                 .accessibilityIdentifier("minihome.editor.hint")
         }
         .padding(.horizontal, PlanteriorSpacing.medium)
-        .padding(.vertical, PlanteriorSpacing.small)
+        .padding(.vertical, 5)
         .background(PlanteriorPalette.surface.color)
         .clipShape(Capsule())
         .padding(PlanteriorSpacing.medium)

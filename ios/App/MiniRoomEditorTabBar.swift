@@ -39,6 +39,7 @@ struct MiniRoomEditorTabBar: View {
                 }
             }
         }
+        .frame(height: sizeCategory.isAccessibilityCategory ? nil : 54)
         .background(PlanteriorPalette.surface.color)
         .overlay(alignment: .top) {
             Rectangle()
@@ -46,6 +47,7 @@ struct MiniRoomEditorTabBar: View {
                 .frame(height: PlanteriorControl.hairline)
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("minihome.editor.category-bar")
     }
 
     private func tab(_ category: MiniRoomCategory) -> some View {
@@ -78,8 +80,8 @@ struct MiniRoomEditorTabBar: View {
             .padding(
                 .vertical,
                 sizeCategory.isAccessibilityCategory
-                    ? 0
-                    : PlanteriorSpacing.small
+                    ? PlanteriorSpacing.small
+                    : 0
             )
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {

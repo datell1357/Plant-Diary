@@ -5,6 +5,7 @@ import SwiftUI
 /// centered screen title, a trailing accent save action, and a hairline base.
 struct MiniRoomEditorHeader: View {
     let close: () -> Void
+    let showRoomSettings: () -> Void
     let save: () -> Void
 
     var body: some View {
@@ -27,12 +28,16 @@ struct MiniRoomEditorHeader: View {
             Text("마이룸 편집")
                 .font(PlanteriorTypography.screenTitle)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .lineLimit(2)
+                .lineLimit(1)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: showRoomSettings)
                 .accessibilityElement()
                 .accessibilityLabel("마이룸 편집")
+                .accessibilityHint("방 이름과 편집 상태 보기")
                 .accessibilityAddTraits(.isHeader)
+                .accessibilityAction { showRoomSettings() }
                 .accessibilityIdentifier("minihome.editor.title")
 
             Button(action: save) {
@@ -52,12 +57,14 @@ struct MiniRoomEditorHeader: View {
             .accessibilityIdentifier("minihome.save")
         }
         .padding(.horizontal, PlanteriorSpacing.large)
-        .padding(.vertical, PlanteriorSpacing.small)
+        .frame(height: 52)
         .background(PlanteriorPalette.canvas.color)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(PlanteriorPalette.border.color)
                 .frame(height: PlanteriorControl.hairline)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("minihome.editor.header")
     }
 }

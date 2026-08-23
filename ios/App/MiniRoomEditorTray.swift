@@ -31,7 +31,8 @@ struct MiniRoomEditorTray: View {
                             MiniRoomTrayCard(
                                 entry: pair.element,
                                 index: pair.offset,
-                                selected: pair.element.id == selectedEntryID,
+                                selected: pair.element.id == selectedEntryID
+                                    || (selectedEntryID == nil && pair.offset == 0),
                                 select: select
                             )
                         }
@@ -42,14 +43,22 @@ struct MiniRoomEditorTray: View {
             }
         }
         .padding(
-            .vertical,
+            .top,
             sizeCategory.isAccessibilityCategory
                 ? PlanteriorSpacing.small
-                : PlanteriorSpacing.medium
+                : PlanteriorSpacing.large
+        )
+        .padding(
+            .bottom,
+            sizeCategory.isAccessibilityCategory
+                ? PlanteriorSpacing.small
+                : 6
         )
         .frame(maxWidth: .infinity)
+        .frame(height: sizeCategory.isAccessibilityCategory ? nil : 119)
         .background(PlanteriorPalette.surface.color)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("minihome.editor.tray")
     }
 }
 
