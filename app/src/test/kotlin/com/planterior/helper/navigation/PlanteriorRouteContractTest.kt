@@ -21,6 +21,7 @@ class PlanteriorRouteContractTest {
             PlanteriorRoute.Settings,
             PlanteriorRoute.Camera,
             PlanteriorRoute.MiniHome,
+            PlanteriorRoute.MiniHomeShare,
             PlanteriorRoute.Notifications,
             PlanteriorRoute.PlantDetail("plant-1"),
             PlanteriorRoute.WateringConfirmation("plant-1"),
@@ -90,11 +91,15 @@ class PlanteriorRouteContractTest {
 
     @Test
     fun `home entry points are authenticated destinations outside the tab bar`() {
-        listOf<PlanteriorRoute>(PlanteriorRoute.MiniHome, PlanteriorRoute.Notifications).forEach {
-            route ->
-            assertTrue("$route must be authenticated", route is PlanteriorRoute.Authenticated)
-            assertTrue("$route must not be a bottom tab", route !is PlanteriorRoute.TopLevel)
-        }
+        listOf<PlanteriorRoute>(
+                PlanteriorRoute.MiniHome,
+                PlanteriorRoute.MiniHomeShare,
+                PlanteriorRoute.Notifications,
+            )
+            .forEach { route ->
+                assertTrue("$route must be authenticated", route is PlanteriorRoute.Authenticated)
+                assertTrue("$route must not be a bottom tab", route !is PlanteriorRoute.TopLevel)
+            }
     }
 
     @Test

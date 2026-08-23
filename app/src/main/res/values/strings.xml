@@ -19,6 +19,8 @@
     <string name="screen_registration_identified_description">%1$s 후보를 이어서 등록할 수 있어요.</string>
     <string name="screen_mini_home">미니 식물원</string>
     <string name="screen_mini_home_description">등록한 식물을 미니어처로 배치하는 화면입니다.</string>
+    <string name="screen_mini_home_share">미니홈 공유</string>
+    <string name="screen_mini_home_share_description">저장한 미니홈을 이미지나 링크로 공유하는 화면입니다.</string>
     <string name="screen_notifications">알림</string>
     <string name="screen_notifications_description">물 주기와 날씨 알림 내역이 이 화면에 표시됩니다.</string>
     <string name="screen_plant_detail">식물 상세</string>

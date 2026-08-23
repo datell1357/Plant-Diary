@@ -1,0 +1,59 @@
+<resources>
+    <string name="mini_home_share_title">미니홈 공유</string>
+    <string name="mini_home_share_back">미니 식물원으로 돌아가기</string>
+    <string name="mini_home_share_chooser_title">미니홈 공유</string>
+    <string name="mini_home_share_clip_label">미니홈 공유 링크</string>
+
+    <string name="mini_home_share_notice_title">아직 아무것도 공개되지 않았어요</string>
+    <string name="mini_home_share_notice_body">아래에서 직접 실행하기 전까지는 이미지도 링크도 만들어지지 않아요. 공유는 저장된 미니홈만 담아요.</string>
+
+    <string name="mini_home_share_revision_title">공유할 저장본</string>
+    <string name="mini_home_share_revision_body">저장 %1$s번째 구성이에요. 편집 중인 내용은 담기지 않아요.</string>
+
+    <string name="mini_home_share_render_progress">공유 이미지를 준비하고 있어요</string>
+    <string name="mini_home_share_render_failure_title">공유 이미지를 만들지 못했어요</string>
+    <string name="mini_home_share_render_failure_body">저장된 구성은 그대로예요. 다시 시도해 주세요.</string>
+    <string name="mini_home_share_render_retry">공유 이미지 다시 만들기</string>
+    <string name="mini_home_share_preview_description">저장된 미니홈 공유 미리보기</string>
+
+    <string name="mini_home_share_image_action">이미지로 공유</string>
+
+    <string name="mini_home_share_link_section">공개 링크</string>
+    <string name="mini_home_share_link_idle">링크를 만들면 링크를 아는 사람이 저장된 미니홈을 볼 수 있어요.</string>
+    <string name="mini_home_share_link_create">공개 링크 만들기</string>
+    <string name="mini_home_share_link_generating">공개 링크를 만들고 있어요</string>
+    <string name="mini_home_share_link_active_title">공개 링크가 활성 상태예요</string>
+    <string name="mini_home_share_link_url_description">공개 링크 주소</string>
+    <string name="mini_home_share_link_copy">링크 복사</string>
+    <string name="mini_home_share_link_copied_state">복사됨</string>
+    <string name="mini_home_share_link_share">링크 공유</string>
+    <string name="mini_home_share_link_revoke">공개 링크 해제</string>
+    <string name="mini_home_share_link_revoking">공개 링크를 해제하고 있어요</string>
+    <string name="mini_home_share_link_revoked_title">공개 링크를 해제했어요</string>
+    <string name="mini_home_share_link_revoked_body">이 링크로는 더 이상 볼 수 없어요. 필요하면 새 링크를 만들 수 있어요.</string>
+
+    <string name="mini_home_share_failure_offline_title">연결 상태를 확인해 주세요</string>
+    <string name="mini_home_share_failure_offline_body">연결이 끊겨 링크를 만들지 못했어요. 저장된 구성은 그대로예요. 연결 후 다시 시도해 주세요.</string>
+    <string name="mini_home_share_failure_deadline_body">응답을 받지 못했어요. 링크가 이미 만들어졌을 수 있어 같은 요청을 그대로 다시 확인해요. 중복으로 만들지는 않아요.</string>
+    <string name="mini_home_share_failure_permanent_title">공개 링크를 만들지 못했어요</string>
+    <string name="mini_home_share_failure_permanent_body">같은 요청을 반복하지 않았어요. 저장된 구성은 그대로예요.</string>
+    <string name="mini_home_share_failure_conflict_body">저장된 구성이 바뀌었어요. 화면을 다시 불러온 뒤 만들어 주세요.</string>
+    <string name="mini_home_share_failure_permission_body">이 계정으로 공유할 권한을 확인하지 못했어요. 계정 상태를 확인해 주세요.</string>
+    <string name="mini_home_share_revoke_failure">해제하지 못했어요. 링크는 아직 활성 상태예요. 다시 시도해 주세요.</string>
+
+    <string name="mini_home_share_feedback_copied">링크를 복사했어요</string>
+    <string name="mini_home_share_feedback_sheet_opened">공유 시트를 열었어요. 실제 전달 여부는 선택한 앱에서 확인해 주세요.</string>
+    <string name="mini_home_share_feedback_sheet_cancelled">공유를 취소했어요. 바뀐 것은 없어요.</string>
+    <string name="mini_home_share_feedback_no_target">공유할 수 있는 앱이 없어요</string>
+    <string name="mini_home_share_feedback_sheet_failed">공유 시트를 열지 못했어요. 저장된 구성은 그대로예요.</string>
+
+    <string name="mini_home_share_no_target_title">공유할 저장본이 없어요</string>
+    <string name="mini_home_share_no_target_body">미니 식물원을 한 번 저장하면 그 구성을 공유할 수 있어요.</string>
+
+    <string name="mini_home_share_forbidden_title">이 미니홈을 공유할 수 없어요</string>
+    <string name="mini_home_share_forbidden_body">로그인한 계정의 미니 식물원에서 다시 열어 주세요.</string>
+    <string name="mini_home_share_error_title">공유 화면을 불러오지 못했어요</string>
+    <string name="mini_home_share_error_body">연결 상태를 확인하고 다시 시도해 주세요.</string>
+    <string name="mini_home_share_retry">다시 시도</string>
+    <string name="mini_home_share_loading">저장된 미니홈을 불러오고 있어요</string>
+</resources>

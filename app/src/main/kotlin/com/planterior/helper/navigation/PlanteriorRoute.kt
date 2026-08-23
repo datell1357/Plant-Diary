@@ -57,6 +57,13 @@ sealed interface PlanteriorRoute {
     /** 미니홈피. 홈의 미리보기 카드가 연다. 하단 탭이 아니므로 탭 목록에 넣지 않는다. */
     @Serializable data object MiniHome : Authenticated
 
+    /**
+     * 미니홈 공유. 미니 식물원의 보기 상태 하단 액션이 연다.
+     *
+     * 인자가 없다. 공유 링크는 bearer 데이터라 route 인자로 절대 옮기지 않고, 화면이 확정 구성을 직접 다시 읽는다.
+     */
+    @Serializable data object MiniHomeShare : Authenticated
+
     /** 알림 목록. 홈 상단 종 버튼이 연다. */
     @Serializable data object Notifications : Authenticated
 

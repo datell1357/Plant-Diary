@@ -33,7 +33,7 @@
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/camera_file_paths" />
+                android:resource="@xml/shared_file_paths" />
         </provider>
         <service
             android:name=".notification.PlanteriorMessagingService"

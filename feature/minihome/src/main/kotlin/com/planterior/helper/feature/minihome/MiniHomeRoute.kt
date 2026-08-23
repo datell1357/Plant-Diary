@@ -46,6 +46,7 @@ fun MiniHomeRoute(
     repository: MiniHomeRepository,
     onBack: () -> Unit,
     onOpenCollection: () -> Unit,
+    onOpenShare: (() -> Unit)? = null,
     photoLoader: MiniHomePhotoLoader = PlaceholderMiniHomePhotoLoader,
     authOwnership: MiniHomeAuthOwnership = MiniHomeAuthOwnership.Unmanaged,
     onStateObserved: (MiniHomeUiState) -> Unit = {},
@@ -88,6 +89,7 @@ fun MiniHomeRoute(
             onAdoptConflict = controller::adoptAuthoritativeAfterConflict,
             onReconcileSaveFailure = controller::reconcileSaveFailure,
             onOpenCollection = onOpenCollection,
+            onOpenShare = onOpenShare,
             photoLoader = photoLoader,
             authOwnership = authOwnership,
         )

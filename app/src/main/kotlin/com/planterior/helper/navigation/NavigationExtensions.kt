@@ -40,6 +40,7 @@ internal fun NavBackStackEntry?.toPlanteriorRoute(): PlanteriorRoute? {
             entry.toRoute<PlanteriorRoute.Identification>()
         PlanteriorRoute.Registration::class.qualifiedName -> PlanteriorRoute.Registration
         PlanteriorRoute.MiniHome::class.qualifiedName -> PlanteriorRoute.MiniHome
+        PlanteriorRoute.MiniHomeShare::class.qualifiedName -> PlanteriorRoute.MiniHomeShare
         PlanteriorRoute.Notifications::class.qualifiedName -> PlanteriorRoute.Notifications
         PlanteriorRoute.Weather::class.qualifiedName -> PlanteriorRoute.Weather
         PlanteriorRoute.WeatherRisk::class.qualifiedName ->

@@ -1,7 +1,6 @@
 package com.planterior.helper.feature.minihome
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -44,8 +43,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -58,7 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.component.PlanteriorScreenScaffold
-import com.planterior.helper.core.designsystem.theme.PlanteriorBorderWidth
+import com.planterior.helper.core.designsystem.component.PlanteriorStatusCard
 import com.planterior.helper.core.designsystem.theme.PlanteriorRadius
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.AccountId
@@ -75,6 +72,7 @@ object MiniHomeTestTags {
     const val LOADING = "mini-home:loading"
     const val CANVAS = "mini-home:canvas"
     const val EDIT = "mini-home:edit"
+    const val SHARE = "mini-home:share"
     const val SAVE = "mini-home:save"
     const val SAVE_FAILURE = "mini-home:save-failure"
     const val CONFLICT = "mini-home:conflict"
@@ -119,6 +117,7 @@ fun MiniHomeScreen(
     onAdoptConflict: suspend () -> Unit,
     onOpenCollection: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenShare: (() -> Unit)? = null,
     onReconcileSaveFailure: suspend () -> Unit = {},
     photoLoader: MiniHomePhotoLoader = PlaceholderMiniHomePhotoLoader,
     navigationIntentIdFactory: () -> String = { UUID.randomUUID().toString() },
@@ -280,6 +279,15 @@ fun MiniHomeScreen(
                             modifier = Modifier.action(MiniHomeTestTags.EDIT),
                         ) {
                             Text("배치 편집")
+                        }
+                        // 공유 진입은 저장본만 다루므로 편집 중에는 노출하지 않는다.
+                        if (onOpenShare != null) {
+                            OutlinedButton(
+                                onClick = onOpenShare,
+                                modifier = Modifier.action(MiniHomeTestTags.SHARE),
+                            ) {
+                                Text("미니홈 공유")
+                            }
                         }
                     },
                 )
@@ -696,30 +704,17 @@ private fun IsometricRoom(
     decorations: List<MiniHomeDecorationChoice>,
     photoLoader: MiniHomePhotoLoader,
 ) {
-    val backgroundPlacement =
-        layout.placements.firstOrNull { placement ->
-            val itemId =
-                (placement.target as? MiniHomePlacementTarget.Decoration)?.itemId
-                    ?: return@firstOrNull false
-            decorations.firstOrNull { it.id == itemId }?.category == ItemCategory.BACKGROUND
-        }
+    val backgroundPlacement = MiniHomeRoomRenderer.backgroundPlacement(layout, decorations)
     val backgroundChoice = backgroundPlacement?.let { placement ->
         val itemId = (placement.target as MiniHomePlacementTarget.Decoration).itemId
         decorations.firstOrNull { it.id == itemId }
     }
-    val floor =
-        if (backgroundChoice == null) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
-    val wall =
-        if (backgroundChoice == null) MaterialTheme.colorScheme.surface
-        else MaterialTheme.colorScheme.surface.copy(alpha = 0.22f)
-    val grid = MaterialTheme.colorScheme.outline
     val selectedBorder = MaterialTheme.colorScheme.primary
     val density = LocalDensity.current
     BoxWithConstraints(
         modifier =
             Modifier.fillMaxWidth()
-                .aspectRatio(1.2f)
+                .aspectRatio(MiniHomeRoomRenderer.ASPECT_RATIO)
                 .clip(RoundedCornerShape(PlanteriorRadius.Card))
                 .testTag(MiniHomeTestTags.CANVAS)
                 .semantics {
@@ -740,159 +735,111 @@ private fun IsometricRoom(
         val touchWidth = maxOf(miniatureWidth, PlanteriorTheme.spacing.huge * 2)
         val touchHeight = maxOf(miniatureHeight, PlanteriorTheme.spacing.huge * 2)
         MiniHomeBackground(backgroundChoice, photoLoader, Modifier.fillMaxSize())
-        Canvas(Modifier.fillMaxSize()) {
-            drawRect(wall, size = Size(size.width, projection.floorTop + size.height * 0.10f))
-            for (row in 0 until MiniHomeGrid.ROWS) {
-                for (column in 0 until MiniHomeGrid.COLUMNS) {
-                    val tile = projection.cell(GridPosition(column, row))
-                    val path =
-                        Path().apply {
-                            moveTo(tile.back.x, tile.back.y)
-                            lineTo(tile.right.x, tile.right.y)
-                            lineTo(tile.front.x, tile.front.y)
-                            lineTo(tile.left.x, tile.left.y)
-                            close()
-                        }
-                    drawPath(
-                        path,
-                        if ((column + row) % 2 == 0) floor else floor.copy(alpha = 0.82f),
-                    )
-                    drawPath(
-                        path,
-                        grid,
-                        style =
-                            androidx.compose.ui.graphics.drawscope.Stroke(
-                                PlanteriorBorderWidth.toPx()
-                            ),
-                    )
+        MiniHomeFloor(projection, backgroundChoice != null)
+        MiniHomeRoomRenderer.stagePlacements(layout, decorations).forEach { placement ->
+            val plant =
+                (placement.target as? MiniHomePlacementTarget.Plant)?.let { target ->
+                    plants.firstOrNull { it.id == target.plantId }
                 }
-            }
-        }
-        layout.placements
-            .asSequence()
-            .filterNot { placement ->
-                val itemId =
-                    (placement.target as? MiniHomePlacementTarget.Decoration)?.itemId
-                        ?: return@filterNot false
-                decorations.firstOrNull { it.id == itemId }?.category == ItemCategory.BACKGROUND
-            }
-            .sortedBy { it.zIndex.value }
-            .forEach { placement ->
-                val plant =
-                    (placement.target as? MiniHomePlacementTarget.Plant)?.let { target ->
-                        plants.firstOrNull { it.id == target.plantId }
+            val decoration =
+                (placement.target as? MiniHomePlacementTarget.Decoration)?.let { target ->
+                    decorations.firstOrNull { it.id == target.itemId }
+                }
+            val label =
+                when (val target = placement.target) {
+                    is MiniHomePlacementTarget.Plant ->
+                        "식물 ${plant?.displayName ?: target.plantId.value}"
+                    is MiniHomePlacementTarget.Decoration -> {
+                        val kind =
+                            when (decoration?.category) {
+                                ItemCategory.BACKGROUND -> "배경"
+                                ItemCategory.FURNITURE -> "가구"
+                                ItemCategory.DECORATION -> "장식"
+                                null -> "종류 미확인 아이템"
+                            }
+                        "$kind ${decoration?.displayName ?: target.itemId.value}"
                     }
-                val decoration =
-                    (placement.target as? MiniHomePlacementTarget.Decoration)?.let { target ->
-                        decorations.firstOrNull { it.id == target.itemId }
-                    }
-                val label =
-                    when (val target = placement.target) {
-                        is MiniHomePlacementTarget.Plant ->
-                            "식물 ${plant?.displayName ?: target.plantId.value}"
-                        is MiniHomePlacementTarget.Decoration -> {
-                            val kind =
-                                when (decoration?.category) {
-                                    ItemCategory.BACKGROUND -> "배경"
-                                    ItemCategory.FURNITURE -> "가구"
-                                    ItemCategory.DECORATION -> "장식"
-                                    null -> "종류 미확인 아이템"
-                                }
-                            "$kind ${decoration?.displayName ?: target.itemId.value}"
+                }
+            val selectedNow = placement.id == selected
+            val anchor = projection.cellCenter(placement.position)
+            val touchWidthPx = with(density) { touchWidth.toPx() }
+            val touchHeightPx = with(density) { touchHeight.toPx() }
+            Box(
+                modifier =
+                    Modifier.offset(
+                            x = with(density) { (anchor.x - touchWidthPx / 2f).toDp() },
+                            y = with(density) { (anchor.y - touchHeightPx).toDp() },
+                        )
+                        .size(touchWidth, touchHeight)
+                        .then(
+                            if (selectedNow) {
+                                Modifier.border(
+                                    PlanteriorTheme.spacing.extraSmall,
+                                    selectedBorder,
+                                    RoundedCornerShape(PlanteriorRadius.Card),
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .clickable(
+                            enabled = enabled,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                        ) {
+                            onSelect(placement.id)
                         }
-                    }
-                val selectedNow = placement.id == selected
-                val anchor = projection.cellCenter(placement.position)
-                val touchWidthPx = with(density) { touchWidth.toPx() }
-                val touchHeightPx = with(density) { touchHeight.toPx() }
-                Box(
-                    modifier =
-                        Modifier.offset(
-                                x = with(density) { (anchor.x - touchWidthPx / 2f).toDp() },
-                                y = with(density) { (anchor.y - touchHeightPx).toDp() },
-                            )
-                            .size(touchWidth, touchHeight)
-                            .then(
-                                if (selectedNow) {
-                                    Modifier.border(
-                                        PlanteriorTheme.spacing.extraSmall,
-                                        selectedBorder,
-                                        RoundedCornerShape(PlanteriorRadius.Card),
-                                    )
-                                } else {
-                                    Modifier
-                                }
-                            )
-                            .clickable(
-                                enabled = enabled,
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                role = Role.Button,
-                            ) {
-                                onSelect(placement.id)
-                            }
-                            .testTag(MiniHomeTestTags.placement(placement.id))
-                            .semantics {
-                                this.selected = selectedNow
-                                contentDescription =
-                                    "$label, ${placement.position.column + 1}열 ${placement.position.row + 1}행"
-                            }
-                            .then(
-                                if (!enabled) {
-                                    Modifier
-                                } else {
-                                    Modifier.pointerInput(
-                                        placement.id,
-                                        projection.width,
-                                        projection.height,
-                                    ) {
-                                        var dragged = Offset.Zero
-                                        detectDragGestures(
-                                            onDragStart = {
-                                                dragged = Offset.Zero
-                                                onSelect(placement.id)
-                                            },
-                                            onDragEnd = {
-                                                onMove(
-                                                    projection.positionAt(
-                                                        MiniHomePoint(
-                                                            anchor.x + dragged.x,
-                                                            anchor.y + dragged.y,
-                                                        )
+                        .testTag(MiniHomeTestTags.placement(placement.id))
+                        .semantics {
+                            this.selected = selectedNow
+                            contentDescription =
+                                "$label, ${placement.position.column + 1}열 ${placement.position.row + 1}행"
+                        }
+                        .then(
+                            if (!enabled) {
+                                Modifier
+                            } else {
+                                Modifier.pointerInput(
+                                    placement.id,
+                                    projection.width,
+                                    projection.height,
+                                ) {
+                                    var dragged = Offset.Zero
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            dragged = Offset.Zero
+                                            onSelect(placement.id)
+                                        },
+                                        onDragEnd = {
+                                            onMove(
+                                                projection.positionAt(
+                                                    MiniHomePoint(
+                                                        anchor.x + dragged.x,
+                                                        anchor.y + dragged.y,
                                                     )
                                                 )
-                                            },
-                                        ) { change, amount ->
-                                            change.consume()
-                                            dragged += amount
-                                        }
+                                            )
+                                        },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragged += amount
                                     }
                                 }
-                            ),
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    when (val target = placement.target) {
-                        is MiniHomePlacementTarget.Plant ->
-                            PlantMiniature(
-                                identity = target.plantId.value,
-                                name = plant?.displayName ?: target.plantId.value,
-                                representativePhotoPath = plant?.representativePhotoPath,
-                                photoLoader = photoLoader,
-                                width = miniatureWidth,
-                                height = miniatureHeight,
-                            )
-                        is MiniHomePlacementTarget.Decoration ->
-                            DecorationMiniature(
-                                identity = target.itemId.value,
-                                name = decoration?.displayName ?: target.itemId.value,
-                                mediaIdentity = decoration?.mediaIdentity,
-                                photoLoader = photoLoader,
-                                width = miniatureWidth,
-                                height = miniatureHeight,
-                            )
-                    }
-                }
+                            }
+                        ),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                MiniHomePlacementMiniature(
+                    placement = placement,
+                    plants = plants,
+                    decorations = decorations,
+                    photoLoader = photoLoader,
+                    width = miniatureWidth,
+                    height = miniatureHeight,
+                )
             }
+        }
         if (backgroundPlacement != null && backgroundChoice != null) {
             OutlinedButton(
                 onClick = { onSelect(backgroundPlacement.id) },
@@ -1063,24 +1010,7 @@ private fun StatusCard(
     error: Boolean = false,
     tag: String? = null,
 ) {
-    PlanteriorCard(
-        modifier =
-            Modifier.fillMaxWidth()
-                .then(tag?.let(Modifier::testTag) ?: Modifier)
-                .then(if (error) Modifier.semantics { this.error(body) } else Modifier),
-        containerColor =
-            if (error) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(
-            body,
-            modifier = Modifier.padding(top = PlanteriorTheme.spacing.medium),
-            color =
-                if (error) MaterialTheme.colorScheme.onErrorContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    PlanteriorStatusCard(title = title, body = body, error = error, tag = tag)
 }
 
 @Composable

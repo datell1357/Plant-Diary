@@ -31,7 +31,7 @@ object PlanteriorRouteResolver {
             "camera" -> PlanteriorRoute.Camera
             "identify" -> resolveIdentification(segments)
             "registration" -> PlanteriorRoute.Registration
-            "minihome" -> PlanteriorRoute.MiniHome
+            "minihome" -> resolveMiniHome(segments)
             "notifications" -> PlanteriorRoute.Notifications
             "weather" -> resolveWeather(segments)
             else -> PlanteriorRoute.Home
@@ -76,6 +76,8 @@ object PlanteriorRouteResolver {
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.Weather, route)
             is PlanteriorRoute.InventoryItemDetail ->
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.Storage, route)
+            is PlanteriorRoute.MiniHomeShare ->
+                listOf(PlanteriorRoute.Home, PlanteriorRoute.MiniHome, route)
             else -> listOf(PlanteriorRoute.Home, route)
         }
 
@@ -97,6 +99,13 @@ object PlanteriorRouteResolver {
                 segments[2] == "watering" &&
                 PLANT_ID_PATTERN.matches(segments[1]) ->
                 PlanteriorRoute.WateringConfirmation(segments[1])
+            else -> PlanteriorRoute.Home
+        }
+
+    private fun resolveMiniHome(segments: List<String>): PlanteriorRoute =
+        when {
+            segments.isEmpty() -> PlanteriorRoute.MiniHome
+            segments.size == 1 && segments[0] == "share" -> PlanteriorRoute.MiniHomeShare
             else -> PlanteriorRoute.Home
         }
 

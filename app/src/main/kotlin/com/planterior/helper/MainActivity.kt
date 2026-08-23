@@ -410,6 +410,7 @@ internal fun PlanteriorApp(
             registrationRepository = authRuntime?.registrationRepository,
             collectionRepository = authRuntime?.collectionRepository,
             miniHomeRepository = authRuntime?.miniHomeRepository,
+            miniHomeShareRepository = authRuntime?.miniHomeShareRepository,
             miniHomeAuthOwnershipOverride =
                 authRuntime?.forcedHomeAccountUid?.let {
                     MiniHomeAuthOwnership.Authenticated(AccountId(it))

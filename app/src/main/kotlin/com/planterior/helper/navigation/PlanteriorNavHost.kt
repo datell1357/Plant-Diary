@@ -49,6 +49,8 @@ import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRoute
 import com.planterior.helper.feature.registration.RegistrationSeed
+import com.planterior.helper.feature.share.MiniHomeShareRepository
+import com.planterior.helper.feature.share.MiniHomeShareRoute
 import com.planterior.helper.feature.shop.CatalogMediaLoadResult
 import com.planterior.helper.feature.shop.CatalogMediaLoader
 import com.planterior.helper.feature.shop.InventoryAuthOwnership
@@ -103,6 +105,7 @@ fun PlanteriorNavHost(
     registrationRepository: RegistrationRepository? = null,
     collectionRepository: CollectionRepository? = null,
     miniHomeRepository: MiniHomeRepository? = null,
+    miniHomeShareRepository: MiniHomeShareRepository? = null,
     miniHomeAuthOwnershipOverride: MiniHomeAuthOwnership? = null,
     inventoryRepository: InventoryRepository? = null,
     wateringRepository: WateringRepository? = null,
@@ -494,25 +497,30 @@ fun PlanteriorNavHost(
                     repository = miniHomeRepository,
                     onBack = { navController.popBackStack() },
                     onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
-                    photoLoader =
-                        remember(collectionThumbnailLoader, catalogMediaLoader) {
-                            MiniHomePhotoLoader { request ->
-                                when (request) {
-                                    is MiniHomePhotoRequest.Catalog ->
-                                        when (
-                                            val result = catalogMediaLoader.load(request.identity)
-                                        ) {
-                                            is CatalogMediaLoadResult.Loaded -> result.bitmap
-                                            is CatalogMediaLoadResult.Fallback ->
-                                                error("Catalog media fallback: ${result.reason}")
-                                        }
-                                    is MiniHomePhotoRequest.PersonalPlant ->
-                                        collectionThumbnailLoader.load(request.path)
-                                }
-                            }
+                    onOpenShare =
+                        miniHomeShareRepository?.let {
+                            { navController.navigate(PlanteriorRoute.MiniHomeShare) }
                         },
+                    photoLoader =
+                        miniHomePhotoLoader(collectionThumbnailLoader, catalogMediaLoader),
                     authOwnership = miniHomeAuthOwnership,
                     onStateObserved = { observeDebugMiniHomeState(context, it) },
+                )
+            }
+        }
+        composable<PlanteriorRoute.MiniHomeShare> {
+            if (miniHomeShareRepository == null) {
+                PlaceholderScreen(
+                    title = stringResource(R.string.screen_mini_home_share),
+                    description = stringResource(R.string.screen_mini_home_share_description),
+                )
+            } else {
+                MiniHomeShareRoute(
+                    repository = miniHomeShareRepository,
+                    onBack = { navController.popBackStack() },
+                    photoLoader =
+                        miniHomePhotoLoader(collectionThumbnailLoader, catalogMediaLoader),
+                    authOwnership = miniHomeAuthOwnership,
                 )
             }
         }
@@ -644,6 +652,27 @@ fun PlanteriorNavHost(
         }
     }
 }
+
+/** 미니 식물원과 미니홈 공유가 같은 사진 소스를 쓰도록 한 곳에서 만든다. */
+@Composable
+private fun miniHomePhotoLoader(
+    collectionThumbnailLoader: PlantThumbnailLoader,
+    catalogMediaLoader: CatalogMediaLoader,
+): MiniHomePhotoLoader =
+    remember(collectionThumbnailLoader, catalogMediaLoader) {
+        MiniHomePhotoLoader { request ->
+            when (request) {
+                is MiniHomePhotoRequest.Catalog ->
+                    when (val result = catalogMediaLoader.load(request.identity)) {
+                        is CatalogMediaLoadResult.Loaded -> result.bitmap
+                        is CatalogMediaLoadResult.Fallback ->
+                            error("Catalog media fallback: ${result.reason}")
+                    }
+                is MiniHomePhotoRequest.PersonalPlant ->
+                    collectionThumbnailLoader.load(request.path)
+            }
+        }
+    }
 
 internal fun registrationAuthOwnership(
     authState: AuthUiState?,

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        공유 대상 앱이 하나도 없을 때를 감지하려면 ACTION_SEND를 처리하는 앱이 보여야 한다.
+        패키지 목록 전체가 아니라 실제로 쓰는 두 payload 형식만 좁게 선언한다.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="image/png" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+</manifest>

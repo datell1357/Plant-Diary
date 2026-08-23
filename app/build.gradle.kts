@@ -348,6 +348,7 @@ dependencies {
     implementation(project(":feature:identify"))
     implementation(project(":feature:minihome"))
     implementation(project(":feature:registration"))
+    implementation(project(":feature:share"))
     implementation(project(":feature:shop"))
     implementation(project(":feature:watering"))
     implementation(project(":feature:weather"))

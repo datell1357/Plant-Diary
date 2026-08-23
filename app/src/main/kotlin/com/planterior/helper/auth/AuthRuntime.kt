@@ -38,6 +38,7 @@ import com.planterior.helper.feature.home.HomeSyncStatus
 import com.planterior.helper.feature.home.HomeWeather
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
+import com.planterior.helper.feature.share.MiniHomeShareRepository
 import com.planterior.helper.feature.shop.CatalogMediaLoader
 import com.planterior.helper.feature.shop.InventoryRepository
 import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
@@ -73,6 +74,7 @@ private constructor(
     val registrationRepository: RegistrationRepository?,
     val collectionRepository: CollectionRepository?,
     val miniHomeRepository: MiniHomeRepository?,
+    val miniHomeShareRepository: MiniHomeShareRepository?,
     val inventoryRepository: InventoryRepository?,
     val wateringRepository: WateringRepository?,
     val wateringNotificationSettingsRepository: WateringNotificationSettingsRepository?,
@@ -194,6 +196,7 @@ private constructor(
                     shared.database,
                     shared.miniHomeRepository,
                 ),
+                shared.miniHomeShareRepository,
                 shared.inventoryRepository,
                 shared.wateringRepository,
                 shared.wateringNotificationSettingsRepository,
@@ -265,6 +268,7 @@ private constructor(
                 {},
                 // 구성이 없으면 로그인할 수 없으므로 홈은 항상 로그아웃 상태로 머무른다.
                 UnavailableHomeRepository,
+                null,
                 null,
                 null,
                 null,

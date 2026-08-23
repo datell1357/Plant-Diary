@@ -39,6 +39,8 @@ import com.planterior.helper.feature.minihome.FirebaseMiniHomeRemoteDataSource
 import com.planterior.helper.feature.minihome.FirebaseMiniHomeRepository
 import com.planterior.helper.feature.registration.FirebaseRegistrationRemoteDataSource
 import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
+import com.planterior.helper.feature.share.FirebaseMiniHomeShareRepository
+import com.planterior.helper.feature.share.MiniHomeShareImageStore
 import com.planterior.helper.feature.shop.FirebaseCatalogMediaLoader
 import com.planterior.helper.feature.shop.FirebaseInventoryRemoteDataSource
 import com.planterior.helper.feature.shop.FirebaseInventoryRepository
@@ -63,6 +65,7 @@ private constructor(
     val registrationRepository: FirebaseRegistrationRepository,
     val collectionRepository: FirebaseCollectionRepository,
     val miniHomeRepository: FirebaseMiniHomeRepository,
+    val miniHomeShareRepository: FirebaseMiniHomeShareRepository,
     val inventoryRepository: FirebaseInventoryRepository,
     val wateringRepository: OutboxWateringRepository,
     val wateringNotificationSettingsRepository: FirebaseWateringNotificationSettingsRepository,
@@ -159,6 +162,11 @@ private constructor(
                         mutationGateway,
                     )
                 val weatherRepository = FirebaseWeatherRepository(auth, firestore, functions)
+                val miniHomeRepository =
+                    FirebaseMiniHomeRepository(
+                        database,
+                        FirebaseMiniHomeRemoteDataSource(auth, functions),
+                    )
                 AuthRepositoryRuntime(
                     auth,
                     firestore,
@@ -168,9 +176,12 @@ private constructor(
                     syncRepository,
                     registrationRepository,
                     collectionRepository,
-                    FirebaseMiniHomeRepository(
-                        database,
-                        FirebaseMiniHomeRemoteDataSource(auth, functions),
+                    miniHomeRepository,
+                    FirebaseMiniHomeShareRepository(
+                        auth,
+                        functions,
+                        miniHomeRepository,
+                        MiniHomeShareImageStore(applicationContext),
                     ),
                     FirebaseInventoryRepository(
                         database,
