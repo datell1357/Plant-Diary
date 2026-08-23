@@ -7,11 +7,14 @@ import SwiftUI
 extension HomeDashboardView {
     var accountScopeID: String? {
         #if DEBUG
-            if ProcessInfo.processInfo.environment[
-                "QA_AUTHENTICATED"
-            ] == "1" {
+            switch ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] {
+            case "1":
                 return ProcessInfo.processInfo.environment["QA_ACCOUNT_ID"]
                     ?? "qa-account"
+            case "0":
+                return nil
+            default:
+                break
             }
         #endif
         return auth.accountID?.rawValue
@@ -30,11 +33,16 @@ extension HomeDashboardView {
 
     var authenticationState: HomeAuthenticationState {
         #if DEBUG
+            switch ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] {
+            case "1":
+                return .authenticated
+            case "0":
+                return .loggedOut
+            default:
+                break
+            }
             if ProcessInfo.processInfo.environment["QA_HOME_AUTH_STATE"] == "signing-in" {
                 return .signingIn
-            }
-            if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
-                return .authenticated
             }
         #endif
         if auth.isRestoring {

@@ -4,8 +4,13 @@ import PlanteriorData
 extension AppShellView {
     var authenticationState: AppAuthenticationState {
         #if DEBUG
-            if ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] == "1" {
+            switch ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] {
+            case "1":
                 return .signedIn
+            case "0":
+                return .signedOut
+            default:
+                break
             }
         #endif
         return auth.isSignedIn ? .signedIn : .signedOut
@@ -13,11 +18,14 @@ extension AppShellView {
 
     var accountScopeID: String? {
         #if DEBUG
-            if ProcessInfo.processInfo.environment[
-                "QA_AUTHENTICATED"
-            ] == "1" {
+            switch ProcessInfo.processInfo.environment["QA_AUTHENTICATED"] {
+            case "1":
                 return ProcessInfo.processInfo.environment["QA_ACCOUNT_ID"]
                     ?? "qa-account"
+            case "0":
+                return nil
+            default:
+                break
             }
         #endif
         return auth.accountID?.rawValue

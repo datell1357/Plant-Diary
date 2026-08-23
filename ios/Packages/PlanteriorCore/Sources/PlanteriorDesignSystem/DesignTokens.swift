@@ -50,6 +50,25 @@ public enum PlanteriorSpacing {
 }
 
 /// In-app corner radii. The 48pt Figma phone radius is device chrome and is absent here.
+/// Shared app-owned frame geometry. Values here describe reusable chrome rather
+/// than the dimensions of any one feature's content.
+public enum PlanteriorLayout {
+    public static let contentGutter: CGFloat = 16
+    public static let topBarHeight: CGFloat = 56
+    /// The visible tab controls above the system home-indicator safe area.
+    public static let tabBarHeight: CGFloat = 64
+    /// Visible sheet content above the shell tab bar in the 402x874 reference.
+    public static let bottomPanelContentHeight: CGFloat = 306
+    /// Full white bottom-panel footprint, including the 98pt tab/home-indicator region.
+    public static let bottomPanelTotalHeight: CGFloat = 404
+    public static let modalWidth: CGFloat = 320
+    public static let heroAspectRatio: CGFloat = 5.0 / 3.0
+    public static let mediaAspectRatio: CGFloat = 4.0 / 3.0
+    public static let mediaThumbnailSize: CGFloat = 48
+    public static let floatingActionSize: CGFloat = 56
+    public static let floatingActionInset: CGFloat = 16
+}
+
 public enum PlanteriorRadius {
     public static let small: CGFloat = 8
     public static let medium: CGFloat = 12
@@ -63,7 +82,7 @@ public enum PlanteriorControl {
     public static let minimumTarget: CGFloat = 44
     public static let cameraDiameter: CGFloat = 52
     public static let primaryButtonHeight: CGFloat = 52
-    public static let navigationBarHeight: CGFloat = 56
+    public static let navigationBarHeight = PlanteriorLayout.topBarHeight
     public static let rowHeight: CGFloat = 56
     public static let iconWellSize: CGFloat = 32
     public static let hairline: CGFloat = 1
@@ -73,6 +92,10 @@ public enum PlanteriorControl {
     ) -> CGFloat {
         sizeCategory.isAccessibilityCategory ? minimumTarget : iconWellSize
     }
+}
+
+public enum PlanteriorOpacity {
+    public static let dimmer: Double = 0.4
 }
 
 public enum PlanteriorMotion {
@@ -144,6 +167,24 @@ public enum PlanteriorStatusVariant: Hashable, Sendable {
         case .tonal: PlanteriorPalette.accent
         case .warning: PlanteriorPalette.warning
         }
+    }
+}
+
+/// Semantic filter-chip roles shared by collection and inventory surfaces.
+public enum PlanteriorFilterStyle: Hashable, Sendable {
+    case selected
+    case unselected
+
+    public var background: PlanteriorColorToken {
+        self == .selected ? PlanteriorPalette.accent : PlanteriorPalette.surface
+    }
+
+    public var foreground: PlanteriorColorToken {
+        self == .selected ? PlanteriorPalette.textOnAccent : PlanteriorPalette.textSecondary
+    }
+
+    public var border: PlanteriorColorToken? {
+        self == .selected ? nil : PlanteriorPalette.border
     }
 }
 

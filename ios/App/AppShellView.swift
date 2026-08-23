@@ -22,13 +22,26 @@ struct AppShellView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack {
             tabContent
+                .allowsHitTesting(!showsLogin)
+                .accessibilityHidden(showsLogin)
+
+            if showsLogin {
+                LoginSheet(auth: auth) {
+                    showsLogin = false
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             AppTabBar(
                 selectedTab: navigation.selectedTab,
                 selectTab: requestTab,
                 presentCamera: requestCamera
             )
+            .allowsHitTesting(!showsLogin)
+            .accessibilityHidden(showsLogin)
         }
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveShellSizeCategory)
@@ -111,9 +124,6 @@ struct AppShellView: View {
                 }
             }
         )
-        .sheet(isPresented: $showsLogin) {
-            LoginSheet(auth: auth)
-        }
         .fullScreenCover(isPresented: $showsOnboarding) {
             OnboardingView {
                 OnboardingState.complete()

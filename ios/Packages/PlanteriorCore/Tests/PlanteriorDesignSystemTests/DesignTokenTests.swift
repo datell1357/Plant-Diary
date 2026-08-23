@@ -52,6 +52,25 @@ struct DesignTokenTests {
     }
 
     @Test
+    func sharedChromeGeometryMatchesFigmaReference() {
+        #expect(PlanteriorLayout.contentGutter == 16)
+        #expect(PlanteriorLayout.topBarHeight == 56)
+        #expect(PlanteriorLayout.tabBarHeight == 64)
+        #expect(PlanteriorLayout.bottomPanelContentHeight == 306)
+        #expect(PlanteriorLayout.bottomPanelTotalHeight == 404)
+        #expect(
+            PlanteriorLayout.bottomPanelTotalHeight
+                - PlanteriorLayout.bottomPanelContentHeight == 98
+        )
+        #expect(PlanteriorLayout.modalWidth == 320)
+        #expect(abs(PlanteriorLayout.heroAspectRatio - CGFloat(5.0 / 3.0)) < 0.0001)
+        #expect(abs(PlanteriorLayout.mediaAspectRatio - CGFloat(4.0 / 3.0)) < 0.0001)
+        #expect(PlanteriorLayout.mediaThumbnailSize == 48)
+        #expect(PlanteriorLayout.floatingActionSize == 56)
+        #expect(PlanteriorLayout.floatingActionInset == 16)
+    }
+
+    @Test
     func iconWellGeometryScalesForAccessibilityCategories() {
         #expect(PlanteriorControl.iconWellSize(for: .large) == 32)
         #expect(

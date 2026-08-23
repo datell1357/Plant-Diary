@@ -7,6 +7,7 @@ enum AppTabBarMetrics {
     static let iconSize: CGFloat = 24
     static let iconLabelSpacing = PlanteriorSpacing.extraSmall
     static let horizontalPadding = PlanteriorSpacing.small
+    static let contentHeight = PlanteriorLayout.tabBarHeight
     static let minimumTarget = PlanteriorControl.minimumTarget
     static let cameraDiameter = PlanteriorControl.cameraDiameter
     static let cameraGlyphSize: CGFloat = 26
@@ -37,6 +38,7 @@ struct AppTabBar: View {
         }
         .padding(.horizontal, AppTabBarMetrics.horizontalPadding)
         .padding(.top, PlanteriorSpacing.small)
+        .frame(height: AppTabBarMetrics.contentHeight, alignment: .top)
         .background(AppTabBarMetrics.surface.color)
         .overlay(alignment: .top) {
             Rectangle()

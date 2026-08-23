@@ -129,9 +129,10 @@ final class AppLaunchUITests: XCTestCase {
     func testLoginSheetPresentsAndCancelsWithoutPrivateRows() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "0"
         app.launch()
-        XCTAssertTrue(app.buttons["home.identify"].waitForExistence(timeout: 5))
-        app.buttons["home.identify"].tap()
+        XCTAssertTrue(app.buttons["tab.camera"].waitForExistence(timeout: 5))
+        app.buttons["tab.camera"].tap()
         XCTAssertTrue(app.buttons["auth.apple"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["auth.google"].exists)
         app.buttons["auth.cancel"].tap()

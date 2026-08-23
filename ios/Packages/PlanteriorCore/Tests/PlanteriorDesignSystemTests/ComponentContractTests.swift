@@ -30,6 +30,16 @@ struct ComponentContractTests {
     }
 
     @Test
+    func filterChipStyleUsesSelectedAndUnselectedSemanticSurfaces() {
+        #expect(PlanteriorFilterStyle.selected.background == PlanteriorPalette.accent)
+        #expect(PlanteriorFilterStyle.selected.foreground == PlanteriorPalette.textOnAccent)
+        #expect(PlanteriorFilterStyle.selected.border == nil)
+        #expect(PlanteriorFilterStyle.unselected.background == PlanteriorPalette.surface)
+        #expect(PlanteriorFilterStyle.unselected.foreground == PlanteriorPalette.textSecondary)
+        #expect(PlanteriorFilterStyle.unselected.border == PlanteriorPalette.border)
+    }
+
+    @Test
     func secondaryActionUsesOutlinedSurface() {
         #expect(PlanteriorActionStyle.primary.background == PlanteriorPalette.accent)
         #expect(PlanteriorActionStyle.primary.foreground == PlanteriorPalette.textOnAccent)
