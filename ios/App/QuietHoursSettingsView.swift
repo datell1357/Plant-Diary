@@ -2,8 +2,8 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 struct QuietHoursSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.sizeCategory) private var sizeCategory
+    @Environment(\.dismiss) var dismiss
+    @Environment(\.sizeCategory) var sizeCategory
     @State private var enabled: Bool
     @State private var startDate: Date
     @State private var endDate: Date
@@ -35,11 +35,14 @@ struct QuietHoursSettingsView: View {
                     spacing: PlanteriorSpacing.extraLarge
                 ) {
                     toggleCard
-                    Text("설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다.")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, PlanteriorSpacing.small)
+                    Text(
+                        "설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 "
+                            + "식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다."
+                    )
+                    .font(PlanteriorTypography.caption)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, PlanteriorSpacing.small)
                     VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                         Text("시간 범위 설정")
                             .font(PlanteriorTypography.caption.weight(.semibold))
@@ -61,31 +64,22 @@ struct QuietHoursSettingsView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var topBar: some View {
-        PlanteriorTopBar("알림 금지 시간 설정", leading: {
-            SettingsBackButton(identifier: "quiet-hours.back") {
-                dismiss()
-            }
-        }, trailing: {
-            EmptyView()
-        })
-        .background {
-            SettingsTopBarFrame(identifier: "quiet-hours.top-bar")
-        }
-        .settingsReferenceTopBar()
-    }
-
     private var toggleCard: some View {
         PlanteriorGroupedSurface {
             HStack(spacing: PlanteriorSpacing.medium) {
-                PlanteriorIconWell(systemImage: "clock")
-                Toggle("알림 금지 시간 사용", isOn: $enabled)
-                    .font(PlanteriorTypography.body.weight(.medium))
-                    .tint(PlanteriorPalette.accent.color)
-                    .accessibilityIdentifier("quiet-hours.enabled")
+                SettingsIconWell(icon: .system("clock"))
+                SettingsToggle(
+                    title: "알림 금지 시간 사용",
+                    isOn: $enabled,
+                    identifier: "quiet-hours.enabled"
+                )
+                .font(PlanteriorTypography.body.weight(.medium))
             }
             .padding(.horizontal, PlanteriorSpacing.large)
             .frame(minHeight: PlanteriorControl.rowHeight)
+            .background {
+                SettingsLayoutFrame(identifier: "quiet-hours.enabled.row")
+            }
         }
     }
 
@@ -96,48 +90,6 @@ struct QuietHoursSettingsView: View {
             timePicker("종료 시간", selection: $endDate, id: "quiet-hours.end")
         }
         .opacity(enabled ? 1 : 0.55)
-    }
-
-    private var warningCard: some View {
-        PlanteriorCard(variant: .warning) {
-            HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
-                Image(systemName: "lightbulb")
-                    .foregroundStyle(PlanteriorPalette.warning.color)
-                    .frame(
-                        width: PlanteriorSpacing.extraLarge,
-                        height: PlanteriorSpacing.extraLarge
-                    )
-                    .accessibilityHidden(true)
-                Text(
-                    sizeCategory.isAccessibilityCategory
-                        ? "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는 기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이 즉시 발송됩니다."
-                        : "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는\n기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이\n즉시 발송됩니다."
-                )
-                    .font(PlanteriorTypography.caption.weight(.semibold))
-                    .foregroundStyle(PlanteriorPalette.warning.color)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(
-                maxWidth: .infinity,
-                minHeight: SettingsReferenceMetrics.saveButtonHeight,
-                alignment: .leading
-            )
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                .stroke(
-                    PlanteriorPalette.warning.color,
-                    lineWidth: PlanteriorControl.hairline
-                )
-        }
-        .frame(
-            minHeight: SettingsReferenceMetrics.warningHeight,
-            maxHeight: sizeCategory.isAccessibilityCategory
-                ? nil
-                : SettingsReferenceMetrics.warningHeight
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("quiet-hours.warning")
     }
 
     @ViewBuilder
@@ -172,22 +124,29 @@ struct QuietHoursSettingsView: View {
                 .accessibilityIdentifier(id)
             }
             .padding(.vertical, PlanteriorSpacing.small)
+            .background {
+                SettingsLayoutFrame(identifier: "\(id).row")
+            }
             .disabled(!enabled)
         } else {
-            DatePicker(
-                title,
-                selection: selection,
-                displayedComponents: .hourAndMinute
-            )
-            .datePickerStyle(.compact)
-            .padding(.horizontal, PlanteriorSpacing.large)
+            ZStack {
+                SettingsLayoutFrame(identifier: "\(id).row")
+                DatePicker(
+                    title,
+                    selection: selection,
+                    displayedComponents: .hourAndMinute
+                )
+                .datePickerStyle(.compact)
+                .padding(.horizontal, PlanteriorSpacing.large)
+                .disabled(!enabled)
+                .accessibilityValue(
+                    QuietHoursPresentation.localTime(
+                        from: selection.wrappedValue
+                    )?.rawValue ?? ""
+                )
+                .accessibilityIdentifier(id)
+            }
             .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)
-            .disabled(!enabled)
-            .accessibilityValue(
-                QuietHoursPresentation.localTime(from: selection.wrappedValue)?
-                    .rawValue ?? ""
-            )
-            .accessibilityIdentifier(id)
         }
     }
 

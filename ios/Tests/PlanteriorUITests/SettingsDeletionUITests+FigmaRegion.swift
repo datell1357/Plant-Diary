@@ -27,10 +27,6 @@ extension SettingsDeletionUITests {
         let back = app.buttons["weather.region.back"]
         let topBar = app.otherElements["region-settings.top-bar"]
         let body = app.scrollViews["region-settings.screen"]
-        let currentLocation = app.buttons["weather.use-current-location"]
-        let firstRecentRegion = app.buttons[
-            "weather.region-result.manual-seoul"
-        ]
         XCTAssertTrue(back.isHittable)
         XCTAssertFalse(app.buttons["weather.region.save"].exists)
         XCTAssertEqual(back.frame.minX, 16, accuracy: 1)
@@ -41,12 +37,7 @@ extension SettingsDeletionUITests {
         XCTAssertEqual(topBar.frame.height, 56, accuracy: 1)
         XCTAssertEqual(body.frame.minY, 100, accuracy: 1)
         XCTAssertEqual(body.frame.maxY, 874, accuracy: 1)
-        XCTAssertEqual(currentLocation.frame.minX, 20, accuracy: 1)
-        XCTAssertEqual(currentLocation.frame.minY, 180, accuracy: 2)
-        XCTAssertEqual(currentLocation.frame.width, 362, accuracy: 1)
-        XCTAssertEqual(currentLocation.frame.height, 74, accuracy: 2)
-        XCTAssertEqual(firstRecentRegion.frame.minY, 299, accuracy: 2)
-        XCTAssertEqual(firstRecentRegion.frame.height, 52, accuracy: 1)
+        assertReferenceRegionAnatomy(in: app)
         attachScreenshot(named: "region-402x874-light")
 
         app.buttons["weather.region-result.manual-haeundae"].tap()

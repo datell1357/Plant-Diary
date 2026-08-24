@@ -33,6 +33,7 @@ extension SettingsDeletionUITests {
         XCTAssertEqual(rootTopBar.frame.height, 56, accuracy: 1)
         XCTAssertEqual(rootBody.frame.minY, 100, accuracy: 1)
         XCTAssertEqual(rootBody.frame.maxY, 874, accuracy: 1)
+        assertReferenceRootAnatomy(in: app)
         attachScreenshot(named: "settings-402x874-light")
 
         app.buttons["settings.quiet-hours.open"].tap()
@@ -65,6 +66,7 @@ extension SettingsDeletionUITests {
         XCTAssertEqual(save.frame.width, 362, accuracy: 1)
         XCTAssertEqual(save.frame.height, 48, accuracy: 1)
         XCTAssertEqual(save.frame.maxY, 828, accuracy: 1)
+        assertReferenceQuietHoursAnatomy(in: app)
         attachScreenshot(named: "quiet-hours-402x874-light")
 
         toggle.tap()

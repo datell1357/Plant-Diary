@@ -9,14 +9,14 @@ extension SettingsView {
         settingsGroup("알림 관리") {
             toggleRow(
                 "물 주기 알림",
-                icon: "drop",
+                icon: .system("drop"),
                 isOn: $wateringEnabled,
                 id: "settings.alerts.watering-enabled"
             )
             rowDivider
             toggleRow(
                 "날씨 알림",
-                icon: "sun.max",
+                icon: .system("sun.max"),
                 isOn: Binding(
                     get: { weather.globalAlertsEnabled },
                     set: { weather.setGlobalAlertsEnabled($0) }
@@ -29,7 +29,7 @@ extension SettingsView {
             } label: {
                 rowLabel(
                     "알림 금지 시간 설정",
-                    icon: "clock",
+                    icon: .system("clock"),
                     value: quietHoursSummary
                 )
             }
@@ -43,7 +43,7 @@ extension SettingsView {
             Button {
                 showsRegionSettings = true
             } label: {
-                rowLabel("관리 지역 설정", icon: "mappin", value: regionName)
+                rowLabel("관리 지역 설정", icon: .location, value: regionName)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.region.open")
@@ -54,11 +54,14 @@ extension SettingsView {
                 }
                 openURL(url)
             } label: {
-                rowLabel("위치 권한 관리", icon: "shield", value: Self.locationText)
+                rowLabel(
+                    "위치 권한 관리",
+                    icon: .system("shield"),
+                    value: Self.locationText
+                )
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.permission.location")
-
         }
     }
 
@@ -66,13 +69,13 @@ extension SettingsView {
         settingsGroup("계정") {
             actionRow(
                 "개인정보 처리방침",
-                icon: "doc.text",
+                icon: .system("doc.text"),
                 id: "settings.privacy"
             ) { showsPrivacy = true }
             rowDivider
             rowLabel(
                 "앱 버전",
-                icon: "info.circle",
+                icon: .system("info.circle"),
                 value: appVersion,
                 disclosure: false
             )
@@ -80,7 +83,7 @@ extension SettingsView {
             rowDivider
             actionRow(
                 "로그아웃",
-                icon: "rectangle.portrait.and.arrow.right",
+                icon: .system("rectangle.portrait.and.arrow.right"),
                 id: "auth.logout",
                 disclosure: false
             ) { auth.pendingLogout = true }
@@ -91,7 +94,7 @@ extension SettingsView {
         settingsGroup("기타 설정") {
             actionRow(
                 "꾸미기 마일스톤",
-                icon: "trophy",
+                icon: .system("trophy"),
                 id: "settings.milestones",
                 action: openMilestones
             )
@@ -110,7 +113,7 @@ extension SettingsView {
             rowDivider
             actionRow(
                 "계정 삭제",
-                icon: "person.crop.circle.badge.minus",
+                icon: .system("person.crop.circle.badge.minus"),
                 id: "settings.delete-account"
             ) { showsDeletion = true }
         }

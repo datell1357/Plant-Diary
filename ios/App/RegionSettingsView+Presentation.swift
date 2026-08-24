@@ -43,14 +43,17 @@ extension RegionSettingsView {
             weather.requestLocationPermission()
         } label: {
             HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
-                Image(systemName: "mappin.circle.fill")
-                    .font(PlanteriorTypography.supporting)
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .frame(
-                        width: PlanteriorSpacing.large,
-                        height: PlanteriorSpacing.extraLarge
-                    )
-                    .accessibilityHidden(true)
+                SettingsLocationGlyph(
+                    identifier: "region-settings.location-glyph",
+                    size: SettingsReferenceMetrics.regionLocationGlyphSize,
+                    translation: CGSize(width: 1, height: -1),
+                    tailInset: 1.5
+                )
+                .frame(
+                    width: PlanteriorSpacing.large,
+                    height: PlanteriorSpacing.extraLarge,
+                    alignment: .top
+                )
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                     Text("현재 위치로 설정")
                         .font(PlanteriorTypography.cardTitle)
