@@ -50,12 +50,22 @@ extension HomeDashboardView {
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .accessibilityIdentifier("home.greeting")
                 .accessibilityAddTraits(.isHeader)
-            Text(greetingMeta)
-                .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .accessibilityIdentifier("home.greeting.meta")
+            HStack(spacing: PlanteriorSpacing.extraSmall) {
+                Text(greetingMeta)
+                    .font(PlanteriorTypography.caption)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .accessibilityIdentifier("home.greeting.meta")
+                if authenticationState == .authenticated {
+                    Image(systemName: "sun.max.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(PlanteriorPalette.accent.color)
+                        .frame(width: 14, height: 14)
+                        .accessibilityLabel("맑음")
+                        .accessibilityIdentifier("home.greeting.weather-glyph")
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

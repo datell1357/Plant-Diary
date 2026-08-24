@@ -27,6 +27,10 @@ extension HomeDashboardUITests {
             app.staticTexts["home.greeting.meta"].label,
             "서울 성동구 · 28°C"
         )
+        let weatherGlyph = app.images["home.greeting.weather-glyph"]
+        XCTAssertTrue(weatherGlyph.exists)
+        XCTAssertEqual(weatherGlyph.frame.width, 37.0 / 3.0, accuracy: 0.1)
+        XCTAssertEqual(weatherGlyph.frame.height, 37.0 / 3.0, accuracy: 0.1)
         XCTAssertEqual(app.buttons["home.room.title"].label, "민지의 미니 식물원 🏡")
         XCTAssertEqual(
             app.staticTexts["home.weather.warning"].label,

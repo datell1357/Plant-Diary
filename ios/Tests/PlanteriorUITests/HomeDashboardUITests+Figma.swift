@@ -22,10 +22,13 @@ extension HomeDashboardUITests {
         XCTAssertTrue(app.images["home.avatar"].exists)
         XCTAssertTrue(app.staticTexts["home.greeting"].exists)
         XCTAssertEqual(app.staticTexts["home.greeting"].label, "안녕하세요, 민지님!")
-        XCTAssertEqual(
-            app.staticTexts["home.greeting.meta"].label,
-            "서울 성동구 · 28°C"
-        )
+        let metadata = app.staticTexts["home.greeting.meta"]
+        XCTAssertEqual(metadata.label, "서울 성동구 · 28°C")
+        let weatherGlyph = app.images["home.greeting.weather-glyph"]
+        XCTAssertTrue(weatherGlyph.exists)
+        XCTAssertEqual(weatherGlyph.frame.width, 37.0 / 3.0, accuracy: 0.1)
+        XCTAssertEqual(weatherGlyph.frame.height, 37.0 / 3.0, accuracy: 0.1)
+        XCTAssertEqual(weatherGlyph.frame.minX - metadata.frame.maxX, 4, accuracy: 1)
         XCTAssertTrue(app.buttons["home.notifications"].exists)
 
         let title = app.buttons["home.room.title"]
