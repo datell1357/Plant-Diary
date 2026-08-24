@@ -27,7 +27,7 @@ object PlanteriorRouteResolver {
             "home" -> PlanteriorRoute.Home
             "collection" -> resolveCollection(segments)
             "storage" -> resolveStorage(segments)
-            "settings" -> PlanteriorRoute.Settings
+            "settings" -> resolveSettings(segments)
             "camera" -> PlanteriorRoute.Camera
             "identify" -> resolveIdentification(segments)
             "registration" -> PlanteriorRoute.Registration
@@ -76,9 +76,18 @@ object PlanteriorRouteResolver {
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.Weather, route)
             is PlanteriorRoute.InventoryItemDetail ->
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.Storage, route)
+            is PlanteriorRoute.AccountDeletion ->
+                listOf(PlanteriorRoute.Home, PlanteriorRoute.Settings, route)
             is PlanteriorRoute.MiniHomeShare ->
                 listOf(PlanteriorRoute.Home, PlanteriorRoute.MiniHome, route)
             else -> listOf(PlanteriorRoute.Home, route)
+        }
+
+    private fun resolveSettings(segments: List<String>): PlanteriorRoute =
+        when {
+            segments.isEmpty() -> PlanteriorRoute.Settings
+            segments == listOf("account-deletion") -> PlanteriorRoute.AccountDeletion
+            else -> PlanteriorRoute.Home
         }
 
     private fun resolveStorage(segments: List<String>): PlanteriorRoute =

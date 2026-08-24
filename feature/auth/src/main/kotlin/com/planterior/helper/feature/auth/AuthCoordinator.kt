@@ -229,6 +229,54 @@ class AuthCoordinator(
 
     private suspend fun lastSync(account: AuthAccount) = synchronizer.lastKnown(account.uid)
 
+    suspend fun reauthenticateCurrent(): AuthReauthenticationResult {
+        val account = identity.current() ?: return AuthReauthenticationResult.FAILED
+        val provider = account.providers.firstOrNull() ?: return AuthReauthenticationResult.FAILED
+        val requestId = ++generation
+        val adapter = providers.getValue(provider)
+        activeRequest = requestId to adapter
+        val outcome = acquire(adapter, requestId)
+        if (requestId != generation) return AuthReauthenticationResult.CANCELLED
+        activeRequest = null
+        return when (outcome) {
+            ProviderOutcome.Cancelled -> AuthReauthenticationResult.CANCELLED
+            is ProviderOutcome.Failed -> AuthReauthenticationResult.FAILED
+            is ProviderOutcome.Proof ->
+                try {
+                    val refreshed =
+                        identity.reauthenticate(
+                            ProviderProof(provider, outcome.token, outcome.rawNonce)
+                        )
+                    if (refreshed.uid == account.uid) {
+                        AuthReauthenticationResult.SUCCEEDED
+                    } else {
+                        AuthReauthenticationResult.FAILED
+                    }
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (_: AuthGatewayException) {
+                    AuthReauthenticationResult.FAILED
+                }
+        }
+    }
+
+    suspend fun completeTerminalAccountDeletion(accountUid: String): Boolean {
+        generation += 1
+        activeRequest?.let { it.second.cancel(it.first) }
+        activeRequest = null
+        return authTransitionMutex.withLock {
+            val currentUid = identity.current()?.uid
+            if (currentUid != null && currentUid != accountUid) return@withLock false
+            try {
+                if (currentUid != null) identity.signOut()
+                true
+            } finally {
+                cache.activate(null)
+                mutableState.value = AuthUiState.SignedOut()
+            }
+        }
+    }
+
     suspend fun logout(): Boolean {
         generation += 1
         activeRequest?.let { it.second.cancel(it.first) }

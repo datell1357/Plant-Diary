@@ -134,7 +134,10 @@ class RegistrationRestorationTest {
                 RegistrationAttempt.Failed(
                     RegistrationFailure.REMOTE_WRITE_FAILED,
                     RegistrationCheckpoint.PhotoStored(
-                        "plant-photos/account-a/${submission.plantId.value}/representative.jpg"
+                        com.planterior.helper.core.data.PrivateMediaReference(
+                            "reservation_plant_restore",
+                            "7",
+                        )
                     ),
                 )
             } else {

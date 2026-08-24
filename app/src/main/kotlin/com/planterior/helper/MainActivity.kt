@@ -50,6 +50,7 @@ import java.net.URI
 import java.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var notificationOpenCallable: FirebaseNotificationOpenCallable
     private lateinit var weatherLocationGateway: WeatherLocationGateway
     private var pendingLocationPermission: CompletableDeferred<LocationPermission>? = null
+    private val navigationReady = CompletableDeferred<NavHostController>()
     internal var notificationPermissionAction by
         mutableStateOf(NotificationPermissionAction.NOT_REQUIRED)
         private set
@@ -111,6 +113,7 @@ class MainActivity : ComponentActivity() {
                 ::locationPermissionState,
                 ::requestLocationPermission,
             )
+        authRuntime.accountDeletionRuntime?.attachLocationGateway(weatherLocationGateway)
         DebugNotificationInjector.injectIfRequested(this, intent)
         homeViewModel = HomeViewModel(authRuntime.homeRepository, Clock.systemDefaultZone())
         val target =
@@ -120,6 +123,14 @@ class MainActivity : ComponentActivity() {
                 )
                 .last()
         lifecycleScope.launch {
+            authRuntime.accountDeletionRuntime?.exits?.collect {
+                navigationReady
+                    .await()
+                    .replaceWithNotificationStack(listOf(PlanteriorRoute.Login()))
+            }
+        }
+        lifecycleScope.launch {
+            authRuntime.accountDeletionRuntime?.retryIncompleteAfterSignedOutStartup()
             authRuntime.coordinator.restore()
             intent
                 .deepLinkUri()
@@ -152,6 +163,7 @@ class MainActivity : ComponentActivity() {
                 onOpenLocationSettings = ::openLocationSettings,
                 onNavigationReady = { controller ->
                     navigationController = controller
+                    if (!navigationReady.isCompleted) navigationReady.complete(controller)
                     restoreOrApplyActiveDeepLink()
                     pendingDeepLinkDelivery?.let { delivery ->
                         pendingDeepLinkDelivery = null
@@ -422,6 +434,8 @@ internal fun PlanteriorApp(
             weatherRepository = authRuntime?.weatherRepository,
             weatherLocationGateway = weatherLocationGateway,
             weatherPermissionCapabilities = authRuntime?.weatherPermissionCapabilities,
+            accountDeletionDependencyFactory =
+                authRuntime?.accountDeletionRuntime?.let { runtime -> runtime::dependencies },
             onOpenLocationSettings = onOpenLocationSettings,
             notificationPermissionGranted =
                 notificationPermissionAction == NotificationPermissionAction.GRANTED ||

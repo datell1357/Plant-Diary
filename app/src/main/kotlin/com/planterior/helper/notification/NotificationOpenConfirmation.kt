@@ -97,6 +97,10 @@ class NotificationOpenConfirmationStore(
     internal fun pending(): Set<String> =
         rawPending().filterTo(mutableSetOf(), DELIVERY_ID::matches)
 
+    fun clearLocalState() {
+        synchronized(preferences) { preferences.edit(commit = true) { clear() } }
+    }
+
     private fun rawPending(): Set<String> =
         preferences.getStringSet(PENDING, emptySet()).orEmpty().toSet()
 

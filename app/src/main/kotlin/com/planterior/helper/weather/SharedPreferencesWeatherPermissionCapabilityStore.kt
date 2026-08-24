@@ -66,6 +66,18 @@ class SharedPreferencesWeatherPermissionCapabilityStore(context: Context) :
         }
     }
 
+    fun clear(accountId: String) {
+        val prefix = keyPrefix(accountId)
+        preferences.edit(commit = true) {
+            remove(prefix)
+            remove("$prefix.desired")
+            remove("$prefix.acknowledged")
+            remove("$prefix.pending")
+            remove("$prefix.generation")
+            remove("$prefix.os-granted")
+        }
+    }
+
     private fun keyPrefix(accountId: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(accountId.toByteArray())
         return "capability." + digest.joinToString("") { byte -> "%02x".format(byte) }

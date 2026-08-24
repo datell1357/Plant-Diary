@@ -9,6 +9,7 @@ import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.planterior.helper.BuildConfig
 import com.planterior.helper.FirebaseRuntime
+import com.planterior.helper.core.data.FirebasePrivateMediaGateway
 import com.planterior.helper.core.data.FirebaseRemoteMutationGateway
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
 import com.planterior.helper.core.database.MIGRATION_10_11
@@ -136,7 +137,12 @@ private constructor(
                 val registrationRepository =
                     FirebaseRegistrationRepository(
                         database,
-                        FirebaseRegistrationRemoteDataSource(auth, firestore, storage) { photo ->
+                        FirebaseRegistrationRemoteDataSource(
+                            auth,
+                            firestore,
+                            storage,
+                            FirebasePrivateMediaGateway(functions),
+                        ) { photo ->
                             val maximum = 20 * 1024 * 1024
                             applicationContext.contentResolver
                                 .openInputStream(photo.privateUri.toUri())

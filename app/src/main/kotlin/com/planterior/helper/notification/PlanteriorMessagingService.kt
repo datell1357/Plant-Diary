@@ -171,6 +171,10 @@ internal class WeatherNotificationIdentityRegistry(context: Context) {
     private val preferences =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
+    fun clearLocalState() {
+        synchronized(lock) { preferences.edit(commit = true) { clear() } }
+    }
+
     fun platformId(immutableAlertId: String): Int {
         require(immutableAlertId.matches(VALID_IDENTITY))
         synchronized(lock) {

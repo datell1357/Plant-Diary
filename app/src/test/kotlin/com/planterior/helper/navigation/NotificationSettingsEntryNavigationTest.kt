@@ -1,8 +1,12 @@
 package com.planterior.helper.navigation
 
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -45,11 +49,37 @@ class NotificationSettingsEntryNavigationTest {
         }
         compose.waitForIdle()
 
-        compose.onNodeWithTag("account-notification-settings").performClick()
+        compose.onNodeWithTag("settings.watering-detail").performScrollTo().performClick()
         compose.waitForIdle()
 
         assertEquals(
             PlanteriorRoute.Notifications,
+            navController.currentBackStackEntry.toPlanteriorRoute(),
+        )
+    }
+
+    @Test
+    fun `settings route exposes compatibility and screen roots while deletion entry works`() {
+        lateinit var navController: NavHostController
+        compose.setContent {
+            navController = rememberNavController()
+            PlanteriorNavHost(
+                navController = navController,
+                startRoute = PlanteriorRoute.Settings,
+                authCoordinator = coordinator(),
+                authRouteGuardEnabled = false,
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("account-screen").assertIsDisplayed()
+        compose.onNodeWithTag("settings.screen").assertIsDisplayed()
+        compose.onAllNodes(hasScrollAction(), useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithTag("account-delete").performScrollTo().performClick()
+        compose.waitForIdle()
+
+        assertEquals(
+            PlanteriorRoute.AccountDeletion,
             navController.currentBackStackEntry.toPlanteriorRoute(),
         )
     }

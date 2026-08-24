@@ -29,6 +29,7 @@ class AuthRouteGuardTest {
                 PlanteriorRoute.Collection,
                 PlanteriorRoute.Storage,
                 PlanteriorRoute.Settings,
+                PlanteriorRoute.AccountDeletion,
                 PlanteriorRoute.Camera,
                 PlanteriorRoute.MiniHome,
                 PlanteriorRoute.Notifications,

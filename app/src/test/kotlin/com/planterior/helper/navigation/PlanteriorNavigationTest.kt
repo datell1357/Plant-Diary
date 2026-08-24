@@ -378,6 +378,20 @@ class PlanteriorNavigationTest {
     }
 
     @Test
+    fun `terminal deletion exit replaces the full authenticated graph with login`() {
+        start(target = PlanteriorRoute.AccountDeletion)
+        assertEquals(PlanteriorRoute.AccountDeletion, currentRoute())
+
+        composeRule.runOnIdle {
+            navController.replaceWithNotificationStack(listOf(PlanteriorRoute.Login()))
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(PlanteriorRoute.Login(), currentRoute())
+        composeRule.runOnIdle { assertEquals(false, navController.popBackStack()) }
+    }
+
+    @Test
     fun `login returns to the requested authenticated destination`() {
         composeRule.setContent {
             PlanteriorTheme {

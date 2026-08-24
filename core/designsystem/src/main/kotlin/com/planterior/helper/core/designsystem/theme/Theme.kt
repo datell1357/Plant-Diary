@@ -63,4 +63,16 @@ object PlanteriorTheme {
     /** 경고 테두리 색. */
     val warningBorder
         @Composable @ReadOnlyComposable get() = PlanteriorPalette.WarningBorder
+
+    /** 계정 삭제처럼 되돌릴 수 없는 행동에만 쓰는 전경색. */
+    val destructive
+        @Composable @ReadOnlyComposable get() = PlanteriorPalette.Destructive
+
+    /** 파괴적 결과를 설명하는 표면색. */
+    val destructiveContainer
+        @Composable @ReadOnlyComposable get() = PlanteriorPalette.DestructiveContainer
+
+    /** 파괴적 표면 위 본문색. */
+    val onDestructiveContainer
+        @Composable @ReadOnlyComposable get() = PlanteriorPalette.OnDestructiveContainer
 }

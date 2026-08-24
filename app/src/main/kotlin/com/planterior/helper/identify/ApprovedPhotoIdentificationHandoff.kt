@@ -2,12 +2,11 @@ package com.planterior.helper.identify
 
 import com.planterior.helper.core.data.FirestoreTimestampAdapter
 import com.planterior.helper.core.data.IdentificationRequestDto
-import com.planterior.helper.core.data.StorageContract
+import com.planterior.helper.core.data.PrivateMediaReference
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.IdentificationRequestId
 import com.planterior.helper.feature.camera.PhotoMime
 import com.planterior.helper.feature.camera.PhotoSubmission
-import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -21,11 +20,9 @@ fun interface PrivatePhotoBytes {
 }
 
 data class TemporaryIdentificationOriginal(
-    val path: String,
     val ownerUid: String,
     val requestId: String,
     val contentType: String,
-    val expiresAt: Instant,
     val bytes: ByteArray,
 )
 
@@ -34,7 +31,7 @@ interface IdentificationHandoffBackend {
 
     suspend fun findRequest(owner: AccountId, requestId: String): IdentificationRequestDto?
 
-    suspend fun upload(original: TemporaryIdentificationOriginal)
+    suspend fun upload(original: TemporaryIdentificationOriginal): PrivateMediaReference
 
     suspend fun createRequest(
         owner: AccountId,
@@ -71,18 +68,15 @@ class ApprovedPhotoIdentificationHandoff(
         val key = RequestKey(owner, requestId)
         mutex.withLock {
             if (key in completed) return
-            val request = submission.request(owner, requestId)
             val existing = requestLookup(owner, requestId)
             if (existing != null) {
-                existing.requireSameRequest(request)
+                existing.requireSameOwner(owner, requestId)
                 completed += key
                 return
             }
             val bytes = readPhoto(submission)
-            upload(
-                submission.original(owner, requestId, request.expiresAt.toDate().toInstant(), bytes)
-            )
-            createRequest(owner, requestId, request)
+            val mediaReference = upload(submission.original(owner, requestId, bytes))
+            createRequest(owner, requestId, submission.request(owner, requestId, mediaReference))
             completed += key
         }
     }
@@ -118,9 +112,9 @@ class ApprovedPhotoIdentificationHandoff(
             throw IdentificationHandoffException(IdentificationHandoffFailure.PhotoUnavailable)
         }
 
-    private suspend fun upload(original: TemporaryIdentificationOriginal) {
+    private suspend fun upload(original: TemporaryIdentificationOriginal): PrivateMediaReference {
         try {
-            backend.upload(original)
+            return backend.upload(original)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -153,12 +147,12 @@ class ApprovedPhotoIdentificationHandoff(
 private fun PhotoSubmission.request(
     owner: AccountId,
     requestId: IdentificationRequestId,
+    mediaReference: PrivateMediaReference,
 ): IdentificationRequestDto {
     val expiresAt = approvedAt.plusSeconds(disclosure.originalRetentionHours * 60L * 60L)
-    val path = StorageContract.identificationOriginal(owner, requestId.value, photo.fileName())
     return IdentificationRequestDto(
         ownerUid = owner.value,
-        temporaryOriginalPath = path,
+        mediaReference = mediaReference,
         createdAt = FirestoreTimestampAdapter.fromInstant(approvedAt),
         expiresAt = FirestoreTimestampAdapter.fromInstant(expiresAt),
         revision = 1,
@@ -171,34 +165,23 @@ private fun PhotoSubmission.request(
 private fun PhotoSubmission.original(
     owner: AccountId,
     requestId: IdentificationRequestId,
-    expiresAt: Instant,
     bytes: ByteArray,
 ) =
     TemporaryIdentificationOriginal(
-        path = StorageContract.identificationOriginal(owner, requestId.value, photo.fileName()),
         ownerUid = owner.value,
         requestId = requestId.value,
         contentType = photo.mime.contentType(),
-        expiresAt = expiresAt,
         bytes = bytes,
     )
 
-private fun IdentificationRequestDto.requireSameRequest(expected: IdentificationRequestDto) {
-    if (ownerUid != expected.ownerUid || temporaryOriginalPath != expected.temporaryOriginalPath) {
+private fun IdentificationRequestDto.requireSameOwner(
+    owner: AccountId,
+    requestId: IdentificationRequestId,
+) {
+    if (ownerUid != owner.value || idempotencyKey != requestId.value) {
         throw IdentificationHandoffException(IdentificationHandoffFailure.PermissionDenied)
     }
 }
-
-private fun com.planterior.helper.feature.camera.PreparedPhoto.fileName(): String =
-    "original.${mime.extension()}"
-
-private fun PhotoMime.extension(): String =
-    when (this) {
-        PhotoMime.Jpeg -> "jpg"
-        PhotoMime.Png -> "png"
-        PhotoMime.Webp -> "webp"
-        PhotoMime.Heif -> "heif"
-    }
 
 private fun PhotoMime.contentType(): String =
     when (this) {

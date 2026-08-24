@@ -1,5 +1,7 @@
 package com.planterior.helper.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -8,8 +10,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavHostController
@@ -24,7 +28,6 @@ import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.PersonalPlantId
-import com.planterior.helper.feature.auth.AuthAccountScreen
 import com.planterior.helper.feature.auth.AuthCoordinator
 import com.planterior.helper.feature.auth.AuthScreen
 import com.planterior.helper.feature.auth.AuthUiState
@@ -49,6 +52,12 @@ import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationRoute
 import com.planterior.helper.feature.registration.RegistrationSeed
+import com.planterior.helper.feature.settings.AccountDeletionDependencies
+import com.planterior.helper.feature.settings.AccountDeletionRoute
+import com.planterior.helper.feature.settings.DevicePermissionState
+import com.planterior.helper.feature.settings.SettingsActions
+import com.planterior.helper.feature.settings.SettingsScreen
+import com.planterior.helper.feature.settings.SettingsUiState
 import com.planterior.helper.feature.share.MiniHomeShareRepository
 import com.planterior.helper.feature.share.MiniHomeShareRoute
 import com.planterior.helper.feature.shop.CatalogMediaLoadResult
@@ -113,6 +122,8 @@ fun PlanteriorNavHost(
     weatherRepository: WeatherRepository? = null,
     weatherLocationGateway: WeatherLocationGateway? = null,
     weatherPermissionCapabilities: WeatherPermissionCapabilityStore? = null,
+    accountDeletionDependencies: AccountDeletionDependencies? = null,
+    accountDeletionDependencyFactory: ((String) -> AccountDeletionDependencies)? = null,
     notificationPermissionGranted: Boolean = true,
     canRequestNotificationPermission: Boolean = false,
     onRequestNotificationPermission: () -> Unit = {},
@@ -355,26 +366,99 @@ fun PlanteriorNavHost(
                 )
             } else {
                 val state by authCoordinator.state.collectAsState()
-                AuthAccountScreen(
-                    state = state,
-                    onLink = { provider, consent ->
-                        scope.launch { authCoordinator.link(provider, consent) }
-                    },
-                    onLogout = {
-                        scope.launch {
-                            if (authCoordinator.logout()) {
-                                navController.navigate(PlanteriorRoute.Login()) {
-                                    popUpTo(navController.graph.id) { inclusive = true }
-                                }
-                            }
-                        }
-                    },
-                    onNotificationSettings = {
-                        navController.navigate(PlanteriorRoute.Notifications)
-                    },
-                    onWeatherSettings = { navController.navigate(PlanteriorRoute.Weather) },
-                    logoutLabel = stringResource(R.string.action_logout),
-                    bottomBar = bottomBar,
+                var wateringEnabled by rememberSaveable { mutableStateOf(true) }
+                var weatherEnabled by rememberSaveable { mutableStateOf(true) }
+                val authenticated = state as? AuthUiState.Authenticated
+                val locationPermission = weatherLocationGateway?.permission()
+                val capability =
+                    authenticated?.account?.uid?.let { weatherPermissionCapabilities?.read(it) }
+                var locationConsentGranted by
+                    rememberSaveable(authenticated?.account?.uid) {
+                        mutableStateOf(capability?.desiredGranted == true)
+                    }
+                Box(Modifier.fillMaxSize().testTag("account-screen")) {
+                    SettingsScreen(
+                        state =
+                            SettingsUiState(
+                                authState = state,
+                                wateringNotificationsEnabled = wateringEnabled,
+                                weatherNotificationsEnabled = weatherEnabled,
+                                quietHoursSummary = "없음",
+                                regionName = "지역 관리에서 확인",
+                                osLocationPermission =
+                                    if (
+                                        locationPermission
+                                            is
+                                            com.planterior.helper.feature.weather.LocationPermission.GrantedApproximate
+                                    ) {
+                                        DevicePermissionState.ALLOWED
+                                    } else {
+                                        DevicePermissionState.DENIED
+                                    },
+                                appLocationConsentGranted = locationConsentGranted,
+                                lastSyncAt =
+                                    authenticated?.sync?.records?.values?.maxOfOrNull {
+                                        it.attemptedAt
+                                    },
+                                osNotificationPermission =
+                                    if (notificationPermissionGranted) DevicePermissionState.ALLOWED
+                                    else DevicePermissionState.DENIED,
+                                appVersion = "v${com.planterior.helper.BuildConfig.VERSION_NAME}",
+                            ),
+                        actions =
+                            SettingsActions(
+                                onLinkProvider = { provider, consent ->
+                                    scope.launch { authCoordinator.link(provider, consent) }
+                                },
+                                onWateringNotificationsChanged = { wateringEnabled = it },
+                                onWeatherNotificationsChanged = { weatherEnabled = it },
+                                onOpenWateringSettings = {
+                                    navController.navigate(PlanteriorRoute.Notifications)
+                                },
+                                onOpenQuietHours = {
+                                    navController.navigate(PlanteriorRoute.Notifications)
+                                },
+                                onOpenRegion = { navController.navigate(PlanteriorRoute.Weather) },
+                                onRevokeLocationConsent = {
+                                    weatherLocationGateway?.cancel()
+                                    locationConsentGranted = false
+                                },
+                                onOpenPrivacy = {},
+                                onLogout = {
+                                    scope.launch {
+                                        if (authCoordinator.logout()) {
+                                            navController.navigate(PlanteriorRoute.Login()) {
+                                                popUpTo(navController.graph.id) { inclusive = true }
+                                            }
+                                        }
+                                    }
+                                },
+                                onOpenNotificationSettings = onOpenNotificationSettings,
+                                onOpenAccountDeletion = {
+                                    navController.navigate(PlanteriorRoute.AccountDeletion)
+                                },
+                            ),
+                        bottomBar = bottomBar,
+                    )
+                }
+            }
+        }
+        composable<PlanteriorRoute.AccountDeletion> {
+            val authenticated = liveAuthState as? AuthUiState.Authenticated
+            val dependencies =
+                accountDeletionDependencies
+                    ?: authenticated?.account?.uid?.let { ownerUid ->
+                        accountDeletionDependencyFactory?.invoke(ownerUid)
+                    }
+            if (dependencies == null) {
+                PlaceholderScreen(
+                    title = "계정 삭제",
+                    description = "계정 삭제 상태를 불러올 수 없어요.",
+                )
+            } else {
+                AccountDeletionRoute(
+                    dependencies = dependencies,
+                    onBack = { navController.popBackStack() },
                 )
             }
         }

@@ -27,6 +27,9 @@ class PlanteriorDesignTokenTest {
         assertEquals(Color(0xFFFEF3C7), PlanteriorPalette.WarningContainer)
         assertEquals(Color(0xFFFDE68A), PlanteriorPalette.WarningBorder)
         assertEquals(Color(0xFF92400E), PlanteriorPalette.OnWarningContainer)
+        assertEquals(Color(0xFFB42318), PlanteriorPalette.Destructive)
+        assertEquals(Color(0xFFFFE9E7), PlanteriorPalette.DestructiveContainer)
+        assertEquals(Color(0xFF7A271A), PlanteriorPalette.OnDestructiveContainer)
     }
 
     @Test

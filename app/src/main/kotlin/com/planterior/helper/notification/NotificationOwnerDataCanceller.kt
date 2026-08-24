@@ -14,3 +14,14 @@ class SystemNotificationOwnerDataCanceller(context: Context) : NotificationOwner
         NotificationManagerCompat.from(applicationContext).cancelAll()
     }
 }
+
+class LocalNotificationOwnerStateCleaner(context: Context) {
+    private val applicationContext = context.applicationContext
+
+    fun clear() {
+        SystemNotificationOwnerDataCanceller(applicationContext).cancelFormerOwnerNotifications()
+        NotificationTokenStore(applicationContext).clearLocalState()
+        NotificationOpenConfirmationStore(applicationContext).clearLocalState()
+        WeatherNotificationIdentityRegistry(applicationContext).clearLocalState()
+    }
+}

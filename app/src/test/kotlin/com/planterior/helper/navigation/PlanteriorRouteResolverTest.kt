@@ -32,6 +32,10 @@ class PlanteriorRouteResolverTest {
             PlanteriorRouteResolver.resolve("planterior://settings"),
         )
         assertEquals(PlanteriorRoute.Camera, PlanteriorRouteResolver.resolve("planterior://camera"))
+        assertEquals(
+            PlanteriorRoute.AccountDeletion,
+            PlanteriorRouteResolver.resolve("planterior://settings/account-deletion"),
+        )
     }
 
     @Test
@@ -202,6 +206,14 @@ class PlanteriorRouteResolverTest {
             ),
             PlanteriorRouteResolver.backStackFor(PlanteriorRoute.WateringConfirmation("abc")),
         )
+        assertEquals(
+            listOf(
+                PlanteriorRoute.Home,
+                PlanteriorRoute.Settings,
+                PlanteriorRoute.AccountDeletion,
+            ),
+            PlanteriorRouteResolver.backStackFor(PlanteriorRoute.AccountDeletion),
+        )
     }
 
     @Test
@@ -212,6 +224,7 @@ class PlanteriorRouteResolverTest {
                 PlanteriorRoute.Collection,
                 PlanteriorRoute.Storage,
                 PlanteriorRoute.Settings,
+                PlanteriorRoute.AccountDeletion,
                 PlanteriorRoute.Camera,
                 PlanteriorRoute.MiniHome,
                 PlanteriorRoute.Notifications,

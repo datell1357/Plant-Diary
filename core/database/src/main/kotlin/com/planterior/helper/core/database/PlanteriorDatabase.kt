@@ -31,6 +31,8 @@ abstract class PlanteriorDatabase : RoomDatabase() {
     abstract fun syncDao(): SyncDao
 
     abstract fun inventoryDao(): InventoryDao
+
+    abstract fun terminalAccountDeletionDao(): TerminalAccountDeletionDao
 }
 
 val MIGRATION_1_2 =

@@ -39,6 +39,27 @@ class WeatherPermissionCapabilityStoreTest {
     }
 
     @Test
+    fun `terminal clear removes only the deleted owner weather keys`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val store = SharedPreferencesWeatherPermissionCapabilityStore(context)
+        val state =
+            WeatherPermissionCapabilityState(
+                desiredGranted = true,
+                acknowledgedGranted = true,
+                revocationPending = false,
+                commandGeneration = 3,
+                osPermissionGranted = true,
+            )
+        store.write("deleted-owner", state)
+        store.write("retained-owner", state)
+
+        store.clear("deleted-owner")
+
+        assertNull(store.read("deleted-owner"))
+        assertEquals(state, store.read("retained-owner"))
+    }
+
+    @Test
     fun `legacy combined capability migrates without inventing os permission state`() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val accountId = "legacy-account"

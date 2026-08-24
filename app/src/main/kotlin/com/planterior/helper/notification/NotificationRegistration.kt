@@ -102,6 +102,11 @@ class NotificationTokenStore(context: Context) {
 
     fun notificationsEnabled(): Boolean = synchronized(STATE_LOCK) { notificationsEnabledUnsafe() }
 
+    fun clearLocalState() =
+        synchronized(STATE_LOCK) {
+            preferences.edit(commit = true) { clear() }
+        }
+
     fun registrationFor(accountId: String): NotificationEndpointRegistration? =
         synchronized(STATE_LOCK) {
             val desiredKind = preferences.getString(DESIRED_KIND, null)

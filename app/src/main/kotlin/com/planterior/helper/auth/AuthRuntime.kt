@@ -3,6 +3,7 @@ package com.planterior.helper.auth
 import androidx.activity.ComponentActivity
 import com.planterior.helper.BuildConfig
 import com.planterior.helper.PlanteriorApplication
+import com.planterior.helper.accountdeletion.AppAccountDeletionRuntime
 import com.planterior.helper.feature.auth.AccountProfileStore
 import com.planterior.helper.feature.auth.AccountSessionCache
 import com.planterior.helper.feature.auth.AccountSynchronizer
@@ -82,6 +83,7 @@ private constructor(
     val weatherPermissionCapabilities: WeatherPermissionCapabilityStore?,
     val collectionThumbnailLoader: PlantThumbnailLoader,
     val catalogMediaLoader: CatalogMediaLoader,
+    val accountDeletionRuntime: AppAccountDeletionRuntime?,
 ) {
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -204,6 +206,12 @@ private constructor(
                 shared.weatherPermissionCapabilities,
                 shared.collectionThumbnailLoader,
                 shared.catalogMediaLoader,
+                AppAccountDeletionRuntime(
+                    activity.applicationContext,
+                    shared.functions,
+                    shared.database,
+                    coordinator,
+                ),
             )
         }
 
@@ -279,6 +287,7 @@ private constructor(
                 null,
                 PlaceholderPlantThumbnailLoader,
                 PlaceholderCatalogMediaLoader,
+                null,
             )
         }
     }

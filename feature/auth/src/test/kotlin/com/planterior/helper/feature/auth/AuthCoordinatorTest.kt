@@ -129,6 +129,50 @@ class AuthCoordinatorTest {
     }
 
     @Test
+    fun `account deletion reauthentication refreshes current credential without changing session`() =
+        runTest {
+            val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
+            val coordinator =
+                coordinator(
+                    google =
+                        FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("fresh-token")),
+                    identity = identity,
+                )
+            coordinator.restore()
+            val before = coordinator.state.value
+
+            val result = coordinator.reauthenticateCurrent()
+
+            assertEquals(AuthReauthenticationResult.SUCCEEDED, result)
+            assertEquals(1, identity.reauthenticateCalls)
+            assertEquals(before, coordinator.state.value)
+        }
+
+    @Test
+    fun `terminal deletion signs out locally without ordinary logout hooks or visible-only purge`() =
+        runTest {
+            val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
+            val cache = RecordingAccountCache()
+            val ordinaryHooks = mutableListOf<String>()
+            val coordinator =
+                coordinator(
+                    identity = identity,
+                    cache = cache,
+                    beforeSignOut = { ordinaryHooks += "remote-unregister:$it" },
+                    beforeAuthRemoval = { ordinaryHooks += "ordinary-cleanup:$it" },
+                )
+            coordinator.restore()
+            cache.events.clear()
+
+            coordinator.completeTerminalAccountDeletion("account-a")
+
+            assertEquals(1, identity.signOutCalls)
+            assertEquals(listOf("activate:null"), cache.events)
+            assertTrue(ordinaryHooks.isEmpty())
+            assertTrue(coordinator.state.value is AuthUiState.SignedOut)
+        }
+
+    @Test
     fun `session restore reports partial sync without hiding successful domains`() = runTest {
         val identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE))
         val summary =

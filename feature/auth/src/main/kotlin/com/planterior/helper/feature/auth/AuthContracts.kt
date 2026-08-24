@@ -121,6 +121,12 @@ fun interface AccountSynchronizer {
     suspend fun lastKnown(accountUid: String): SyncSummary = SyncSummary.EMPTY
 }
 
+enum class AuthReauthenticationResult {
+    SUCCEEDED,
+    CANCELLED,
+    FAILED,
+}
+
 sealed interface AuthUiState {
     data object Restoring : AuthUiState
 

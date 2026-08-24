@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
@@ -102,7 +103,7 @@ class RepositoryLifecycleMainActivityTest {
         retainedEntries +=
             requireNotNull(composeRule.activity.navigationController.currentBackStackEntry)
         awaitRoute(PlanteriorRoute.Login()) {
-            composeRule.onNodeWithTag("account-logout").performClick()
+            composeRule.onNodeWithTag("account-logout").performScrollTo().performClick()
         }
         composeRule.waitForIdle()
 

@@ -52,4 +52,13 @@ internal object PlanteriorPalette {
 
     /** 경고 테두리. */
     val WarningBorder = Color(0xFFFDE68A)
+
+    /** 되돌릴 수 없는 파괴적 행동. 경고 amber와 의미를 분리한다. */
+    val Destructive = Color(0xFFB42318)
+
+    /** 파괴적 결과와 확인 내용을 담는 저강도 표면. */
+    val DestructiveContainer = Color(0xFFFFE9E7)
+
+    /** 파괴적 표면 위의 고대비 본문. */
+    val OnDestructiveContainer = Color(0xFF7A271A)
 }

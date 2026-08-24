@@ -1,6 +1,7 @@
 package com.planterior.helper.identify
 
 import com.planterior.helper.core.data.IdentificationRequestDto
+import com.planterior.helper.core.data.PrivateMediaReference
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.camera.CameraCommand
 import com.planterior.helper.feature.camera.CameraFlowController
@@ -63,20 +64,21 @@ class ApprovedPhotoIdentificationHandoffTest {
             // Then
             assertEquals(listOf("lookup", "upload", "create", "function"), events)
             val original = requireNotNull(backend.uploaded)
-            assertEquals(
-                "identification-originals/user-a/request_12345678/original.webp",
-                original.path,
-            )
             assertEquals("image/webp", original.contentType)
             assertEquals("user-a", original.ownerUid)
             assertEquals("request_12345678", original.requestId)
-            assertEquals(Instant.parse("2026-08-13T00:00:00Z"), original.expiresAt)
             assertArrayEquals(bytes, original.bytes)
             val request = requireNotNull(backend.created)
             assertEquals("user-a", request.ownerUid)
-            assertEquals(original.path, request.temporaryOriginalPath)
+            assertEquals(
+                PrivateMediaReference("reservation_request_12345678", "7"),
+                request.mediaReference,
+            )
             assertEquals(approvedAt, request.createdAt.toDate().toInstant())
-            assertEquals(original.expiresAt, request.expiresAt.toDate().toInstant())
+            assertEquals(
+                Instant.parse("2026-08-13T00:00:00Z"),
+                request.expiresAt.toDate().toInstant(),
+            )
             assertEquals(1L, request.revision)
             assertEquals(0L, request.expectedRevision)
             assertEquals("request_12345678", request.idempotencyKey)
@@ -158,7 +160,7 @@ class ApprovedPhotoIdentificationHandoffTest {
             return existingOwnerUid?.let {
                 IdentificationRequestDto(
                     ownerUid = it,
-                    temporaryOriginalPath = "identification-originals/$it/$requestId/original.webp",
+                    mediaReference = PrivateMediaReference("reservation_existing_123", "7"),
                     createdAt = com.google.firebase.Timestamp(approvedAt.epochSecond, 0),
                     expiresAt =
                         com.google.firebase.Timestamp(
@@ -173,10 +175,13 @@ class ApprovedPhotoIdentificationHandoffTest {
             }
         }
 
-        override suspend fun upload(original: TemporaryIdentificationOriginal) {
+        override suspend fun upload(
+            original: TemporaryIdentificationOriginal
+        ): PrivateMediaReference {
             events += "upload"
             if (failureAt == "upload") throw IllegalStateException("secret upload detail")
             uploaded = original
+            return PrivateMediaReference("reservation_${original.requestId}", "7")
         }
 
         override suspend fun createRequest(

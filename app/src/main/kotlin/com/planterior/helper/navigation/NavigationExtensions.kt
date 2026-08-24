@@ -33,6 +33,7 @@ internal fun NavBackStackEntry?.toPlanteriorRoute(): PlanteriorRoute? {
         PlanteriorRoute.Collection::class.qualifiedName -> PlanteriorRoute.Collection
         PlanteriorRoute.Storage::class.qualifiedName -> PlanteriorRoute.Storage
         PlanteriorRoute.Settings::class.qualifiedName -> PlanteriorRoute.Settings
+        PlanteriorRoute.AccountDeletion::class.qualifiedName -> PlanteriorRoute.AccountDeletion
         PlanteriorRoute.InventoryItemDetail::class.qualifiedName ->
             entry.toRoute<PlanteriorRoute.InventoryItemDetail>()
         PlanteriorRoute.Camera::class.qualifiedName -> PlanteriorRoute.Camera

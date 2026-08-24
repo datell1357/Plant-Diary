@@ -19,6 +19,7 @@ class PlanteriorRouteContractTest {
             PlanteriorRoute.Collection,
             PlanteriorRoute.Storage,
             PlanteriorRoute.Settings,
+            PlanteriorRoute.AccountDeletion,
             PlanteriorRoute.Camera,
             PlanteriorRoute.MiniHome,
             PlanteriorRoute.MiniHomeShare,
@@ -80,6 +81,15 @@ class PlanteriorRouteContractTest {
             assertTrue("$tab must be a top level destination", tab is PlanteriorRoute.TopLevel)
             assertTrue("$tab must be authenticated", tab is PlanteriorRoute.Authenticated)
         }
+    }
+
+    @Test
+    fun `account deletion is authenticated and carries no identity arguments`() {
+        val route: PlanteriorRoute = PlanteriorRoute.AccountDeletion
+        assertTrue(route is PlanteriorRoute.Authenticated)
+        assertTrue(route !is PlanteriorRoute.TopLevel)
+        val encoded = json.encodeToJsonElement(PlanteriorRoute.serializer(), route) as JsonObject
+        assertEquals(setOf("type"), encoded.keys)
     }
 
     @Test

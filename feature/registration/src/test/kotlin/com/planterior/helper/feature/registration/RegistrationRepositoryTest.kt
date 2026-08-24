@@ -3,6 +3,7 @@ package com.planterior.helper.feature.registration
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.planterior.helper.core.data.PrivateMediaReference
 import com.planterior.helper.core.data.RemoteMutationCommand
 import com.planterior.helper.core.data.RemoteMutationGateway
 import com.planterior.helper.core.data.RemoteMutationResult
@@ -103,9 +104,14 @@ class RegistrationRepositoryTest {
 
             assertEquals(1, remote.uploads)
             assertEquals(
-                "plant-photos/account-a/plant-stable/representative.webp",
+                "private-media-v2/reservation_plant_stable",
                 remote.lastPhotoPath,
             )
+            val payload = gateway.commands.first().draftPayload
+            assertTrue(payload.contains("\"representativeMediaReference\""))
+            assertTrue(payload.contains("\"reservationId\":\"reservation_plant_stable\""))
+            assertTrue(payload.contains("\"generation\":\"7\""))
+            assertTrue(!payload.contains("representativePhotoPath"))
         }
 
     @Test
@@ -218,18 +224,26 @@ class RegistrationRepositoryTest {
         override suspend fun uploadRepresentativePhoto(
             accountId: AccountId,
             plantId: PersonalPlantId,
+            operationId: OperationId,
             photo: RepresentativePhoto,
-        ): String {
+        ): PrivateMediaReference {
             uploads += 1
             uploadFailure?.let { throw it }
-            return "plant-photos/${accountId.value}/${plantId.value}/representative.${photo.extension}"
-                .also { lastPhotoPath = it }
+            assertEquals("operation-stable", operationId.value)
+            return PrivateMediaReference("reservation_plant_stable", "7").also {
+                lastPhotoPath = it.storagePath
+            }
         }
 
         override suspend fun readCommitted(
             submission: PendingRegistration,
             revision: Long,
-            photoPath: String?,
-        ) = submission.toPersonalPlant(revision, Instant.parse("2026-08-18T00:00:00Z"), photoPath)
+            mediaReference: PrivateMediaReference?,
+        ) =
+            submission.toPersonalPlant(
+                revision,
+                Instant.parse("2026-08-18T00:00:00Z"),
+                mediaReference?.storagePath,
+            )
     }
 }

@@ -5,7 +5,11 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.storage.StorageMetadata
+import com.planterior.helper.core.data.PrivateMediaGateway
+import com.planterior.helper.core.data.PrivateMediaKind
+import com.planterior.helper.core.data.PrivateMediaObjectMetadata
+import com.planterior.helper.core.data.PrivateMediaReference
+import com.planterior.helper.core.data.PrivateMediaUpload
 import com.planterior.helper.core.data.RemoteMutationCommand
 import com.planterior.helper.core.data.RemoteMutationGateway
 import com.planterior.helper.core.data.RemoteMutationResult
@@ -28,7 +32,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 
 fun interface PreparedPhotoBytesReader {
     fun read(photo: com.planterior.helper.feature.camera.PreparedPhoto): ByteArray
@@ -49,13 +52,14 @@ interface RegistrationRemoteDataSource {
     suspend fun uploadRepresentativePhoto(
         accountId: AccountId,
         plantId: PersonalPlantId,
+        operationId: com.planterior.helper.core.model.OperationId,
         photo: RepresentativePhoto,
-    ): String
+    ): PrivateMediaReference
 
     suspend fun readCommitted(
         submission: PendingRegistration,
         revision: Long,
-        photoPath: String?,
+        mediaReference: PrivateMediaReference?,
     ): PersonalPlant
 }
 
@@ -90,10 +94,19 @@ class FirebaseRegistrationRepository(
         val payload =
             kotlinx.serialization.json.Json.parseToJsonElement(existing.draftPayload) as? JsonObject
                 ?: return checkpoint
-        val path = (payload["representativePhotoPath"] as? JsonPrimitive)?.contentOrNull
+        val mediaReference =
+            (payload["representativeMediaReference"] as? JsonObject)?.let {
+                runCatching {
+                    PrivateMediaReference(
+                        (it["reservationId"] as JsonPrimitive).content,
+                        (it["generation"] as JsonPrimitive).content,
+                    )
+                }
+                    .getOrNull()
+            }
         return when {
             checkpoint is RegistrationCheckpoint.PlantCommitted -> checkpoint
-            path != null -> RegistrationCheckpoint.PhotoStored(path)
+            mediaReference != null -> RegistrationCheckpoint.PhotoStored(mediaReference)
             else -> checkpoint
         }
     }
@@ -114,7 +127,7 @@ class FirebaseRegistrationRepository(
             return RegistrationAttempt.Failed(RegistrationFailure.UNAUTHENTICATED, checkpoint)
         }
         var current = checkpoint
-        val photoPath =
+        val mediaReference =
             when (current) {
                 RegistrationCheckpoint.NotStarted -> {
                     if (submission.photo == null) null
@@ -123,6 +136,7 @@ class FirebaseRegistrationRepository(
                                 remote.uploadRepresentativePhoto(
                                     submission.accountId,
                                     submission.plantId,
+                                    submission.operationId,
                                     submission.photo,
                                 )
                             } catch (error: CancellationException) {
@@ -136,8 +150,8 @@ class FirebaseRegistrationRepository(
                             .also { current = RegistrationCheckpoint.PhotoStored(it) }
                     }
                 }
-                is RegistrationCheckpoint.PhotoStored -> current.path
-                is RegistrationCheckpoint.PlantCommitted -> current.photoPath
+                is RegistrationCheckpoint.PhotoStored -> current.mediaReference
+                is RegistrationCheckpoint.PlantCommitted -> current.mediaReference
             }
         val committed = current as? RegistrationCheckpoint.PlantCommitted
         val revision =
@@ -157,7 +171,7 @@ class FirebaseRegistrationRepository(
                 if (stillActive != submission.accountId) {
                     return RegistrationAttempt.Failed(RegistrationFailure.UNAUTHENTICATED, current)
                 }
-                val payload = submission.payload(photoPath)
+                val payload = submission.payload(mediaReference)
                 val outbox =
                     OperationOutboxEntity(
                         submission.operationId.value,
@@ -259,10 +273,10 @@ class FirebaseRegistrationRepository(
                     }
                 }
             }
-        val committedCheckpoint = RegistrationCheckpoint.PlantCommitted(revision, photoPath)
+        val committedCheckpoint = RegistrationCheckpoint.PlantCommitted(revision, mediaReference)
         val plant =
             try {
-                remote.readCommitted(submission, revision, photoPath)
+                remote.readCommitted(submission, revision, mediaReference)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -316,6 +330,7 @@ class FirebaseRegistrationRemoteDataSource(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
     private val storage: FirebaseStorage,
+    private val privateMedia: PrivateMediaGateway,
     private val preparedPhotoBytes: PreparedPhotoBytesReader,
 ) : RegistrationRemoteDataSource {
     override fun activeAccount(): AccountId =
@@ -369,8 +384,9 @@ class FirebaseRegistrationRemoteDataSource(
     override suspend fun uploadRepresentativePhoto(
         accountId: AccountId,
         plantId: PersonalPlantId,
+        operationId: com.planterior.helper.core.model.OperationId,
         photo: RepresentativePhoto,
-    ): String {
+    ): PrivateMediaReference {
         val (bytes, extension, contentType) =
             when (photo) {
                 is RepresentativePhoto.Bytes ->
@@ -389,17 +405,26 @@ class FirebaseRegistrationRemoteDataSource(
                             )
                             .get()
                             .await()
-                    val originalPath = requireNotNull(request.getString("temporaryOriginalPath"))
-                    require(
-                        originalPath.startsWith(
-                            "identification-originals/${accountId.value}/${photo.requestId}/"
+                    val mediaReference =
+                        PrivateMediaReference.fromWireValue(
+                            request.get("mediaReference") ?: error("Missing media reference")
                         )
-                    )
-                    val reference = storage.reference.child(originalPath)
+                    val reference = storage.reference.child(mediaReference.storagePath)
+                    val metadata = reference.metadata.await()
                     val originalContentType =
-                        reference.metadata.await().contentType?.takeIf {
-                            it in SUPPORTED_PHOTO_TYPES
-                        } ?: error("Unsupported identification photo")
+                        metadata.contentType?.takeIf { it in SUPPORTED_PHOTO_TYPES }
+                            ?: error("Unsupported identification photo")
+                    PrivateMediaObjectMetadata(
+                            path = mediaReference.storagePath,
+                            generation = requireNotNull(metadata.generation),
+                            byteSize = metadata.sizeBytes,
+                            contentType = originalContentType,
+                            customMetadata =
+                                metadata.customMetadataKeys.associateWith {
+                                    requireNotNull(metadata.getCustomMetadata(it))
+                                },
+                        )
+                        .requireOwnerReadable(mediaReference, accountId.value)
                     Triple(
                         reference.getBytes(MAX_PHOTO_BYTES).await(),
                         extensionFor(originalContentType),
@@ -408,20 +433,22 @@ class FirebaseRegistrationRemoteDataSource(
                 }
             }
         require(bytes.isNotEmpty() && bytes.size.toLong() <= MAX_PHOTO_BYTES)
-        val path = "plant-photos/${accountId.value}/${plantId.value}/representative.$extension"
-        val metadata =
-            StorageMetadata.Builder()
-                .setContentType(contentType)
-                .setCustomMetadata("ownerUid", accountId.value)
-                .build()
-        storage.reference.child(path).putBytes(bytes, metadata).await()
-        return path
+        require(extension == extensionFor(contentType))
+        return privateMedia.upload(
+            PrivateMediaUpload(
+                expectedOwnerUid = accountId.value,
+                mediaKind = PrivateMediaKind.PLANT_PHOTO,
+                contentType = contentType,
+                bytes = bytes,
+                idempotencyKey = operationId.value,
+            )
+        )
     }
 
     override suspend fun readCommitted(
         submission: PendingRegistration,
         revision: Long,
-        photoPath: String?,
+        mediaReference: PrivateMediaReference?,
     ): PersonalPlant {
         val document =
             firestore
@@ -436,13 +463,16 @@ class FirebaseRegistrationRemoteDataSource(
         val method =
             RegistrationMethod.valueOf(requireNotNull(document.getString("registrationMethod")))
         val storedPhoto = document.getString("representativePhotoPath")
+        val storedReference =
+            document.get("representativeMediaReference")?.let(PrivateMediaReference::fromWireValue)
         check(document.getString("ownerUid") == submission.accountId.value)
         check(document.getString("idempotencyKey") == submission.operationId.value)
         check(document.getLong("expectedRevision") == 0L)
         check(displayName == submission.displayName)
         check(contentId == submission.contentId)
         check(method == submission.method)
-        check(storedPhoto == photoPath)
+        check(storedReference == mediaReference)
+        check(storedPhoto == mediaReference?.storagePath)
         check(document.getString("location") == null)
         check(document.getString("note") == null)
         check(document.getString("lastWateredDate") == submission.lastWateredDate?.toString())
@@ -488,13 +518,21 @@ private fun OperationOutboxEntity.matchesFrozen(other: OperationOutboxEntity): B
         expectedRevision == other.expectedRevision &&
         draftPayload == other.draftPayload
 
-private fun PendingRegistration.payload(photoPath: String?): String =
+private fun PendingRegistration.payload(mediaReference: PrivateMediaReference?): String =
     JsonObject(
             linkedMapOf(
                 "displayName" to JsonPrimitive(displayName),
                 "contentId" to (contentId?.value?.let(::JsonPrimitive) ?: JsonNull),
                 "registrationMethod" to JsonPrimitive(method.name),
-                "representativePhotoPath" to (photoPath?.let(::JsonPrimitive) ?: JsonNull),
+                "representativeMediaReference" to
+                    (mediaReference?.let {
+                        JsonObject(
+                            mapOf(
+                                "reservationId" to JsonPrimitive(it.reservationId),
+                                "generation" to JsonPrimitive(it.generation),
+                            )
+                        )
+                    } ?: JsonNull),
                 "location" to JsonNull,
                 "note" to JsonNull,
                 "lastWateredDate" to

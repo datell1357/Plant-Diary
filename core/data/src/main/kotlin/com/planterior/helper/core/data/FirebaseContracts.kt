@@ -356,7 +356,7 @@ data class ShopItemDto(
 
 data class IdentificationRequestDto(
     override val ownerUid: String,
-    val temporaryOriginalPath: String,
+    val mediaReference: PrivateMediaReference,
     val createdAt: Timestamp,
     val expiresAt: Timestamp,
     override val revision: Long,

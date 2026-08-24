@@ -446,11 +446,3 @@ data class ContentAudit(
     val action: String,
     val changedAt: Instant,
 )
-
-data class IdentificationRequest(
-    val id: IdentificationRequestId,
-    val temporaryOriginalPath: String,
-    val createdAt: Instant,
-    val expiresAt: Instant,
-    val revision: Revision,
-)

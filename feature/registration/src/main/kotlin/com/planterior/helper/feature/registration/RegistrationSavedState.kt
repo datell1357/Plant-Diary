@@ -175,22 +175,39 @@ private fun RegistrationCheckpoint.bundle() =
             RegistrationCheckpoint.NotStarted -> putString("kind", "new")
             is RegistrationCheckpoint.PhotoStored -> {
                 putString("kind", "photo")
-                putString("path", path)
+                putString("reservationId", mediaReference.reservationId)
+                putString("generation", mediaReference.generation)
             }
             is RegistrationCheckpoint.PlantCommitted -> {
                 putString("kind", "committed")
                 putLong("revision", revision)
-                putString("path", photoPath)
+                putString("reservationId", mediaReference?.reservationId)
+                putString("generation", mediaReference?.generation)
             }
         }
     }
 
 private fun Bundle.checkpoint(): RegistrationCheckpoint =
     when (getString("kind")) {
-        "photo" -> RegistrationCheckpoint.PhotoStored(requireNotNull(getString("path")))
-        "committed" -> RegistrationCheckpoint.PlantCommitted(getLong("revision"), getString("path"))
+        "photo" -> RegistrationCheckpoint.PhotoStored(requireMediaReference())
+        "committed" ->
+            RegistrationCheckpoint.PlantCommitted(
+                getLong("revision"),
+                getString("reservationId")?.let { reservationId ->
+                    com.planterior.helper.core.data.PrivateMediaReference(
+                        reservationId,
+                        requireNotNull(getString("generation")),
+                    )
+                },
+            )
         else -> RegistrationCheckpoint.NotStarted
     }
+
+private fun Bundle.requireMediaReference() =
+    com.planterior.helper.core.data.PrivateMediaReference(
+        requireNotNull(getString("reservationId")),
+        requireNotNull(getString("generation")),
+    )
 
 private fun RegistrationUiState.bundle() =
     Bundle().apply {

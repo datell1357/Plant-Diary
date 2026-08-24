@@ -395,6 +395,57 @@ interface CacheDao {
     }
 }
 
+@Dao
+interface TerminalAccountDeletionDao {
+    @Query("DELETE FROM cached_plants WHERE accountId = :accountId")
+    suspend fun purgePlants(accountId: String)
+
+    @Query("DELETE FROM cached_watering_schedules WHERE accountId = :accountId")
+    suspend fun purgeWateringSchedules(accountId: String)
+
+    @Query("DELETE FROM operation_outbox WHERE accountId = :accountId")
+    suspend fun purgeOperationOutbox(accountId: String)
+
+    @Query("DELETE FROM cached_mini_homes WHERE accountId = :accountId")
+    suspend fun purgeMiniHomes(accountId: String)
+
+    @Query("DELETE FROM cached_mini_home_placements WHERE accountId = :accountId")
+    suspend fun purgeMiniHomePlacements(accountId: String)
+
+    @Query("DELETE FROM mini_home_cache_watermarks WHERE accountId = :accountId")
+    suspend fun purgeMiniHomeWatermarks(accountId: String)
+
+    @Query("DELETE FROM cached_shop_items WHERE accountId = :accountId")
+    suspend fun purgeShopItems(accountId: String)
+
+    @Query("DELETE FROM cached_owned_items WHERE accountId = :accountId")
+    suspend fun purgeOwnedItems(accountId: String)
+
+    @Query("DELETE FROM inventory_snapshot_watermarks WHERE accountId = :accountId")
+    suspend fun purgeInventoryWatermarks(accountId: String)
+
+    @Query("DELETE FROM inventory_acquisition_operations WHERE accountId = :accountId")
+    suspend fun purgeInventoryOperations(accountId: String)
+
+    @Query("DELETE FROM last_sync WHERE accountId = :accountId")
+    suspend fun purgeLastSync(accountId: String)
+
+    @Transaction
+    suspend fun purgeOwner(accountId: String) {
+        purgePlants(accountId)
+        purgeWateringSchedules(accountId)
+        purgeOperationOutbox(accountId)
+        purgeMiniHomes(accountId)
+        purgeMiniHomePlacements(accountId)
+        purgeMiniHomeWatermarks(accountId)
+        purgeShopItems(accountId)
+        purgeOwnedItems(accountId)
+        purgeInventoryWatermarks(accountId)
+        purgeInventoryOperations(accountId)
+        purgeLastSync(accountId)
+    }
+}
+
 private fun validateInventoryCacheWrite(write: AuthoritativeInventoryCacheWrite) {
     require(write.accountId.matches(Regex("^[A-Za-z0-9_-]{1,128}$")))
     require(write.generation >= 1)

@@ -1,5 +1,6 @@
 package com.planterior.helper.feature.registration
 
+import com.planterior.helper.core.data.PrivateMediaReference
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlant
@@ -153,9 +154,12 @@ enum class RegistrationFailure {
 sealed interface RegistrationCheckpoint {
     data object NotStarted : RegistrationCheckpoint
 
-    data class PhotoStored(val path: String) : RegistrationCheckpoint
+    data class PhotoStored(val mediaReference: PrivateMediaReference) : RegistrationCheckpoint
 
-    data class PlantCommitted(val revision: Long, val photoPath: String?) : RegistrationCheckpoint
+    data class PlantCommitted(
+        val revision: Long,
+        val mediaReference: PrivateMediaReference?,
+    ) : RegistrationCheckpoint
 }
 
 sealed interface RegistrationAttempt {

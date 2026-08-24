@@ -7,11 +7,14 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.storage.StorageMetadata
-import com.planterior.helper.BuildConfig
+import com.google.firebase.functions.FirebaseFunctions
+import com.planterior.helper.core.data.FirebasePrivateMediaGateway
 import com.planterior.helper.core.data.FirestoreContract
 import com.planterior.helper.core.data.IdentificationRequestDto
+import com.planterior.helper.core.data.PrivateMediaGateway
+import com.planterior.helper.core.data.PrivateMediaKind
+import com.planterior.helper.core.data.PrivateMediaReference
+import com.planterior.helper.core.data.PrivateMediaUpload
 import com.planterior.helper.core.model.AccountId
 import java.io.IOException
 import kotlin.coroutines.resume
@@ -26,10 +29,7 @@ internal fun photoIdentificationHandoff(context: Context): PhotoIdentificationHa
         FirebaseIdentificationHandoffBackend(
             FirebaseAuth.getInstance(app),
             FirebaseFirestore.getInstance(app),
-            FirebaseStorage.getInstance(
-                app,
-                "gs://${BuildConfig.FIREBASE_PROJECT_ID}.firebasestorage.app",
-            ),
+            FirebasePrivateMediaGateway(FirebaseFunctions.getInstance(app)),
         )
     return ApprovedPhotoIdentificationHandoff(
         backend,
@@ -46,7 +46,7 @@ internal fun photoIdentificationHandoff(context: Context): PhotoIdentificationHa
 private class FirebaseIdentificationHandoffBackend(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
-    private val storage: FirebaseStorage,
+    private val privateMedia: PrivateMediaGateway,
 ) : IdentificationHandoffBackend {
     override fun currentOwner(): AccountId? = auth.currentUser?.uid?.let(::AccountId)
 
@@ -58,22 +58,16 @@ private class FirebaseIdentificationHandoffBackend(
         return if (snapshot.exists()) snapshot.identificationRequest() else null
     }
 
-    override suspend fun upload(original: TemporaryIdentificationOriginal) {
-        val metadata =
-            StorageMetadata.Builder()
-                .setContentType(original.contentType)
-                .setCustomMetadata("ownerUid", original.ownerUid)
-                .setCustomMetadata("requestId", original.requestId)
-                .setCustomMetadata("expiresAt", original.expiresAt.toString())
-                .build()
-        suspendCancellableCoroutine { continuation ->
-            val task = storage.reference.child(original.path).putBytes(original.bytes, metadata)
-            task.addOnSuccessListener { continuation.resume(Unit) }
-            task.addOnFailureListener(continuation::resumeWithException)
-            task.addOnCanceledListener { continuation.cancel() }
-            continuation.invokeOnCancellation { task.cancel() }
-        }
-    }
+    override suspend fun upload(original: TemporaryIdentificationOriginal): PrivateMediaReference =
+        privateMedia.upload(
+            PrivateMediaUpload(
+                expectedOwnerUid = original.ownerUid,
+                mediaKind = PrivateMediaKind.IDENTIFICATION_ORIGINAL,
+                contentType = original.contentType,
+                bytes = original.bytes,
+                idempotencyKey = original.requestId,
+            )
+        )
 
     override suspend fun createRequest(
         owner: AccountId,
@@ -88,7 +82,7 @@ private class FirebaseIdentificationHandoffBackend(
                     val stored = existing.identificationRequest()
                     if (
                         stored.ownerUid != request.ownerUid ||
-                            stored.temporaryOriginalPath != request.temporaryOriginalPath
+                            stored.mediaReference != request.mediaReference
                     ) {
                         throw IdentificationHandoffException(
                             IdentificationHandoffFailure.PermissionDenied
@@ -99,7 +93,7 @@ private class FirebaseIdentificationHandoffBackend(
                         reference,
                         mapOf(
                             "ownerUid" to request.ownerUid,
-                            "temporaryOriginalPath" to request.temporaryOriginalPath,
+                            "mediaReference" to request.mediaReference.wireValue(),
                             "createdAt" to request.createdAt,
                             "expiresAt" to request.expiresAt,
                             "revision" to request.revision,
@@ -126,7 +120,8 @@ private class FirebaseIdentificationHandoffBackend(
 private fun DocumentSnapshot.identificationRequest() =
     IdentificationRequestDto(
         ownerUid = getString("ownerUid") ?: throw malformedRequest(),
-        temporaryOriginalPath = getString("temporaryOriginalPath") ?: throw malformedRequest(),
+        mediaReference =
+            PrivateMediaReference.fromWireValue(get("mediaReference") ?: throw malformedRequest()),
         createdAt = getTimestamp("createdAt") ?: throw malformedRequest(),
         expiresAt = getTimestamp("expiresAt") ?: throw malformedRequest(),
         revision = getLong("revision") ?: throw malformedRequest(),
