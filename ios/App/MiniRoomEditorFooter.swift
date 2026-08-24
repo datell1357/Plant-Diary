@@ -11,16 +11,25 @@ struct MiniRoomEditorFooter: View {
     let reset: () -> Void
     @Environment(\.sizeCategory) private var sizeCategory
 
+    private static let referenceHeight: CGFloat = 40
+
     var body: some View {
         content
-            .padding(.horizontal, PlanteriorSpacing.large)
+            .padding(.horizontal, PlanteriorSpacing.extraLarge)
             .padding(
                 .vertical,
                 sizeCategory.isAccessibilityCategory
                     ? PlanteriorSpacing.small
                     : 0
             )
-            .frame(height: sizeCategory.isAccessibilityCategory ? nil : 38)
+            // Reference raster: footer separator y=800. The 44pt actions
+            // align to its top and extend safely into the bottom inset.
+            .frame(
+                height: sizeCategory.isAccessibilityCategory
+                    ? nil
+                    : Self.referenceHeight,
+                alignment: .top
+            )
             .background(PlanteriorPalette.surface.color)
             .overlay(alignment: .top) {
                 Rectangle()
@@ -79,8 +88,15 @@ struct MiniRoomEditorFooter: View {
             .frame(minHeight: PlanteriorControl.minimumTarget)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MiniRoomFooterButtonStyle())
         .disabled(!enabled)
         .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct MiniRoomFooterButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

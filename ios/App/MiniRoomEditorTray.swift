@@ -11,6 +11,9 @@ struct MiniRoomEditorTray: View {
     let select: (MiniRoomTrayEntry) -> Void
     @Environment(\.sizeCategory) private var sizeCategory
 
+    private static let referenceHeight: CGFloat = 117
+    private static let referenceTopInset: CGFloat = 16
+
     var body: some View {
         Group {
             if entries.isEmpty {
@@ -23,7 +26,10 @@ struct MiniRoomEditorTray: View {
                     .accessibilityIdentifier("minihome.editor.tray.empty")
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: PlanteriorSpacing.medium) {
+                    HStack(
+                        alignment: .top,
+                        spacing: MiniRoomTrayCard.referenceSpacing
+                    ) {
                         ForEach(
                             Array(entries.enumerated()),
                             id: \.element.id
@@ -37,7 +43,10 @@ struct MiniRoomEditorTray: View {
                             )
                         }
                     }
-                    .padding(.horizontal, PlanteriorSpacing.large)
+                    .padding(
+                        .horizontal,
+                        MiniRoomTrayCard.referenceHorizontalInset
+                    )
                 }
                 .scrollClipDisabled()
             }
@@ -46,16 +55,22 @@ struct MiniRoomEditorTray: View {
             .top,
             sizeCategory.isAccessibilityCategory
                 ? PlanteriorSpacing.small
-                : PlanteriorSpacing.large
+                : Self.referenceTopInset
         )
         .padding(
             .bottom,
             sizeCategory.isAccessibilityCategory
                 ? PlanteriorSpacing.small
-                : 6
+                : 0
         )
         .frame(maxWidth: .infinity)
-        .frame(height: sizeCategory.isAccessibilityCategory ? nil : 119)
+        // Reference raster: tray y=683, first tile y=699, footer y=800.
+        .frame(
+            height: sizeCategory.isAccessibilityCategory
+                ? nil
+                : Self.referenceHeight,
+            alignment: .top
+        )
         .background(PlanteriorPalette.surface.color)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("minihome.editor.tray")
@@ -70,9 +85,12 @@ struct MiniRoomTrayCard: View {
     let select: (MiniRoomTrayEntry) -> Void
     @Environment(\.sizeCategory) private var sizeCategory
 
-    private static let tileSide: CGFloat = 72
+    static let referenceHorizontalInset: CGFloat = 17
+    static let referenceSpacing: CGFloat = 14
+    private static let tileSide: CGFloat = 70
     private static let accessibilityTileSide: CGFloat = 56
-    private static let badgeSide: CGFloat = 22
+    private static let badgeSide: CGFloat = 20
+    private static let badgeOffset = CGSize(width: -3, height: 3)
     private static let selectedBorder: CGFloat = 2
 
     var body: some View {
@@ -96,19 +114,13 @@ struct MiniRoomTrayCard: View {
         Image(entry.asset)
             .resizable()
             .scaledToFit()
-            .padding(PlanteriorSpacing.small)
             .frame(width: tileSide, height: tileSide)
-            .background(
-                selected
-                    ? PlanteriorPalette.accentSurface.color
-                    : PlanteriorPalette.subtle.color
-            )
             .clipShape(
                 RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-                    .stroke(
+                    .strokeBorder(
                         selected
                             ? PlanteriorPalette.accent.color
                             : PlanteriorPalette.border.color,
@@ -163,7 +175,10 @@ struct MiniRoomTrayCard: View {
             .frame(width: Self.badgeSide, height: Self.badgeSide)
             .background(PlanteriorPalette.accent.color)
             .clipShape(Circle())
-            .offset(x: PlanteriorSpacing.small, y: -PlanteriorSpacing.small)
+            .offset(
+                x: Self.badgeOffset.width,
+                y: Self.badgeOffset.height
+            )
             .accessibilityHidden(true)
     }
 }

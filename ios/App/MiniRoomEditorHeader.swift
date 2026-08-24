@@ -8,6 +8,11 @@ struct MiniRoomEditorHeader: View {
     let showRoomSettings: () -> Void
     let save: () -> Void
 
+    private static let height: CGFloat = 52
+    private static let edgeActionInset: CGFloat = 10
+    private static let saveOpticalInset: CGFloat = -10
+    private static let contentVerticalOffset: CGFloat = -2
+
     var body: some View {
         HStack(spacing: PlanteriorSpacing.small) {
             Button(action: close) {
@@ -16,8 +21,7 @@ struct MiniRoomEditorHeader: View {
                     .foregroundStyle(PlanteriorPalette.textPrimary.color)
                     .frame(
                         width: PlanteriorControl.minimumTarget,
-                        height: PlanteriorControl.minimumTarget,
-                        alignment: .leading
+                        height: PlanteriorControl.minimumTarget
                     )
                     .contentShape(Rectangle())
             }
@@ -42,7 +46,7 @@ struct MiniRoomEditorHeader: View {
 
             Button(action: save) {
                 Text("저장")
-                    .font(PlanteriorTypography.body.weight(.semibold))
+                    .font(PlanteriorTypography.supporting.weight(.semibold))
                     .foregroundStyle(PlanteriorPalette.accent.color)
                     .lineLimit(1)
                     .frame(
@@ -55,9 +59,13 @@ struct MiniRoomEditorHeader: View {
             .buttonStyle(.plain)
             .accessibilityLabel("저장")
             .accessibilityIdentifier("minihome.save")
+            .offset(x: Self.saveOpticalInset)
         }
-        .padding(.horizontal, PlanteriorSpacing.large)
-        .frame(height: 52)
+        // The reference centers its leading 44pt action at x=32; the save
+        // label is optically inset from the trailing edge by another 10pt.
+        .padding(.horizontal, Self.edgeActionInset)
+        .offset(y: Self.contentVerticalOffset)
+        .frame(height: Self.height)
         .background(PlanteriorPalette.canvas.color)
         .overlay(alignment: .bottom) {
             Rectangle()

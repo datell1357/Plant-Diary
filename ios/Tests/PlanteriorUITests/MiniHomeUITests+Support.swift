@@ -89,6 +89,10 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         in app: XCUIApplication
     ) {
         let field = app.textFields["minihome.room-name"]
+        if !field.exists {
+            app.staticTexts["minihome.editor.title"].tap()
+        }
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText(
             String(
@@ -97,12 +101,21 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
             )
         )
         field.typeText(value + "\n")
+        let done = app.navigationBars.buttons["완료"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
     }
 
     func dragPlantToEdgeAndAttachGeometry(
         in app: XCUIApplication
     ) {
-        app.buttons["minihome.add-plant"].tap()
+        let addPlant = app.buttons["minihome.add-plant"]
+        if !addPlant.exists {
+            app.staticTexts["minihome.editor.title"].tap()
+        }
+        XCTAssertTrue(addPlant.waitForExistence(timeout: 5))
+        addPlant.tap()
         let firstPlant = app.buttons.matching(
             NSPredicate(
                 format: "identifier BEGINSWITH 'minihome.plant.'"
@@ -134,19 +147,23 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
     }
 
     func saveAndAttachRoom(in app: XCUIApplication) {
+        app.buttons["minihome.save"].tap()
+        app.staticTexts["minihome.editor.title"].tap()
         let state = app.staticTexts["minihome.state"]
         XCTAssertTrue(state.waitForExistence(timeout: 5))
         let saved = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == '저장 완료'"),
             object: state
         )
-        app.buttons["minihome.save"].tap()
         XCTAssertEqual(
             XCTWaiter.wait(for: [saved], timeout: 5),
             .completed,
             "MiniHome state: \(state.label)"
         )
         attachScreenshot(named: "task-14-room")
+        let done = app.navigationBars.buttons["완료"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.tap()
     }
 
     func waitForMiniHomeState(

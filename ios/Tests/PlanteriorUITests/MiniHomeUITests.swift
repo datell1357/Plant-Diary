@@ -27,17 +27,26 @@ final class MiniHomeUITests: XCTestCase, MiniHomeUITestSupport {
         app.launchEnvironment["QA_MINIHOME_RESET_TOKEN"] =
             "todo14-committed-only-\(UUID())"
         app.launch()
+        let committedName = app.staticTexts["minihome.committed.name"]
+        XCTAssertTrue(committedName.waitForExistence(timeout: 10))
+        let originalName = committedName.label
         openEditor(in: app)
         replaceRoomName(with: "미저장 초안", in: app)
 
         app.terminate()
         app.launchEnvironment.removeValue(forKey: "QA_MINIHOME_ROUTE")
         app.launch()
-        waitForCommittedRoom(named: "초록 방", in: app)
+        let homeTitle = app.buttons["home.room.title"]
+        XCTAssertTrue(homeTitle.waitForExistence(timeout: 10))
+        XCTAssertNotEqual(homeTitle.label, "미저장 초안 🏡")
+        app.buttons["home.room.decorate"].tap()
+        let restoredName = app.staticTexts["minihome.committed.name"]
+        XCTAssertTrue(restoredName.waitForExistence(timeout: 10))
+        XCTAssertEqual(restoredName.label, originalName)
         attachJSON(
             [
                 "unsavedDraft": "미저장 초안",
-                "homeCommittedRoom": "초록 방",
+                "homeCommittedRoom": originalName,
                 "committedOnly": true
             ],
             named: "task-14-home-committed-only"

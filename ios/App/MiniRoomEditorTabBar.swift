@@ -1,5 +1,6 @@
 import PlanteriorDesignSystem
 import SwiftUI
+import UIKit
 
 /// Figma `category-tab-bar`: five equal-width tabs on Surface, each an icon over
 /// a caption label. The active tab uses Accent for icon, label, and a 2pt
@@ -9,6 +10,9 @@ struct MiniRoomEditorTabBar: View {
     let reduceMotion: Bool
     @Environment(\.sizeCategory) private var sizeCategory
 
+    private static let referenceHeight: CGFloat = 55
+    private static let referenceHorizontalInset: CGFloat = 8
+    private static let plantIconSide: CGFloat = 18
     private static let underlineHeight: CGFloat = 2
     /// Minimum readable tab width once Dynamic Type stops the labels fitting
     /// five-across; beyond this the strip scrolls instead of colliding. This is
@@ -35,11 +39,18 @@ struct MiniRoomEditorTabBar: View {
                 HStack(spacing: 0) {
                     ForEach(MiniRoomCategory.allCases) { category in
                         tab(category)
+                            .frame(maxHeight: .infinity)
                     }
                 }
+                .padding(.horizontal, Self.referenceHorizontalInset)
             }
         }
-        .frame(height: sizeCategory.isAccessibilityCategory ? nil : 54)
+        // Reference raster: separator y=628, tray y=683.
+        .frame(
+            height: sizeCategory.isAccessibilityCategory
+                ? nil
+                : Self.referenceHeight
+        )
         .background(PlanteriorPalette.surface.color)
         .overlay(alignment: .top) {
             Rectangle()
@@ -58,8 +69,7 @@ struct MiniRoomEditorTabBar: View {
             }
         } label: {
             VStack(spacing: PlanteriorSpacing.extraSmall) {
-                Image(systemName: category.systemImage)
-                    .font(PlanteriorTypography.supporting)
+                categoryIcon(category)
                 Text(category.title)
                     .font(PlanteriorTypography.caption.weight(
                         selected ? .semibold : .regular
@@ -75,7 +85,12 @@ struct MiniRoomEditorTabBar: View {
                     ? PlanteriorPalette.accent.color
                     : PlanteriorPalette.textSecondary.color
             )
-            .frame(maxWidth: .infinity)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: sizeCategory.isAccessibilityCategory
+                    ? nil
+                    : .infinity
+            )
             .frame(minHeight: PlanteriorControl.minimumTarget)
             .padding(
                 .vertical,
@@ -101,5 +116,27 @@ struct MiniRoomEditorTabBar: View {
         .accessibilityIdentifier(
             "minihome.editor.category.\(category.rawValue)"
         )
+    }
+
+    @ViewBuilder
+    private func categoryIcon(_ category: MiniRoomCategory) -> some View {
+        if category == .plant,
+           let image = UIImage(
+               named: "FigmaRoomCategoryPlant",
+               in: .main,
+               compatibleWith: nil
+           ) {
+            Image(uiImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(
+                    width: Self.plantIconSide,
+                    height: Self.plantIconSide
+                )
+        } else {
+            Image(systemName: category.systemImage)
+                .font(PlanteriorTypography.supporting)
+        }
     }
 }

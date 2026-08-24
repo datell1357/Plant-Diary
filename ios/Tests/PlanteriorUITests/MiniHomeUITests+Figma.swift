@@ -42,11 +42,13 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
         XCTAssertEqual(canvas.frame.width, 358, accuracy: 1)
         XCTAssertEqual(canvas.frame.height, 330, accuracy: 1)
         XCTAssertEqual(canvas.frame.minY, 200, accuracy: 2)
-        XCTAssertEqual(categoryBar.frame.minY, 629, accuracy: 1)
-        XCTAssertEqual(categoryBar.frame.height, 54, accuracy: 1)
-        XCTAssertEqual(firstPlant.frame.minY, 700, accuracy: 1)
+        // Measured directly from the authenticated 402x874 reference raster:
+        // category separator y=628, first 70pt tray tile y=699, footer y=800.
+        XCTAssertEqual(categoryBar.frame.minY, 628, accuracy: 0.5)
+        XCTAssertEqual(categoryBar.frame.height, 55, accuracy: 0.5)
+        XCTAssertEqual(firstPlant.frame.minY, 699, accuracy: 0.5)
         let undo = app.buttons["minihome.editor.undo"]
-        XCTAssertEqual(undo.frame.minY, 799, accuracy: 1)
+        XCTAssertEqual(undo.frame.minY, 800, accuracy: 0.5)
         XCTAssertLessThanOrEqual(categoryBar.frame.maxY, firstPlant.frame.minY)
         XCTAssertLessThanOrEqual(firstPlant.frame.maxY, undo.frame.minY)
         XCTAssertFalse(app.textFields["minihome.room-name"].exists)
@@ -89,26 +91,35 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
                 .waitForExistence(timeout: 5)
         )
 
-        // Owned inventory drives non-plant trays: the QA fixture owns exactly
-        // `item-chair` (furniture), so furniture lists it and decoration is empty.
+        // The canonical 12-owned fixture preserves catalog order. Furniture
+        // therefore starts with `item-mini-shelf` / `미니 책장`.
         let furniture = app.buttons["minihome.editor.category.furniture"]
         furniture.tap()
         XCTAssertEqual(furniture.value as? String, "선택됨")
         XCTAssertEqual(plantTab.value as? String, "선택 안 됨")
-        let chair = app.buttons["minihome.editor.tray.0"]
-        XCTAssertTrue(chair.waitForExistence(timeout: 5))
-        XCTAssertEqual(chair.label, "원목 의자")
-        chair.tap()
+        let shelf = app.buttons["minihome.editor.tray.0"]
+        XCTAssertTrue(shelf.waitForExistence(timeout: 5))
+        XCTAssertEqual(shelf.identifier, "minihome.editor.tray.0")
+        XCTAssertEqual(shelf.label, "미니 책장")
+        shelf.tap()
         XCTAssertTrue(
             app.images["minihome.placement.placement-2"]
                 .waitForExistence(timeout: 5)
         )
 
-        app.buttons["minihome.editor.category.decoration"].tap()
-        XCTAssertTrue(
-            app.staticTexts["minihome.editor.tray.empty"]
-                .waitForExistence(timeout: 5)
-        )
+        // Decoration filtering keeps the same canonical order and begins with
+        // the owned `item-small-rug` / `작은 러그`, not an empty state.
+        let decoration = app.buttons[
+            "minihome.editor.category.decoration"
+        ]
+        decoration.tap()
+        XCTAssertEqual(decoration.value as? String, "선택됨")
+        XCTAssertEqual(furniture.value as? String, "선택 안 됨")
+        XCTAssertFalse(app.staticTexts["minihome.editor.tray.empty"].exists)
+        let rug = app.buttons["minihome.editor.tray.0"]
+        XCTAssertTrue(rug.waitForExistence(timeout: 5))
+        XCTAssertEqual(rug.identifier, "minihome.editor.tray.0")
+        XCTAssertEqual(rug.label, "작은 러그")
     }
 
     func testUndoAndResetRestoreDraftWithoutTouchingCommittedRoom() {
