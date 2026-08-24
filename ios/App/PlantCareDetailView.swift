@@ -151,7 +151,6 @@ struct PlantCareDetailView: View {
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.trailing, PlanteriorSpacing.huge)
                 .accessibilityIdentifier("plant.detail.memo.body")
                 if let memoUpdatedOn {
                     Text("수정일: \(memoUpdatedOn)")
@@ -161,10 +160,12 @@ struct PlantCareDetailView: View {
                 }
             }
             .padding(.horizontal, PlanteriorSpacing.medium)
-            .padding(.vertical, PlanteriorSpacing.extraLarge)
+            .padding(.vertical, PlanteriorSpacing.large)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(PlanteriorPalette.canvas.color)
             .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("plant.detail.memo.card")
             .overlay {
                 RoundedRectangle(cornerRadius: PlanteriorRadius.large)
                     .stroke(
@@ -173,7 +174,6 @@ struct PlantCareDetailView: View {
                     )
             }
         }
-        .padding(.top, PlanteriorSpacing.extraSmall)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plant.detail.memo")
     }

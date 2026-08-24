@@ -65,6 +65,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         let guide = app.otherElements["plant.detail.guide"]
         let watering = app.otherElements["plant.detail.watering-card"]
         let memo = app.otherElements["plant.detail.memo"]
+        let memoCard = app.otherElements["plant.detail.memo.card"]
         assertPlantDetailChromeAndHeroMatchReference(in: app)
         XCTAssertTrue(guide.exists)
         XCTAssertTrue(watering.exists)
@@ -75,6 +76,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["watering.complete"].exists)
         XCTAssertTrue(memo.exists)
+        XCTAssertTrue(memoCard.exists)
         let memoBody = app.staticTexts["plant.detail.memo.body"]
         XCTAssertTrue(memoBody.exists)
         XCTAssertEqual(
@@ -82,8 +84,12 @@ final class PlantCollectionFigmaUITests: XCTestCase {
             "최근에 새 잎이 돋아나기 시작했어요! 잎 끝이 마르지 않게 저녁마다 "
                 + "습도 관리를 위한 스프레이를 분무해주고 있습니다. 🌿"
         )
+        XCTAssertEqual(memoCard.frame.minX, 16, accuracy: 0.5)
+        XCTAssertEqual(memoCard.frame.minY, 662.667, accuracy: 0.5)
+        XCTAssertEqual(memoCard.frame.width, 370, accuracy: 0.5)
+        XCTAssertEqual(memoCard.frame.height, 112.333, accuracy: 0.5)
+        XCTAssertEqual(memoCard.frame.maxY, 775, accuracy: 0.5)
         XCTAssertEqual(memoBody.frame.minX, 28, accuracy: 0.5)
-        XCTAssertEqual(memoBody.frame.width, 309, accuracy: 0.5)
         XCTAssertEqual(memoBody.frame.height, 58, accuracy: 0.5)
         XCTAssertLessThan(app.images["plant.detail.hero"].frame.maxY, guide.frame.minY)
         XCTAssertLessThan(guide.frame.maxY, watering.frame.minY)

@@ -59,6 +59,7 @@ extension PlantCollectionFigmaUITests {
             ("guide", app.otherElements["plant.detail.guide"]),
             ("watering", app.otherElements["plant.detail.watering-card"]),
             ("memo", app.otherElements["plant.detail.memo"]),
+            ("memo.card", app.otherElements["plant.detail.memo.card"]),
             ("memo.body", app.staticTexts["plant.detail.memo.body"]),
             ("memo.updated", app.staticTexts["plant.detail.memo-updated"])
         ])
