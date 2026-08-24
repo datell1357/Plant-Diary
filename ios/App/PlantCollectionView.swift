@@ -13,7 +13,7 @@ struct PlantCollectionView: View {
     @Environment(\.sizeCategory) var sizeCategory
     let careCalendar = PlantCareCalendar()
     var body: some View {
-        VStack(spacing: PlanteriorSpacing.extraLarge) {
+        VStack(spacing: 18) {
             header
             if showsSearch, !isTrueEmptyCollection {
                 searchField

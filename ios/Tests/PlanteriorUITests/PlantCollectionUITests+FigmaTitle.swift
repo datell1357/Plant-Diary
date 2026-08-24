@@ -12,10 +12,6 @@ extension PlantCollectionFigmaUITests {
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-05-19"
         app.launchEnvironment["QA_PLANT_DETAIL_UPDATED_ON"] = "2026-05-17"
-        app.launchArguments += [
-            "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryM"
-        ]
         if empty {
             app.launchEnvironment["QA_COLLECTION_EMPTY"] = "1"
         }
@@ -29,11 +25,106 @@ extension PlantCollectionFigmaUITests {
         add(attachment)
     }
 
+    func attachListFrameReceipt(in app: XCUIApplication) {
+        attachFrameReceipt(named: "collection-list-frames", elements: [
+            ("title", app.staticTexts["collection.title"]),
+            ("summary", app.buttons["collection.open-detail"]),
+            ("row.0", app.buttons["collection.row.0"]),
+            ("row.1", app.buttons["collection.row.1"]),
+            ("row.2", app.buttons["collection.row.2"]),
+            ("row.3", app.buttons["collection.row.3"]),
+            ("row.4", app.buttons["collection.row.4"]),
+            ("search", app.buttons["collection.search.action"]),
+            ("add", app.buttons["collection.add"])
+        ])
+    }
+
+    func attachEmptyFrameReceipt(in app: XCUIApplication) {
+        attachFrameReceipt(named: "collection-empty-frames", elements: [
+            ("title", app.staticTexts["collection.title"]),
+            ("illustration", app.images["collection.empty.illustration"]),
+            ("empty.title", app.staticTexts["collection.empty.title"]),
+            ("empty.body", app.staticTexts["collection.empty.body"]),
+            ("empty.camera", app.buttons["collection.empty.camera"]),
+            ("empty.manual", app.buttons["collection.empty.manual"])
+        ])
+    }
+
+    func attachDetailFrameReceipt(in app: XCUIApplication) {
+        attachFrameReceipt(named: "collection-detail-frames", elements: [
+            ("top-bar", app.otherElements["plant.detail.top-bar"]),
+            ("back", app.buttons["plant.detail.back"]),
+            ("edit", app.buttons["plant.detail.edit"]),
+            ("hero", app.images["plant.detail.hero"]),
+            ("guide", app.otherElements["plant.detail.guide"]),
+            ("watering", app.otherElements["plant.detail.watering-card"]),
+            ("memo", app.otherElements["plant.detail.memo"]),
+            ("memo.body", app.staticTexts["plant.detail.memo.body"]),
+            ("memo.updated", app.staticTexts["plant.detail.memo-updated"])
+        ])
+    }
+
+    func attachRemedyFrameReceipt(in app: XCUIApplication) {
+        attachFrameReceipt(named: "collection-remedy-frames", elements: [
+            ("top-bar", app.otherElements["remedy.top-bar"]),
+            ("back", app.buttons["remedy.back"]),
+            ("context", app.staticTexts["remedy.context"]),
+            ("card.0", app.otherElements["remedy.card.0"]),
+            ("card.1", app.otherElements["remedy.card.1"]),
+            ("card.2", app.otherElements["remedy.card.2"]),
+            ("card.3", app.otherElements["remedy.card.3"])
+        ])
+    }
+
+    private func attachFrameReceipt(
+        named name: String,
+        elements: [(String, XCUIElement)]
+    ) {
+        let receipt = elements.map { elementName, element in
+            "\(elementName)=\(element.frame)"
+        }.joined(separator: "\n")
+        print("FRAME_RECEIPT \(name)\n\(receipt)")
+        let attachment = XCTAttachment(string: receipt)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func assertCollectionHeadingMatchesReference(in app: XCUIApplication) {
         let heading = app.staticTexts["collection.title"]
         XCTAssertTrue(heading.exists)
         XCTAssertEqual(heading.frame.minX, 24, accuracy: 1)
         XCTAssertEqual(heading.frame.minY, 64, accuracy: 1)
+    }
+
+    func assertCollectionListGeometryMatchesReference(in app: XCUIApplication) {
+        let summary = app.buttons["collection.open-detail"]
+        XCTAssertEqual(summary.frame.minX, 16, accuracy: 0.5)
+        XCTAssertEqual(summary.frame.minY, 116, accuracy: 0.5)
+        XCTAssertEqual(summary.frame.width, 370, accuracy: 0.5)
+        XCTAssertEqual(summary.frame.height, 80, accuracy: 0.5)
+    }
+
+    func assertCollectionEmptyGeometryMatchesReference(in app: XCUIApplication) {
+        let illustration = app.images["collection.empty.illustration"]
+        let title = app.staticTexts["collection.empty.title"]
+        let body = app.staticTexts["collection.empty.body"]
+        let camera = app.buttons["collection.empty.camera"]
+        let manual = app.buttons["collection.empty.manual"]
+        XCTAssertEqual(illustration.frame.minX, 111, accuracy: 0.5)
+        XCTAssertEqual(illustration.frame.minY, 156, accuracy: 0.5)
+        XCTAssertEqual(illustration.frame.width, 180, accuracy: 0.5)
+        XCTAssertEqual(illustration.frame.height, 180, accuracy: 0.5)
+        XCTAssertEqual(title.frame.minY, 364, accuracy: 0.5)
+        XCTAssertEqual(body.frame.minY, 392.333, accuracy: 0.5)
+        XCTAssertEqual(camera.frame.minX, 24, accuracy: 0.5)
+        XCTAssertEqual(camera.frame.minY, 438.333, accuracy: 0.5)
+        XCTAssertEqual(camera.frame.width, 354, accuracy: 0.5)
+        XCTAssertEqual(camera.frame.height, 46, accuracy: 0.5)
+        XCTAssertEqual(manual.frame.minX, 24, accuracy: 0.5)
+        XCTAssertEqual(manual.frame.minY, 496.333, accuracy: 0.5)
+        XCTAssertEqual(manual.frame.width, 354, accuracy: 0.5)
+        XCTAssertEqual(manual.frame.height, 44, accuracy: 0.5)
     }
 
     func assertPlantDetailChromeAndHeroMatchReference(in app: XCUIApplication) {

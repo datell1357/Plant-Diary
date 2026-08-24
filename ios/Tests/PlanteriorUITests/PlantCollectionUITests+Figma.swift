@@ -9,6 +9,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["collection.screen"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["collection.title"].label, "나의 도감")
         assertCollectionHeadingMatchesReference(in: app)
+        assertCollectionListGeometryMatchesReference(in: app)
         XCTAssertEqual(
             app.staticTexts["collection.summary.title"].label,
             "등록된 식물 총 5개 🌱"
@@ -43,6 +44,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertTrue(add.exists)
         XCTAssertGreaterThanOrEqual(add.frame.width, 44)
         XCTAssertGreaterThan(add.frame.midY, app.buttons["collection.row.3"].frame.midY)
+        attachListFrameReceipt(in: app)
         attachScreenshot(named: "collection-list-402x874")
 
         searchAction.tap()
@@ -78,13 +80,17 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertEqual(
             memoBody.label,
             "최근에 새 잎이 돋아나기 시작했어요! 잎 끝이 마르지 않게 저녁마다 "
-                + "습도 관리를 위한 스프레이를 분무해주고 있습니다."
+                + "습도 관리를 위한 스프레이를 분무해주고 있습니다. 🌿"
         )
+        XCTAssertEqual(memoBody.frame.minX, 28, accuracy: 0.5)
+        XCTAssertEqual(memoBody.frame.width, 309, accuracy: 0.5)
+        XCTAssertEqual(memoBody.frame.height, 58, accuracy: 0.5)
         XCTAssertLessThan(app.images["plant.detail.hero"].frame.maxY, guide.frame.minY)
         XCTAssertLessThan(guide.frame.maxY, watering.frame.minY)
         XCTAssertLessThan(watering.frame.maxY, memo.frame.minY)
         XCTAssertFalse(app.textFields["plant.detail.nickname"].exists)
         XCTAssertFalse(app.tables.firstMatch.exists, "detail must not regress to Form")
+        attachDetailFrameReceipt(in: app)
         attachScreenshot(named: "collection-detail-402x874")
 
         app.buttons["plant.detail.edit"].tap()
@@ -131,6 +137,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
             app.otherElements["remedy.card.1"].frame.height,
             app.otherElements["remedy.card.0"].frame.height
         )
+        attachRemedyFrameReceipt(in: app)
         attachScreenshot(named: "collection-remedy-402x874")
 
         app.buttons["remedy.symptom.1"].tap()
@@ -162,8 +169,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["검색 결과가 없어요"].exists)
         XCTAssertFalse(app.buttons["collection.search.action"].exists)
         XCTAssertFalse(app.textFields["collection.search"].exists)
-        XCTAssertGreaterThan(app.images["collection.empty.illustration"].frame.minY, 120)
-        XCTAssertLessThan(app.images["collection.empty.illustration"].frame.minY, 180)
+        assertCollectionEmptyGeometryMatchesReference(in: app)
         let camera = app.buttons["collection.empty.camera"]
         let manual = app.buttons["collection.empty.manual"]
         let homeTab = app.buttons["tab.home"]
@@ -180,6 +186,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
             )
             return
         }
+        attachEmptyFrameReceipt(in: app)
         attachScreenshot(named: "collection-empty-before-camera")
         camera.tap()
         XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))

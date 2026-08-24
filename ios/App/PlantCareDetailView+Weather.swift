@@ -144,7 +144,7 @@ struct PlantSymptomRemedyView: View {
                 guidanceBody(item, index: index)
                     .padding(.horizontal, PlanteriorSpacing.large)
                     .padding(.top, PlanteriorSpacing.medium)
-                    .padding(.bottom, PlanteriorSpacing.huge)
+                    .padding(.bottom, 18)
             }
         }
         .background(PlanteriorPalette.surface.color)

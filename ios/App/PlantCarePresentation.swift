@@ -134,7 +134,7 @@ extension PlantCollectionView {
             .top,
             sizeCategory.isAccessibilityCategory
                 ? 0
-                : PlanteriorSpacing.board + PlanteriorSpacing.extraLarge
+                : PlanteriorSpacing.board
         )
     }
 
