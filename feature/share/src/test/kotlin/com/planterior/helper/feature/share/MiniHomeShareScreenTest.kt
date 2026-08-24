@@ -21,6 +21,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.test.core.app.ApplicationProvider
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,6 +93,24 @@ class MiniHomeShareScreenTest {
     }
 
     @Test
+    fun `privacy prose exposes the original string once without invisible controls`() {
+        setScreen(ready())
+        val expected =
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+                .getString(R.string.mini_home_share_notice_body)
+
+        val semantics =
+            compose
+                .onNodeWithTag("mini-home-share:privacy-body", useUnmergedTree = true)
+                .performScrollTo()
+                .fetchSemanticsNode()
+                .subtreeText()
+        assertEquals(listOf(expected), semantics)
+        val forbidden = setOf('\u00A0', '\u200B', '\u200C', '\u200D', '\u2060', '\uFEFF')
+        assertTrue(semantics.single().none(forbidden::contains))
+    }
+
+    @Test
     fun `committed revision is shown for the exported layout`() {
         setScreen(ready())
 
@@ -122,7 +141,10 @@ class MiniHomeShareScreenTest {
             }
         }
 
-        compose.onNodeWithTag(MiniHomeShareTestTags.RENDER_PROGRESS).assertIsDisplayed()
+        compose
+            .onNodeWithTag(MiniHomeShareTestTags.STATUS)
+            .performScrollTo()
+            .assert(hasTextContaining("준비하고 있어요"))
 
         state = ready(render = MiniHomeShareRenderState.Failed)
         compose
@@ -278,6 +300,12 @@ class MiniHomeShareScreenTest {
             .onNodeWithTag(MiniHomeShareTestTags.FEEDBACK)
             .performScrollTo()
             .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
+        assertEquals(
+            1,
+            renderedSemanticsText().lineSequence().count {
+                it == "공유를 취소했어요. 바뀐 것은 없어요."
+            },
+        )
         assertFalse(MiniHomeShareFeedback.SHEET_CANCELLED.error)
     }
 
@@ -296,6 +324,7 @@ class MiniHomeShareScreenTest {
 
         listOf(
                 MiniHomeShareTestTags.IMAGE_SHARE,
+                MiniHomeShareTestTags.LINK_CREATE,
                 MiniHomeShareTestTags.LINK_COPY,
                 MiniHomeShareTestTags.LINK_SHARE,
                 MiniHomeShareTestTags.LINK_REVOKE,

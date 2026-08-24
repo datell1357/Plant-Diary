@@ -4,12 +4,14 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.os.Build
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +28,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.core.view.ViewCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.planterior.helper.Api37LocalNetworkPermissionRule
@@ -179,13 +182,15 @@ class InventoryScreenApi37Test {
                 )
             )
         compose.setContent {
-            EvidenceEdgeToEdge()
+            if (!rememberEvidenceEdgeToEdgeReady()) return@setContent
             PlanteriorTheme {
                 if (!openedMiniHome && !openedDetail && showInventory) {
                     InventoryScreen(
                         state,
                         onSelectSection = { section -> state = state.copy(section = section) },
-                        onSelectCategory = { category -> state = state.copy(category = category) },
+                        onSelectCategory = { category ->
+                            state = state.copy(category = category)
+                        },
                         onAcquire = {
                             acquired = it
                             events.publish(VisualEvent.Acquired(it))
@@ -506,9 +511,20 @@ class InventoryScreenApi37Test {
     }
 
     @Composable
-    private fun EvidenceEdgeToEdge() {
+    private fun rememberEvidenceEdgeToEdgeReady(): Boolean {
         val activity = LocalContext.current.findComponentActivity()
-        SideEffect { activity.enableEdgeToEdge() }
+        val root = activity.findViewById<View>(android.R.id.content)
+        var insetsReady by remember(root) { mutableStateOf(false) }
+        DisposableEffect(activity, root) {
+            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+                insetsReady = true
+                insets
+            }
+            activity.enableEdgeToEdge()
+            ViewCompat.requestApplyInsets(root)
+            onDispose { ViewCompat.setOnApplyWindowInsetsListener(root, null) }
+        }
+        return insetsReady
     }
 
     private fun Context.findComponentActivity(): ComponentActivity =

@@ -1,33 +1,35 @@
 <resources>
     <string name="mini_home_share_title">미니홈 공유</string>
-    <string name="mini_home_share_back">미니 식물원으로 돌아가기</string>
+    <string name="mini_home_share_back">닫기</string>
+    <string name="mini_home_share_back_description">공유 화면 닫고 미니 식물원으로 돌아가기</string>
     <string name="mini_home_share_chooser_title">미니홈 공유</string>
     <string name="mini_home_share_clip_label">미니홈 공유 링크</string>
 
     <string name="mini_home_share_notice_title">아직 아무것도 공개되지 않았어요</string>
     <string name="mini_home_share_notice_body">아래에서 직접 실행하기 전까지는 이미지도 링크도 만들어지지 않아요. 공유는 저장된 미니홈만 담아요. 개인 식물 사진의 원본과 픽셀은 제외하고 미니어처로 표시해요.</string>
 
-    <string name="mini_home_share_revision_title">공유할 저장본</string>
-    <string name="mini_home_share_revision_body">저장 %1$s번째 구성이에요. 편집 중인 내용은 담기지 않아요.</string>
+    <string name="mini_home_share_revision">저장된 %1$s판</string>
+    <string name="mini_home_share_revision_description">공유할 저장본은 저장된 %1$s판이에요. 편집 중인 내용은 담기지 않아요.</string>
 
-    <string name="mini_home_share_render_progress">공유 이미지를 준비하고 있어요</string>
+    <string name="mini_home_share_status_ready">저장된 미니홈 이미지 준비됨</string>
+    <string name="mini_home_share_status_rendering">공유 이미지를 준비하고 있어요</string>
+    <string name="mini_home_share_status_failed">이미지를 만들 수 없음</string>
+
     <string name="mini_home_share_render_failure_title">공유 이미지를 만들지 못했어요</string>
     <string name="mini_home_share_render_failure_body">저장된 구성은 그대로예요. 다시 시도해 주세요.</string>
     <string name="mini_home_share_render_retry">공유 이미지 다시 만들기</string>
     <string name="mini_home_share_preview_description">저장된 미니홈 공유 미리보기</string>
 
-    <string name="mini_home_share_image_action">이미지로 공유</string>
+    <string name="mini_home_share_image_action">이미지 공유</string>
 
-    <string name="mini_home_share_link_section">공개 링크</string>
     <string name="mini_home_share_link_idle">링크를 만들면 링크를 아는 사람이 저장된 미니홈을 볼 수 있어요.</string>
-    <string name="mini_home_share_link_create">공개 링크 만들기</string>
+    <string name="mini_home_share_link_create">공유 링크 만들기</string>
     <string name="mini_home_share_link_generating">공개 링크를 만들고 있어요</string>
-    <string name="mini_home_share_link_active_title">공개 링크가 활성 상태예요</string>
     <string name="mini_home_share_link_url_description">공개 링크 주소</string>
     <string name="mini_home_share_link_copy">링크 복사</string>
     <string name="mini_home_share_link_copied_state">복사됨</string>
     <string name="mini_home_share_link_share">링크 공유</string>
-    <string name="mini_home_share_link_revoke">공개 링크 해제</string>
+    <string name="mini_home_share_link_revoke">링크 해제</string>
     <string name="mini_home_share_link_revoking">공개 링크를 해제하고 있어요</string>
     <string name="mini_home_share_link_revoked_title">공개 링크를 해제했어요</string>
     <string name="mini_home_share_link_revoked_body">이 링크로는 더 이상 볼 수 없어요. 필요하면 새 링크를 만들 수 있어요.</string>

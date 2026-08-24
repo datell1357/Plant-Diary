@@ -4,13 +4,15 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.os.Build
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -30,6 +32,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
+import androidx.core.view.ViewCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
@@ -125,7 +128,7 @@ class MiniHomeShareVisualApi37Test {
         var fontScale by mutableStateOf(1f)
         var backClicks = 0
         compose.setContent {
-            EvidenceEdgeToEdge()
+            if (!rememberEvidenceEdgeToEdgeReady()) return@setContent
             val density = LocalDensity.current
             key(scenario) {
                 CompositionLocalProvider(
@@ -205,7 +208,7 @@ class MiniHomeShareVisualApi37Test {
         assertErrorSemantics(MiniHomeShareTestTags.RENDER_FAILURE)
         capture("todo15-api37-render-failure.png")
         compose.onNodeWithTag(MiniHomeShareTestTags.RENDER_RETRY).performScrollTo().performClick()
-        compose.onNodeWithTag(MiniHomeShareTestTags.RENDER_PROGRESS).assertIsDisplayed()
+        compose.onNodeWithTag(MiniHomeShareTestTags.STATUS).performScrollTo().assertIsDisplayed()
 
         moveTo("chooser-cancelled", next = ready(render = MiniHomeShareRenderState.Ready))
         compose.onNodeWithTag(MiniHomeShareTestTags.IMAGE_SHARE).performScrollTo().performClick()
@@ -290,7 +293,7 @@ class MiniHomeShareVisualApi37Test {
             }
         }
         compose.onNodeWithTag(MiniHomeShareTestTags.REVISION).assertIsDisplayed()
-        compose.onNodeWithText("저장 12번째 구성이에요. 편집 중인 내용은 담기지 않아요.").assertIsDisplayed()
+        compose.onNodeWithText("저장된 12판").assertIsDisplayed()
         compose.onNodeWithTag(MiniHomeShareTestTags.PREVIEW).assertIsDisplayed()
         assertTrue(repository.lastLoadedTarget.committed.placements.isEmpty())
 
@@ -327,10 +330,15 @@ class MiniHomeShareVisualApi37Test {
         assertEquals(Revision(12), repository.createRevision)
     }
 
+    /** 참조는 미리보기와 저장본 표기를 먼저 놓고 비공개 안내는 그 뒤를 따르므로 스크롤해 확인한다. */
     private fun assertReadyChrome() {
-        compose.onNodeWithTag(MiniHomeShareTestTags.PRIVACY_NOTICE).assertIsDisplayed()
+        compose.onNodeWithTag(MiniHomeShareTestTags.PREVIEW).assertIsDisplayed()
         compose.onNodeWithTag(MiniHomeShareTestTags.REVISION).assertIsDisplayed()
-        compose.onNodeWithText("저장 12번째 구성이에요. 편집 중인 내용은 담기지 않아요.").assertIsDisplayed()
+        compose.onNodeWithText("저장된 12판").assertIsDisplayed()
+        compose
+            .onNodeWithTag(MiniHomeShareTestTags.PRIVACY_NOTICE)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     private fun assertActiveLinkActions() {
@@ -449,9 +457,20 @@ class MiniHomeShareVisualApi37Test {
     }
 
     @androidx.compose.runtime.Composable
-    private fun EvidenceEdgeToEdge() {
+    private fun rememberEvidenceEdgeToEdgeReady(): Boolean {
         val activity = LocalContext.current.findComponentActivity()
-        SideEffect { activity.enableEdgeToEdge() }
+        val root = activity.findViewById<View>(android.R.id.content)
+        var insetsReady by remember(root) { mutableStateOf(false) }
+        DisposableEffect(activity, root) {
+            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+                insetsReady = true
+                insets
+            }
+            activity.enableEdgeToEdge()
+            ViewCompat.requestApplyInsets(root)
+            onDispose { ViewCompat.setOnApplyWindowInsetsListener(root, null) }
+        }
+        return insetsReady
     }
 
     private fun Context.findComponentActivity(): ComponentActivity =

@@ -3,6 +3,8 @@ package com.planterior.helper.core.designsystem.component
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,10 +13,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 
 /**
@@ -25,6 +29,8 @@ import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
  *
  * @param title 화면 상단에 표시하고 스크린 리더가 heading으로 읽는 제목.
  * @param bottomBar 하단 내비게이션. 탭이 없는 화면은 비워 둔다.
+ * @param topAction 제목과 같은 줄의 선택적 보조 행동. 제공하지 않으면 기존 제목 배치를 유지한다.
+ * @param contentHorizontalPadding 제목과 내용의 좌우 여백. 승인된 외부 참조 계약이 다른 값을 정한 화면만 바꾼다.
  * @param content 제목 아래에 놓일 화면 내용.
  */
 @Composable
@@ -32,6 +38,8 @@ fun PlanteriorScreenScaffold(
     title: String,
     modifier: Modifier = Modifier,
     bottomBar: @Composable () -> Unit = {},
+    topAction: @Composable RowScope.() -> Unit = {},
+    contentHorizontalPadding: Dp = PlanteriorTheme.spacing.extraLarge,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Scaffold(
@@ -46,19 +54,25 @@ fun PlanteriorScreenScaffold(
                     .padding(innerPadding)
                     .statusBarsPadding()
                     .padding(
-                        horizontal = PlanteriorTheme.spacing.extraLarge,
+                        horizontal = contentHorizontalPadding,
                         vertical = PlanteriorTheme.spacing.large,
                     ),
             verticalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.large),
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().semantics { heading() },
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).semantics { heading() },
+                )
+                topAction()
+            }
             content()
         }
     }
