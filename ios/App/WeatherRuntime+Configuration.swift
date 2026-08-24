@@ -75,14 +75,7 @@ extension WeatherRuntime {
     }
 
     static var locationTimeoutMilliseconds: Int {
-        #if DEBUG
-            if let rawValue = ProcessInfo.processInfo.environment[
-                "QA_WEATHER_TIMEOUT_MILLISECONDS"
-            ], let milliseconds = Int(rawValue) {
-                return milliseconds
-            }
-        #endif
-        return 10000
+        10000
     }
 
     func applyQALocationStateIfNeeded() {

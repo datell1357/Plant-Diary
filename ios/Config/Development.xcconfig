@@ -1,4 +1,5 @@
 PLAN_CONFIGURATION = Development
+APP_ATTEST_ENVIRONMENT = development
 PLAN_FIREBASE_PLIST_PATH = $(SRCROOT)/../../docs/firebase/GoogleService-Info.plist
 GOOGLE_CLIENT_ID = 399546775599-t5gq1b6r2jhr2lnipmaakndg06784n8g.apps.googleusercontent.com
 GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.399546775599-t5gq1b6r2jhr2lnipmaakndg06784n8g

@@ -11,6 +11,18 @@ extension WeatherFlowUITests {
         return app
     }
 
+    func scrollToWeatherControl(
+        _ control: XCUIElement,
+        in app: XCUIApplication
+    ) {
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        let scroll = app.scrollViews["home.screen"]
+        for _ in 0 ..< 6 where !control.isHittable {
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(control.isHittable)
+    }
+
     func attachScreenshot(named name: String) {
         let attachment = XCTAttachment(
             screenshot: XCUIScreen.main.screenshot()

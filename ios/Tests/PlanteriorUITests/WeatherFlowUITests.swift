@@ -31,7 +31,9 @@ final class WeatherFlowUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["weather.region"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["weather.location.calls"].label, "위치 요청 0회")
-        app.buttons["weather.open-region"].tap()
+        let openRegion = app.buttons["weather.open-region"]
+        scrollToWeatherControl(openRegion, in: app)
+        openRegion.tap()
         let revoke = app.buttons["weather.qa-revoke"]
         XCTAssertTrue(revoke.waitForExistence(timeout: 5))
         revoke.tap()
@@ -41,13 +43,15 @@ final class WeatherFlowUITests: XCTestCase {
         )
         XCTAssertEqual(app.staticTexts["weather.location.calls"].label, "위치 요청 0회")
         app.buttons["tab.collection"].tap()
-        XCTAssertTrue(app.textFields["collection.search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["collection.search.action"].waitForExistence(timeout: 5)
+        )
     }
 
     func testLocationTimeoutFailsWithoutBlockingCollection() {
         let app = weatherApp()
         app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "full"
-        app.launchEnvironment["QA_WEATHER_TIMEOUT_MILLISECONDS"] = "10"
+        app.launchEnvironment["QA_WEATHER_LOCATION_MODE"] = "timeout"
         app.launch()
 
         XCTAssertTrue(
@@ -60,7 +64,7 @@ final class WeatherFlowUITests: XCTestCase {
         )
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(
-            app.textFields["collection.search"]
+            app.buttons["collection.search.action"]
                 .waitForExistence(timeout: 5)
         )
     }
@@ -102,11 +106,11 @@ final class WeatherFlowUITests: XCTestCase {
             app.staticTexts["weather.alert-count"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.buttons["weather.open-region"].exists)
+        scrollToWeatherControl(app.buttons["weather.open-region"], in: app)
         attachScreenshot(named: "task-13-weather-ax5-actions")
     }
 
-    func testRegionSettingsSearchesSelectsAndSavesManualRegion() {
+    func testRegionSettingsAutoSavesManualRegionAndPersistsSelection() {
         let app = weatherApp()
         app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "denied"
         app.launchEnvironment["QA_WEATHER_FIXTURE"] = "high-dry"
@@ -114,8 +118,8 @@ final class WeatherFlowUITests: XCTestCase {
         app.launch()
 
         let openRegion = app.buttons["weather.open-region"]
+        scrollToWeatherControl(openRegion, in: app)
         XCTAssertTrue(app.staticTexts["weather.purpose"].exists)
-        XCTAssertTrue(openRegion.waitForExistence(timeout: 5))
         openRegion.tap()
         XCTAssertTrue(
             app.buttons["weather.use-current-location"]
@@ -125,6 +129,7 @@ final class WeatherFlowUITests: XCTestCase {
         let back = app.buttons["weather.region.back"]
         XCTAssertTrue(back.exists)
         XCTAssertTrue(back.isHittable)
+        XCTAssertFalse(app.buttons["weather.region.save"].exists)
         attachScreenshot(named: "region-402x874-light")
         let region = app.textFields["weather.manual-region"]
         region.tap()
@@ -133,10 +138,16 @@ final class WeatherFlowUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         attachScreenshot(named: "task-13-weather-settings")
         result.tap()
-        XCTAssertEqual(result.value as? String, "선택됨")
-        app.buttons["weather.region.save"].tap()
-        XCTAssertTrue(app.staticTexts["weather.region"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["weather.region"].label.contains("서울"))
+        let savedRegion = app.staticTexts["weather.region"]
+        XCTAssertTrue(savedRegion.waitForExistence(timeout: 5))
+        XCTAssertTrue(savedRegion.label.contains("서울"))
+
+        scrollToWeatherControl(openRegion, in: app)
+        openRegion.tap()
+        XCTAssertTrue(region.waitForExistence(timeout: 5))
+        let persistedResult = app.buttons["weather.region-result.manual-seoul"]
+        XCTAssertTrue(persistedResult.waitForExistence(timeout: 5))
+        XCTAssertEqual(persistedResult.value as? String, "선택됨")
     }
 
     func testPerPlantWeatherAlertControlIsVisible() {

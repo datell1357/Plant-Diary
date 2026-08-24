@@ -18,16 +18,22 @@ final class WeatherRuntime: NSObject, ObservableObject {
     @Published var locationRegionCode: String?
     @Published var globalAlertsEnabledState = true
 
-    private let locationManager = CLLocationManager()
+    let locationManager = CLLocationManager()
+    #if DEBUG
+        let qaLocationClient: QAWeatherLocationClient?
+    #endif
     let defaults: UserDefaults
     private let repository: any WeatherSnapshotRepository
     var accountScopeID: String?
-    private var locationRequestToken: UUID?
+    var locationRequestToken: UUID?
     var latestEvaluation: WeatherRiskEvaluation?
     var latestPlantIDs: [PersonalPlantID] = []
     var plannedRisksByPlant: [PersonalPlantID: Set<RiskType>] = [:]
 
     override init() {
+        #if DEBUG
+            qaLocationClient = QAWeatherLocationClient()
+        #endif
         defaults = .standard
         repository = Self.currentRepository()
         accountScopeID = Self.initialAccountScopeID
@@ -76,8 +82,9 @@ final class WeatherRuntime: NSObject, ObservableObject {
         )
         guard let regionCode = selection.effectiveRegionCode else {
             if selection.shouldRequestLocation {
-                requestLocationIfNeeded()
-                homeState = .loading
+                if requestLocationIfNeeded() {
+                    homeState = .loading
+                }
             } else {
                 homeState = .unavailable
             }
@@ -161,26 +168,12 @@ final class WeatherRuntime: NSObject, ObservableObject {
         }
     }
 
-    private func requestLocationIfNeeded() {
-        guard locationRequestToken == nil else {
-            return
-        }
-        let token = UUID()
-        locationRequestToken = token
+    func recordLocationRequest(count: Int) {
+        locationRequestCount = count
+    }
+
+    func recordLocationRequest() {
         locationRequestCount += 1
-        locationManager.requestLocation()
-        let milliseconds = Self.locationTimeoutMilliseconds
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(
-                for: .milliseconds(milliseconds)
-            )
-            guard let self, locationRequestToken == token else {
-                return
-            }
-            locationRequestToken = nil
-            locationManager.stopUpdatingLocation()
-            homeState = .failed
-        }
     }
 
     func completeLocationRequest() {
