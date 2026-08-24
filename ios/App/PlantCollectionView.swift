@@ -27,6 +27,12 @@ struct PlantCollectionView: View {
                         searchEmptyState
                     } else {
                         summaryBanner
+                        if sizeCategory.isAccessibilityCategory {
+                            HStack {
+                                Spacer(minLength: 0)
+                                addPlantButton
+                            }
+                        }
                         plantRows
                     }
                 }
@@ -48,15 +54,6 @@ struct PlantCollectionView: View {
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.top, -PlanteriorSpacing.small)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !isTrueEmptyCollection, sizeCategory.isAccessibilityCategory {
-                HStack {
-                    Spacer(minLength: 0)
-                    addPlantButton
-                }
-                .padding(.bottom, PlanteriorSpacing.large)
-            }
-        }
         .background(PlanteriorPalette.canvas.color)
         .toolbar(.hidden, for: .navigationBar)
         .task {

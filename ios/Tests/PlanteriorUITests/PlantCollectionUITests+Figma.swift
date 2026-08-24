@@ -218,17 +218,19 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.scrollViews["collection.screen"].waitForExistence(timeout: 10))
-        let row = app.buttons["collection.row.0"]
+        let rows = (app.buttons["collection.row.0"], app.buttons["collection.row.1"])
         let add = app.buttons["collection.add"]
         let status = app.staticTexts["collection.status.0"]
-        XCTAssertTrue(row.exists)
+        XCTAssertTrue(rows.0.exists && rows.1.exists)
         XCTAssertTrue(add.isHittable)
         XCTAssertTrue(status.exists)
-        XCTAssertFalse(row.frame.intersects(add.frame))
+        XCTAssertFalse(rows.0.frame.intersects(add.frame) || rows.1.frame.intersects(add.frame))
         XCTAssertGreaterThan(status.frame.width, status.frame.height)
         assertTitleStaysInsideContentColumn(in: app)
         attachScreenshot(named: "collection-list-korean-ax5")
-        app.buttons["collection.row.0"].tap()
+        app.scrollViews["collection.screen"].swipeUp()
+        XCTAssertTrue(rows.1.isHittable)
+        rows.1.tap()
         XCTAssertTrue(app.scrollViews["plant.detail.screen"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["watering.complete"].exists)
         XCTAssertTrue(app.buttons["plant.detail.remedy"].exists)
