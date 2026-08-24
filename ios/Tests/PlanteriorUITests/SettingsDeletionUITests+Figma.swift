@@ -181,6 +181,11 @@ extension SettingsDeletionUITests {
         let email = app.staticTexts["settings.profile.email"]
         XCTAssertTrue(email.exists)
         XCTAssertEqual(email.label, "minji@email.com")
+        assertIconWellSize(
+            "settings.location.icon-well",
+            expectedSide: 44,
+            in: app
+        )
         attachScreenshot(named: "settings-korean-ax5-reduce-motion")
 
         let quietHours = app.buttons["settings.quiet-hours.open"]
@@ -199,6 +204,11 @@ extension SettingsDeletionUITests {
         quietHours.tap()
         let scroll = app.scrollViews["quiet-hours.screen"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        assertIconWellSize(
+            "quiet-hours.clock.icon-well",
+            expectedSide: 44,
+            in: app
+        )
         let enabled = app.switches["quiet-hours.enabled"]
         if enabled.value as? String != "1" {
             enabled.tap()

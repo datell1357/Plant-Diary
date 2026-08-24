@@ -37,9 +37,7 @@ struct SettingsWarningCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
             Image(systemName: "lightbulb")
-                .foregroundStyle(
-                    SettingsReferencePalette.warningForeground.color
-                )
+                .foregroundStyle(PlanteriorPalette.warning.color)
                 .frame(
                     width: SettingsReferenceMetrics.warningIconWidth,
                     height: PlanteriorSpacing.extraLarge
@@ -52,9 +50,7 @@ struct SettingsWarningCard: View {
                     : Self.referenceCopy
             )
             .font(PlanteriorTypography.caption.weight(.semibold))
-            .foregroundStyle(
-                SettingsReferencePalette.warningForeground.color
-            )
+            .foregroundStyle(PlanteriorPalette.warning.color)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("quiet-hours.warning-copy")
             .background {
@@ -74,12 +70,12 @@ struct SettingsWarningCard: View {
                 : SettingsReferenceMetrics.warningHeight,
             alignment: .leading
         )
-        .background(SettingsReferencePalette.warningBackground.color)
+        .background(PlanteriorPalette.warningSurface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .overlay {
             RoundedRectangle(cornerRadius: PlanteriorRadius.large)
                 .stroke(
-                    SettingsReferencePalette.warningBorder.color,
+                    PlanteriorPalette.border.color,
                     lineWidth: PlanteriorControl.hairline
                 )
         }

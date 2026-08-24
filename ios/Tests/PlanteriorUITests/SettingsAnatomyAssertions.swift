@@ -2,6 +2,23 @@ import XCTest
 
 @MainActor
 extension SettingsDeletionUITests {
+    func assertIconWellSize(
+        _ identifier: String,
+        expectedSide: CGFloat,
+        in app: XCUIApplication
+    ) {
+        let wells = app.descendants(matching: .any)
+            .matching(identifier: identifier)
+        // ViewThatFits can retain a non-selected branch in the AX tree; the
+        // last sentinel is the active Settings row owner.
+        let well = wells.count > 0
+            ? wells.element(boundBy: wells.count - 1)
+            : wells.firstMatch
+        XCTAssertTrue(well.exists, "missing icon well \(identifier)")
+        XCTAssertEqual(well.frame.width, expectedSide, accuracy: 1)
+        XCTAssertEqual(well.frame.height, expectedSide, accuracy: 1)
+    }
+
     func assertReferenceRootAnatomy(in app: XCUIApplication) {
         let wateringRow = app.descendants(matching: .any)[
             "settings.alerts.watering-enabled.row"
@@ -45,6 +62,11 @@ extension SettingsDeletionUITests {
         assertFrame(
             locationGlyph.frame,
             CGRect(x: 41, y: 461, width: 14, height: 18)
+        )
+        assertIconWellSize(
+            "settings.location.icon-well",
+            expectedSide: 32,
+            in: app
         )
     }
 
@@ -98,6 +120,11 @@ extension SettingsDeletionUITests {
         assertFrame(
             toggleRow.frame,
             CGRect(x: 20, y: 116, width: 362, height: 56)
+        )
+        assertIconWellSize(
+            "quiet-hours.clock.icon-well",
+            expectedSide: 32,
+            in: app
         )
         XCTAssertTrue(toggleVisual.exists)
         assertFrame(

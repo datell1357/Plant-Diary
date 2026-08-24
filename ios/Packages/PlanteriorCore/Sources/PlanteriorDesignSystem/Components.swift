@@ -167,17 +167,23 @@ public struct PlanteriorGroupedSurface<Content: View>: View {
     }
 }
 
-public struct PlanteriorIconWell: View {
+public struct PlanteriorIconWell<Content: View>: View {
     @Environment(\.sizeCategory) private var sizeCategory
-    private let systemImage: String
+    private let content: Content
 
-    public init(systemImage: String) {
-        self.systemImage = systemImage
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    public init(systemImage: String) where Content == Image {
+        self.init {
+            Image(systemName: systemImage)
+        }
     }
 
     public var body: some View {
         let side = PlanteriorControl.iconWellSize(for: sizeCategory)
-        Image(systemName: systemImage)
+        content
             .font(PlanteriorTypography.supporting)
             .foregroundStyle(PlanteriorPalette.accent.color)
             .frame(width: side, height: side)

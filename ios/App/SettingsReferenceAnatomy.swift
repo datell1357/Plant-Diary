@@ -6,12 +6,6 @@ enum SettingsIcon: Hashable {
     case system(String)
 }
 
-enum SettingsReferencePalette {
-    static let warningBackground = PlanteriorColorToken(hex: "#FEF3C7")
-    static let warningBorder = PlanteriorColorToken(hex: "#FDE68A")
-    static let warningForeground = PlanteriorColorToken(hex: "#D97706")
-}
-
 struct SettingsLayoutFrame: View {
     let identifier: String
 
@@ -27,24 +21,32 @@ struct SettingsIconWell: View {
     let icon: SettingsIcon
 
     var body: some View {
-        Group {
-            switch icon {
-            case .location:
+        switch icon {
+        case .location:
+            PlanteriorIconWell {
                 SettingsLocationGlyph(identifier: "settings.location-glyph")
                     .padding(.bottom, 2)
-            case let .system(name):
-                Image(systemName: name)
-                    .font(PlanteriorTypography.supporting)
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .accessibilityHidden(true)
             }
+            .background {
+                SettingsLayoutFrame(identifier: wellIdentifier)
+            }
+        case let .system(name):
+            PlanteriorIconWell(systemImage: name)
+                .background {
+                    SettingsLayoutFrame(identifier: wellIdentifier)
+                }
         }
-        .frame(
-            width: PlanteriorControl.iconWellSize,
-            height: PlanteriorControl.iconWellSize
-        )
-        .background(PlanteriorPalette.canvas.color)
-        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.small))
+    }
+
+    private var wellIdentifier: String {
+        switch icon {
+        case .location:
+            "settings.location.icon-well"
+        case .system("clock"):
+            "quiet-hours.clock.icon-well"
+        case let .system(name):
+            "settings.\(name).icon-well"
+        }
     }
 }
 
