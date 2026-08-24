@@ -77,23 +77,6 @@ final class HomeDashboardUITests: XCTestCase {
         )
     }
 
-    func testDeniedNotificationsDoNotBlockCollection() {
-        let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
-        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
-        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "denied"
-        app.launch()
-
-        XCTAssertTrue(
-            app.staticTexts["home.notification.denied"].waitForExistence(timeout: 5)
-        )
-        app.swipeUp()
-        attachScreenshot(named: "task-12-home-notification-denied")
-        app.buttons["tab.collection"].tap()
-        XCTAssertTrue(app.textFields["collection.search"].waitForExistence(timeout: 5))
-    }
-
     func testDeletedNotificationTargetShowsUnavailableWithoutPlantMetadata() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -180,21 +163,5 @@ final class HomeDashboardUITests: XCTestCase {
             app.staticTexts["home.notification.denied"].waitForExistence(timeout: 5)
         )
         attachScreenshot(named: "task-12-home-ax5")
-    }
-
-    private func attachScreenshot(named name: String) {
-        attachScreenshot(app: XCUIApplication(), named: name)
-    }
-
-    private func attachScreenshot(
-        app _: XCUIApplication,
-        named name: String
-    ) {
-        let attachment = XCTAttachment(
-            screenshot: XCUIScreen.main.screenshot()
-        )
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 }

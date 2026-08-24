@@ -37,13 +37,21 @@ extension AppLaunchUITests {
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
 
-        let nickname = app.textFields["plant.detail.nickname"]
-        XCTAssertTrue(nickname.waitForExistence(timeout: 5))
-        XCTAssertEqual(nickname.value as? String, "몬스테라")
+        XCTAssertTrue(
+            app.scrollViews["plant.detail.screen"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.images["plant.detail.hero"].exists)
+        XCTAssertTrue(app.buttons["plant.detail.edit"].exists)
+        XCTAssertFalse(app.textFields["plant.detail.nickname"].exists)
         XCTAssertFalse(app.otherElements["plant.detail"].exists)
         XCTAssertFalse(
             app.staticTexts["notification.scheduled-count"].exists
         )
+
+        app.buttons["plant.detail.edit"].tap()
+        let nickname = app.textFields["plant.detail.nickname"]
+        XCTAssertTrue(nickname.waitForExistence(timeout: 5))
+        XCTAssertEqual(nickname.value as? String, "몬스테라")
     }
 
     func testUnavailableURLsFallBackWithoutMetadata() {

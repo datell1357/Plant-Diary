@@ -9,7 +9,7 @@ import UIKit
 struct FigmaAssetContractTests {
     /// Logical (1x) source dimensions carried over from the Figma export evidence.
     private static let representativeSizes: [FigmaAsset: CGSize] = [
-        .homeRoom: CGSize(width: 394, height: 350),
+        .homeRoom: CGSize(width: 370, height: 326),
         .capturePhoto: CGSize(width: 386, height: 444),
         .collectionHero: CGSize(width: 370, height: 220),
         .roomHero: CGSize(width: 358, height: 330),

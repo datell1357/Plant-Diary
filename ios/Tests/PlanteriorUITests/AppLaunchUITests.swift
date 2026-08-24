@@ -43,6 +43,7 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["settings.profile.email"].label, "minji@email.com")
         app.buttons["settings.milestones"].tap()
         XCTAssertTrue(app.scrollViews["milestones.screen"].waitForExistence(timeout: 5))
+        attachScreenshot(app, named: "shell-milestone-402")
 
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
@@ -52,6 +53,7 @@ final class AppLaunchUITests: XCTestCase {
         app.buttons["capture.close"].tap()
         XCTAssertTrue(app.otherElements["capture.camera"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
+        attachScreenshot(app, named: "shell-camera-return-402")
     }
 
     func testCanonicalSharedTabsRemainFunctionalAcrossRepresentativeDomains() {
@@ -81,25 +83,11 @@ final class AppLaunchUITests: XCTestCase {
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launch()
 
-        for identifier in [
-            "tab.home",
-            "tab.collection",
-            "tab.camera",
-            "tab.storage",
-            "tab.settings"
-        ] {
-            let control = app.buttons[identifier]
-            XCTAssertTrue(control.waitForExistence(timeout: 5), "\(identifier) should exist")
-            XCTAssertTrue(control.isHittable, "\(identifier) should have a hittable target")
-            XCTAssertGreaterThanOrEqual(
-                control.frame.height,
-                44,
-                "\(identifier) should preserve its minimum target"
-            )
-        }
+        assertPrimaryNavigationControls(in: app)
 
         let ordinaryTab = app.buttons["tab.home"]
         let camera = app.buttons["tab.camera"]
+        let homeScreen = app.scrollViews["home.screen"]
         let expectedSurfaceMinimumY = app.frame.maxY - 84
         XCTAssertGreaterThanOrEqual(
             ordinaryTab.frame.minY,
@@ -122,6 +110,16 @@ final class AppLaunchUITests: XCTestCase {
             app.frame.maxY - 14,
             "the raised camera should leave the home-indicator edge clear"
         )
+        XCTAssertLessThanOrEqual(
+            homeScreen.frame.maxY,
+            ordinaryTab.frame.minY,
+            "the in-flow shell must keep navigation content above tab hit targets"
+        )
+        print(
+            "SHELL_GEOMETRY viewport=\(app.frame) home=\(homeScreen.frame) "
+                + "tab=\(ordinaryTab.frame) camera=\(camera.frame)"
+        )
+        attachScreenshot(app, named: "shell-responsive")
     }
 
     func testReduceMotionLaunchContract() {
@@ -218,9 +216,43 @@ final class AppLaunchUITests: XCTestCase {
         app.buttons["photo.acknowledge"].tap()
         XCTAssertTrue(app.alerts["사진 처리 안내"].waitForExistence(timeout: 5))
         app.alerts["사진 처리 안내"].buttons["취소"].tap()
+        XCTAssertTrue(app.otherElements["capture.photo-review"].exists)
         XCTAssertTrue(app.images["photo.review"].exists)
+        XCTAssertTrue(app.buttons["photo.acknowledge"].exists)
         XCTAssertTrue(app.buttons["photo.retake"].exists)
-        XCTAssertTrue(app.buttons["photo.replace"].exists)
+        XCTAssertFalse(app.buttons["photo.replace"].exists)
+        XCTAssertFalse(app.buttons["photo.manual"].exists)
+    }
+
+    private func assertPrimaryNavigationControls(
+        in app: XCUIApplication
+    ) {
+        for identifier in [
+            "tab.home",
+            "tab.collection",
+            "tab.camera",
+            "tab.storage",
+            "tab.settings"
+        ] {
+            let control = app.buttons[identifier]
+            XCTAssertTrue(control.waitForExistence(timeout: 5), "\(identifier) should exist")
+            XCTAssertTrue(control.isHittable, "\(identifier) should have a hittable target")
+            XCTAssertGreaterThanOrEqual(
+                control.frame.height,
+                44,
+                "\(identifier) should preserve its minimum target"
+            )
+        }
+    }
+
+    private func attachScreenshot(
+        _ app: XCUIApplication,
+        named name: String
+    ) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testDeniedCameraAndCorruptPhotoPreserveFallbackActions() {

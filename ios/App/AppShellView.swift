@@ -23,31 +23,26 @@ struct AppShellView: View {
 
     var body: some View {
         ZStack {
-            tabContent
-                .allowsHitTesting(!showsLogin)
-                .accessibilityHidden(showsLogin)
-
-            if showsLogin {
-                LoginSheet(auth: auth) {
-                    showsLogin = false
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                PlanteriorPalette.canvas.color
-                    .frame(height: PlanteriorSpacing.extraLarge)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                tabContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 AppTabBar(
                     selectedTab: navigation.selectedTab,
                     selectTab: requestTab,
                     presentCamera: requestCamera
                 )
-                .allowsHitTesting(!showsLogin)
-                .accessibilityHidden(showsLogin)
+                .padding(.top, PlanteriorSpacing.extraLarge)
+                .background(PlanteriorPalette.canvas.color)
+            }
+            .allowsHitTesting(!showsLogin)
+            .accessibilityHidden(showsLogin)
+
+            if showsLogin {
+                LoginSheet(auth: auth) {
+                    showsLogin = false
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(PlanteriorPalette.canvas.color)

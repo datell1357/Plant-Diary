@@ -6,6 +6,7 @@ extension AppLaunchUITests {
     func testSignedOutShellInterceptsEveryTabAndCameraWithLogin() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "0"
         app.launch()
 
         XCTAssertTrue(app.otherElements["app.shell"].waitForExistence(timeout: 5))
@@ -27,6 +28,12 @@ extension AppLaunchUITests {
                 "\(identifier) should present the login sheet"
             )
             XCTAssertFalse(app.otherElements["capture.camera"].exists)
+            if identifier == "tab.camera" {
+                let attachment = XCTAttachment(screenshot: app.screenshot())
+                attachment.name = "shell-signed-out-login-402"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
             app.buttons["auth.cancel"].tap()
             XCTAssertTrue(app.buttons["auth.apple"].waitForNonExistence(timeout: 5))
             XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
