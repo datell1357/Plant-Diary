@@ -180,6 +180,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
             )
             return
         }
+        attachScreenshot(named: "collection-empty-before-camera")
         camera.tap()
         XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
         app.buttons["capture.close"].tap()
@@ -191,7 +192,6 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["tab.home"].exists)
         assertCollectionHeadingMatchesReference(in: app)
-        attachScreenshot(named: "collection-empty-402x874")
     }
 
     func testFigmaKoreanAX5ListAndDetailRemainScrollable() {
