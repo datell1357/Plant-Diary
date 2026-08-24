@@ -30,7 +30,10 @@ extension SettingsView {
     private var profileAvatar: some View {
         Text("🌿")
             .font(.system(size: 28))
-            .frame(width: 60, height: 60)
+            .frame(
+                width: SettingsReferenceMetrics.profileAvatarSize,
+                height: SettingsReferenceMetrics.profileAvatarSize
+            )
             .background(PlanteriorPalette.accentSurface.color)
             .clipShape(Circle())
             .accessibilityHidden(true)

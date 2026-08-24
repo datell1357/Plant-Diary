@@ -18,7 +18,21 @@ extension SettingsDeletionUITests {
         XCTAssertTrue(app.staticTexts["계정"].exists)
         XCTAssertTrue(app.buttons["settings.privacy"].isHittable)
         XCTAssertTrue(app.staticTexts["앱 버전"].isHittable)
+        XCTAssertTrue(app.staticTexts["v1.0.0"].exists)
         XCTAssertTrue(app.buttons["auth.logout"].isHittable)
+
+        let rootBack = app.buttons["settings.back"]
+        let rootTopBar = app.otherElements["settings.top-bar"]
+        let rootBody = app.scrollViews["settings.screen"]
+        XCTAssertTrue(rootBack.isHittable)
+        XCTAssertEqual(rootBack.frame.minX, 16, accuracy: 1)
+        XCTAssertEqual(rootBack.frame.minY, 50, accuracy: 2)
+        XCTAssertEqual(rootBack.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(rootBack.frame.height, 44, accuracy: 1)
+        XCTAssertEqual(rootTopBar.frame.minY, 44, accuracy: 1)
+        XCTAssertEqual(rootTopBar.frame.height, 56, accuracy: 1)
+        XCTAssertEqual(rootBody.frame.minY, 100, accuracy: 1)
+        XCTAssertEqual(rootBody.frame.maxY, 874, accuracy: 1)
         attachScreenshot(named: "settings-402x874-light")
 
         app.buttons["settings.quiet-hours.open"].tap()
@@ -29,11 +43,28 @@ extension SettingsDeletionUITests {
         let toggle = app.switches["quiet-hours.enabled"]
         let start = app.datePickers["quiet-hours.start"]
         let end = app.datePickers["quiet-hours.end"]
+        let quietTopBar = app.otherElements["quiet-hours.top-bar"]
+        let quietBody = app.scrollViews["quiet-hours.screen"]
+        let warning = app.otherElements["quiet-hours.warning"]
+        let save = app.buttons["quiet-hours.save"]
         XCTAssertEqual(toggle.value as? String, "0")
         XCTAssertFalse(start.isEnabled)
         XCTAssertFalse(end.isEnabled)
         XCTAssertEqual(start.value as? String, "22:00:00")
         XCTAssertEqual(end.value as? String, "07:00:00")
+        XCTAssertEqual(quietTopBar.frame.minY, 44, accuracy: 1)
+        XCTAssertEqual(quietTopBar.frame.height, 56, accuracy: 1)
+        XCTAssertEqual(quietBody.frame.minY, 100, accuracy: 1)
+        XCTAssertEqual(quietBody.frame.maxY, 769, accuracy: 1)
+        XCTAssertEqual(warning.frame.minX, 20, accuracy: 1)
+        XCTAssertEqual(warning.frame.minY, 397, accuracy: 2)
+        XCTAssertEqual(warning.frame.width, 362, accuracy: 1)
+        XCTAssertEqual(warning.frame.height, 80, accuracy: 1)
+        XCTAssertEqual(save.frame.minX, 20, accuracy: 1)
+        XCTAssertEqual(save.frame.minY, 780, accuracy: 1)
+        XCTAssertEqual(save.frame.width, 362, accuracy: 1)
+        XCTAssertEqual(save.frame.height, 48, accuracy: 1)
+        XCTAssertEqual(save.frame.maxY, 828, accuracy: 1)
         attachScreenshot(named: "quiet-hours-402x874-light")
 
         toggle.tap()
@@ -143,9 +174,18 @@ extension SettingsDeletionUITests {
         attachScreenshot(named: "settings-korean-ax5-reduce-motion")
 
         let quietHours = app.buttons["settings.quiet-hours.open"]
-        if !quietHours.isHittable {
-            app.swipeUp()
+        let settingsScroll = app.scrollViews["settings.screen"]
+        let tabBarControl = app.buttons["tab.settings"]
+        var scrollCount = 0
+        while (
+            !quietHours.isHittable
+                || quietHours.frame.intersects(tabBarControl.frame)
+        ), scrollCount < 6 {
+            settingsScroll.swipeUp()
+            scrollCount += 1
         }
+        XCTAssertTrue(quietHours.isHittable)
+        XCTAssertFalse(quietHours.frame.intersects(tabBarControl.frame))
         quietHours.tap()
         let scroll = app.scrollViews["quiet-hours.screen"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))

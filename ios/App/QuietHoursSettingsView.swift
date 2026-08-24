@@ -30,12 +30,16 @@ struct QuietHoursSettingsView: View {
         VStack(spacing: 0) {
             topBar
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(
+                    alignment: .leading,
+                    spacing: PlanteriorSpacing.extraLarge
+                ) {
                     toggleCard
                     Text("설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다.")
                         .font(PlanteriorTypography.caption)
                         .foregroundStyle(PlanteriorPalette.textSecondary.color)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, PlanteriorSpacing.small)
                     VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                         Text("시간 범위 설정")
                             .font(PlanteriorTypography.caption.weight(.semibold))
@@ -44,37 +48,31 @@ struct QuietHoursSettingsView: View {
                     }
                     warningCard
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, PlanteriorSpacing.medium)
+                .padding(.horizontal, PlanteriorSpacing.extraLarge)
+                .padding(.top, PlanteriorSpacing.large)
                 .padding(.bottom, PlanteriorSpacing.large)
             }
             .accessibilityIdentifier("quiet-hours.screen")
+            .settingsReferenceBody()
             saveBar
         }
-        .background(PlanteriorPalette.canvas.color)
+        .settingsReferenceChrome()
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
 
     private var topBar: some View {
         PlanteriorTopBar("알림 금지 시간 설정", leading: {
-            if showsCloseButton {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(
-                            width: PlanteriorControl.minimumTarget,
-                            height: PlanteriorControl.minimumTarget
-                        )
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .accessibilityLabel("뒤로")
-                .accessibilityIdentifier("quiet-hours.back")
+            SettingsBackButton(identifier: "quiet-hours.back") {
+                dismiss()
             }
         }, trailing: {
             EmptyView()
         })
+        .background {
+            SettingsTopBarFrame(identifier: "quiet-hours.top-bar")
+        }
+        .settingsReferenceTopBar()
     }
 
     private var toggleCard: some View {
@@ -87,7 +85,7 @@ struct QuietHoursSettingsView: View {
                     .accessibilityIdentifier("quiet-hours.enabled")
             }
             .padding(.horizontal, PlanteriorSpacing.large)
-            .frame(minHeight: 56)
+            .frame(minHeight: PlanteriorControl.rowHeight)
         }
     }
 
@@ -102,17 +100,44 @@ struct QuietHoursSettingsView: View {
 
     private var warningCard: some View {
         PlanteriorCard(variant: .warning) {
-            HStack(alignment: .top, spacing: PlanteriorSpacing.medium) {
+            HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
                 Image(systemName: "lightbulb")
                     .foregroundStyle(PlanteriorPalette.warning.color)
-                    .frame(width: 20, height: 20)
+                    .frame(
+                        width: PlanteriorSpacing.extraLarge,
+                        height: PlanteriorSpacing.extraLarge
+                    )
                     .accessibilityHidden(true)
-                Text("태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는 기상 특보 및 재난 알림은 시간 설정과 관계없이 즉시 발송됩니다.")
+                Text(
+                    sizeCategory.isAccessibilityCategory
+                        ? "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는 기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이 즉시 발송됩니다."
+                        : "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는\n기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이\n즉시 발송됩니다."
+                )
                     .font(PlanteriorTypography.caption.weight(.semibold))
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .foregroundStyle(PlanteriorPalette.warning.color)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(
+                maxWidth: .infinity,
+                minHeight: SettingsReferenceMetrics.saveButtonHeight,
+                alignment: .leading
+            )
         }
+        .overlay {
+            RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                .stroke(
+                    PlanteriorPalette.warning.color,
+                    lineWidth: PlanteriorControl.hairline
+                )
+        }
+        .frame(
+            minHeight: SettingsReferenceMetrics.warningHeight,
+            maxHeight: sizeCategory.isAccessibilityCategory
+                ? nil
+                : SettingsReferenceMetrics.warningHeight
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("quiet-hours.warning")
     }
 
     @ViewBuilder
@@ -156,7 +181,7 @@ struct QuietHoursSettingsView: View {
             )
             .datePickerStyle(.compact)
             .padding(.horizontal, PlanteriorSpacing.large)
-            .frame(minHeight: 52)
+            .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)
             .disabled(!enabled)
             .accessibilityValue(
                 QuietHoursPresentation.localTime(from: selection.wrappedValue)?
@@ -167,14 +192,26 @@ struct QuietHoursSettingsView: View {
     }
 
     private var saveBar: some View {
-        PlanteriorPrimaryButton("저장하기", action: save)
-            .accessibilityIdentifier("quiet-hours.save")
-            .padding(.horizontal, 20)
-            .padding(.vertical, 11)
-            .background(PlanteriorPalette.canvas.color)
-            .overlay(alignment: .top) {
-                Divider()
-            }
+        Button(action: save) {
+            Text("저장하기")
+                .font(PlanteriorTypography.body.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(height: SettingsReferenceMetrics.saveButtonHeight)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+        .background(PlanteriorPalette.accent.color)
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
+        .accessibilityIdentifier("quiet-hours.save")
+        .padding(.horizontal, PlanteriorSpacing.extraLarge)
+        .padding(
+            .vertical,
+            SettingsReferenceMetrics.saveBarVerticalInset
+        )
+        .background(PlanteriorPalette.surface.color)
+        .overlay(alignment: .top) {
+            Divider()
+        }
     }
 
     private func save() {

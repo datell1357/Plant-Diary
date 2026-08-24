@@ -6,6 +6,7 @@ import UserNotifications
 
 struct SettingsView: View {
     let openMilestones: () -> Void
+    @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) var openURL
     @EnvironmentObject var auth: AuthRuntime
     @StateObject var weather = WeatherRuntime()
@@ -20,9 +21,20 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PlanteriorTopBar("설정")
+            PlanteriorTopBar("설정", leading: {
+                SettingsBackButton(identifier: "settings.back") {
+                    dismiss()
+                }
+            })
+            .background {
+                SettingsTopBarFrame(identifier: "settings.top-bar")
+            }
+            .settingsReferenceTopBar()
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(
+                    alignment: .leading,
+                    spacing: SettingsReferenceMetrics.rootGroupSpacing
+                ) {
                     profileCard
                     alertGroup
                     environmentGroup
@@ -30,12 +42,13 @@ struct SettingsView: View {
                     operationalGroup
                 }
                 .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.top, PlanteriorSpacing.extraSmall)
+                .padding(.top, PlanteriorSpacing.small)
                 .padding(.bottom, PlanteriorSpacing.large)
             }
             .accessibilityIdentifier("settings.screen")
+            .settingsReferenceBody()
         }
-        .background(PlanteriorPalette.canvas.color)
+        .settingsReferenceChrome()
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task {

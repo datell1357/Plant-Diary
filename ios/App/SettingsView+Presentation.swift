@@ -117,7 +117,13 @@ extension SettingsView {
     }
 
     var appVersion: String {
-        "v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")"
+        let version = Bundle.main.infoDictionary?[
+            "CFBundleShortVersionString"
+        ] as? String ?? "1.0"
+        let normalizedVersion = version.split(separator: ".").count == 2
+            ? "\(version).0"
+            : version
+        return "v\(normalizedVersion)"
     }
 }
 

@@ -41,48 +41,47 @@ struct RegionSettingsView: View {
         VStack(spacing: 0) {
             topBar
             ScrollView {
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
+                VStack(alignment: .leading, spacing: 0) {
                     searchField
+                    Spacer().frame(height: PlanteriorSpacing.extraLarge)
                     currentLocationCard
+                    Spacer().frame(height: PlanteriorSpacing.extraLarge)
                     Text("최근 검색 지역")
                         .font(PlanteriorTypography.caption.weight(.semibold))
                         .foregroundStyle(PlanteriorPalette.textSecondary.color)
                         .accessibilityIdentifier("weather.recent-regions")
+                    Spacer().frame(
+                        height: SettingsReferenceMetrics.regionRecentGap
+                    )
                     regionCard
                     #if DEBUG
                         revokeLocationButton
                     #endif
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, PlanteriorSpacing.small)
+                .padding(.horizontal, PlanteriorSpacing.extraLarge)
+                .padding(.top, PlanteriorSpacing.large)
                 .padding(.bottom, PlanteriorSpacing.large)
             }
             .accessibilityIdentifier("region-settings.screen")
+            .settingsReferenceBody()
         }
-        .background(PlanteriorPalette.canvas.color)
+        .settingsReferenceChrome()
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
 
     private var topBar: some View {
         PlanteriorTopBar("관리 지역 설정", leading: {
-            if showsCloseButton {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(
-                            width: PlanteriorControl.minimumTarget,
-                            height: PlanteriorControl.minimumTarget
-                        )
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .accessibilityLabel("뒤로")
-                .accessibilityIdentifier("weather.region.back")
+            SettingsBackButton(identifier: "weather.region.back") {
+                dismiss()
             }
         }, trailing: {
             EmptyView()
         })
+        .background {
+            SettingsTopBarFrame(identifier: "region-settings.top-bar")
+        }
+        .settingsReferenceTopBar()
     }
 
     #if DEBUG

@@ -3,7 +3,7 @@ import SwiftUI
 
 extension RegionSettingsView {
     var searchField: some View {
-        HStack(spacing: PlanteriorSpacing.medium) {
+        HStack(spacing: PlanteriorSpacing.small) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(PlanteriorPalette.textTertiary.color)
                 .accessibilityHidden(true)
@@ -13,14 +13,17 @@ extension RegionSettingsView {
             if !regionQuery.isEmpty {
                 Button { regionQuery = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .frame(width: 44, height: 44)
+                        .frame(
+                            width: PlanteriorControl.minimumTarget,
+                            height: PlanteriorControl.minimumTarget
+                        )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("검색어 지우기")
             }
         }
         .padding(.leading, PlanteriorSpacing.large)
-        .frame(minHeight: 48)
+        .frame(height: SettingsReferenceMetrics.regionSearchHeight)
         .background(PlanteriorPalette.surface.color)
         .clipShape(Capsule())
         .overlay {
@@ -39,11 +42,15 @@ extension RegionSettingsView {
             onSaved()
             weather.requestLocationPermission()
         } label: {
-            HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.medium) {
-                PlanteriorIconWell(systemImage: "mappin")
-                    .alignmentGuide(.firstTextBaseline) { dimensions in
-                        dimensions[VerticalAlignment.center]
-                    }
+            HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
+                Image(systemName: "mappin.circle.fill")
+                    .font(PlanteriorTypography.supporting)
+                    .foregroundStyle(PlanteriorPalette.accent.color)
+                    .frame(
+                        width: PlanteriorSpacing.large,
+                        height: PlanteriorSpacing.extraLarge
+                    )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                     Text("현재 위치로 설정")
                         .font(PlanteriorTypography.cardTitle)
@@ -58,16 +65,23 @@ extension RegionSettingsView {
                         ? "checkmark"
                         : "arrow.clockwise"
                 )
-                .foregroundStyle(PlanteriorPalette.accent.color)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .accessibilityHidden(true)
             }
             .padding(PlanteriorSpacing.large)
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: SettingsReferenceMetrics.regionCurrentLocationHeight,
+                alignment: .leading
+            )
             .background(PlanteriorPalette.surface.color)
             .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
             .overlay {
                 RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                    .stroke(PlanteriorPalette.border.color, lineWidth: 1)
+                    .stroke(
+                        PlanteriorPalette.border.color,
+                        lineWidth: PlanteriorControl.hairline
+                    )
             }
         }
         .buttonStyle(.plain)
@@ -80,7 +94,7 @@ extension RegionSettingsView {
             ForEach(Array(filteredRegions.enumerated()), id: \.element.code) { index, region in
                 regionRow(region)
                 if index < filteredRegions.count - 1 {
-                    Divider().padding(.leading, PlanteriorSpacing.large)
+                    Divider()
                 }
             }
         }
@@ -94,7 +108,7 @@ extension RegionSettingsView {
             weather.setManualRegion(region.code)
             onSaved()
         } label: {
-            HStack(spacing: PlanteriorSpacing.medium) {
+            HStack(spacing: PlanteriorSpacing.small) {
                 if selected {
                     Image(systemName: "checkmark")
                         .foregroundStyle(PlanteriorPalette.accent.color)
@@ -123,7 +137,7 @@ extension RegionSettingsView {
                 }
             }
             .padding(.horizontal, PlanteriorSpacing.large)
-            .frame(minHeight: PlanteriorControl.rowHeight)
+            .frame(height: SettingsReferenceMetrics.regionRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
