@@ -66,7 +66,7 @@ struct DesignTokenTests {
     func sharedChromeGeometryMatchesFigmaReference() {
         #expect(PlanteriorLayout.contentGutter == 16)
         #expect(PlanteriorLayout.topBarHeight == 56)
-        #expect(PlanteriorLayout.tabBarHeight == 64)
+        #expect(PlanteriorLayout.tabBarHeight == 50)
         #expect(PlanteriorLayout.bottomPanelContentHeight == 306)
         #expect(PlanteriorLayout.bottomPanelTotalHeight == 404)
         #expect(
@@ -79,6 +79,20 @@ struct DesignTokenTests {
         #expect(PlanteriorLayout.mediaThumbnailSize == 48)
         #expect(PlanteriorLayout.floatingActionSize == 56)
         #expect(PlanteriorLayout.floatingActionInset == 16)
+    }
+
+    @Test
+    func sharedTabSurfaceUsesCanonicalComponentGeometry() {
+        let referenceCanvasHeight: CGFloat = 874
+        let systemBottomSafeArea: CGFloat = 34
+        let expectedSurfaceMinimumY: CGFloat = 790
+        let actualSurfaceMinimumY = referenceCanvasHeight
+            - systemBottomSafeArea
+            - PlanteriorLayout.tabBarHeight
+
+        #expect(actualSurfaceMinimumY == expectedSurfaceMinimumY)
+        #expect(PlanteriorControl.minimumTarget >= 44)
+        #expect(PlanteriorControl.cameraDiameter == 52)
     }
 
     @Test

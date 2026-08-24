@@ -57,8 +57,8 @@ public enum PlanteriorSpacing {
 public enum PlanteriorLayout {
     public static let contentGutter: CGFloat = 16
     public static let topBarHeight: CGFloat = 56
-    /// The visible tab controls above the system home-indicator safe area.
-    public static let tabBarHeight: CGFloat = 64
+    /// Canonical app-owned tab content above the system home-indicator safe area.
+    public static let tabBarHeight: CGFloat = 50
     /// Visible sheet content above the shell tab bar in the 402x874 reference.
     public static let bottomPanelContentHeight: CGFloat = 306
     /// Full white bottom-panel footprint, including the 98pt tab/home-indicator region.

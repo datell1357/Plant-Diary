@@ -54,6 +54,27 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
     }
 
+    func testCanonicalSharedTabsRemainFunctionalAcrossRepresentativeDomains() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        app.launch()
+
+        XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
+        app.buttons["tab.collection"].tap()
+        XCTAssertTrue(app.scrollViews["collection.screen"].waitForExistence(timeout: 5))
+        app.buttons["tab.storage"].tap()
+        XCTAssertTrue(app.scrollViews["storage.screen"].waitForExistence(timeout: 5))
+        app.buttons["tab.home"].tap()
+        XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
+        app.buttons["tab.camera"].tap()
+        XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
+        app.buttons["capture.close"].tap()
+        XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
+    }
+
     func testEveryPrimaryNavigationControlIsReachable() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -70,7 +91,37 @@ final class AppLaunchUITests: XCTestCase {
             let control = app.buttons[identifier]
             XCTAssertTrue(control.waitForExistence(timeout: 5), "\(identifier) should exist")
             XCTAssertTrue(control.isHittable, "\(identifier) should have a hittable target")
+            XCTAssertGreaterThanOrEqual(
+                control.frame.height,
+                44,
+                "\(identifier) should preserve its minimum target"
+            )
         }
+
+        let ordinaryTab = app.buttons["tab.home"]
+        let camera = app.buttons["tab.camera"]
+        let expectedSurfaceMinimumY = app.frame.maxY - 84
+        XCTAssertGreaterThanOrEqual(
+            ordinaryTab.frame.minY,
+            expectedSurfaceMinimumY,
+            "ordinary tab targets should remain inside the shared surface"
+        )
+        XCTAssertLessThanOrEqual(
+            ordinaryTab.frame.maxY,
+            app.frame.maxY - 14,
+            "tab targets should leave the system home-indicator edge clear"
+        )
+        XCTAssertGreaterThanOrEqual(camera.frame.height, 52)
+        XCTAssertLessThan(
+            camera.frame.minY,
+            ordinaryTab.frame.minY,
+            "the camera action should remain visibly raised"
+        )
+        XCTAssertLessThanOrEqual(
+            camera.frame.maxY,
+            app.frame.maxY - 14,
+            "the raised camera should leave the home-indicator edge clear"
+        )
     }
 
     func testReduceMotionLaunchContract() {

@@ -35,13 +35,20 @@ struct AppShellView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            AppTabBar(
-                selectedTab: navigation.selectedTab,
-                selectTab: requestTab,
-                presentCamera: requestCamera
-            )
-            .allowsHitTesting(!showsLogin)
-            .accessibilityHidden(showsLogin)
+            VStack(spacing: 0) {
+                PlanteriorPalette.canvas.color
+                    .frame(height: PlanteriorSpacing.extraLarge)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
+                AppTabBar(
+                    selectedTab: navigation.selectedTab,
+                    selectTab: requestTab,
+                    presentCamera: requestCamera
+                )
+                .allowsHitTesting(!showsLogin)
+                .accessibilityHidden(showsLogin)
+            }
         }
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveShellSizeCategory)
