@@ -22,7 +22,11 @@ extension HomeDashboardView {
                     notificationButton
                 }
             }
+            // The title's visible line owns a 20pt track while its button keeps
+            // the 44pt hit target and may extend beyond that layout track. This
+            // preserves the Figma media cadence without negative section gaps.
             titleRow
+                .frame(height: PlanteriorSpacing.extraLarge, alignment: .leading)
         }
         .padding(.horizontal, PlanteriorSpacing.extraSmall)
         .accessibilityElement(children: .contain)

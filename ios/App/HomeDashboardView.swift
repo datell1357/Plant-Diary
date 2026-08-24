@@ -30,10 +30,11 @@ struct HomeDashboardView: View {
     /// `home.screen` is the single vertical scroll owner for the whole Home
     /// surface; nothing below it introduces a second scroll view.
     var body: some View {
-        ZStack {
-            homeSurface
-            renameDialog
-        }
+        homeSurface
+            .fullScreenCover(isPresented: $isRenamePresented) {
+                renameDialog
+                    .presentationBackground(.clear)
+            }
     }
 
     private var homeSurface: some View {
@@ -42,11 +43,10 @@ struct HomeDashboardView: View {
                 homeHeader
                 signingInIndicator
                 miniHomeSection
-                    .padding(.top, -19)
                 weatherWarningBanner
                     .padding(.top, PlanteriorSpacing.large)
                 careSection
-                    .padding(.top, 9)
+                    .padding(.top, PlanteriorSpacing.small)
                 if authenticationState == .authenticated {
                     weatherSection
                         .id("home.weather.section")
@@ -58,7 +58,6 @@ struct HomeDashboardView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, -8)
             .padding(.bottom, PlanteriorSpacing.large)
         }
         .contentMargins(
@@ -66,6 +65,7 @@ struct HomeDashboardView: View {
             PlanteriorLayout.contentGutter,
             for: .scrollContent
         )
+        .contentMargins(.top, 0, for: .scrollContent)
         .accessibilityIdentifier("home.screen")
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveSizeCategory)

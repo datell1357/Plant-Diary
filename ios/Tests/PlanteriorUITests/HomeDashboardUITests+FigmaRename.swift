@@ -15,10 +15,28 @@ extension HomeDashboardUITests {
         app.launch()
 
         XCTAssertTrue(app.buttons["home.room.title"].waitForExistence(timeout: 10))
+        let tabFrame = app.buttons["tab.home"].frame
         app.buttons["home.room.title"].tap()
 
+        let overlay = app.descendants(matching: .any)["home.rename.overlay"]
         let dialog = app.descendants(matching: .any)["home.rename.dialog"]
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
         XCTAssertTrue(dialog.waitForExistence(timeout: 5))
+        XCTAssertEqual(overlay.frame.minX, 0, accuracy: 1)
+        XCTAssertEqual(overlay.frame.minY, 0, accuracy: 1)
+        XCTAssertEqual(overlay.frame.width, 402, accuracy: 1)
+        XCTAssertEqual(overlay.frame.height, 874, accuracy: 1)
+        XCTAssertTrue(
+            overlay.frame.contains(
+                CGPoint(x: tabFrame.midX, y: tabFrame.midY)
+            ),
+            "the dimmed modal overlay must own the shell and cover tab chrome"
+        )
+        XCTAssertFalse(
+            app.buttons["tab.home"].isHittable,
+            "tab chrome must not remain interactive above the rename dimmer"
+        )
+        XCTAssertEqual(dialog.frame.minY, 340, accuracy: 1)
         XCTAssertEqual(app.staticTexts["home.rename.title"].label, "홈피 이름 변경")
 
         let input = app.textFields["home.rename.input"]

@@ -10,6 +10,29 @@ import XCTest
 /// screenshot. Assertions here stay structural (identifier, hittability,
 /// stacking order) so the harness never pins copy or pixel geometry.
 extension HomeDashboardUITests {
+    func testCaptureAuthenticatedHomeState() {
+        let app = XCUIApplication()
+        applyAuthenticatedFigmaLaunch(app)
+        app.launch()
+
+        let greeting = app.staticTexts["home.greeting"]
+        XCTAssertTrue(greeting.waitForExistence(timeout: 10))
+        XCTAssertEqual(greeting.label, "안녕하세요, 민지님!")
+        XCTAssertEqual(app.buttons["home.room.title"].label, "민지의 미니 식물원 🏡")
+        attachFigmaScreenshot(named: "home-authenticated")
+    }
+
+    func testCaptureLoggedOutHomeState() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "0"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["home.greeting"].waitForExistence(timeout: 10))
+        attachFigmaScreenshot(named: "home-logged-out")
+    }
+
     func testCaptureRenameFreeState() {
         let app = XCUIApplication()
         applyAuthenticatedFigmaLaunch(app)
@@ -34,6 +57,10 @@ extension HomeDashboardUITests {
     func testCaptureSignInSheetState() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchArguments += [
+            "-AppleLanguages", "(ko)",
+            "-AppleLocale", "ko_KR"
+        ]
         app.launch()
 
         let link = app.buttons["home.login.link"]
@@ -45,6 +72,8 @@ extension HomeDashboardUITests {
         XCTAssertTrue(google.waitForExistence(timeout: 5))
         XCTAssertTrue(apple.exists)
         XCTAssertLessThan(google.frame.minY, apple.frame.minY)
+        XCTAssertEqual(google.label, "Google로 계속하기")
+        XCTAssertEqual(apple.label, "Apple로 계속하기")
         attachFigmaScreenshot(named: "home-sign-in-sheet")
     }
 

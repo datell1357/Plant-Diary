@@ -5,21 +5,21 @@ import SwiftUI
 extension HomeDashboardView {
     /// Figma `modal-overlay` §6.9. Free and paid share every dimension; only the
     /// trailing cost affordance on the save button changes.
-    @ViewBuilder
     var renameDialog: some View {
-        if isRenamePresented {
-            ZStack {
-                Color.black.opacity(PlanteriorOpacity.dimmer)
-                    .ignoresSafeArea()
-                    .onTapGesture(perform: dismissRename)
-                    .accessibilityHidden(true)
-                dialogCard
-                    .offset(y: 26)
-            }
-            .transition(
-                effectiveReduceMotion ? .identity : .opacity
-            )
+        ZStack {
+            Color.black.opacity(PlanteriorOpacity.dimmer)
+                .ignoresSafeArea()
+                .onTapGesture(perform: dismissRename)
+                .accessibilityHidden(true)
+            dialogCard
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.rename.overlay")
+        .transition(
+            effectiveReduceMotion ? .identity : .opacity
+        )
     }
 
     private var dialogCard: some View {
@@ -114,6 +114,7 @@ extension HomeDashboardView {
                         Text("저장")
                             .font(PlanteriorTypography.supporting.weight(.semibold))
                         costAffordance
+                        paidBalanceAffordance
                     }
                     .padding(.vertical, PlanteriorSpacing.small)
                     .fixedSize(horizontal: false, vertical: true)
@@ -150,13 +151,26 @@ extension HomeDashboardView {
                 .foregroundStyle(PlanteriorPalette.textOnAccent.color.opacity(0.7))
                 .accessibilityIdentifier("home.rename.cost")
         case let .paid(cost, _), let .insufficient(cost, _):
-            Image(systemName: "circle.fill")
-                .font(.system(size: 9))
+            Image(systemName: "wonsign.circle.fill")
+                .font(PlanteriorTypography.caption.weight(.bold))
                 .foregroundStyle(PlanteriorPalette.warning.color)
+                .accessibilityLabel("크레딧")
                 .accessibilityIdentifier("home.rename.cost.coin")
             Text("\(cost)")
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .accessibilityIdentifier("home.rename.cost")
+        }
+    }
+
+    @ViewBuilder
+    private var paidBalanceAffordance: some View {
+        switch renameQuote {
+        case .free:
+            EmptyView()
+        case let .paid(_, balance), let .insufficient(_, balance):
+            Text("보유 \(balance)")
+                .font(PlanteriorTypography.caption)
+                .accessibilityIdentifier("home.rename.balance")
         }
     }
 

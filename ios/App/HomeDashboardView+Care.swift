@@ -66,7 +66,7 @@ extension HomeDashboardView {
 
     private func careRow(_ item: HomeCareItem, index: Int) -> some View {
         HStack(spacing: PlanteriorSpacing.medium) {
-            Image(index == 0 ? .homePlantMonstera : .homePlantSnake)
+            Image(index == 0 ? .homePlantSnake : .homePlantMonstera)
                 .resizable()
                 .scaledToFill()
                 .frame(

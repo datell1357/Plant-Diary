@@ -36,11 +36,23 @@ struct LoginSheet: View {
                             }
                         }
                     } label: {
-                        Label("Google로 계속하기", systemImage: "g.circle.fill")
-                            .font(PlanteriorTypography.body.weight(.semibold))
-                            .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: PlanteriorControl.primaryButtonHeight)
+                        HStack(spacing: PlanteriorSpacing.small) {
+                            if let googleMark {
+                                Image(uiImage: googleMark)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(
+                                        width: PlanteriorSpacing.large,
+                                        height: PlanteriorSpacing.large
+                                    )
+                                    .accessibilityHidden(true)
+                            }
+                            Text("Google로 계속하기")
+                        }
+                        .font(PlanteriorTypography.body.weight(.semibold))
+                        .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: PlanteriorControl.primaryButtonHeight)
                     }
                     .buttonStyle(.plain)
                     .background(PlanteriorPalette.surface.color)
@@ -75,7 +87,22 @@ struct LoginSheet: View {
                     .signInWithAppleButtonStyle(.black)
                     .frame(minHeight: PlanteriorControl.primaryButtonHeight)
                     .clipShape(Capsule())
+                    .overlay {
+                        HStack(spacing: PlanteriorSpacing.small) {
+                            Image(systemName: "apple.logo")
+                                .accessibilityHidden(true)
+                            Text("Apple로 계속하기")
+                        }
+                        .font(PlanteriorTypography.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.black)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                    .clipShape(Capsule())
                     .padding(.top, PlanteriorSpacing.small)
+                    .accessibilityLabel("Apple로 계속하기")
                     .accessibilityIdentifier("auth.apple")
 
                     Text("로그인 시 서비스 이용 약관 및 개인정보 처리방침에 동의하는 것으로 간주됩니다.")
@@ -97,6 +124,16 @@ struct LoginSheet: View {
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
         }
+    }
+
+    private var googleMark: UIImage? {
+        guard let bundleURL = Bundle.main.url(
+            forResource: "GoogleSignIn_GoogleSignIn",
+            withExtension: "bundle"
+        ), let bundle = Bundle(url: bundleURL) else {
+            return nil
+        }
+        return UIImage(named: "google", in: bundle, compatibleWith: nil)
     }
 }
 
