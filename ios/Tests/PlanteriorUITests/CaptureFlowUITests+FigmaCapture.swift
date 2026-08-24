@@ -87,6 +87,8 @@ extension CaptureFlowUITests {
         let library = app.buttons["capture.library"]
         XCTAssertTrue(library.exists)
         XCTAssertEqual(library.label, "사진 보관함")
+        XCTAssertGreaterThanOrEqual(library.frame.width.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(library.frame.height.rounded(), 44)
         let flash = app.buttons["capture.flash"]
         XCTAssertTrue(flash.exists)
         XCTAssertFalse(app.buttons["capture.switch"].exists)
@@ -95,11 +97,11 @@ extension CaptureFlowUITests {
         XCTAssertEqual(shutter.label, "촬영")
         assertFrame(
             shutter,
-            x: 161,
-            y: 742,
-            width: 80,
-            height: 80,
-            message: "§6.11 shutter is a 72pt circle inside an 80pt ring"
+            x: 165,
+            y: 746,
+            width: 72,
+            height: 72,
+            message: "the reference shutter uses a 72pt outer ring"
         )
         XCTAssertLessThan(library.frame.midX, shutter.frame.midX)
         XCTAssertLessThan(shutter.frame.midX, flash.frame.midX)

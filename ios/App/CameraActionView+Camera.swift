@@ -82,10 +82,10 @@ extension CameraActionView {
             CameraCornerReticle(
                 armLength: CaptureLayoutMetrics.cameraReticleArmLength * scale
             )
-                .stroke(
-                    PlanteriorPalette.accent.color,
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
+            .stroke(
+                PlanteriorPalette.accent.color,
+                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+            )
             Circle()
                 .stroke(
                     PlanteriorPalette.textOnAccent.color.opacity(0.9),
@@ -137,7 +137,7 @@ extension CameraActionView {
             Spacer()
             flashControl
         }
-        .frame(height: CaptureLayoutMetrics.shutterRingDiameter)
+        .frame(height: CaptureLayoutMetrics.cameraControlRowHeight)
         .padding(.horizontal, PlanteriorSpacing.extraLarge)
         .padding(.bottom, PlanteriorSpacing.large)
     }
@@ -148,9 +148,9 @@ extension CameraActionView {
         } label: {
             ZStack {
                 Circle()
-                    .stroke(
+                    .strokeBorder(
                         PlanteriorPalette.textOnAccent.color,
-                        lineWidth: PlanteriorControl.hairline * 2
+                        lineWidth: CaptureLayoutMetrics.shutterStrokeWidth
                     )
                     .frame(
                         width: CaptureLayoutMetrics.shutterRingDiameter,
@@ -183,7 +183,6 @@ extension CameraActionView {
         .accessibilityAddTraits(isFlashEnabled ? .isSelected : [])
         .accessibilityIdentifier("capture.flash")
     }
-
 }
 
 struct CameraControlLabel: View {
@@ -206,7 +205,7 @@ struct CameraControlLabel: View {
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .foregroundStyle(PlanteriorPalette.textOnAccent.color)
         .frame(width: 88)
-        .frame(minHeight: PlanteriorControl.minimumTarget)
+        .frame(minHeight: CaptureLayoutMetrics.cameraControlMinimumTarget)
     }
 }
 

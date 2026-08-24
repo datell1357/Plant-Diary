@@ -24,8 +24,12 @@ enum CaptureLayoutMetrics {
     static let cameraReticleLength: CGFloat = 240
     static let cameraFocusCircleLength: CGFloat = 160
     static let cameraReticleArmLength: CGFloat = 44
-    static let shutterDiameter: CGFloat = 72
-    static let shutterRingDiameter: CGFloat = 80
+    static let shutterDiameter: CGFloat = 56
+    static let shutterRingDiameter: CGFloat = 72
+    static let shutterStrokeWidth: CGFloat = 4
+    static let cameraControlRowHeight: CGFloat = 80
+    static let gallerySystemImage = "photo"
+    static let cameraControlMinimumTarget: CGFloat = 44
 
     static let reviewAssetSize = CGSize(width: 386, height: 444)
     static let reviewContentSize = CGSize(width: 362, height: 420)

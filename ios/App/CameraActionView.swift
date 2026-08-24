@@ -93,7 +93,7 @@ struct CameraActionView: View {
             showsLibrary = true
         } label: {
             CameraControlLabel(
-                systemImage: "photo.on.rectangle",
+                systemImage: CaptureLayoutMetrics.gallerySystemImage,
                 title: "사진 보관함",
                 labelID: "capture.library.label"
             )
