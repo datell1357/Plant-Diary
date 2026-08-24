@@ -10,16 +10,29 @@ final class MiniHomeAccessibilityUITests: XCTestCase, MiniHomeUITestSupport {
         app.launch()
         openEditor(in: app)
 
-        app.swipeUp()
-        XCTAssertTrue(
-            app.buttons["minihome.save"].waitForExistence(timeout: 5)
-        )
-        XCTAssertGreaterThanOrEqual(
-            app.textFields["minihome.room-name"].frame.height,
-            44
-        )
-        XCTAssertTrue(app.buttons["minihome.save"].isHittable)
-        XCTAssertTrue(app.buttons["minihome.close"].isHittable)
+        for identifier in [
+            "minihome.save",
+            "minihome.close",
+            "minihome.editor.category.plant",
+            "minihome.editor.tray.0"
+        ] {
+            let control = app.buttons[identifier]
+            XCTAssertTrue(control.waitForExistence(timeout: 5))
+            XCTAssertTrue(control.isHittable, "\(identifier) must be reachable at AX5")
+        }
+        let title = app.staticTexts["minihome.editor.title"]
+        XCTAssertTrue(title.isHittable)
         attachScreenshot(named: "task-14-room-ax5")
+
+        let roomSettings = app.descendants(matching: .any)
+            .matching(identifier: "minihome.editor.room-settings")
+            .firstMatch
+        waitForMiniHomeElement(roomSettings) {
+            title.tap()
+        }
+        let roomName = app.textFields["minihome.room-name"]
+        XCTAssertTrue(roomName.waitForExistence(timeout: 5))
+        XCTAssertEqual(roomName.frame.height, 44, accuracy: 1)
+        XCTAssertTrue(roomName.isHittable)
     }
 }

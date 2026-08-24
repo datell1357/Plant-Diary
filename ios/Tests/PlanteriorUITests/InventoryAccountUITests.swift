@@ -3,31 +3,39 @@ import XCTest
 @MainActor
 final class InventoryAccountUITests: XCTestCase, InventoryUITestSupport {
     func testAccountRemountDoesNotLeakOwnership() {
+        let accountScope = UUID().uuidString
+        let accountA = "account-a-\(accountScope)"
+        let accountB = "account-b-\(accountScope)"
         let app = inventoryApp(shopMode: true)
-        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = "account-a"
+        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = accountA
         app.launch()
         openBackgroundShop(in: app)
         let acquireA = app.buttons["shop.acquire.item-green-wall"]
+        waitForHittable(acquireA)
         _ = triggerAndReadMessage(in: app, previous: nil) {
             acquireA.tap()
         }
+        XCTAssertTrue(acquireA.exists)
         XCTAssertFalse(acquireA.isEnabled)
+        XCTAssertEqual(acquireA.value as? String, "보유 중")
 
         app.terminate()
-        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = "account-b"
+        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = accountB
         app.launch()
         openBackgroundShop(in: app)
-        XCTAssertTrue(
-            app.buttons["shop.acquire.item-green-wall"].isEnabled
-        )
+        let acquireB = app.buttons["shop.acquire.item-green-wall"]
+        XCTAssertTrue(acquireB.exists)
+        XCTAssertTrue(acquireB.isEnabled)
+        XCTAssertEqual(acquireB.value as? String, "획득 가능")
 
         app.terminate()
-        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = "account-a"
+        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = accountA
         app.launch()
         openBackgroundShop(in: app)
-        XCTAssertFalse(
-            app.buttons["shop.acquire.item-green-wall"].isEnabled
-        )
+        let restoredA = app.buttons["shop.acquire.item-green-wall"]
+        XCTAssertTrue(restoredA.exists)
+        XCTAssertFalse(restoredA.isEnabled)
+        XCTAssertEqual(restoredA.value as? String, "보유 중")
         attachJSON(
             [
                 "accountAOwned": true,
@@ -39,10 +47,17 @@ final class InventoryAccountUITests: XCTestCase, InventoryUITestSupport {
     }
 
     private func openBackgroundShop(in app: XCUIApplication) {
-        openStorage(in: app)
-        openShop(in: app)
+        XCTAssertTrue(
+            app.scrollViews["storage.screen"].waitForExistence(timeout: 10)
+        )
+        let ready = app.descendants(matching: .any)
+            .matching(identifier: "shop.ready")
+            .firstMatch
+        XCTAssertTrue(ready.waitForExistence(timeout: 10))
+        let background = app.buttons["storage.category.background"]
+        waitForHittable(background)
         waitForShopRows(["shop.row.item-green-wall"], in: app) {
-            app.buttons["storage.category.background"].tap()
+            background.tap()
         }
     }
 }

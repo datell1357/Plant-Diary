@@ -34,7 +34,7 @@ extension InventoryUITestSupport where Self: XCTestCase {
         XCTAssertTrue(
             app.scrollViews["storage.screen"].waitForExistence(timeout: 10)
         )
-        let ready = app.staticTexts.matching(
+        let ready = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "identifier IN %@",
                 ["storage.count", "shop.ready"]
@@ -44,8 +44,13 @@ extension InventoryUITestSupport where Self: XCTestCase {
     }
 
     func openShop(in app: XCUIApplication) {
+        let ready = app.descendants(matching: .any)
+            .matching(identifier: "shop.ready")
+            .firstMatch
+        XCTAssertTrue(ready.waitForExistence(timeout: 10))
         XCTAssertTrue(
-            app.buttons["shop.row.item-lamp"].waitForExistence(timeout: 10)
+            app.buttons["shop.row.item-vintage-lamp"]
+                .waitForExistence(timeout: 10)
         )
     }
 }

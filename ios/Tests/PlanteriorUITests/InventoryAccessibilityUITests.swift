@@ -15,12 +15,14 @@ final class InventoryAccessibilityUITests: XCTestCase, InventoryUITestSupport {
 
         let row = app.buttons["storage.row.item-chair"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        XCTAssertTrue(row.isHittable)
+        scrollToHittable(row, in: app.scrollViews["storage.screen"])
         XCTAssertTrue(app.images["storage.image.item-chair"].exists)
         row.tap()
+
+        let detail = app.scrollViews["storage.detail.item-chair"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
         let action = app.buttons["storage.detail.apply.item-chair"]
         XCTAssertTrue(action.waitForExistence(timeout: 5))
-        app.scrollViews["storage.detail.item-chair"].swipeUp()
-        waitForHittable(action)
+        scrollToHittable(action, in: detail)
     }
 }
