@@ -35,19 +35,17 @@ struct QuietHoursSettingsView: View {
                     spacing: PlanteriorSpacing.extraLarge
                 ) {
                     toggleCard
-                    Text(
-                        "설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등 일상적인 "
-                            + "식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다."
-                    )
-                    .font(PlanteriorTypography.caption)
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, PlanteriorSpacing.small)
+                    if !sizeCategory.isAccessibilityCategory {
+                        informationCopy
+                    }
                     VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                         Text("시간 범위 설정")
                             .font(PlanteriorTypography.caption.weight(.semibold))
                             .foregroundStyle(PlanteriorPalette.textSecondary.color)
                         timeCard
+                    }
+                    if sizeCategory.isAccessibilityCategory {
+                        informationCopy
                     }
                     warningCard
                 }

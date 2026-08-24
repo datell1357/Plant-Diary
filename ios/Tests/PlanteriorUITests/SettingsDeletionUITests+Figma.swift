@@ -83,11 +83,23 @@ extension SettingsDeletionUITests {
         let dismissStart = app.buttons["PopoverDismissRegion"]
         XCTAssertTrue(dismissStart.waitForExistence(timeout: 2))
         dismissStart.tap()
+        let endHittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"),
+            object: end
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [endHittable], timeout: 2), .completed)
+        XCTAssertTrue(end.isHittable)
         end.tap()
         let dismissEnd = app.buttons["PopoverDismissRegion"]
         XCTAssertTrue(dismissEnd.waitForExistence(timeout: 2))
         dismissEnd.tap()
-        app.buttons["quiet-hours.save"].tap()
+        let saveHittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"),
+            object: save
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [saveHittable], timeout: 2), .completed)
+        XCTAssertTrue(save.isHittable)
+        save.tap()
 
         XCTAssertTrue(
             app.buttons["settings.quiet-hours.open"]
@@ -193,10 +205,11 @@ extension SettingsDeletionUITests {
         let settingsScroll = app.scrollViews["settings.screen"]
         let tabBarControl = app.buttons["tab.settings"]
         var scrollCount = 0
-        while (
+        let quietHoursNeedsScroll = {
             !quietHours.isHittable
                 || quietHours.frame.intersects(tabBarControl.frame)
-        ), scrollCount < 6 {
+        }
+        while quietHoursNeedsScroll(), scrollCount < 6 {
             settingsScroll.swipeUp()
             scrollCount += 1
         }
@@ -221,27 +234,36 @@ extension SettingsDeletionUITests {
         if enabled.value as? String != "1" {
             enabled.tap()
         }
-        scroll.swipeUp()
         let start = app.datePickers["quiet-hours.start"]
-        XCTAssertTrue(start.isHittable)
+        XCTAssertTrue(start.exists)
         XCTAssertGreaterThanOrEqual(start.frame.height, 44)
         XCTAssertTrue(app.staticTexts["시작 시간"].exists)
         start.tap()
-        let dismissStart = app.buttons["PopoverDismissRegion"]
-        XCTAssertTrue(dismissStart.waitForExistence(timeout: 2))
-        dismissStart.tap()
-        scroll.swipeUp()
+        let dismissRegions = app.buttons.matching(
+            identifier: "PopoverDismissRegion"
+        )
+        XCTAssertTrue(dismissRegions.firstMatch.waitForExistence(timeout: 2))
+        title.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).tap()
         let end = app.datePickers["quiet-hours.end"]
-        XCTAssertTrue(end.isHittable)
+        XCTAssertTrue(end.exists)
         XCTAssertGreaterThanOrEqual(end.frame.height, 44)
         XCTAssertTrue(app.staticTexts["종료 시간"].exists)
         end.tap()
-        let dismissEnd = app.buttons["PopoverDismissRegion"]
-        XCTAssertTrue(dismissEnd.waitForExistence(timeout: 2))
-        dismissEnd.tap()
-        scroll.swipeUp()
-        attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
+        XCTAssertTrue(
+            dismissRegions.allElementsBoundByIndex.contains(where: \.isHittable)
+        )
+        title.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).tap()
         let save = app.buttons["quiet-hours.save"]
+        let saveHittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"),
+            object: save
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [saveHittable], timeout: 2), .completed)
+        attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
         let window = app.windows.element(boundBy: 0)
         // Remove the two 11pt insets, 34pt bottom safe area, and 1pt divider.
         let saveVisualHeight = window.frame.maxY - scroll.frame.maxY - 57

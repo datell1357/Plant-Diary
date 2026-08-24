@@ -8,6 +8,10 @@ final class OperationalAccessibilityUITests: XCTestCase {
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
         app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName",
+            "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
         app.launch()
         let settings = app.buttons["tab.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))

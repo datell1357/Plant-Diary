@@ -2,6 +2,11 @@ import PlanteriorDesignSystem
 import SwiftUI
 
 extension QuietHoursSettingsView {
+    private static let informationLeadingCopy =
+        "설정한 시간 동안 물\u{00A0}주기, 영양제 주기 등"
+    private static let informationTrailingCopy =
+        "일상적인 식물\u{00A0}관리\u{00A0}알림 및 푸시가 발송되지 않습니다."
+
     var topBar: some View {
         PlanteriorTopBar("알림 금지 시간 설정", leading: {
             SettingsBackButton(identifier: "quiet-hours.back") {
@@ -11,6 +16,36 @@ extension QuietHoursSettingsView {
             EmptyView()
         })
         .settingsReferenceTopBar()
+    }
+
+    var informationCopy: some View {
+        VStack(
+            alignment: .leading,
+            spacing: sizeCategory.isAccessibilityCategory
+                ? PlanteriorSpacing.medium
+                : 0
+        ) {
+            if sizeCategory.isAccessibilityCategory {
+                Text(Self.informationLeadingCopy)
+                    .accessibilityIdentifier("quiet-hours.information.leading")
+                Text(Self.informationTrailingCopy)
+                    .accessibilityIdentifier("quiet-hours.information.trailing")
+            } else {
+                Text(
+                    Self.informationLeadingCopy
+                        + " "
+                        + Self.informationTrailingCopy
+                )
+            }
+        }
+        .font(PlanteriorTypography.caption)
+        .foregroundStyle(
+            sizeCategory.isAccessibilityCategory
+                ? PlanteriorPalette.textPrimary.color
+                : PlanteriorPalette.textSecondary.color
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, PlanteriorSpacing.small)
     }
 
     var warningCard: some View {
