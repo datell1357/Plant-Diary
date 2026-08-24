@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
+import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
 import { executeSaveMiniHomeLayout, MiniHomeError } from "./mini-home.js";
 
@@ -440,6 +441,11 @@ function present(read: Awaited<ReturnType<FirestoreMiniHomeLayoutStore["load"]>>
 }
 
 async function clear(firestore: ReturnType<typeof getFirestore>): Promise<void> {
+  await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await new FirestoreCatalogProjectionStore(
+    firestore,
+    () => Timestamp.fromDate(new Date("2026-08-12T00:00:00Z")),
+  ).rebuild();
   for (const collection of [
     "personalPlants",
     "ownedItems",
@@ -455,7 +461,4 @@ async function clear(firestore: ReturnType<typeof getFirestore>): Promise<void> 
     await Promise.all(snapshot.docs.map((document) => document.ref.delete()));
   }
   await firestore.doc("users/user-a").delete();
-  await firestore.recursiveDelete(firestore.collection("catalogProjections"));
-  await firestore.doc("catalogProjectionPointers/current").delete();
-  await firestore.recursiveDelete(firestore.collection("shopItems"));
 }

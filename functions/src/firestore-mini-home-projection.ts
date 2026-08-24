@@ -61,12 +61,19 @@ type CatalogProjection = Readonly<{
   catalog: readonly InventoryCatalogItem[];
   partial: boolean;
   rejectedCount: number;
+  needsPointerRepair: boolean;
 }>;
+
+type CatalogSource = Readonly<Pick<
+  CatalogProjection,
+  "token" | "catalog" | "partial" | "rejectedCount"
+>>;
 
 type CatalogPublicationPlan = Readonly<{
   published: CatalogProjection;
   projectionRef: DocumentReference | null;
   immutablePayload: Readonly<Record<string, unknown>> | null;
+  writePointer: boolean;
   now: Timestamp;
 }>;
 
@@ -97,6 +104,7 @@ type PublishedOwnerProjection = Readonly<{
   inventoryGeneration: number;
   inventorySnapshotHash: string;
   partial: boolean;
+  needsPointerRepair: boolean;
 }>;
 
 type OwnerWriterState = Readonly<{
@@ -149,42 +157,16 @@ export async function rebuildCatalogProjection(
   hooks: CatalogProjectionRebuildHooks = {},
 ): Promise<CatalogProjection> {
   const pointerRef = firestore.doc("catalogProjectionPointers/current");
-  const [pointer, documents] = await Promise.all([
-    transaction.get(pointerRef),
-    transaction.get(
-      firestore.collection("shopItems")
-        .where("publicationState", "==", "PUBLIC")
-        .limit(MAX_CATALOG_ITEMS + 1),
-    ),
+  const pointer = await transaction.get(pointerRef);
+  const [source, highWater] = await Promise.all([
+    readCatalogSource(transaction, firestore),
+    pointer.exists ? Promise.resolve(null) : readHighestCatalogProjection(transaction, firestore),
   ]);
-  if (documents.size > MAX_CATALOG_ITEMS) {
-    projectionExhausted("Catalog projection exceeds the 100 item bound", "catalog");
-  }
   await hooks.afterSourceRead?.();
-  let rejectedCount = 0;
-  const catalog = documents.docs.flatMap((document) => {
-    try {
-      return [parseCatalogRecord(document.id, document.data())];
-    } catch (error) {
-      if (isCatalogRecordRejection(error)) {
-        rejectedCount += 1;
-        return [];
-      }
-      throw error;
-    }
-  }).sort(catalogOrder);
-  const partial = rejectedCount > 0;
-  const token = catalogToken(catalog, partial, rejectedCount);
+  const { catalog, partial, rejectedCount, token } = source;
   const prior = pointer.exists
     ? catalogPointerState(pointer)
-    : {
-        projectionId: null,
-        generation: 0,
-        token: catalogToken([], false, 0),
-        catalog: [] as readonly InventoryCatalogItem[],
-        partial: false,
-        rejectedCount: 0,
-      };
+    : catalogRecoveryState(source, highWater);
   if (
     pointer.exists &&
     prior.token === token &&
@@ -229,30 +211,13 @@ export async function readCatalogForWriter(
   const pointer = await transaction.get(pointerRef);
   if (pointer.exists) return readCatalogFromPointer(transaction, firestore, pointer);
 
-  const documents = await transaction.get(
-    firestore.collection("shopItems").where("publicationState", "==", "PUBLIC").limit(MAX_CATALOG_ITEMS + 1),
-  );
-  if (documents.size > MAX_CATALOG_ITEMS) projectionExhausted("Catalog projection exceeds the 100 item bound", "catalog");
-  let rejectedCount = 0;
-  const catalog = documents.docs.flatMap((document) => {
-    try {
-      return [parseCatalogRecord(document.id, document.data())];
-    } catch (error) {
-      if (isCatalogRecordRejection(error)) {
-        rejectedCount += 1;
-        return [];
-      }
-      throw error;
-    }
-  }).sort(catalogOrder);
-  return {
-    projectionId: null,
-    generation: 0,
-    token: catalogToken(catalog, rejectedCount > 0, rejectedCount),
-    catalog,
-    partial: rejectedCount > 0,
-    rejectedCount,
-  };
+  // Two rows prove a unique immutable high-water generation while keeping
+  // pointer-loss recovery bounded.
+  const [source, highWater] = await Promise.all([
+    readCatalogSource(transaction, firestore),
+    readHighestCatalogProjection(transaction, firestore),
+  ]);
+  return catalogRecoveryState(source, highWater);
 }
 
 export async function ensureCatalogPublished(
@@ -261,7 +226,7 @@ export async function ensureCatalogPublished(
   current: CatalogProjection,
   now: Timestamp,
 ): Promise<CatalogProjection> {
-  if (current.projectionId !== null) return current;
+  if (current.projectionId !== null && !current.needsPointerRepair) return current;
   return publishCatalogProjection(
     transaction,
     firestore,
@@ -296,8 +261,11 @@ export async function readOwnerForWriter(
       draft: { layout: prior.layout, owned: prior.owned, plants: prior.plants },
     };
   }
+
+  // The second row exists only to reject an ambiguous highest generation.
+  const prior = await readHighestOwnerProjection(transaction, firestore, ownerUid);
   return {
-    prior: null,
+    prior,
     draft: await readLegacyOwnerDraft(transaction, firestore, ownerUid, currentCatalog, now),
   };
 }
@@ -388,7 +356,11 @@ export async function publishOwnerProjection(
     prior.catalogToken === catalog.token
   ) {
     await commitCatalogPublication(transaction, firestore, catalogPlan);
-    return prior;
+    if (prior.needsPointerRepair) {
+      await hooks.beforePointerSwap?.(prior.projectionId);
+      writeOwnerPointer(transaction, firestore, { ...prior, needsPointerRepair: false }, now);
+    }
+    return { ...prior, needsPointerRepair: false };
   }
   const generation = (prior?.generation ?? 0) + 1;
   const projectionId = `${generation}-${projectionToken}`;
@@ -405,6 +377,7 @@ export async function publishOwnerProjection(
     inventoryGeneration,
     inventorySnapshotHash: inventory.snapshotHash,
     partial: catalog.partial || inventory.partial,
+    needsPointerRepair: false,
   };
   const projectionRef = firestore.doc(`users/${ownerUid}/miniHomeProjections/${projectionId}`);
   const existing = await transaction.get(projectionRef);
@@ -438,16 +411,7 @@ export async function publishOwnerProjection(
     });
   }
   await hooks.beforePointerSwap?.(projectionId);
-  transaction.set(ownerPointerRef(firestore, ownerUid), {
-    schemaVersion: PROJECTION_SCHEMA_VERSION,
-    ownerUid,
-    projectionId,
-    generation,
-    projectionToken,
-    catalogProjectionId: catalog.projectionId,
-    catalogToken: catalog.token,
-    updatedAt: now,
-  }, { merge: false });
+  writeOwnerPointer(transaction, firestore, published, now);
   return published;
 }
 
@@ -520,8 +484,9 @@ export function projectionSnapshot(
   };
 }
 
-export const MINI_HOME_PROJECTION_MAX_DOCUMENT_READS = 5;
-export const MINI_HOME_PROJECTION_BOOTSTRAP_MAX_DOCUMENT_READS = 431;
+export const MINI_HOME_PROJECTION_MAX_DOCUMENT_READS = 6;
+/** Pointer-loss recovery adds at most two rows per high-water query. */
+export const MINI_HOME_PROJECTION_BOOTSTRAP_MAX_DOCUMENT_READS = 436;
 
 async function publishCatalogProjection(
   transaction: Transaction,
@@ -565,11 +530,25 @@ async function prepareCatalogPublication(
   }
   const token = catalogToken(ordered, partial, rejectedCount);
   if (prior.projectionId !== null && prior.token === token) {
-    return { published: prior, projectionRef: null, immutablePayload: null, now };
+    return {
+      published: { ...prior, needsPointerRepair: false },
+      projectionRef: null,
+      immutablePayload: null,
+      writePointer: prior.needsPointerRepair,
+      now,
+    };
   }
   const generation = prior.generation + 1;
   const projectionId = `${generation}-${token}`;
-  const published = { projectionId, generation, token, catalog: ordered, partial, rejectedCount };
+  const published = {
+    projectionId,
+    generation,
+    token,
+    catalog: ordered,
+    partial,
+    rejectedCount,
+    needsPointerRepair: false,
+  };
   const projectionRef = firestore.doc(`catalogProjections/${projectionId}`);
   const existing = await transaction.get(projectionRef);
   if (existing.exists) {
@@ -614,6 +593,7 @@ async function prepareCatalogPublication(
       })),
       createdAt: now,
     },
+    writePointer: true,
     now,
   };
 }
@@ -624,8 +604,10 @@ async function commitCatalogPublication(
   plan: CatalogPublicationPlan,
   hooks: CatalogProjectionRebuildHooks = {},
 ): Promise<void> {
-  if (plan.projectionRef === null || plan.published.projectionId === null) return;
-  if (plan.immutablePayload !== null) transaction.create(plan.projectionRef, plan.immutablePayload);
+  if (!plan.writePointer || plan.published.projectionId === null) return;
+  if (plan.projectionRef !== null && plan.immutablePayload !== null) {
+    transaction.create(plan.projectionRef, plan.immutablePayload);
+  }
   await hooks.beforePointerSwap?.(plan.published.projectionId);
   transaction.set(firestore.doc("catalogProjectionPointers/current"), {
     schemaVersion: CATALOG_PROJECTION_SCHEMA_VERSION,
@@ -656,6 +638,77 @@ export function catalogProjectionForPublishedOwner(
     projectionId: owner.catalogProjectionId,
     generation,
     token: owner.catalogToken,
+    needsPointerRepair: false,
+  };
+}
+
+async function readCatalogSource(
+  transaction: Transaction,
+  firestore: Firestore,
+): Promise<CatalogSource> {
+  const documents = await transaction.get(
+    firestore.collection("shopItems")
+      .where("publicationState", "==", "PUBLIC")
+      .limit(MAX_CATALOG_ITEMS + 1),
+  );
+  if (documents.size > MAX_CATALOG_ITEMS) {
+    projectionExhausted("Catalog projection exceeds the 100 item bound", "catalog");
+  }
+  let rejectedCount = 0;
+  const catalog = documents.docs.flatMap((document) => {
+    try {
+      return [parseCatalogRecord(document.id, document.data())];
+    } catch (error) {
+      if (isCatalogRecordRejection(error)) {
+        rejectedCount += 1;
+        return [];
+      }
+      throw error;
+    }
+  }).sort(catalogOrder);
+  const partial = rejectedCount > 0;
+  return {
+    token: catalogToken(catalog, partial, rejectedCount),
+    catalog,
+    partial,
+    rejectedCount,
+  };
+}
+
+async function readHighestCatalogProjection(
+  transaction: Transaction,
+  firestore: Firestore,
+): Promise<CatalogProjection | null> {
+  const documents = await transaction.get(
+    firestore.collection("catalogProjections")
+      .orderBy("generation", "desc")
+      .limit(2),
+  );
+  const parsed = documents.docs.map((document) =>
+    parseCatalogProjectionDocument(document, document.id),
+  );
+  const highest = parsed[0] ?? null;
+  const second = parsed[1];
+  if (highest !== null && second !== undefined && highest.generation === second.generation) {
+    projectionMalformed("Catalog projection high-water generation is ambiguous", "catalogProjection");
+  }
+  return highest === null ? null : { ...highest, needsPointerRepair: true };
+}
+
+function catalogRecoveryState(
+  source: CatalogSource,
+  highWater: CatalogProjection | null,
+): CatalogProjection {
+  const matchesHighWater = highWater !== null &&
+    highWater.token === source.token &&
+    highWater.partial === source.partial &&
+    highWater.rejectedCount === source.rejectedCount &&
+    canonicalJson(highWater.catalog) === canonicalJson(source.catalog);
+  return {
+    projectionId: matchesHighWater ? highWater.projectionId : null,
+    generation: highWater?.generation ?? 0,
+    ...source,
+    needsPointerRepair: true,
   };
 }
 
@@ -689,6 +742,7 @@ function catalogPointerState(pointer: DocumentSnapshot): CatalogProjection {
     catalog: [],
     partial,
     rejectedCount,
+    needsPointerRepair: false,
   };
 }
 
@@ -750,7 +804,15 @@ function parseCatalogProjectionDocument(document: DocumentSnapshot, projectionId
   ) {
     projectionMalformed("Catalog projection count or hash is corrupt", "catalogProjection");
   }
-  return { projectionId, generation, token, catalog, partial, rejectedCount };
+  return {
+    projectionId,
+    generation,
+    token,
+    catalog,
+    partial,
+    rejectedCount,
+    needsPointerRepair: false,
+  };
 }
 
 async function readOwnerFromPointer(
@@ -824,7 +886,38 @@ function parseOwnerProjectionDocument(
     inventoryGeneration,
     inventorySnapshotHash,
     partial,
+    needsPointerRepair: false,
   };
+}
+
+async function readHighestOwnerProjection(
+  transaction: Transaction,
+  firestore: Firestore,
+  ownerUid: string,
+): Promise<PublishedOwnerProjection | null> {
+  const documents = await transaction.get(
+    firestore.collection(`users/${ownerUid}/miniHomeProjections`)
+      .orderBy("generation", "desc")
+      .limit(2),
+  );
+  const parsed = documents.docs.map((document) =>
+    parseOwnerProjectionDocument(document, ownerUid, document.id),
+  );
+  const highest = parsed[0] ?? null;
+  const second = parsed[1];
+  if (highest !== null && second !== undefined && highest.generation === second.generation) {
+    projectionMalformed("Mini-home projection high-water generation is ambiguous", "projection");
+  }
+  if (highest === null) return null;
+  const catalog = parseCatalogProjectionDocument(
+    await transaction.get(firestore.doc(`catalogProjections/${highest.catalogProjectionId}`)),
+    highest.catalogProjectionId,
+  );
+  if (catalog.token !== highest.catalogToken) {
+    projectionMalformed("Owner projection catalog token differs from its immutable catalog", "catalogToken");
+  }
+  validateOwnerProjection(highest, catalog);
+  return { ...highest, needsPointerRepair: true };
 }
 
 async function readLegacyOwnerDraft(
@@ -1290,6 +1383,24 @@ function catalogSnapshot(item: InventoryCatalogItem): InventoryOwnedCatalogSnaps
     mediaIdentity: item.mediaIdentity,
     catalogRevision: item.revision,
   };
+}
+
+function writeOwnerPointer(
+  transaction: Transaction,
+  firestore: Firestore,
+  published: PublishedOwnerProjection,
+  now: Timestamp,
+): void {
+  transaction.set(ownerPointerRef(firestore, published.ownerUid), {
+    schemaVersion: PROJECTION_SCHEMA_VERSION,
+    ownerUid: published.ownerUid,
+    projectionId: published.projectionId,
+    generation: published.generation,
+    projectionToken: published.token,
+    catalogProjectionId: published.catalogProjectionId,
+    catalogToken: published.catalogToken,
+    updatedAt: now,
+  }, { merge: false });
 }
 
 function ownerPointerRef(firestore: Firestore, ownerUid: string) {

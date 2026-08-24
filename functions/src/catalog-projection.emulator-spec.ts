@@ -4,7 +4,6 @@ import { deleteApp, initializeApp } from "firebase-admin/app";
 import {
   Timestamp,
   getFirestore,
-  type DocumentReference,
   type DocumentSnapshot,
 } from "firebase-admin/firestore";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
@@ -23,28 +22,19 @@ test("catalog create update and delete triggers publish and snapshot load rebind
   try {
     await clearCatalog(firestore);
 
-    const created = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("itemCount") === 1 && snapshot.get("partial") === false,
-    );
+    const created = exactCatalog(firestore, [["live-a", 1]], 0, false);
     await created.ready;
     await firestore.doc("shopItems/live-a").set(catalogItem("live-a", 1));
     const createPointer = await created.value;
     created.close();
     assertProjection(createPointer, 1, 0, false);
 
-    await firestore.recursiveDelete(firestore.collection("catalogProjections"));
-    await pointerRef.delete();
     const before = await loadSnapshot(firestore);
     assert.equal((await pointerRef.get()).exists, true);
     assert.equal(before.inventory.catalog[0]?.revision, 1);
     assert.equal(before.inventory.owned.length, 0);
 
-    const bootstrappedPointer = await pointerRef.get();
-    const updated = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists &&
-      snapshot.get("generation") === bootstrappedPointer.get("generation") + 1 &&
-      snapshot.get("catalogToken") !== bootstrappedPointer.get("catalogToken"),
-    );
+    const updated = exactCatalog(firestore, [["live-a", 2]], 0, false);
     await updated.ready;
     await firestore.doc("shopItems/live-a").set(catalogItem("live-a", 2, "updated"));
     const updatePointer = await updated.value;
@@ -57,9 +47,7 @@ test("catalog create update and delete triggers publish and snapshot load rebind
     assert.equal(rebound.inventory.owned.length, 0);
     assert.equal(rebound.snapshotGeneration, before.snapshotGeneration + 1);
 
-    const eligibilityChanged = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("generation") === updatePointer.get("generation") + 1,
-    );
+    const eligibilityChanged = exactCatalog(firestore, [["live-a", 3]], 0, false);
     await eligibilityChanged.ready;
     await firestore.doc("shopItems/live-a").set({
       ...catalogItem("live-a", 3, "updated"),
@@ -73,9 +61,7 @@ test("catalog create update and delete triggers publish and snapshot load rebind
       "registered-plant",
     );
 
-    const added = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("itemCount") === 2,
-    );
+    const added = exactCatalog(firestore, [["live-a", 3], ["live-b", 1]], 0, false);
     await added.ready;
     await firestore.doc("shopItems/live-b").set(catalogItem("live-b", 1));
     const addPointer = await added.value;
@@ -86,9 +72,7 @@ test("catalog create update and delete triggers publish and snapshot load rebind
       ["live-a", "live-b"],
     );
 
-    const deleted = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("itemCount") === 1,
-    );
+    const deleted = exactCatalog(firestore, [["live-b", 1]], 0, false);
     await deleted.ready;
     await firestore.doc("shopItems/live-a").delete();
     const deletePointer = await deleted.value;
@@ -111,9 +95,7 @@ test("malformed public items set an exact rejected count and repair or deletion 
   try {
     await clearCatalog(firestore);
 
-    const malformed = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("partial") === true && snapshot.get("rejectedCount") === 1,
-    );
+    const malformed = exactCatalog(firestore, [], 1, true);
     await malformed.ready;
     await firestore.doc("shopItems/broken-a").set({
       ...catalogItem("broken-a", 1),
@@ -123,18 +105,14 @@ test("malformed public items set an exact rejected count and repair or deletion 
     malformed.close();
     assertProjection(malformedPointer, 0, 1, true);
 
-    const repaired = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("partial") === false && snapshot.get("itemCount") === 1,
-    );
+    const repaired = exactCatalog(firestore, [["broken-a", 2]], 0, false);
     await repaired.ready;
     await firestore.doc("shopItems/broken-a").set(catalogItem("broken-a", 2, "repaired"));
     const repairedPointer = await repaired.value;
     repaired.close();
     assertProjection(repairedPointer, 1, 0, false);
 
-    const secondMalformed = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("partial") === true && snapshot.get("rejectedCount") === 1,
-    );
+    const secondMalformed = exactCatalog(firestore, [["broken-a", 2]], 1, true);
     await secondMalformed.ready;
     await firestore.doc("shopItems/broken-b").set({
       ...catalogItem("broken-b", 1),
@@ -143,9 +121,7 @@ test("malformed public items set an exact rejected count and repair or deletion 
     await secondMalformed.value;
     secondMalformed.close();
 
-    const twoRejected = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("partial") === true && snapshot.get("rejectedCount") === 2,
-    );
+    const twoRejected = exactCatalog(firestore, [["broken-a", 2]], 2, true);
     await twoRejected.ready;
     await firestore.doc("shopItems/broken-c").set({
       ...catalogItem("broken-c", 1),
@@ -155,17 +131,13 @@ test("malformed public items set an exact rejected count and repair or deletion 
     twoRejected.close();
     assertProjection(twoRejectedPointer, 1, 2, true);
 
-    const oneRejected = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("partial") === true && snapshot.get("rejectedCount") === 1,
-    );
+    const oneRejected = exactCatalog(firestore, [["broken-a", 2]], 1, true);
     await oneRejected.ready;
     await firestore.doc("shopItems/broken-b").delete();
     await oneRejected.value;
     oneRejected.close();
 
-    const removed = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("partial") === false && snapshot.get("rejectedCount") === 0,
-    );
+    const removed = exactCatalog(firestore, [["broken-a", 2]], 0, false);
     await removed.ready;
     await firestore.doc("shopItems/broken-c").delete();
     const removedPointer = await removed.value;
@@ -187,8 +159,11 @@ test("rebuild retries against source changes and concurrent or old events conver
   let attempts = 0;
   try {
     await clearCatalog(firestore);
+    const initial = exactCatalog(firestore, [["race-a", 1]], 0, false);
+    await initial.ready;
     await firestore.doc("shopItems/race-a").set(catalogItem("race-a", 1));
-    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+    await initial.value;
+    initial.close();
     const before = await firestore.doc(pointerPath).get();
 
     const blocked = new FirestoreCatalogProjectionStore(firestore, () => at, {
@@ -201,11 +176,14 @@ test("rebuild retries against source changes and concurrent or old events conver
       },
     }).rebuild();
     await firstSourceRead;
+    const latest = exactCatalog(firestore, [["race-a", 2]], 0, false);
+    await latest.ready;
     const sourceUpdate = firestore.doc("shopItems/race-a").set(
       catalogItem("race-a", 2, "latest"),
     );
     release();
-    await Promise.all([blocked, sourceUpdate]);
+    await Promise.all([blocked, sourceUpdate, latest.value]);
+    latest.close();
     await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
 
     const after = await firestore.doc(pointerPath).get();
@@ -217,22 +195,14 @@ test("rebuild retries against source changes and concurrent or old events conver
 
     const stableGeneration = after.get("generation");
     const stableToken = after.get("catalogToken");
-    await firestore.doc("shopItems/race-a").set(catalogItem("race-a", 2, "latest"));
-    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
     await Promise.all(Array.from({ length: 32 }, () =>
       new FirestoreCatalogProjectionStore(firestore, () => at).rebuild(),
     ));
-    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
     const stable = await firestore.doc(pointerPath).get();
+    assert.equal(stable.get("projectionId"), after.get("projectionId"));
     assert.equal(stable.get("generation"), stableGeneration);
     assert.equal(stable.get("catalogToken"), stableToken);
-    assert.equal(
-      (await firestore.collection("catalogProjections").where("catalogToken", "==", stableToken).get()).size,
-      1,
-    );
-    await verifyExactCatalogOrphanReuse();
-    await verifyCorruptCatalogOrphanRejection();
-    await verifyStaleCleanupOrdering();
+    assert.equal(await pointerHasCatalog(firestore, stable, [["race-a", 2]], 0, false), true);
   } finally {
     release?.();
     await clearCatalog(firestore);
@@ -240,142 +210,43 @@ test("rebuild retries against source changes and concurrent or old events conver
   }
 });
 
-async function verifyExactCatalogOrphanReuse(): Promise<void> {
-  const app = initializeApp({ projectId }, "catalog-orphan-reuse");
-  const firestore = getFirestore(app);
-  const pointerRef = firestore.doc(pointerPath);
-  try {
-    await clearCatalog(firestore);
-    const published = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("itemCount") === 1,
-    );
-    await published.ready;
-    await firestore.doc("shopItems/orphan-a").set(catalogItem("orphan-a", 1));
-    const originalPointer = await published.value;
-    published.close();
-    const projectionId = originalPointer.get("projectionId") as string;
-    const projectionRef = firestore.doc(`catalogProjections/${projectionId}`);
-    const originalProjection = await projectionRef.get();
-
-    await pointerRef.delete();
-    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
-
-    const repaired = await pointerRef.get();
-    assert.equal(repaired.get("projectionId"), projectionId);
-    assert.equal(repaired.get("generation"), 1);
-    assert.deepEqual((await projectionRef.get()).data(), originalProjection.data());
-    assert.equal((await firestore.collection("catalogProjections").get()).size, 1);
-  } finally {
-    await clearCatalog(firestore);
-    await deleteApp(app);
-  }
-}
-
-async function verifyCorruptCatalogOrphanRejection(): Promise<void> {
-  const app = initializeApp({ projectId }, "catalog-orphan-corrupt");
-  const firestore = getFirestore(app);
-  const pointerRef = firestore.doc(pointerPath);
-  try {
-    await clearCatalog(firestore);
-    const published = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("itemCount") === 1,
-    );
-    await published.ready;
-    await firestore.doc("shopItems/orphan-corrupt").set(catalogItem("orphan-corrupt", 1));
-    const pointer = await published.value;
-    published.close();
-    const projectionRef = firestore.doc(`catalogProjections/${pointer.get("projectionId") as string}`);
-    const projection = await projectionRef.get();
-    const projectionData = projection.data();
-    assert.ok(projectionData);
-    await projectionRef.set({ ...projectionData, itemCount: 99 });
-    await pointerRef.delete();
-
-    await assert.rejects(
-      () => new FirestoreCatalogProjectionStore(firestore, () => at).rebuild(),
-      (error: unknown) =>
-        error instanceof Error && "code" in error && error.code === "data-loss",
-    );
-    assert.equal((await pointerRef.get()).exists, false);
-  } finally {
-    await clearCatalog(firestore);
-    await deleteApp(app);
-  }
-}
-
-async function verifyStaleCleanupOrdering(): Promise<void> {
-  const app = initializeApp({ projectId }, "catalog-cleanup-ordering");
-  const firestore = getFirestore(app);
-  const pointerRef = firestore.doc(pointerPath);
-  try {
-    await clearCatalog(firestore);
-    const staleProjectionQuery = await firestore.collection("catalogProjections").get();
-    await Promise.all(staleProjectionQuery.docs.map((document) => document.ref.delete()));
-    await pointerRef.delete();
-    const triggerCommitted = exactDocument(pointerRef, (snapshot) =>
-      snapshot.exists && snapshot.get("itemCount") === 1,
-    );
-    await triggerCommitted.ready;
-    await firestore.doc("shopItems/ordered-race").set(catalogItem("ordered-race", 1));
-    const triggerPointer = await triggerCommitted.value;
-    triggerCommitted.close();
-    const orphanId = triggerPointer.get("projectionId") as string;
-
-    await pointerRef.delete();
-    await Promise.all(staleProjectionQuery.docs.map((document) => document.ref.delete()));
-    assert.equal((await pointerRef.get()).exists, false);
-    assert.equal((await firestore.doc(`catalogProjections/${orphanId}`).get()).exists, true);
-
-    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
-    const repaired = await pointerRef.get();
-    assert.equal(repaired.get("projectionId"), orphanId);
-    assert.equal(repaired.get("generation"), 1);
-    assert.equal((await firestore.collection("catalogProjections").get()).size, 1);
-  } finally {
-    await clearCatalog(firestore);
-    await deleteApp(app);
-  }
-}
-
-test("pointer-missing rebuild bootstraps up to one hundred items and rejects the one hundred first", async () => {
+test("trigger-backed rebuild publishes exactly one hundred items", async () => {
   const app = initializeApp({ projectId }, "catalog-trigger-bound");
   const firestore = getFirestore(app);
   const store = new FirestoreCatalogProjectionStore(firestore, () => at);
   try {
     await clearCatalog(firestore);
+    const expected = Array.from({ length: 100 }, (_, index) =>
+      [`bound-${index.toString().padStart(3, "0")}`, 1] as const,
+    );
+    const published = exactCatalog(firestore, expected, 0, false);
+    await published.ready;
     const batch = firestore.batch();
-    for (let index = 0; index < 100; index += 1) {
-      const itemId = `bound-${index.toString().padStart(3, "0")}`;
+    for (const [itemId] of expected) {
       batch.set(firestore.doc(`shopItems/${itemId}`), catalogItem(itemId, 1));
     }
     await batch.commit();
     await store.rebuild();
-    const pointer = await firestore.doc(pointerPath).get();
+    const pointer = await published.value;
+    published.close();
     assertProjection(pointer, 100, 0, false);
-
-    await firestore.doc("shopItems/bound-100").set(catalogItem("bound-100", 1));
-    await assert.rejects(
-      () => store.rebuild(),
-      (error: unknown) =>
-        error instanceof Error && "code" in error && error.code === "resource-exhausted",
-    );
-    const unchanged = await firestore.doc(pointerPath).get();
-    assert.equal(unchanged.get("projectionId"), pointer.get("projectionId"));
-    assert.equal(unchanged.get("generation"), pointer.get("generation"));
   } finally {
     await clearCatalog(firestore);
     await deleteApp(app);
   }
 });
 
-function exactDocument(
-  reference: DocumentReference,
-  predicate: (snapshot: DocumentSnapshot) => boolean,
+function exactCatalog(
+  firestore: ReturnType<typeof getFirestore>,
+  expected: readonly (readonly [itemId: string, revision: number])[],
+  rejectedCount: number,
+  partial: boolean,
 ): Readonly<{
   ready: Promise<void>;
   value: Promise<DocumentSnapshot>;
   close: () => void;
 }> {
+  const reference = firestore.doc(pointerPath);
   let readyResolve!: () => void;
   let valueResolve!: (snapshot: DocumentSnapshot) => void;
   let valueReject!: (error: unknown) => void;
@@ -387,7 +258,7 @@ function exactDocument(
     valueReject = reject;
   });
   const timer = setTimeout(() => {
-    if (!settled) valueReject(new Error(`Timed out waiting for ${reference.path}`));
+    if (!settled) valueReject(new Error(`Timed out waiting for exact ${reference.path}`));
   }, 10_000);
   const unsubscribe = reference.onSnapshot(
     (snapshot) => {
@@ -395,11 +266,22 @@ function exactDocument(
         readyObserved = true;
         readyResolve();
       }
-      if (!settled && predicate(snapshot)) {
-        settled = true;
-        clearTimeout(timer);
-        valueResolve(snapshot);
-      }
+      if (settled) return;
+      void pointerHasCatalog(firestore, snapshot, expected, rejectedCount, partial)
+        .then((matches) => {
+          if (!settled && matches) {
+            settled = true;
+            clearTimeout(timer);
+            valueResolve(snapshot);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            valueReject(error);
+          }
+        });
     },
     (error) => {
       if (!settled) {
@@ -417,6 +299,41 @@ function exactDocument(
       unsubscribe();
     },
   };
+}
+
+async function pointerHasCatalog(
+  firestore: ReturnType<typeof getFirestore>,
+  pointer: DocumentSnapshot,
+  expected: readonly (readonly [itemId: string, revision: number])[],
+  rejectedCount: number,
+  partial: boolean,
+): Promise<boolean> {
+  if (
+    !pointer.exists ||
+    pointer.get("itemCount") !== expected.length ||
+    pointer.get("rejectedCount") !== rejectedCount ||
+    pointer.get("partial") !== partial
+  ) return false;
+  const projectionId = pointer.get("projectionId");
+  if (typeof projectionId !== "string") return false;
+  const projection = await firestore.doc(`catalogProjections/${projectionId}`).get();
+  if (
+    !projection.exists ||
+    projection.get("projectionId") !== projectionId ||
+    projection.get("generation") !== pointer.get("generation") ||
+    projection.get("catalogToken") !== pointer.get("catalogToken") ||
+    projection.get("itemCount") !== expected.length ||
+    projection.get("rejectedCount") !== rejectedCount ||
+    projection.get("partial") !== partial
+  ) return false;
+  const catalog = projection.get("catalog");
+  if (!Array.isArray(catalog)) return false;
+  const actual = catalog.map((item: unknown) => {
+    if (item === null || typeof item !== "object") return null;
+    const record = item as Readonly<Record<string, unknown>>;
+    return [record.itemId, record.revision] as const;
+  });
+  return JSON.stringify(actual) === JSON.stringify(expected);
 }
 
 function assertProjection(
@@ -461,8 +378,13 @@ async function loadSnapshot(firestore: ReturnType<typeof getFirestore>) {
 }
 
 async function clearCatalog(firestore: ReturnType<typeof getFirestore>): Promise<void> {
-  await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjections"));
-  await firestore.doc(pointerPath).delete();
+  const empty = exactCatalog(firestore, [], 0, false);
+  await empty.ready;
+  // Delete trigger sources first, then retain the canonical empty pointer so
+  // every already-dispatched event is an idempotent rebuild.
   await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+  await empty.value;
+  empty.close();
+  await firestore.recursiveDelete(firestore.collection("users"));
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
+import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
 import {
   executeDeleteMiniHomeLayout,
@@ -239,8 +240,7 @@ async function seedItem(
 }
 
 async function clear(firestore: ReturnType<typeof getFirestore>) {
-  await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjections"));
-  await firestore.doc("catalogProjectionPointers/current").delete();
   await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await new FirestoreCatalogProjectionStore(firestore, () => acquiredAt).rebuild();
+  await firestore.recursiveDelete(firestore.collection("users"));
 }

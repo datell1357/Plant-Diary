@@ -64,7 +64,7 @@ test("combined snapshot rejects missing auth spoofing and unknown fields before 
   }
 });
 
-test("combined snapshot refreshes current catalog binding within five reads and orphan-safe legacy bootstrap remains bounded by 431", () => {
-  assert.equal(MINI_HOME_SNAPSHOT_MAX_DOCUMENT_READS, 5);
-  assert.equal(MINI_HOME_SNAPSHOT_BOOTSTRAP_MAX_DOCUMENT_READS, 431);
+test("combined snapshot refreshes current catalog binding within six reads and high-water legacy bootstrap remains bounded by 436", () => {
+  assert.equal(MINI_HOME_SNAPSHOT_MAX_DOCUMENT_READS, 6);
+  assert.equal(MINI_HOME_SNAPSHOT_BOOTSTRAP_MAX_DOCUMENT_READS, 436);
 });

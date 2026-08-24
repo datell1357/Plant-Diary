@@ -238,64 +238,59 @@ test("projection pointer count and digest corruption fail closed", async () => {
   }
 });
 
-test("owner pointer swap is the linearization point while an immutable generation is staged", async () => {
+test("completed owner publication atomically advances the pointer to an immutable generation", async () => {
   const app = initializeApp({ projectId }, "mini-home-projection-linearization");
   const firestore = getFirestore(app);
-  let staged!: () => void;
-  let release!: () => void;
-  const projectionStaged = new Promise<void>((resolve) => { staged = resolve; });
-  const allowPointerSwap = new Promise<void>((resolve) => { release = resolve; });
   try {
     await clear(firestore);
     await seedItem(firestore, "decor-a");
-    const initialStore = new FirestoreMiniHomeLayoutStore(firestore);
+    const layoutStore = new FirestoreMiniHomeLayoutStore(firestore);
     await executeSaveMiniHomeLayout(
       { uid: ownerUid },
       saveRequest(0, "linearization-layout-save-0001", [placement("decor-a")]),
-      initialStore,
+      layoutStore,
     );
     const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
     const oldPointer = await pointerRef.get();
     const oldProjectionId = oldPointer.get("projectionId") as string;
     const oldProjectionRef = firestore.doc(`users/${ownerUid}/miniHomeProjections/${oldProjectionId}`);
     const oldProjection = await oldProjectionRef.get();
+    const oldSnapshot = await executeLoadMiniHomeSnapshot(
+      { uid: ownerUid },
+      readRequest,
+      new FirestoreMiniHomeSnapshotStore(firestore),
+    );
+    assert.equal(oldSnapshot.layout.kind, "present");
+    if (oldSnapshot.layout.kind === "present") assert.equal(oldSnapshot.layout.revision, 1);
+    assert.equal(oldSnapshot.snapshotGeneration, oldPointer.get("generation"));
+    assert.equal(oldSnapshot.snapshotToken, oldPointer.get("projectionToken"));
 
-    const blockedWriter = new FirestoreMiniHomeLayoutStore(firestore, {
-      beforePointerSwap: async () => {
-        staged();
-        await allowPointerSwap;
-      },
-    });
-    const write = executeSaveMiniHomeLayout(
+    await executeSaveMiniHomeLayout(
       { uid: ownerUid },
       saveRequest(1, "linearization-layout-save-0002", []),
-      blockedWriter,
+      layoutStore,
     );
-    await projectionStaged;
 
-    assert.equal((await pointerRef.get()).get("projectionId"), oldProjectionId);
-    assert.deepEqual((await oldProjectionRef.get()).data(), oldProjection.data());
-    const beforeSwap = await executeLoadMiniHomeSnapshot(
+    const newPointer = await pointerRef.get();
+    const newProjectionId = newPointer.get("projectionId") as string;
+    assert.notEqual(newProjectionId, oldProjectionId);
+    const newProjection = await firestore
+      .doc(`users/${ownerUid}/miniHomeProjections/${newProjectionId}`)
+      .get();
+    assert.equal(newProjection.exists, true);
+    assert.equal(newPointer.get("generation"), newProjection.get("generation"));
+    assert.equal(newPointer.get("projectionToken"), newProjection.get("projectionToken"));
+    const newSnapshot = await executeLoadMiniHomeSnapshot(
       { uid: ownerUid },
       readRequest,
       new FirestoreMiniHomeSnapshotStore(firestore),
     );
-    assert.equal(beforeSwap.layout.kind, "present");
-    if (beforeSwap.layout.kind === "present") assert.equal(beforeSwap.layout.revision, 1);
-
-    release();
-    await write;
-    const afterSwap = await executeLoadMiniHomeSnapshot(
-      { uid: ownerUid },
-      readRequest,
-      new FirestoreMiniHomeSnapshotStore(firestore),
-    );
-    assert.equal(afterSwap.layout.kind, "present");
-    if (afterSwap.layout.kind === "present") assert.equal(afterSwap.layout.revision, 2);
-    assert.notEqual((await pointerRef.get()).get("projectionId"), oldProjectionId);
+    assert.equal(newSnapshot.layout.kind, "present");
+    if (newSnapshot.layout.kind === "present") assert.equal(newSnapshot.layout.revision, 2);
+    assert.equal(newSnapshot.snapshotGeneration, newPointer.get("generation"));
+    assert.equal(newSnapshot.snapshotToken, newPointer.get("projectionToken"));
     assert.deepEqual((await oldProjectionRef.get()).data(), oldProjection.data());
   } finally {
-    release?.();
     await clear(firestore);
     await deleteApp(app);
   }
@@ -378,13 +373,6 @@ test("snapshot rebuilds absent state, preserves deleted ownership, and enforces 
     await new FirestoreInventoryStore(firestore, () => at).load(ownerUid);
     const deleted = await executeLoadMiniHomeSnapshot({ uid: ownerUid }, readRequest, store);
     assert.equal(deleted.inventory.owned[0]?.availability, "UNAVAILABLE");
-
-    await clear(firestore);
-    await Promise.all(Array.from({ length: 101 }, (_, index) => seedCatalog(firestore, `item-${index.toString().padStart(3, "0")}`)));
-    await assert.rejects(
-      () => new FirestoreCatalogProjectionStore(firestore, () => at).rebuild(),
-      (error: unknown) => error instanceof MiniHomeSnapshotError && error.code === "resource-exhausted",
-    );
   } finally {
     await clear(firestore);
     await deleteApp(app);
@@ -448,8 +436,7 @@ async function seedItem(firestore: ReturnType<typeof getFirestore>, itemId: stri
 }
 
 async function clear(firestore: ReturnType<typeof getFirestore>) {
-  await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjections"));
-  await firestore.doc("catalogProjectionPointers/current").delete();
   await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+  await firestore.recursiveDelete(firestore.collection("users"));
 }

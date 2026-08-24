@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
+import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeShareStore } from "./firestore-mini-home-share-store.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
 import {
@@ -273,9 +274,8 @@ test("public read normalizes malformed and torn records to absence", async () =>
 });
 
 async function clear(firestore: ReturnType<typeof getFirestore>) {
-  await firestore.recursiveDelete(firestore.collection("users"));
-  await firestore.recursiveDelete(firestore.collection("catalogProjections"));
-  await firestore.doc("catalogProjectionPointers/current").delete();
   await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+  await firestore.recursiveDelete(firestore.collection("users"));
   await firestore.recursiveDelete(firestore.collection("publicShares"));
 }

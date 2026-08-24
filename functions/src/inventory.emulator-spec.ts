@@ -338,9 +338,7 @@ async function seedOwnedSnapshot(
 }
 
 async function clear(firestore: FirebaseFirestore.Firestore): Promise<void> {
-  for (const collection of ["users", "catalogProjections"]) {
-    await firestore.recursiveDelete(firestore.collection(collection));
-  }
-  await firestore.doc("catalogProjectionPointers/current").delete();
   await firestore.recursiveDelete(firestore.collection("shopItems"));
+  await new FirestoreCatalogProjectionStore(firestore, () => now).rebuild();
+  await firestore.recursiveDelete(firestore.collection("users"));
 }
