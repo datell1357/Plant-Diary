@@ -22,59 +22,47 @@ struct PlantCareDetailView: View {
     @State var showsDeleteConfirmation = false
     @State var saveError: String?
     @State var saveFeedback: String?
-    @State private var showsEditing = false
+    @State var showsEditing = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
-                hero
-                guideSection
-                    .padding(.top, PlanteriorSpacing.extraSmall)
-                compactWateringCard
-                    .padding(.top, PlanteriorSpacing.medium)
-                memoSection
-                remedyLink
-                weatherSection
-                if showsEditing {
-                    titleSummary
-                    wateringEditorSection
-                    editingSection
+        VStack(spacing: 0) {
+            detailTopBar
+            ScrollView {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+                    hero
+                    guideSection
+                        .padding(.top, PlanteriorSpacing.extraSmall)
+                    compactWateringCard
+                        .padding(.top, PlanteriorSpacing.medium)
+                    memoSection
+                    remedyLink
+                    weatherSection
+                    if showsEditing {
+                        titleSummary
+                        wateringEditorSection
+                        editingSection
+                    }
+                    timelineSection
+                    saveFeedbackLabel
+                    if let saveError {
+                        Text(saveError)
+                            .font(PlanteriorTypography.supporting)
+                            .foregroundStyle(PlanteriorPalette.warning.color)
+                            .accessibilityIdentifier("plant.detail.save-error")
+                    }
+                    deleteAction
                 }
-                timelineSection
-                saveFeedbackLabel
-                if let saveError {
-                    Text(saveError)
-                        .font(PlanteriorTypography.supporting)
-                        .foregroundStyle(PlanteriorPalette.warning.color)
-                        .accessibilityIdentifier("plant.detail.save-error")
-                }
-                deleteAction
+                .padding(.horizontal, PlanteriorSpacing.large)
+                .padding(.bottom, PlanteriorSpacing.large)
             }
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.top, -PlanteriorSpacing.large)
-            .padding(.bottom, PlanteriorSpacing.large)
+            .plantCareReferenceBody()
+            .scrollClipDisabled(!dynamicTypeSize.isAccessibilitySize)
+            .accessibilityIdentifier("plant.detail.screen")
         }
-        .scrollClipDisabled(!dynamicTypeSize.isAccessibilitySize)
         .background(PlanteriorPalette.canvas.color)
-        .navigationTitle(trimmedNickname)
-        .navigationBarTitleDisplayMode(.inline)
-        .planteriorInlineNavigationChrome()
-        .toolbar(.visible, for: .navigationBar)
-        .toolbar {
-            Button {
-                showsEditing.toggle()
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .frame(
-                        width: PlanteriorControl.minimumTarget,
-                        height: PlanteriorControl.minimumTarget
-                    )
-            }
-            .accessibilityLabel(showsEditing ? "편집 닫기" : "식물 정보 편집")
-            .accessibilityIdentifier("plant.detail.edit")
-        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .tint(PlanteriorPalette.accent.color)
-        .accessibilityIdentifier("plant.detail.screen")
         .task { loadPlant() }
         .confirmationDialog(
             "이 식물을 삭제할까요?",
@@ -101,7 +89,7 @@ struct PlantCareDetailView: View {
         .frame(height: 220)
         .background(PlanteriorPalette.subtle.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-        .offset(y: -PlanteriorSpacing.small)
+        .offset(y: PlantCareReferenceMetrics.heroTopInset)
         .accessibilityLabel("\(trimmedNickname) 대표 이미지")
         .accessibilityIdentifier("plant.detail.hero")
     }

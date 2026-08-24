@@ -36,6 +36,7 @@ extension PlantCareDetailView {
 struct PlantSymptomRemedyView: View {
     let displayName: String
     let hasWateringBaseline: Bool
+    @Environment(\.dismiss) var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var expandedIndex: Int? = 0
 
@@ -67,43 +68,43 @@ struct PlantSymptomRemedyView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                Text("반려식물: \(displayName) 🌱")
-                    .font(PlanteriorTypography.caption.weight(.semibold))
-                    .foregroundStyle(PlanteriorPalette.accent.color)
-                    .padding(.horizontal, PlanteriorSpacing.medium)
-                    .frame(minHeight: PlanteriorControl.minimumTarget)
-                    .background {
-                        RoundedRectangle(cornerRadius: PlanteriorRadius.small)
-                            .fill(PlanteriorPalette.subtle.color)
-                            .frame(
-                                height: PlanteriorControl.minimumTarget
-                                    - PlanteriorSpacing.large
-                            )
+        VStack(spacing: 0) {
+            remedyTopBar
+            ScrollView {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                    Text("반려식물: \(displayName) 🌱")
+                        .font(PlanteriorTypography.caption.weight(.semibold))
+                        .foregroundStyle(PlanteriorPalette.accent.color)
+                        .padding(.horizontal, PlanteriorSpacing.medium)
+                        .frame(minHeight: PlanteriorControl.minimumTarget)
+                        .background {
+                            RoundedRectangle(cornerRadius: PlanteriorRadius.small)
+                                .fill(PlanteriorPalette.subtle.color)
+                                .frame(
+                                    height: PlanteriorControl.minimumTarget
+                                        - PlanteriorSpacing.large
+                                )
+                        }
+                        .accessibilityIdentifier("remedy.context")
+                        .padding(.leading, PlanteriorSpacing.small)
+                    VStack(spacing: PlanteriorSpacing.medium) {
+                        ForEach(guidance.indices, id: \.self) { symptomCard($0) }
                     }
-                    .accessibilityIdentifier("remedy.context")
-                    .padding(.leading, PlanteriorSpacing.small)
-                VStack(spacing: PlanteriorSpacing.medium) {
-                    ForEach(guidance.indices, id: \.self) { symptomCard($0) }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, PlanteriorSpacing.large)
+                .padding(
+                    .top,
+                    dynamicTypeSize.isAccessibilitySize ? PlanteriorSpacing.large : 0
+                )
+                .padding(.bottom, PlanteriorSpacing.large)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(
-                .top,
-                dynamicTypeSize.isAccessibilitySize
-                    ? 0
-                    : -PlanteriorSpacing.large
-            )
-            .padding(.bottom, PlanteriorSpacing.large)
+            .plantCareReferenceBody()
+            .accessibilityIdentifier("remedy.screen")
         }
         .background(PlanteriorPalette.canvas.color)
-        .navigationTitle("증상 대처법")
-        .navigationBarTitleDisplayMode(.inline)
-        .planteriorInlineNavigationChrome()
-        .toolbar(.visible, for: .navigationBar)
-        .accessibilityIdentifier("remedy.screen")
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private func symptomCard(_ index: Int) -> some View {
@@ -179,7 +180,6 @@ struct PlantSymptomRemedyView: View {
                 .accessibilityIdentifier("remedy.action.\(index)")
         }
     }
-
 }
 
 private struct SymptomGuidance {

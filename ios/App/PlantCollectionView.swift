@@ -111,6 +111,7 @@ struct PlantCollectionView: View {
             }
         }
         .padding(.horizontal, PlanteriorSpacing.small)
+        .frame(minHeight: PlanteriorControl.minimumTarget)
     }
 
     private var searchField: some View {

@@ -8,6 +8,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
 
         XCTAssertTrue(app.scrollViews["collection.screen"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["collection.title"].label, "나의 도감")
+        assertCollectionHeadingMatchesReference(in: app)
         XCTAssertEqual(
             app.staticTexts["collection.summary.title"].label,
             "등록된 식물 총 5개 🌱"
@@ -58,10 +59,11 @@ final class PlantCollectionFigmaUITests: XCTestCase {
 
         XCTAssertTrue(app.scrollViews["plant.detail.screen"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.images["plant.detail.hero"].exists)
-        XCTAssertTrue(app.navigationBars["몬스테라"].exists)
+        XCTAssertTrue(app.staticTexts["몬스테라"].exists)
         let guide = app.otherElements["plant.detail.guide"]
         let watering = app.otherElements["plant.detail.watering-card"]
         let memo = app.otherElements["plant.detail.memo"]
+        assertPlantDetailChromeAndHeroMatchReference(in: app)
         XCTAssertTrue(guide.exists)
         XCTAssertTrue(watering.exists)
         XCTAssertEqual(
@@ -103,7 +105,8 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         remedyLink.tap()
 
         XCTAssertTrue(app.scrollViews["remedy.screen"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.navigationBars["증상 대처법"].exists)
+        XCTAssertTrue(app.staticTexts["증상 대처법"].exists)
+        assertRemedyChromeAndExpandedCardMatchReference(in: app)
         let context = app.staticTexts["remedy.context"]
         XCTAssertEqual(context.label, "반려식물: 몬스테라 🌱")
         XCTAssertEqual(
@@ -145,6 +148,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         let heading = app.staticTexts["collection.title"]
         XCTAssertTrue(heading.exists, "true-empty must retain the Collection heading")
         XCTAssertEqual(heading.label, "나의 도감")
+        assertCollectionHeadingMatchesReference(in: app)
         XCTAssertEqual(
             app.staticTexts["collection.empty.title"].label,
             "아직 등록된 식물이 없어요 🥺"
@@ -163,7 +167,6 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         let camera = app.buttons["collection.empty.camera"]
         let manual = app.buttons["collection.empty.manual"]
         let homeTab = app.buttons["tab.home"]
-        attachScreenshot(named: "collection-empty-before-camera")
         guard manual.isHittable, !manual.frame.intersects(homeTab.frame) else {
             XCTFail(
                 "empty manual route must clear the tab bar; "
@@ -179,6 +182,15 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         }
         camera.tap()
         XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
+        app.buttons["capture.close"].tap()
+        XCTAssertTrue(
+            app.otherElements["capture.camera"].waitForNonExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.images["collection.empty.illustration"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["tab.home"].exists)
+        assertCollectionHeadingMatchesReference(in: app)
         attachScreenshot(named: "collection-empty-402x874")
     }
 
@@ -218,28 +230,5 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["collection.screen"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["collection.add"].isHittable)
         attachScreenshot(named: "collection-list-light-reduce-motion")
-    }
-
-    private func figmaCollectionApp(empty: Bool = false) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
-        app.launchEnvironment["QA_INITIAL_TAB"] = "collection"
-        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
-        app.launchEnvironment["QA_COLLECTION_FIGMA_FIXTURE"] = "1"
-        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
-        app.launchEnvironment["QA_WATERING_TODAY"] = "2026-05-19"
-        app.launchEnvironment["QA_PLANT_DETAIL_UPDATED_ON"] = "2026-05-17"
-        if empty {
-            app.launchEnvironment["QA_COLLECTION_EMPTY"] = "1"
-        }
-        return app
-    }
-
-    private func attachScreenshot(named name: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 }
