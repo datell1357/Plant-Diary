@@ -60,8 +60,7 @@ extension SettingsDeletionUITests {
     /// Settings entry point and scrolls the control into view first.
     /// Assertions stay structural so no copy or pixel geometry is pinned.
     func testFigmaRegionSettingsAtKoreanAX5ReduceMotion() {
-        let app = figmaSettingsApp()
-        app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
+        let app = figmaSettingsApp(accessibilitySize: true)
         app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
         app.launchEnvironment["QA_WEATHER_MANUAL_REGION"] = "manual-seoul"
         app.launchArguments += [

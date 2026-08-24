@@ -169,8 +169,7 @@ extension SettingsDeletionUITests {
     }
 
     func testFigmaSettingsAndQuietHoursAtKoreanAX5ReduceMotion() {
-        let app = figmaSettingsApp()
-        app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
+        let app = figmaSettingsApp(accessibilitySize: true)
         app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
         app.launchArguments += [
             "-AppleLanguages", "(ko)",
@@ -229,14 +228,18 @@ extension SettingsDeletionUITests {
         let dismissEnd = app.buttons["PopoverDismissRegion"]
         XCTAssertTrue(dismissEnd.waitForExistence(timeout: 2))
         dismissEnd.tap()
+        scroll.swipeUp()
+        attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
         let save = app.buttons["quiet-hours.save"]
         XCTAssertTrue(save.isHittable)
         save.tap()
         XCTAssertTrue(app.buttons["settings.quiet-hours.open"].waitForExistence(timeout: 5))
-        attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
     }
 
-    func figmaSettingsApp(accountID: String? = nil) -> XCUIApplication {
+    func figmaSettingsApp(
+        accountID: String? = nil,
+        accessibilitySize: Bool = false
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
@@ -249,6 +252,13 @@ extension SettingsDeletionUITests {
         app.launchEnvironment["QA_SETTINGS_LOCATION_TEXT"] =
             "서울특별시 강남구 역삼동"
         app.launchEnvironment["TZ"] = "Asia/Seoul"
+        if accessibilitySize {
+            app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL"
+            ]
+        }
         return app
     }
 
