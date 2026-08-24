@@ -41,7 +41,8 @@ extension CaptureFlowUITests {
             app,
             environment: [
                 "QA_PHOTO_FIXTURE": "valid",
-                "QA_IDENTIFICATION_STATE": "pending"
+                "QA_IDENTIFICATION_STATE": "pending",
+                "QA_CAPTURE_STATIC_PHASE": "1"
             ]
         )
         submitReviewedPhoto(app)
@@ -76,15 +77,13 @@ extension CaptureFlowUITests {
         XCTAssertEqual(app.buttons["capture.close"].label, "촬영 닫기")
         let hint = app.staticTexts["capture.hint"]
         XCTAssertTrue(hint.exists)
-        XCTAssertEqual(hint.label, "식물을 초점에 맞춰주세요")
+        XCTAssertEqual(hint.label, "식물을 프레임 안에 맞춰주세요")
         let viewport = app.images["capture.viewport"]
         XCTAssertTrue(viewport.exists, "the viewfinder must render a real image layer")
-        XCTAssertEqual(viewport.frame.width, 320, accuracy: 2)
-        XCTAssertEqual(viewport.frame.height, 320, accuracy: 2)
+        assertFrame(viewport, x: 41, y: 265, width: 320, height: 320)
         let reticle = app.otherElements["capture.reticle"]
         XCTAssertTrue(reticle.exists)
-        XCTAssertEqual(reticle.frame.width, 240, accuracy: 2)
-        XCTAssertEqual(reticle.frame.height, 240, accuracy: 2)
+        assertFrame(reticle, x: 81, y: 305, width: 240, height: 240)
         let library = app.buttons["capture.library"]
         XCTAssertTrue(library.exists)
         XCTAssertEqual(library.label, "사진 보관함")
@@ -94,10 +93,13 @@ extension CaptureFlowUITests {
         let shutter = app.buttons["capture.shutter"]
         XCTAssertTrue(shutter.exists)
         XCTAssertEqual(shutter.label, "촬영")
-        XCTAssertGreaterThanOrEqual(
-            shutter.frame.height.rounded(),
-            64,
-            "§6.11 shutter is a 72pt circle inside an 80pt ring"
+        assertFrame(
+            shutter,
+            x: 161,
+            y: 742,
+            width: 80,
+            height: 80,
+            message: "§6.11 shutter is a 72pt circle inside an 80pt ring"
         )
         XCTAssertLessThan(library.frame.midX, shutter.frame.midX)
         XCTAssertLessThan(shutter.frame.midX, flash.frame.midX)
@@ -106,6 +108,28 @@ extension CaptureFlowUITests {
             app,
             identifiers: ["capture.close", "capture.library", "capture.shutter", "capture.flash"]
         )
+    }
+
+    func testFlashTogglesStateWithoutEnteringCapturePath() {
+        let app = XCUIApplication()
+        launchCapture(app, environment: ["QA_CAMERA_DENIED": "1"])
+        openCamera(app)
+
+        let flash = app.buttons["capture.flash"]
+        XCTAssertTrue(flash.waitForExistence(timeout: 5))
+        flash.tap()
+
+        XCTAssertTrue(app.otherElements["capture.camera"].exists)
+        XCTAssertFalse(
+            app.staticTexts["capture.error"].exists,
+            "Flash must not invoke the camera capture path"
+        )
+        XCTAssertEqual(flash.value as? String, "켜짐")
+        XCTAssertTrue(flash.isSelected)
+
+        flash.tap()
+        XCTAssertEqual(flash.value as? String, "꺼짐")
+        XCTAssertFalse(flash.isSelected)
     }
 
     func testKoreanAX5CameraTertiaryControlsKeepReadableLabelsAndTargets() {
@@ -194,6 +218,21 @@ extension CaptureFlowUITests {
             object: candidate
         )
         await fulfillment(of: [selected], timeout: 2)
+    }
+
+    private func assertFrame(
+        _ element: XCUIElement,
+        x: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        accuracy: CGFloat = 2,
+        message: String = ""
+    ) {
+        XCTAssertEqual(element.frame.minX, x, accuracy: accuracy, message)
+        XCTAssertEqual(element.frame.minY, y, accuracy: accuracy, message)
+        XCTAssertEqual(element.frame.width, width, accuracy: accuracy, message)
+        XCTAssertEqual(element.frame.height, height, accuracy: accuracy, message)
     }
 
     private func attachFigmaScreenshot(named name: String) {

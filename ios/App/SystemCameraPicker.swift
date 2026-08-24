@@ -3,11 +3,13 @@ import SwiftUI
 import UIKit
 
 struct SystemCameraPicker: UIViewControllerRepresentable {
+    let flashMode: AVCaptureDevice.FlashMode
     let completion: (Data) -> Void
     let cancel: () -> Void
 
     func makeUIViewController(context: Context) -> CameraCaptureViewController {
         let controller = CameraCaptureViewController()
+        controller.flashMode = flashMode
         controller.completion = completion
         controller.cancel = cancel
         return controller
@@ -16,10 +18,13 @@ struct SystemCameraPicker: UIViewControllerRepresentable {
     func updateUIViewController(
         _ uiViewController: CameraCaptureViewController,
         context: Context
-    ) {}
+    ) {
+        uiViewController.flashMode = flashMode
+    }
 }
 
 final class CameraCaptureViewController: UIViewController {
+    var flashMode: AVCaptureDevice.FlashMode = .off
     var completion: ((Data) -> Void)?
     var cancel: (() -> Void)?
     private let session = AVCaptureSession()
@@ -91,7 +96,11 @@ final class CameraCaptureViewController: UIViewController {
     }
 
     @objc private func capture() {
-        output.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
+        let settings = AVCapturePhotoSettings()
+        if output.supportedFlashModes.contains(flashMode) {
+            settings.flashMode = flashMode
+        }
+        output.capturePhoto(with: settings, delegate: self)
     }
 
     @objc private func cancelCapture() {

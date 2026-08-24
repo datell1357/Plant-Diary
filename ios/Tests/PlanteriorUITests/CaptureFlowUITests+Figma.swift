@@ -27,9 +27,10 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertTrue(app.images["photo.review"].exists, "review renders the chosen photo")
         let photoContent = app.otherElements["capture.review.content"]
         XCTAssertTrue(photoContent.exists)
+        XCTAssertEqual(photoContent.frame.minX, 20, accuracy: 2)
+        XCTAssertEqual(photoContent.frame.minY, 196, accuracy: 2)
         XCTAssertEqual(photoContent.frame.width, 362, accuracy: 2)
         XCTAssertEqual(photoContent.frame.height, 420, accuracy: 2)
-        XCTAssertGreaterThan(photoContent.frame.minY, 190)
         XCTAssertTrue(app.staticTexts["capture.review.caption"].exists)
         let identify = app.buttons["photo.acknowledge"]
         let retake = app.buttons["photo.retake"]
@@ -37,6 +38,8 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertEqual(identify.label, "이 사진으로 식별하기")
         XCTAssertTrue(retake.exists)
         XCTAssertEqual(retake.label, "다시 촬영")
+        XCTAssertEqual(identify.frame.minY, 721, accuracy: 2)
+        XCTAssertEqual(retake.frame.minY, 779, accuracy: 2)
         XCTAssertLessThan(identify.frame.minY, retake.frame.minY)
         XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
         XCTAssertFalse(app.buttons["photo.replace"].exists)
@@ -77,9 +80,27 @@ final class CaptureFlowUITests: XCTestCase {
         let progress = app.otherElements["capture.identifying.progress"]
         XCTAssertTrue(progress.exists, "progress must be a semantic element, not decoration")
         XCTAssertEqual(progress.value as? String, "분석 중")
+        XCTAssertEqual(progress.frame.minX, 141, accuracy: 2)
         XCTAssertEqual(progress.frame.width, 120, accuracy: 2)
         XCTAssertEqual(progress.frame.height, 120, accuracy: 2)
-        XCTAssertEqual(progress.frame.minY, 200, accuracy: 3)
+        XCTAssertEqual(progress.frame.minY, 200, accuracy: 2)
+    }
+
+    func testIdentifyingCapturePhaseIsDeterministicallyStatic() {
+        let app = XCUIApplication()
+        launchCapture(
+            app,
+            environment: [
+                "QA_PHOTO_FIXTURE": "valid",
+                "QA_IDENTIFICATION_STATE": "pending",
+                "QA_CAPTURE_STATIC_PHASE": "1"
+            ]
+        )
+        submitReviewedPhoto(app)
+
+        XCTAssertTrue(app.otherElements["capture.identifying"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.otherElements["capture.identifying.progress.static"].exists)
+        XCTAssertFalse(app.otherElements["capture.identifying.progress.animated"].exists)
     }
 
     func testIdentifyingUnderReduceMotionKeepsStateWithoutSubstituteAnimation() {
@@ -112,8 +133,11 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertEqual(hero.frame.height, 160, accuracy: 2)
         let resultCard = app.otherElements["capture.result.card"]
         XCTAssertTrue(resultCard.exists)
+        XCTAssertEqual(resultCard.frame.minX, 20, accuracy: 2)
         XCTAssertEqual(resultCard.frame.width, 362, accuracy: 2)
-        XCTAssertEqual(resultCard.frame.minY, hero.frame.minY, accuracy: 2)
+        XCTAssertEqual(resultCard.frame.minY, 142, accuracy: 2)
+        XCTAssertEqual(hero.frame.minX, 20, accuracy: 2)
+        XCTAssertEqual(hero.frame.minY, 142, accuracy: 2)
         let confidence = app.descendants(matching: .any)["capture.result.confidence"]
         XCTAssertTrue(confidence.exists)
         XCTAssertEqual(confidence.label, "신뢰도 95%", "the top candidate matches the fixture")
@@ -133,6 +157,7 @@ final class CaptureFlowUITests: XCTestCase {
         let register = app.buttons["capture.result.register"]
         XCTAssertTrue(register.exists)
         XCTAssertEqual(register.label, "이 식물로 등록하기")
+        XCTAssertEqual(register.frame.minY, 723, accuracy: 2)
         XCTAssertTrue(app.buttons["identification.manual"].exists)
         XCTAssertTrue(app.buttons["identification.manual-registration"].exists)
         assertMinimumTargets(app, identifiers: ["capture.result.register"])

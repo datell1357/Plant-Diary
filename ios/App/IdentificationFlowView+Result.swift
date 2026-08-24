@@ -80,7 +80,9 @@ extension IdentificationFlowView {
 
     @ViewBuilder
     private var resultHero: some View {
-        let height: CGFloat = sizeCategory.isAccessibilityCategory ? 140 : 160
+        let height = sizeCategory.isAccessibilityCategory
+            ? CaptureLayoutMetrics.resultCompactHeroHeight
+            : CaptureLayoutMetrics.resultHeroSize.height
         if usesFigmaPhotoFixture, !sizeCategory.isAccessibilityCategory {
             Image(.capturePreview)
                 .resizable()

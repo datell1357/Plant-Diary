@@ -12,6 +12,60 @@ enum CaptureFlowStep: Equatable {
     case identificationResult
 }
 
+/// Capture-only geometry contract extracted from the 402x874 Figma frames.
+/// Asset dimensions stay native at the reference size and scale down together
+/// on narrower or shorter presentations instead of accumulating per-screen
+/// constants.
+enum CaptureLayoutMetrics {
+    static let referenceCanvas = CGSize(width: 402, height: 874)
+
+    static let cameraViewportLength: CGFloat = 320
+    static let cameraViewportTopSpacing: CGFloat = 161
+    static let cameraReticleLength: CGFloat = 240
+    static let cameraFocusCircleLength: CGFloat = 160
+    static let cameraReticleArmLength: CGFloat = 44
+    static let shutterDiameter: CGFloat = 72
+    static let shutterRingDiameter: CGFloat = 80
+
+    static let reviewAssetSize = CGSize(width: 386, height: 444)
+    static let reviewContentSize = CGSize(width: 362, height: 420)
+    static let reviewCompactContentHeight: CGFloat = 232
+    static let reviewCompactRegionHeight: CGFloat = 256
+    static let reviewTopSpacing: CGFloat = 84
+    static let reviewAssetTopInset: CGFloat = 8
+    static let reviewCaptionTopGap: CGFloat = 10
+    static let reviewActionSpacing: CGFloat = 14
+
+    static let identifyingBackdropSize = CGSize(width: 390, height: 844)
+    static let identifyingProgressTop: CGFloat = 200
+    static let identifyingProgressLength: CGFloat = 120
+    static let identifyingCoreLength: CGFloat = 80
+    static let identifyingGlyphSize: CGFloat = 40
+    static let identifyingRingDashPhase: CGFloat = 9
+    static let identifyingDotSize: CGFloat = 8
+    static let identifyingHeadlineTopSpacing: CGFloat = 33
+    static let identifyingHintTopSpacing: CGFloat = 7
+    static let identifyingDotTopSpacing: CGFloat = 31
+
+    static let resultHeroSize = CGSize(width: 362, height: 160)
+    static let resultCompactHeroHeight: CGFloat = 140
+    static let resultActionVerticalOffset: CGFloat = 7
+
+    static func fittingScale(for availableSize: CGSize) -> CGFloat {
+        min(
+            1,
+            min(
+                availableSize.width / referenceCanvas.width,
+                availableSize.height / referenceCanvas.height
+            )
+        )
+    }
+
+    static func horizontalScale(for availableWidth: CGFloat) -> CGFloat {
+        min(1, availableWidth / referenceCanvas.width)
+    }
+}
+
 /// Presentation model for the identification result card (§6.11). The
 /// identification service returns opaque content IDs and scores; this maps them
 /// onto the Korean name / binomial / description the Figma card renders.

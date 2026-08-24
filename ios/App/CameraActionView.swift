@@ -20,6 +20,7 @@ struct CameraActionView: View {
     @State var showsLibrary = false
     @State var showsAcknowledgement = false
     @State var cameraDenied = false
+    @State var isFlashEnabled = false
     private let consent = PhotoConsentCoordinator(transfer: IdentificationDraftStore.shared)
 
     init(
@@ -55,7 +56,7 @@ struct CameraActionView: View {
             }
         }
         .fullScreenCover(isPresented: $showsCamera) {
-            SystemCameraPicker { data in
+            SystemCameraPicker(flashMode: isFlashEnabled ? .on : .off) { data in
                 showsCamera = false
                 review(data)
             } cancel: {
@@ -117,8 +118,9 @@ struct CameraActionView: View {
         Task { await consent.cancelSelection() }
     }
 
-    /// The shutter and the switch control invoke the real capture stack. The app
-    /// never draws a substitute camera: on denial it surfaces recovery instead.
+    /// The shutter invokes the real capture stack. Flash is configured before
+    /// presentation and never opens the native camera by itself. The app never
+    /// draws a substitute camera: on denial it surfaces recovery instead.
     func requestCamera() {
         #if DEBUG
             if ProcessInfo.processInfo.environment["QA_CAMERA_DENIED"] == "1" {

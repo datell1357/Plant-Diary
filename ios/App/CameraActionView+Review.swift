@@ -21,7 +21,12 @@ extension CameraActionView {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, sizeCategory.isAccessibilityCategory ? 16 : 84)
+                .padding(
+                    .top,
+                    sizeCategory.isAccessibilityCategory
+                        ? PlanteriorSpacing.extraLarge
+                        : CaptureLayoutMetrics.reviewTopSpacing
+                )
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 reviewActions
@@ -66,18 +71,29 @@ extension CameraActionView {
     }
 
     private var reviewPhotoRegion: some View {
-        let contentHeight: CGFloat = sizeCategory.isAccessibilityCategory ? 232 : 420
-        let regionHeight: CGFloat = sizeCategory.isAccessibilityCategory ? 256 : 444
+        let contentHeight = sizeCategory.isAccessibilityCategory
+            ? CaptureLayoutMetrics.reviewCompactContentHeight
+            : CaptureLayoutMetrics.reviewContentSize.height
+        let regionHeight = sizeCategory.isAccessibilityCategory
+            ? CaptureLayoutMetrics.reviewCompactRegionHeight
+            : CaptureLayoutMetrics.reviewAssetSize.height
         return ZStack(alignment: .top) {
             reviewPhoto(contentHeight: contentHeight)
             Text("식물의 초점이 맞고 잎이 선명한지 확인해주세요")
                 .font(PlanteriorTypography.caption)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .multilineTextAlignment(.center)
-                .padding(.top, contentHeight + 10)
+                .padding(
+                    .top,
+                    contentHeight + CaptureLayoutMetrics.reviewCaptionTopGap
+                )
                 .accessibilityIdentifier("capture.review.caption")
         }
-        .frame(width: 386, height: regionHeight, alignment: .top)
+        .frame(
+            width: CaptureLayoutMetrics.reviewAssetSize.width,
+            height: regionHeight,
+            alignment: .top
+        )
     }
 
     @ViewBuilder
@@ -86,40 +102,56 @@ extension CameraActionView {
             if usesFigmaPhotoFixture, !sizeCategory.isAccessibilityCategory {
                 Image(.capturePhoto)
                     .resizable()
-                    .frame(width: 386, height: 444)
+                    .frame(
+                        width: CaptureLayoutMetrics.reviewAssetSize.width,
+                        height: CaptureLayoutMetrics.reviewAssetSize.height
+                    )
                     .accessibilityIdentifier("photo.review")
                     .accessibilityLabel("촬영한 식물 사진")
             } else if let draft, let image = UIImage(data: draft.data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 362, height: contentHeight)
+                    .frame(
+                        width: CaptureLayoutMetrics.reviewContentSize.width,
+                        height: contentHeight
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-                    .padding(.top, 8)
+                    .padding(.top, CaptureLayoutMetrics.reviewAssetTopInset)
                     .accessibilityIdentifier("photo.review")
                     .accessibilityLabel("촬영한 식물 사진")
             } else {
                 Image(.capturePhoto)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 362, height: contentHeight)
+                    .frame(
+                        width: CaptureLayoutMetrics.reviewContentSize.width,
+                        height: contentHeight
+                    )
                     .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-                    .padding(.top, 8)
+                    .padding(.top, CaptureLayoutMetrics.reviewAssetTopInset)
                     .accessibilityIdentifier("photo.review")
                     .accessibilityLabel("촬영한 식물 사진")
             }
             Color.clear
-                .frame(width: 362, height: contentHeight)
-                .padding(.top, 8)
+                .frame(
+                    width: CaptureLayoutMetrics.reviewContentSize.width,
+                    height: contentHeight
+                )
+                .padding(.top, CaptureLayoutMetrics.reviewAssetTopInset)
                 .accessibilityElement()
                 .accessibilityLabel("사진 표시 영역")
                 .accessibilityIdentifier("capture.review.content")
         }
-        .frame(width: 386, height: contentHeight + 8, alignment: .top)
+        .frame(
+            width: CaptureLayoutMetrics.reviewAssetSize.width,
+            height: contentHeight + CaptureLayoutMetrics.reviewAssetTopInset,
+            alignment: .top
+        )
     }
 
     private var reviewActions: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: CaptureLayoutMetrics.reviewActionSpacing) {
             reviewActionButton(
                 "이 사진으로 식별하기",
                 primary: true,

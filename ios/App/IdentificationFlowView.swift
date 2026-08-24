@@ -10,6 +10,8 @@ struct IdentificationFlowView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sizeCategory) var sizeCategory
+    @ScaledMetric(relativeTo: .headline) var identifyingHeadlineFontSize: CGFloat = 19
+    @ScaledMetric(relativeTo: .caption) var identifyingHintFontSize: CGFloat = 15
     let revisePhoto: (() -> Void)?
     let completeRegistration: (() -> Void)?
     @State var state = IdentificationState.pending
@@ -104,6 +106,7 @@ struct IdentificationFlowView: View {
         .padding(.horizontal, PlanteriorSpacing.huge)
         .padding(.bottom, PlanteriorSpacing.small)
         .background(PlanteriorPalette.canvas.color)
+        .offset(y: CaptureLayoutMetrics.resultActionVerticalOffset)
     }
 
     func returnToReviewedPhoto() {
@@ -117,6 +120,11 @@ struct IdentificationFlowView: View {
     var effectiveReduceMotion: Bool {
         reduceMotion
             || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
+    }
+
+    var usesStaticCapturePhase: Bool {
+        effectiveReduceMotion
+            || ProcessInfo.processInfo.environment["QA_CAPTURE_STATIC_PHASE"] == "1"
     }
 
     var usesFigmaPhotoFixture: Bool {
