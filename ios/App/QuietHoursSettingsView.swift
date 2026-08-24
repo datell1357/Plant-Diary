@@ -145,6 +145,20 @@ struct QuietHoursSettingsView: View {
                     )?.rawValue ?? ""
                 )
                 .accessibilityIdentifier(id)
+                .overlay(alignment: .trailing) {
+                    ZStack {
+                        SettingsLayoutFrame(identifier: "\(id).chevron")
+                        Image(systemName: "chevron.right")
+                            .font(PlanteriorTypography.caption)
+                            .foregroundStyle(
+                                PlanteriorPalette.textTertiary.color
+                            )
+                            .accessibilityHidden(true)
+                    }
+                    .frame(width: 16, height: 16)
+                    .padding(.trailing, PlanteriorSpacing.large)
+                    .allowsHitTesting(false)
+                }
             }
             .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)
         }

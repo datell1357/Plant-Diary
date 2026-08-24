@@ -27,10 +27,10 @@ struct SettingsWarningCard: View {
     let isAccessibilityCategory: Bool
 
     private static let accessibilityCopy =
-        "태풍, 한파, 폭염 등 식물 생존에 직접적인 영향을 미치는 "
+        "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는 "
             + "기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이 즉시 발송됩니다."
     private static let referenceCopy =
-        "태풍, 한파, 폭염 등 식물 생존에 직접적인 영향을 미치는\n"
+        "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는\n"
             + "기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이\n"
             + "즉시 발송됩니다."
 

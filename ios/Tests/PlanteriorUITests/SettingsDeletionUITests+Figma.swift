@@ -72,6 +72,14 @@ extension SettingsDeletionUITests {
         toggle.tap()
         XCTAssertTrue(start.isEnabled)
         XCTAssertTrue(end.isEnabled)
+        start.tap()
+        let dismissStart = app.buttons["PopoverDismissRegion"]
+        XCTAssertTrue(dismissStart.waitForExistence(timeout: 2))
+        dismissStart.tap()
+        end.tap()
+        let dismissEnd = app.buttons["PopoverDismissRegion"]
+        XCTAssertTrue(dismissEnd.waitForExistence(timeout: 2))
+        dismissEnd.tap()
         app.buttons["quiet-hours.save"].tap()
 
         XCTAssertTrue(

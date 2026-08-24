@@ -77,6 +77,12 @@ extension SettingsDeletionUITests {
         ]
         let startRow = app.descendants(matching: .any)["quiet-hours.start.row"]
         let endRow = app.descendants(matching: .any)["quiet-hours.end.row"]
+        let startChevron = app.descendants(matching: .any)[
+            "quiet-hours.start.chevron"
+        ]
+        let endChevron = app.descendants(matching: .any)[
+            "quiet-hours.end.chevron"
+        ]
         let warning = app.otherElements["quiet-hours.warning"]
         let warningIcon = app.descendants(matching: .any)["quiet-hours.warning-icon"]
         let warningCopy = app.staticTexts["quiet-hours.warning-copy"]
@@ -84,7 +90,7 @@ extension SettingsDeletionUITests {
             "quiet-hours.warning-copy.intact-weather"
         ]
         let expectedCopy =
-            "태풍, 한파, 폭염 등 식물 생존에 직접적인 영향을 미치는\n"
+            "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는\n"
                 + "기상 특보 및 재난 알림은 시간 설정과 관계없이\n"
                 + "즉시 발송됩니다."
 
@@ -106,6 +112,20 @@ extension SettingsDeletionUITests {
             endRow.frame,
             CGRect(x: 20, y: 324, width: 362, height: 52)
         )
+        XCTAssertTrue(startChevron.exists)
+        if startChevron.exists {
+            assertFrame(
+                startChevron.frame,
+                CGRect(x: 350, y: 290, width: 16, height: 16)
+            )
+        }
+        XCTAssertTrue(endChevron.exists)
+        if endChevron.exists {
+            assertFrame(
+                endChevron.frame,
+                CGRect(x: 350, y: 342, width: 16, height: 16)
+            )
+        }
         assertFrame(
             warning.frame,
             CGRect(x: 20, y: 397, width: 362, height: 80)
