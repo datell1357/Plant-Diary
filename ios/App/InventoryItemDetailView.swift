@@ -17,8 +17,6 @@ struct InventoryItemDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-                .frame(height: 39)
-                .offset(y: -5)
             ScrollView {
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
                     hero
@@ -33,7 +31,10 @@ struct InventoryItemDetailView: View {
             }
             .accessibilityIdentifier("storage.detail.\(item.id.rawValue)")
         }
+        .padding(.top, PlanteriorControl.minimumTarget)
+        .ignoresSafeArea(edges: .top)
         .background(PlanteriorPalette.canvas.color)
+        .padding(.bottom, PlanteriorLayout.tabBarHeight)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .bottom) {
@@ -50,7 +51,7 @@ struct InventoryItemDetailView: View {
     }
 
     private var topBar: some View {
-        PlanteriorTopBar("아이템 상세") {
+        HStack(spacing: 0) {
             Button {
                 dismiss()
             } label: {
@@ -62,10 +63,24 @@ struct InventoryItemDetailView: View {
                     )
             }
             .buttonStyle(.plain)
+            .frame(
+                width: PlanteriorControl.minimumTarget,
+                height: PlanteriorControl.minimumTarget
+            )
+            .contentShape(Rectangle())
             .foregroundStyle(PlanteriorPalette.textPrimary.color)
             .accessibilityLabel("뒤로")
             .accessibilityIdentifier("storage.detail.back")
-        } trailing: {
+
+            Text("아이템 상세")
+                .font(PlanteriorTypography.pageTitle)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("storage.detail.chrome.title")
+
+            Spacer(minLength: PlanteriorSpacing.small)
+
             Button {
                 isFavorite.toggle()
             } label: {
@@ -86,12 +101,16 @@ struct InventoryItemDetailView: View {
                 width: PlanteriorControl.minimumTarget,
                 height: PlanteriorControl.minimumTarget
             )
+            .contentShape(Rectangle())
             .foregroundStyle(PlanteriorPalette.textPrimary.color)
             .accessibilityLabel(isFavorite ? "즐겨찾기 해제" : "즐겨찾기")
             .accessibilityIdentifier(
                 "storage.detail.favorite.\(item.id.rawValue)"
             )
         }
+        .padding(.horizontal, PlanteriorLayout.contentGutter)
+        .frame(height: PlanteriorLayout.topBarHeight)
+        .background(PlanteriorPalette.canvas.color)
     }
 
     private var hero: some View {
@@ -117,7 +136,8 @@ struct InventoryItemDetailView: View {
                 .frame(height: 22)
                 .background(Color.black.opacity(0.72))
                 .clipShape(Capsule())
-                .padding(PlanteriorSpacing.huge)
+                .padding(.horizontal, PlanteriorSpacing.medium)
+                .padding(.top, PlanteriorSpacing.large)
                 .accessibilityIdentifier("storage.detail.category")
         }
     }

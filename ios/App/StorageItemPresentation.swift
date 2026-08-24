@@ -63,9 +63,18 @@ enum StorageItemPresentation {
 
     static func shopBadge(for item: ShopItem) -> String {
         switch item.id.rawValue {
-        case "item-green-wall": "🌱 7일 연속 출석"
-        case "item-christmas-tree": "❄️ 겨울 시즌 한정"
-        case "item-autumn-frame": "🍁 가을 시즌 한정"
+        case "item-green-wall": "7일 연속 출석"
+        case "item-christmas-tree": "겨울 시즌 한정"
+        case "item-autumn-frame": "가을 시즌 한정"
+        default: ""
+        }
+    }
+
+    static func shopBadgeAssetName(for item: ShopItem) -> String {
+        switch item.id.rawValue {
+        case "item-green-wall": "FigmaStorageBadgeAttendance"
+        case "item-christmas-tree": "FigmaStorageBadgeWinter"
+        case "item-autumn-frame": "FigmaStorageBadgeAutumn"
         default: ""
         }
     }

@@ -60,8 +60,12 @@ struct InventoryView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, -15)
         }
+        .padding(
+            .top,
+            PlanteriorControl.minimumTarget + PlanteriorSpacing.extraSmall
+        )
+        .ignoresSafeArea(edges: .top)
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveSizeCategory)
         .toolbar(.hidden, for: .navigationBar)

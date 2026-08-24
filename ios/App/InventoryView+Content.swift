@@ -23,16 +23,32 @@ extension InventoryView {
                     .padding(.horizontal, PlanteriorSpacing.extraLarge)
                     .accessibilityIdentifier("storage.empty")
             } else {
-                LazyVGrid(
-                    columns: storageColumns,
-                    alignment: .leading,
-                    spacing: 10
-                ) {
-                    ForEach(items, id: \.id) { item in
-                        warehouseCard(item)
+                VStack(spacing: 0) {
+                    warehouseGrid(Array(items.prefix(8)))
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("storage.resting.grid")
+                    if items.count > 8 {
+                        Color.clear
+                            .frame(height: PlanteriorSpacing.section * 6)
+                            .accessibilityHidden(true)
+                        warehouseGrid(Array(items.dropFirst(8)))
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("storage.overflow.grid")
                     }
                 }
                 .padding(.horizontal, PlanteriorSpacing.large)
+            }
+        }
+    }
+
+    private func warehouseGrid(_ items: [ShopItem]) -> some View {
+        LazyVGrid(
+            columns: storageColumns,
+            alignment: .leading,
+            spacing: 10
+        ) {
+            ForEach(items, id: \.id) { item in
+                warehouseCard(item)
             }
         }
     }

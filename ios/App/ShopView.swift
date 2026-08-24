@@ -80,7 +80,7 @@ struct ShopView: View {
                     eligibilityText(entry)
             )
 
-            acquireStatus(entry)
+            cardMetadata(entry)
         }
         .padding(9)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -95,10 +95,14 @@ struct ShopView: View {
         }
         .frame(maxWidth: sizeCategory.isAccessibilityCategory ? .infinity : 173)
         .frame(height: 180)
-        .overlay(alignment: .topLeading) {
+    }
+
+    @ViewBuilder
+    private func cardMetadata(_ entry: InventoryCatalogEntry) -> some View {
+        if StorageItemPresentation.shopBadge(for: entry.item).isEmpty {
+            acquireStatus(entry)
+        } else {
             promotionalBadge(entry)
-                .padding(.leading, PlanteriorSpacing.large)
-                .padding(.top, 96)
         }
     }
 
@@ -132,26 +136,55 @@ struct ShopView: View {
         .accessibilityValue(eligibilityText(entry))
     }
 
-    @ViewBuilder
     private func promotionalBadge(
         _ entry: InventoryCatalogEntry
     ) -> some View {
         let badge = StorageItemPresentation.shopBadge(for: entry.item)
-        if !badge.isEmpty {
-            Text(badge)
-                .font(PlanteriorTypography.microLabel)
-                .lineLimit(1)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .padding(.horizontal, PlanteriorSpacing.small)
-                .frame(height: 20)
-                .background(PlanteriorPalette.subtle.color)
-                .clipShape(Capsule())
-                .allowsHitTesting(false)
-                .accessibilityLabel("\(entry.item.name) 프로모션, \(badge)")
-                .accessibilityIdentifier(
-                    "shop.promo.\(entry.item.id.rawValue)"
-                )
+        return Button {
+            acquire(entry.item)
+        } label: {
+            HStack(spacing: PlanteriorSpacing.extraSmall) {
+                shopBadgeImage(for: entry.item)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
+                    .accessibilityHidden(true)
+                Text(badge)
+                    .font(PlanteriorTypography.microLabel)
+                    .lineLimit(1)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .accessibilityLabel("\(entry.item.name) 프로모션, \(badge)")
+                    .accessibilityIdentifier(
+                        "shop.promo.\(entry.item.id.rawValue)"
+                    )
+            }
+            .padding(.horizontal, PlanteriorSpacing.small)
+            .frame(height: 20)
+            .background(PlanteriorPalette.subtle.color)
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
+        .frame(
+            minWidth: PlanteriorControl.minimumTarget,
+            minHeight: PlanteriorControl.minimumTarget,
+            alignment: .leading
+        )
+        .contentShape(Rectangle())
+        .padding(.vertical, -12)
+        .disabled(entry.eligibility != .eligible)
+        .accessibilityIdentifier(
+            "shop.acquire.\(entry.item.id.rawValue)"
+        )
+        .accessibilityLabel("\(entry.item.name) 획득")
+        .accessibilityValue(eligibilityText(entry))
+    }
+
+    private func shopBadgeImage(for item: ShopItem) -> Image {
+        let name = StorageItemPresentation.shopBadgeAssetName(for: item)
+        if let image = UIImage(named: name) {
+            return Image(uiImage: image)
+        }
+        return Image(systemName: "circle")
     }
 
     private func eligibilityText(_ entry: InventoryCatalogEntry) -> String {

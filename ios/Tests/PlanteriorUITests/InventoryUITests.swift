@@ -17,12 +17,21 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
             "item-chair", "item-cushion", "item-book-cart",
             "item-plant-rack", "item-round-mat", "item-cozy-rug"
         ]
-        for itemID in ownedItems {
+        for itemID in ownedItems.prefix(8) {
             XCTAssertTrue(
                 app.buttons["storage.row.\(itemID)"].waitForExistence(timeout: 5),
                 "missing warehouse fixture item \(itemID)"
             )
         }
+        let restingGrid = app.descendants(matching: .any)["storage.resting.grid"]
+        XCTAssertTrue(restingGrid.exists)
+        let visibleAtRest = restingGrid.buttons.allElementsBoundByIndex
+            .map(\.identifier)
+        XCTAssertEqual(
+            visibleAtRest,
+            ownedItems.prefix(8).map { "storage.row.\($0)" },
+            "the resting 402x874 composition exposes the reference eight cards"
+        )
         for itemID in ["item-mini-shelf", "item-small-rug", "item-flower-stand"] {
             XCTAssertTrue(app.staticTexts["storage.applied.\(itemID)"].exists)
         }
@@ -31,12 +40,25 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         let second = app.buttons["storage.row.item-small-rug"].frame
         XCTAssertEqual(first.width, 110, accuracy: 1)
         XCTAssertEqual(second.width, 110, accuracy: 1)
+        XCTAssertEqual(first.minX, 16, accuracy: 1)
+        XCTAssertEqual(first.minY, 179, accuracy: 1)
+        XCTAssertEqual(first.height, 130, accuracy: 1)
         XCTAssertEqual(second.minX - first.maxX, 10, accuracy: 1)
+        let eighth = app.buttons["storage.row.item-cushion"].frame
+        XCTAssertEqual(eighth.minX, 136, accuracy: 1)
+        XCTAssertEqual(eighth.minY, 459, accuracy: 1)
+        XCTAssertEqual(eighth.width, 110, accuracy: 1)
+        XCTAssertEqual(eighth.height, 130, accuracy: 1)
         attachScreenshot(named: "storage-warehouse-402x874")
 
-        let last = app.buttons["storage.row.item-cozy-rug"]
-        scrollToHittable(last, in: app.scrollViews["storage.screen"])
-        XCTAssertTrue(last.isHittable, "all 12 owned items remain scroll-reachable")
+        for itemID in ownedItems.dropFirst(8) {
+            let row = app.buttons["storage.row.\(itemID)"]
+            scrollToHittable(row, in: app.scrollViews["storage.screen"])
+            XCTAssertTrue(
+                row.isHittable,
+                "all 12 owned items remain scroll-reachable"
+            )
+        }
     }
 
     func testShopMatchesReferenceCreditFiltersAndProducts() {
@@ -45,7 +67,9 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         waitForShopReady(in: app)
 
         XCTAssertEqual(app.staticTexts["shop.title"].label, "아이템 상점")
-        XCTAssertEqual(app.staticTexts["shop.credit"].label, "보유 크레딧  🪙 1,250")
+        XCTAssertEqual(app.staticTexts["shop.credit.label"].label, "보유 크레딧")
+        XCTAssertEqual(app.images["shop.credit.icon"].label, "크레딧")
+        XCTAssertEqual(app.staticTexts["shop.credit.amount"].label, "1,250")
         XCTAssertFalse(app.buttons["storage.mode.shop"].exists)
         for filter in ["all", "background", "furniture", "decoration", "seasonal"] {
             XCTAssertTrue(app.buttons["storage.category.\(filter)"].exists)
@@ -66,16 +90,31 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         )
         let eligible = app.buttons["shop.acquire.item-vintage-lamp"]
         let owned = app.buttons["shop.acquire.item-cozy-rug"]
+        let exactSemantics = [
+            "item-cozy-rug": "가구, 보유 중",
+            "item-vintage-lamp": "소품, 획득 가능",
+            "item-green-wall": "배경, 획득 가능",
+            "item-succulent-pot": "소품, 획득 가능",
+            "item-christmas-tree": "소품, 조건 미충족 · 조건 확인 필요",
+            "item-autumn-frame": "소품, 조건 미충족 · 조건 확인 필요"
+        ]
+        for (itemID, value) in exactSemantics {
+            XCTAssertEqual(app.buttons["shop.row.\(itemID)"].value as? String, value)
+        }
         XCTAssertEqual(eligible.value as? String, "획득 가능")
         XCTAssertEqual(owned.value as? String, "보유 중")
         XCTAssertTrue(eligible.isEnabled)
         XCTAssertFalse(owned.isEnabled)
         XCTAssertGreaterThanOrEqual(eligible.frame.width, 44)
         XCTAssertGreaterThanOrEqual(eligible.frame.height, 44)
-        XCTAssertEqual(
-            app.staticTexts["shop.promo.item-green-wall"].label,
-            "체크무늬 커튼 창문 프로모션, 🌱 7일 연속 출석"
-        )
+        let exactBadges = [
+            "item-green-wall": "체크무늬 커튼 창문 프로모션, 7일 연속 출석",
+            "item-christmas-tree": "크리스마스 트리 프로모션, 겨울 시즌 한정",
+            "item-autumn-frame": "가을 단풍 벽장식 프로모션, 가을 시즌 한정"
+        ]
+        for (itemID, label) in exactBadges {
+            XCTAssertEqual(app.staticTexts["shop.promo.\(itemID)"].label, label)
+        }
         attachScreenshot(named: "storage-shop-402x874")
     }
 
@@ -91,12 +130,40 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         let detail = app.scrollViews["storage.detail.item-lamp"]
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["storage.detail.title"].label, "감성 조명")
-        XCTAssertEqual(
-            app.images["storage.detail.hero.item-lamp"].frame.height,
-            220,
-            accuracy: 1
-        )
+        let back = app.buttons["storage.detail.back"]
+        let chromeTitle = app.staticTexts["storage.detail.chrome.title"]
+        let favorite = app.buttons["storage.detail.favorite.item-lamp"]
+        XCTAssertTrue(back.isHittable)
+        XCTAssertEqual(back.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(back.frame.height, 44, accuracy: 1)
+        XCTAssertEqual(chromeTitle.frame.minX, 59, accuracy: 2)
+        XCTAssertLessThan(chromeTitle.frame.maxX, favorite.frame.minX)
+        XCTAssertEqual(favorite.frame.width, 44, accuracy: 1)
+        XCTAssertEqual(favorite.frame.height, 44, accuracy: 1)
+        XCTAssertTrue(favorite.isHittable)
+        XCTAssertTrue(app.buttons["tab.storage"].exists)
+        XCTAssertTrue(app.buttons["tab.storage"].isHittable)
+
+        let heroFrame = app.images["storage.detail.hero.item-lamp"].frame
+        XCTAssertEqual(heroFrame.minX, 20, accuracy: 1)
+        XCTAssertEqual(heroFrame.minY, 101, accuracy: 1)
+        XCTAssertEqual(heroFrame.width, 362, accuracy: 1)
+        XCTAssertEqual(heroFrame.height, 218, accuracy: 2)
+        let categoryFrame = app.staticTexts["storage.detail.category"].frame
+        XCTAssertEqual(categoryFrame.minX, 32, accuracy: 1)
+        XCTAssertEqual(categoryFrame.minY, 116, accuracy: 1)
+
+        favorite.tap()
         XCTAssertTrue(app.buttons["storage.detail.favorite.item-lamp"].exists)
+        XCTAssertEqual(
+            app.buttons["storage.detail.favorite.item-lamp"].label,
+            "즐겨찾기 해제"
+        )
+        app.buttons["storage.detail.favorite.item-lamp"].tap()
+        XCTAssertEqual(
+            app.buttons["storage.detail.favorite.item-lamp"].label,
+            "즐겨찾기"
+        )
         XCTAssertEqual(app.staticTexts["storage.detail.status"].label, "보관 중")
         XCTAssertEqual(
             app.staticTexts["storage.detail.context.title"].label,
@@ -132,11 +199,11 @@ final class InventoryUITests: XCTestCase, InventoryUITestSupport {
         XCTAssertEqual(autumn.value as? String, "조건 미충족 · 조건 확인 필요")
         XCTAssertEqual(
             descendingApp.staticTexts["shop.promo.item-christmas-tree"].label,
-            "크리스마스 트리 프로모션, ❄️ 겨울 시즌 한정"
+            "크리스마스 트리 프로모션, 겨울 시즌 한정"
         )
         XCTAssertEqual(
             descendingApp.staticTexts["shop.promo.item-autumn-frame"].label,
-            "가을 단풍 벽장식 프로모션, 🍁 가을 시즌 한정"
+            "가을 단풍 벽장식 프로모션, 가을 시즌 한정"
         )
 
         let seasonal = descendingApp.buttons["storage.category.seasonal"]

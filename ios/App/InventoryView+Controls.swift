@@ -49,23 +49,38 @@ extension InventoryView {
     }
 
     var shopCredit: some View {
-        (Text("보유 크레딧 ")
-            .foregroundStyle(PlanteriorPalette.accent.color)
-            + Text(" 🪙 1,250")
-            .foregroundStyle(PlanteriorPalette.warning.color))
-            .font(PlanteriorTypography.supporting.weight(.semibold))
-            .frame(width: 179, height: 38)
-            .background(PlanteriorPalette.warningSurface.color)
-            .clipShape(Capsule())
-            .overlay {
-                Capsule().stroke(
-                    PlanteriorPalette.border.color,
-                    lineWidth: PlanteriorControl.hairline
-                )
-            }
-            .padding(.top, 7)
-            .accessibilityIdentifier("shop.credit")
-            .accessibilityAddTraits(.isStaticText)
+        HStack(spacing: PlanteriorSpacing.extraSmall) {
+            Text("보유 크레딧")
+                .foregroundStyle(PlanteriorPalette.accent.color)
+                .accessibilityIdentifier("shop.credit.label")
+            storageCreditImage
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+                .accessibilityLabel("크레딧")
+                .accessibilityIdentifier("shop.credit.icon")
+            Text("1,250")
+                .foregroundStyle(PlanteriorPalette.warning.color)
+                .accessibilityIdentifier("shop.credit.amount")
+        }
+        .font(PlanteriorTypography.supporting.weight(.semibold))
+        .frame(width: 179, height: 38)
+        .background(PlanteriorPalette.warningSurface.color)
+        .clipShape(Capsule())
+        .overlay {
+            Capsule().stroke(
+                PlanteriorPalette.border.color,
+                lineWidth: PlanteriorControl.hairline
+            )
+        }
+        .padding(.top, 7)
+    }
+
+    private var storageCreditImage: Image {
+        if let image = UIImage(named: "FigmaStorageCredit") {
+            return Image(uiImage: image)
+        }
+        return Image(systemName: "circle")
     }
 
     var categoryFilters: some View {
