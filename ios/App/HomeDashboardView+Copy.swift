@@ -6,14 +6,13 @@ import SwiftUI
 extension HomeDashboardView {
     /// Figma §6.2 greeting name. Signed-out renders the guest variant.
     var profileName: String {
-        #if DEBUG
-            if let name = ProcessInfo.processInfo.environment[
-                "QA_HOME_PROFILE_NAME"
-            ], !name.isEmpty {
-                return name
-            }
-        #endif
-        return authenticationState == .authenticated ? "집사" : "게스트"
+        guard authenticationState == .authenticated else {
+            return "게스트"
+        }
+        guard let name = auth.accountProfile?.displayName, !name.isEmpty else {
+            return "집사"
+        }
+        return name
     }
 
     /// §6.2 subline: "서울 성동구 · 28°C" / signed-out "위치 미설정 · - °C".

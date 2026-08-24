@@ -15,10 +15,23 @@ extension HomeDashboardUITests {
         applyAuthenticatedFigmaLaunch(app)
         app.launch()
 
+        // Given
         let greeting = app.staticTexts["home.greeting"]
+
+        // When
         XCTAssertTrue(greeting.waitForExistence(timeout: 10))
+
+        // Then
         XCTAssertEqual(greeting.label, "안녕하세요, 민지님!")
+        XCTAssertEqual(
+            app.staticTexts["home.greeting.meta"].label,
+            "서울 성동구 · 28°C"
+        )
         XCTAssertEqual(app.buttons["home.room.title"].label, "민지의 미니 식물원 🏡")
+        XCTAssertEqual(
+            app.staticTexts["home.weather.warning"].label,
+            "오늘 기온이 35°C로 높아요! 강한 직사광선을 피해 통풍이 잘되는 그늘로 식물을 피해주세요."
+        )
         attachFigmaScreenshot(named: "home-authenticated")
     }
 

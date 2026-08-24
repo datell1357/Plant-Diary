@@ -67,6 +67,21 @@ extension HomeDashboardUITests {
         assertMinimumTargets(app, identifiers: ["home.room.title"])
     }
 
+    func testAuthenticatedHomeFallsBackToHousekeeperWhenProfileNameIsAbsent() {
+        // Given
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+
+        // When
+        app.launch()
+
+        // Then
+        let greeting = app.staticTexts["home.greeting"]
+        XCTAssertTrue(greeting.waitForExistence(timeout: 10))
+        XCTAssertEqual(greeting.label, "안녕하세요, 집사님!")
+    }
+
     // MARK: - home.loggedOut
 
     /// §8.3: the signed-out body still renders; it is never hidden behind a

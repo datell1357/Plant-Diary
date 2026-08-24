@@ -203,7 +203,7 @@ extension HomeDashboardUITests {
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
         app.launchEnvironment["QA_HOME_FIXTURE"] = "1"
-        app.launchEnvironment["QA_HOME_PROFILE_NAME"] = "민지"
+        app.launchEnvironment["QA_AUTH_PROFILE_NAME"] = "민지"
         app.launchEnvironment["QA_HOME_WEATHER_STATE"] = "high-dry"
         app.launchEnvironment["QA_WEATHER_MANUAL_REGION"] = "manual-seoul"
         app.launchEnvironment["QA_WEATHER_NOW"] = "2026-08-11T03:00:00Z"
