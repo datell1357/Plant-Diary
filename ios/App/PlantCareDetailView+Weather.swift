@@ -36,6 +36,7 @@ extension PlantCareDetailView {
 struct PlantSymptomRemedyView: View {
     let displayName: String
     let hasWateringBaseline: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var expandedIndex: Int? = 0
 
     private let guidance = [
@@ -43,7 +44,7 @@ struct PlantSymptomRemedyView: View {
             icon: "🍂",
             title: "잎이 노랗게 변해요",
             cause: "과습 또는 영양 부족",
-            action: "흙의 수분 상태를 확인한 뒤 물 주기 간격을 조절하고 배수 상태를 살펴보세요. 영양제는 필요한 경우 권장량만 사용하세요."
+            action: "물 주기 간격을 대폭 늘려 화분의 속흙까지 완전히 건조시키고 배수 상태를 확인하세요. 필요시 영양제를 보충합니다."
         ),
         SymptomGuidance(
             icon: "🥀",
@@ -67,22 +68,35 @@ struct PlantSymptomRemedyView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                 Text("반려식물: \(displayName) 🌱")
                     .font(PlanteriorTypography.caption.weight(.semibold))
                     .foregroundStyle(PlanteriorPalette.accent.color)
                     .padding(.horizontal, PlanteriorSpacing.medium)
                     .frame(minHeight: PlanteriorControl.minimumTarget)
-                    .background(PlanteriorPalette.subtle.color)
-                    .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.small))
+                    .background {
+                        RoundedRectangle(cornerRadius: PlanteriorRadius.small)
+                            .fill(PlanteriorPalette.subtle.color)
+                            .frame(
+                                height: PlanteriorControl.minimumTarget
+                                    - PlanteriorSpacing.large
+                            )
+                    }
                     .accessibilityIdentifier("remedy.context")
                     .padding(.leading, PlanteriorSpacing.small)
-                ForEach(guidance.indices, id: \.self) { symptomCard($0) }
+                VStack(spacing: PlanteriorSpacing.medium) {
+                    ForEach(guidance.indices, id: \.self) { symptomCard($0) }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.top, -PlanteriorSpacing.small)
-            .padding(.bottom, PlanteriorSpacing.medium)
+            .padding(
+                .top,
+                dynamicTypeSize.isAccessibilitySize
+                    ? 0
+                    : -PlanteriorSpacing.large
+            )
+            .padding(.bottom, PlanteriorSpacing.large)
         }
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle("증상 대처법")
@@ -116,7 +130,7 @@ struct PlantSymptomRemedyView: View {
                 .padding(.horizontal, PlanteriorSpacing.large)
                 .frame(
                     maxWidth: .infinity,
-                    minHeight: expandedIndex == index ? 44 : 48
+                    minHeight: PlanteriorLayout.mediaThumbnailSize
                 )
                 .contentShape(Rectangle())
             }
@@ -128,8 +142,8 @@ struct PlantSymptomRemedyView: View {
                     .padding(.horizontal, PlanteriorSpacing.large)
                 guidanceBody(item, index: index)
                     .padding(.horizontal, PlanteriorSpacing.large)
-                    .padding(.top, 10)
-                    .padding(.bottom, 20)
+                    .padding(.top, PlanteriorSpacing.medium)
+                    .padding(.bottom, PlanteriorSpacing.huge)
             }
         }
         .background(PlanteriorPalette.surface.color)
@@ -161,6 +175,7 @@ struct PlantSymptomRemedyView: View {
             Text(item.action)
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .padding(.trailing, PlanteriorSpacing.extraLarge)
                 .accessibilityIdentifier("remedy.action.\(index)")
         }
     }

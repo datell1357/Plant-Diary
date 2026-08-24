@@ -13,12 +13,10 @@ struct PlantCollectionView: View {
     @Environment(\.sizeCategory) var sizeCategory
     let careCalendar = PlantCareCalendar()
     var body: some View {
-        VStack(spacing: PlanteriorSpacing.medium) {
-            if !isTrueEmptyCollection {
-                header
-                if showsSearch {
-                    searchField
-                }
+        VStack(spacing: PlanteriorSpacing.extraLarge) {
+            header
+            if showsSearch, !isTrueEmptyCollection {
+                searchField
             }
             ScrollView(showsIndicators: false) {
                 VStack(spacing: PlanteriorSpacing.large) {
@@ -37,14 +35,28 @@ struct PlantCollectionView: View {
             .accessibilityIdentifier("collection.screen")
         }
         .overlay(alignment: .bottomTrailing) {
-            if !isTrueEmptyCollection {
+            if !isTrueEmptyCollection, !sizeCategory.isAccessibilityCategory {
                 addPlantButton
                     .padding(.trailing, PlanteriorSpacing.extraSmall)
-                    .padding(.bottom, 140)
+                    .padding(
+                        .bottom,
+                        PlanteriorLayout.tabBarHeight
+                            + PlanteriorLayout.floatingActionSize
+                            + PlanteriorSpacing.extraLarge
+                    )
             }
         }
         .padding(.horizontal, PlanteriorSpacing.large)
-        .padding(.top, PlanteriorSpacing.small)
+        .padding(.top, -PlanteriorSpacing.small)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !isTrueEmptyCollection, sizeCategory.isAccessibilityCategory {
+                HStack {
+                    Spacer(minLength: 0)
+                    addPlantButton
+                }
+                .padding(.bottom, PlanteriorSpacing.large)
+            }
+        }
         .background(PlanteriorPalette.canvas.color)
         .toolbar(.hidden, for: .navigationBar)
         .task {
@@ -55,16 +67,11 @@ struct PlantCollectionView: View {
     }
 
     private var addPlantButton: some View {
-        Button(action: openCamera) {
-            Image(systemName: "plus")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                .frame(width: 56, height: 56)
-                .background(PlanteriorPalette.accent.color)
-                .clipShape(Circle())
-        }
-        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
-        .accessibilityLabel("식물 추가")
+        PlanteriorFloatingActionButton(
+            accessibilityLabel: "식물 추가",
+            action: openCamera
+        )
+        .planteriorShadow(PlanteriorShadow.floatingAction)
         .accessibilityIdentifier("collection.add")
     }
 
@@ -76,31 +83,34 @@ struct PlantCollectionView: View {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("collection.title")
             Spacer()
-            Button {
-                showsSearch = true
-                searchFocused = true
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .frame(width: 40, height: 40)
-                    .background(PlanteriorPalette.surface.color)
-                    .clipShape(Circle())
-                    .overlay {
-                        Circle().stroke(
-                            PlanteriorPalette.border.color,
-                            lineWidth: PlanteriorControl.hairline
-                        )
-                    }
+            if !isTrueEmptyCollection {
+                Button {
+                    showsSearch = true
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .frame(width: 40, height: 40)
+                        .background(PlanteriorPalette.surface.color)
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle().stroke(
+                                PlanteriorPalette.border.color,
+                                lineWidth: PlanteriorControl.hairline
+                            )
+                        }
+                }
+                .frame(
+                    minWidth: PlanteriorControl.minimumTarget,
+                    minHeight: PlanteriorControl.minimumTarget
+                )
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .accessibilityLabel("내 식물 검색")
+                .accessibilityIdentifier("collection.search.action")
             }
-            .frame(
-                minWidth: PlanteriorControl.minimumTarget,
-                minHeight: PlanteriorControl.minimumTarget
-            )
-            .contentShape(Rectangle())
-            .buttonStyle(.plain)
-            .foregroundStyle(PlanteriorPalette.textPrimary.color)
-            .accessibilityLabel("내 식물 검색")
-            .accessibilityIdentifier("collection.search.action")
         }
+        .padding(.horizontal, PlanteriorSpacing.small)
     }
 
     private var searchField: some View {

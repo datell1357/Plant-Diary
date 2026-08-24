@@ -29,7 +29,9 @@ struct PlantCareDetailView: View {
             VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
                 hero
                 guideSection
+                    .padding(.top, PlanteriorSpacing.extraSmall)
                 compactWateringCard
+                    .padding(.top, PlanteriorSpacing.medium)
                 memoSection
                 remedyLink
                 weatherSection
@@ -49,9 +51,10 @@ struct PlantCareDetailView: View {
                 deleteAction
             }
             .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.top, -PlanteriorSpacing.small)
-            .padding(.bottom, PlanteriorSpacing.small)
+            .padding(.top, -PlanteriorSpacing.large)
+            .padding(.bottom, PlanteriorSpacing.large)
         }
+        .scrollClipDisabled(!dynamicTypeSize.isAccessibilitySize)
         .background(PlanteriorPalette.canvas.color)
         .navigationTitle(trimmedNickname)
         .navigationBarTitleDisplayMode(.inline)
@@ -88,15 +91,19 @@ struct PlantCareDetailView: View {
     }
 
     private var hero: some View {
-        Image(.collectionHero)
-            .resizable()
-            .scaledToFill()
-            .frame(maxWidth: .infinity)
-            .aspectRatio(370 / 220, contentMode: .fit)
-            .background(PlanteriorPalette.subtle.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-            .accessibilityLabel("\(trimmedNickname) 대표 이미지")
-            .accessibilityIdentifier("plant.detail.hero")
+        GeometryReader { proxy in
+            Image(.collectionHero)
+                .resizable()
+                .scaledToFill()
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
+        }
+        .frame(height: 220)
+        .background(PlanteriorPalette.subtle.color)
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+        .offset(y: -PlanteriorSpacing.small)
+        .accessibilityLabel("\(trimmedNickname) 대표 이미지")
+        .accessibilityIdentifier("plant.detail.hero")
     }
 
     private var titleSummary: some View {
@@ -156,6 +163,8 @@ struct PlantCareDetailView: View {
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.trailing, PlanteriorSpacing.huge)
+                .accessibilityIdentifier("plant.detail.memo.body")
                 if let memoUpdatedOn {
                     Text("수정일: \(memoUpdatedOn)")
                         .font(PlanteriorTypography.caption)
@@ -163,9 +172,10 @@ struct PlantCareDetailView: View {
                         .accessibilityIdentifier("plant.detail.memo-updated")
                 }
             }
-            .padding(PlanteriorSpacing.medium)
+            .padding(.horizontal, PlanteriorSpacing.medium)
+            .padding(.vertical, PlanteriorSpacing.extraLarge)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PlanteriorPalette.surface.color)
+            .background(PlanteriorPalette.canvas.color)
             .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
             .overlay {
                 RoundedRectangle(cornerRadius: PlanteriorRadius.large)
@@ -175,6 +185,7 @@ struct PlantCareDetailView: View {
                     )
             }
         }
+        .padding(.top, PlanteriorSpacing.extraSmall)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plant.detail.memo")
     }

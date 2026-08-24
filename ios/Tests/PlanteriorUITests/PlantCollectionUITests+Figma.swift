@@ -71,6 +71,13 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["watering.complete"].exists)
         XCTAssertTrue(memo.exists)
+        let memoBody = app.staticTexts["plant.detail.memo.body"]
+        XCTAssertTrue(memoBody.exists)
+        XCTAssertEqual(
+            memoBody.label,
+            "최근에 새 잎이 돋아나기 시작했어요! 잎 끝이 마르지 않게 저녁마다 "
+                + "습도 관리를 위한 스프레이를 분무해주고 있습니다."
+        )
         XCTAssertLessThan(app.images["plant.detail.hero"].frame.maxY, guide.frame.minY)
         XCTAssertLessThan(guide.frame.maxY, watering.frame.minY)
         XCTAssertLessThan(watering.frame.maxY, memo.frame.minY)
@@ -99,13 +106,23 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["증상 대처법"].exists)
         let context = app.staticTexts["remedy.context"]
         XCTAssertEqual(context.label, "반려식물: 몬스테라 🌱")
-        XCTAssertGreaterThanOrEqual(context.frame.height, 44)
+        XCTAssertEqual(
+            context.frame.height,
+            28,
+            accuracy: 0.5
+        )
         for index in 0 ..< 4 {
             XCTAssertTrue(app.buttons["remedy.symptom.\(index)"].exists)
         }
         XCTAssertEqual(app.buttons["remedy.symptom.0"].value as? String, "펼쳐짐")
         XCTAssertTrue(app.staticTexts["remedy.cause.0"].exists)
-        XCTAssertTrue(app.staticTexts["remedy.action.0"].exists)
+        let firstAction = app.staticTexts["remedy.action.0"]
+        XCTAssertTrue(firstAction.exists)
+        XCTAssertEqual(
+            firstAction.label,
+            "물 주기 간격을 대폭 늘려 화분의 속흙까지 완전히 건조시키고 "
+                + "배수 상태를 확인하세요. 필요시 영양제를 보충합니다."
+        )
         XCTAssertFalse(app.staticTexts["remedy.cause.1"].exists)
         XCTAssertLessThan(
             app.otherElements["remedy.card.1"].frame.height,
@@ -125,6 +142,9 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.images["collection.empty.illustration"].waitForExistence(timeout: 10))
+        let heading = app.staticTexts["collection.title"]
+        XCTAssertTrue(heading.exists, "true-empty must retain the Collection heading")
+        XCTAssertEqual(heading.label, "나의 도감")
         XCTAssertEqual(
             app.staticTexts["collection.empty.title"].label,
             "아직 등록된 식물이 없어요 🥺"

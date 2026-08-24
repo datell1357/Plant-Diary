@@ -469,6 +469,15 @@ public struct PlanteriorFloatingActionButton: View {
 }
 
 public extension View {
+    func planteriorShadow(_ token: PlanteriorShadowToken) -> some View {
+        shadow(
+            color: token.color.color.opacity(token.opacity),
+            radius: token.radius,
+            x: token.offsetX,
+            y: token.offsetY
+        )
+    }
+
     func planteriorFloatingActionPlacement() -> some View {
         frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             .padding(PlanteriorLayout.floatingActionInset)

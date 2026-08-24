@@ -33,6 +33,8 @@ public enum PlanteriorPalette {
     public static let warningSurface = PlanteriorColorToken(hex: "#FFF7D6")
     public static let warning = PlanteriorColorToken(hex: "#E97800")
     public static let successSurface = PlanteriorColorToken(hex: "#EEF5EE")
+    public static let attention = PlanteriorColorToken(hex: "#FF4D4F")
+    public static let attentionSurface = PlanteriorColorToken(hex: "#FFE8E8")
 }
 
 /// 4pt spacing grid from `docs/ios/DESIGN.md` §4. Names are spelled out because the
@@ -98,6 +100,38 @@ public enum PlanteriorOpacity {
     public static let dimmer: Double = 0.4
 }
 
+public struct PlanteriorShadowToken: Hashable, Sendable {
+    public let color: PlanteriorColorToken
+    public let opacity: Double
+    public let radius: CGFloat
+    public let offsetX: CGFloat
+    public let offsetY: CGFloat
+
+    public init(
+        color: PlanteriorColorToken,
+        opacity: Double,
+        radius: CGFloat,
+        offsetX: CGFloat,
+        offsetY: CGFloat
+    ) {
+        self.color = color
+        self.opacity = opacity
+        self.radius = radius
+        self.offsetX = offsetX
+        self.offsetY = offsetY
+    }
+}
+
+public enum PlanteriorShadow {
+    public static let floatingAction = PlanteriorShadowToken(
+        color: PlanteriorPalette.textPrimary,
+        opacity: 0.12,
+        radius: 4,
+        offsetX: 0,
+        offsetY: 2
+    )
+}
+
 public enum PlanteriorMotion {
     public static func duration(reduceMotion: Bool) -> Double {
         reduceMotion ? 0 : 0.2
@@ -150,6 +184,7 @@ public enum PlanteriorStatusVariant: Hashable, Sendable {
     case neutral
     case tonal
     case warning
+    case attention
 
     public var background: PlanteriorColorToken {
         switch self {
@@ -157,6 +192,7 @@ public enum PlanteriorStatusVariant: Hashable, Sendable {
         case .neutral: PlanteriorPalette.subtle
         case .tonal: PlanteriorPalette.accentSurface
         case .warning: PlanteriorPalette.warningSurface
+        case .attention: PlanteriorPalette.attentionSurface
         }
     }
 
@@ -166,6 +202,7 @@ public enum PlanteriorStatusVariant: Hashable, Sendable {
         case .neutral: PlanteriorPalette.textSecondary
         case .tonal: PlanteriorPalette.accent
         case .warning: PlanteriorPalette.warning
+        case .attention: PlanteriorPalette.attention
         }
     }
 }

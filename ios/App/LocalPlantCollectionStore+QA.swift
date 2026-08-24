@@ -42,7 +42,7 @@ extension LocalPlantCollectionStore {
                         name: "몬스테라",
                         lastWateredOn: try? CalendarDate.parse("2026-05-15"),
                         wateringIntervalDays: 4,
-                        privateMemo: "최근에 새 잎이 돋아나기 시작했어요! 잎 끝이 마르지 않게 저녁마다 습도 관리를 위한 스프레이를 분무해주고 있습니다. 🌿"
+                        privateMemo: "최근에 새 잎이 돋아나기 시작했어요! 잎 끝이 마르지 않게 저녁마다 습도 관리를 위한 스프레이를 분무해주고 있습니다."
                     ),
                     qaDraft(
                         id: "local-1",

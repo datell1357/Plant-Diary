@@ -27,6 +27,8 @@ struct ComponentContractTests {
         #expect(PlanteriorStatusVariant.tonal.foreground == PlanteriorPalette.accent)
         #expect(PlanteriorStatusVariant.warning.background == PlanteriorPalette.warningSurface)
         #expect(PlanteriorStatusVariant.warning.foreground == PlanteriorPalette.warning)
+        #expect(PlanteriorStatusVariant.attention.background == PlanteriorPalette.attentionSurface)
+        #expect(PlanteriorStatusVariant.attention.foreground == PlanteriorPalette.attention)
     }
 
     @Test

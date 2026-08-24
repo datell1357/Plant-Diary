@@ -4,19 +4,6 @@ import PlanteriorDesignSystem
 import PlanteriorDomain
 import SwiftUI
 
-private enum PlantCollectionAttention {
-    static let foreground = Color(
-        red: 1,
-        green: 77.0 / 255.0,
-        blue: 79.0 / 255.0
-    )
-    static let background = Color(
-        red: 1,
-        green: 232.0 / 255.0,
-        blue: 232.0 / 255.0
-    )
-}
-
 extension PlantCollectionView {
     var plantRows: some View {
         VStack(spacing: 10) {
@@ -54,11 +41,7 @@ extension PlantCollectionView {
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                         Circle()
-                            .fill(
-                                status.needsAttention
-                                    ? PlantCollectionAttention.foreground
-                                    : PlanteriorPalette.accent.color
-                            )
+                            .fill(PlanteriorPalette.accent.color)
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                     }
@@ -149,7 +132,9 @@ extension PlantCollectionView {
         .padding(.horizontal, PlanteriorSpacing.small)
         .padding(
             .top,
-            sizeCategory.isAccessibilityCategory ? 0 : 85
+            sizeCategory.isAccessibilityCategory
+                ? 0
+                : PlanteriorSpacing.board + PlanteriorSpacing.extraLarge
         )
     }
 
@@ -163,12 +148,13 @@ extension PlantCollectionView {
         index: Int
     ) -> some View {
         if status.needsAttention {
+            let style = PlanteriorStatusVariant.attention
             Text(status.title)
                 .font(PlanteriorTypography.microLabel)
-                .foregroundStyle(PlantCollectionAttention.foreground)
+                .foregroundStyle(style.foreground.color)
                 .padding(.horizontal, PlanteriorSpacing.medium)
                 .padding(.vertical, PlanteriorSpacing.extraSmall)
-                .background(PlantCollectionAttention.background)
+                .background(style.background.color)
                 .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.small))
                 .accessibilityIdentifier("collection.status.\(index)")
                 .accessibilityValue("주의")

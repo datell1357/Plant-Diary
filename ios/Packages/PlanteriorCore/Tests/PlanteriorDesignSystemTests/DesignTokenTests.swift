@@ -21,6 +21,17 @@ struct DesignTokenTests {
     }
 
     @Test
+    func collectionAttentionAndFloatingActionDepthAreSemanticTokens() {
+        #expect(PlanteriorPalette.attention.hex == "#FF4D4F")
+        #expect(PlanteriorPalette.attentionSurface.hex == "#FFE8E8")
+        #expect(PlanteriorShadow.floatingAction.color == PlanteriorPalette.textPrimary)
+        #expect(PlanteriorShadow.floatingAction.opacity == 0.12)
+        #expect(PlanteriorShadow.floatingAction.radius == 4)
+        #expect(PlanteriorShadow.floatingAction.offsetX == 0)
+        #expect(PlanteriorShadow.floatingAction.offsetY == 2)
+    }
+
+    @Test
     func spacingScaleFollowsFourPointGrid() {
         #expect(PlanteriorSpacing.extraSmall == 4)
         #expect(PlanteriorSpacing.small == 8)
