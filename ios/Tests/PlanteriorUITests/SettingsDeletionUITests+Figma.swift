@@ -203,6 +203,28 @@ extension SettingsDeletionUITests {
         quietHours.tap()
         let scroll = app.scrollViews["quiet-hours.screen"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
+        let topBar = app.otherElements["quiet-hours.top-bar"]
+        let title = app.staticTexts
+            .matching(NSPredicate(format: "label == %@", "알림 금지 시간 설정"))
+            .element(boundBy: 0)
+        XCTAssertTrue(title.exists)
+        XCTAssertGreaterThan(
+            topBar.frame.height,
+            56,
+            "AX5 top chrome must expand beyond its default Large height"
+        )
+        XCTAssertTrue(
+            topBar.frame.contains(title.frame),
+            "the complete AX5 title must remain inside the expanded top bar"
+        )
+        XCTAssertGreaterThan(
+            title.frame.height,
+            56,
+            "the AX5 Quiet Hours title must use multiple lines"
+        )
+        XCTAssertEqual(title.frame.midX, topBar.frame.midX, accuracy: 1)
+        XCTAssertEqual(title.label, "알림 금지 시간 설정")
+        XCTAssertFalse(title.label.contains("\u{2026}"))
         assertIconWellSize(
             "quiet-hours.clock.icon-well",
             expectedSide: 44,
@@ -231,7 +253,32 @@ extension SettingsDeletionUITests {
         scroll.swipeUp()
         attachScreenshot(named: "quiet-hours-korean-ax5-reduce-motion")
         let save = app.buttons["quiet-hours.save"]
+        let window = app.windows.element(boundBy: 0)
+        // Remove the two 11pt insets, 34pt bottom safe area, and 1pt divider.
+        let saveVisualHeight = window.frame.maxY - scroll.frame.maxY - 57
         XCTAssertTrue(save.isHittable)
+        XCTAssertGreaterThan(
+            saveVisualHeight,
+            48,
+            "AX5 Save must expand beyond its default Large height"
+        )
+        XCTAssertTrue(
+            window.frame.contains(save.frame),
+            "the complete AX5 Save frame must remain onscreen"
+        )
+        XCTAssertGreaterThanOrEqual(save.frame.minY, scroll.frame.maxY + 11)
+        XCTAssertLessThanOrEqual(save.frame.maxY, window.frame.maxY - 11)
+        XCTAssertEqual(save.label, "저장하기")
+        XCTAssertFalse(save.label.contains("\u{2026}"))
+        attachJSON(
+            [
+                "saveFrameHeight": save.frame.height,
+                "saveVisualHeight": saveVisualHeight,
+                "titleFrameHeight": title.frame.height,
+                "topBarHeight": topBar.frame.height
+            ],
+            named: "quiet-hours-ax5-geometry"
+        )
         save.tap()
         XCTAssertTrue(app.buttons["settings.quiet-hours.open"].waitForExistence(timeout: 5))
     }

@@ -195,6 +195,7 @@ public struct PlanteriorIconWell<Content: View>: View {
 
 /// App-owned navigation chrome with a centered title and stable 44pt action slots.
 public struct PlanteriorTopBar<Leading: View, Trailing: View>: View {
+    @Environment(\.sizeCategory) private var sizeCategory
     private let title: LocalizedStringKey
     private let leading: Leading
     private let trailing: Trailing
@@ -214,7 +215,9 @@ public struct PlanteriorTopBar<Leading: View, Trailing: View>: View {
             Text(title)
                 .font(PlanteriorTypography.screenTitle)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .lineLimit(1)
+                .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, PlanteriorControl.minimumTarget)
                 .accessibilityAddTraits(.isHeader)
 
@@ -235,7 +238,7 @@ public struct PlanteriorTopBar<Leading: View, Trailing: View>: View {
             }
         }
         .padding(.horizontal, PlanteriorLayout.contentGutter)
-        .frame(height: PlanteriorLayout.topBarHeight)
+        .frame(minHeight: PlanteriorLayout.topBarHeight)
         .background(PlanteriorPalette.canvas.color)
     }
 }

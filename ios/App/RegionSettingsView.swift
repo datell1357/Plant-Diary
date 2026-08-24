@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RegionSettingsView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.sizeCategory) var sizeCategory
     @ObservedObject var weather: WeatherRuntime
     @State var regionQuery = ""
     @State var selectedCode: String?

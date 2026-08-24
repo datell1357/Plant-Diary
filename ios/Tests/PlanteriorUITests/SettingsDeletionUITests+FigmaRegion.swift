@@ -94,7 +94,78 @@ extension SettingsDeletionUITests {
             app.buttons["weather.use-current-location"]
                 .waitForExistence(timeout: 5)
         )
+        let topBar = app.otherElements["region-settings.top-bar"]
+        let title = app.staticTexts
+            .matching(NSPredicate(format: "label == %@", "관리 지역 설정"))
+            .element(boundBy: 0)
+        XCTAssertTrue(title.exists)
+        XCTAssertGreaterThan(
+            topBar.frame.height,
+            56,
+            "AX5 top chrome must expand beyond its default Large height"
+        )
+        XCTAssertTrue(
+            topBar.frame.contains(title.frame),
+            "the complete AX5 title must remain inside the expanded top bar"
+        )
+        XCTAssertGreaterThan(
+            title.frame.height,
+            56,
+            "the AX5 Region title must use multiple lines"
+        )
+        XCTAssertEqual(title.frame.midX, topBar.frame.midX, accuracy: 1)
+        XCTAssertEqual(title.label, "관리 지역 설정")
+        XCTAssertFalse(title.label.contains("\u{2026}"))
         XCTAssertTrue(app.buttons["weather.region.back"].isHittable)
+
+        let firstRow = app.buttons["weather.region-result.manual-seoul"]
+        let secondRow = app.buttons["weather.region-result.manual-busan"]
+        let thirdRow = app.buttons["weather.region-result.manual-haeundae"]
+        let firstName = app.staticTexts["서울특별시 강남구"]
+        let secondName = app.staticTexts["경기도 성남시 분당구"]
+        let thirdName = app.staticTexts["부산광역시 해운대구"]
+        let status = app.staticTexts["기준 지역"]
+        for row in [firstRow, secondRow, thirdRow] {
+            XCTAssertTrue(row.exists)
+            XCTAssertGreaterThan(
+                row.frame.height,
+                52,
+                "AX5 Region rows must expand beyond their default Large height"
+            )
+        }
+        XCTAssertLessThanOrEqual(firstRow.frame.maxY, secondRow.frame.minY)
+        XCTAssertLessThanOrEqual(secondRow.frame.maxY, thirdRow.frame.minY)
+        for (row, name, expectedName) in [
+            (firstRow, firstName, "서울특별시 강남구"),
+            (secondRow, secondName, "경기도 성남시 분당구"),
+            (thirdRow, thirdName, "부산광역시 해운대구")
+        ] {
+            XCTAssertTrue(name.exists)
+            XCTAssertEqual(name.label, expectedName)
+            XCTAssertFalse(name.label.contains("\u{2026}"))
+            XCTAssertTrue(
+                row.frame.contains(name.frame),
+                "the complete Region name must remain inside its AX5 row"
+            )
+        }
+        XCTAssertTrue(status.exists)
+        XCTAssertEqual(status.label, "기준 지역")
+        XCTAssertFalse(status.label.contains("\u{2026}"))
+        XCTAssertTrue(firstRow.frame.contains(status.frame))
+        attachJSON(
+            [
+                "firstRowHeight": firstRow.frame.height,
+                "secondRowHeight": secondRow.frame.height,
+                "thirdRowHeight": thirdRow.frame.height,
+                "titleFrameHeight": title.frame.height,
+                "topBarHeight": topBar.frame.height
+            ],
+            named: "region-ax5-geometry"
+        )
+        scrollToHittable(
+            thirdRow,
+            in: app.scrollViews["region-settings.screen"]
+        )
         attachScreenshot(named: "region-korean-ax5-reduce-motion")
     }
 }

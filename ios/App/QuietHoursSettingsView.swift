@@ -169,7 +169,7 @@ struct QuietHoursSettingsView: View {
             Text("저장하기")
                 .font(PlanteriorTypography.body.weight(.semibold))
                 .frame(maxWidth: .infinity)
-                .frame(height: SettingsReferenceMetrics.saveButtonHeight)
+                .frame(minHeight: SettingsReferenceMetrics.saveButtonHeight)
         }
         .buttonStyle(.plain)
         .foregroundStyle(PlanteriorPalette.textOnAccent.color)

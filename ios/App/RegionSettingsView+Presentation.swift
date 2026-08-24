@@ -111,40 +111,78 @@ extension RegionSettingsView {
             weather.setManualRegion(region.code)
             onSaved()
         } label: {
-            HStack(spacing: PlanteriorSpacing.small) {
-                if selected {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(PlanteriorPalette.accent.color)
-                        .accessibilityHidden(true)
+            if sizeCategory.isAccessibilityCategory {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                    HStack(spacing: PlanteriorSpacing.small) {
+                        if selected {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(PlanteriorPalette.accent.color)
+                                .accessibilityHidden(true)
+                        }
+                        regionName(region.name, selected: selected)
+                        Spacer(minLength: PlanteriorSpacing.small)
+                        if !selected {
+                            Image(systemName: "xmark.circle")
+                                .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    if selected {
+                        Text("기준 지역")
+                            .font(PlanteriorTypography.microLabel)
+                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                Text(region.name)
-                    .font(
-                        PlanteriorTypography.supporting.weight(
-                            selected ? .semibold : .regular
-                        )
-                    )
-                    .foregroundStyle(
-                        selected
-                            ? PlanteriorPalette.accent.color
-                            : PlanteriorPalette.textPrimary.color
-                    )
-                Spacer(minLength: PlanteriorSpacing.small)
-                if selected {
-                    Text("기준 지역")
-                        .font(PlanteriorTypography.microLabel)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                } else {
-                    Image(systemName: "xmark.circle")
-                        .foregroundStyle(PlanteriorPalette.textTertiary.color)
-                        .accessibilityHidden(true)
+                .padding(.horizontal, PlanteriorSpacing.large)
+                .padding(.vertical, PlanteriorSpacing.small)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: SettingsReferenceMetrics.regionRowHeight,
+                    alignment: .leading
+                )
+                .contentShape(Rectangle())
+            } else {
+                HStack(spacing: PlanteriorSpacing.small) {
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(PlanteriorPalette.accent.color)
+                            .accessibilityHidden(true)
+                    }
+                    regionName(region.name, selected: selected)
+                    Spacer(minLength: PlanteriorSpacing.small)
+                    if selected {
+                        Text("기준 지역")
+                            .font(PlanteriorTypography.microLabel)
+                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    } else {
+                        Image(systemName: "xmark.circle")
+                            .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .padding(.horizontal, PlanteriorSpacing.large)
+                .frame(height: SettingsReferenceMetrics.regionRowHeight)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .frame(height: SettingsReferenceMetrics.regionRowHeight)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityValue(selected ? "선택됨" : "선택 안 됨")
         .accessibilityIdentifier("weather.region-result.\(region.code)")
+    }
+
+    private func regionName(_ name: String, selected: Bool) -> some View {
+        Text(name)
+            .font(
+                PlanteriorTypography.supporting.weight(
+                    selected ? .semibold : .regular
+                )
+            )
+            .foregroundStyle(
+                selected
+                    ? PlanteriorPalette.accent.color
+                    : PlanteriorPalette.textPrimary.color
+            )
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
