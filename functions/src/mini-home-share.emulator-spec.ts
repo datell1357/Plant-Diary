@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
-import { Timestamp, getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { Timestamp, getFirestore, type Firestore, type Transaction } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
+import { ACCOUNT_DELETION_GRACE_MILLIS } from "./account-deletion-contract.js";
+import { requestAccountDeletion } from "./account-deletion-service.js";
+import { FirebaseAccountDeletionCleaner } from "./firebase-account-deletion-cleaner.js";
+import { FirestoreAccountDeletionStore } from "./firestore-account-deletion-store.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeShareStore } from "./firestore-mini-home-share-store.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
@@ -28,6 +34,71 @@ function placement(x = 0.1) {
     normalizedY: 0.125,
     zIndex: 0,
   };
+}
+
+function exactSignal(): Readonly<{ wait: Promise<void>; emit: () => void }> {
+  let emitSignal: (() => void) | undefined;
+  const wait = new Promise<void>((resolve, reject) => {
+    const safety = setTimeout(
+      () => reject(new Error("Timed out waiting for exact test signal")),
+      10_000,
+    );
+    emitSignal = () => {
+      clearTimeout(safety);
+      resolve();
+    };
+  });
+  return {
+    wait,
+    emit: () => {
+      if (emitSignal === undefined) throw new TypeError("Signal is not subscribed");
+      emitSignal();
+    },
+  };
+}
+
+function pauseTransactionAfterRead(
+  firestore: Firestore,
+  path: string,
+  paused: ReturnType<typeof exactSignal>,
+  release: ReturnType<typeof exactSignal>,
+): Firestore {
+  let shouldPause = true;
+  return new Proxy(firestore, {
+    get(target, property) {
+      if (property !== "runTransaction") {
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return async <T>(
+        operation: (transaction: Transaction) => Promise<T>,
+        options?: Readonly<{ maxAttempts?: number }>,
+      ): Promise<T> => target.runTransaction(async (transaction) => {
+        const instrumented = new Proxy(transaction, {
+          get(transactionTarget, transactionProperty) {
+            if (transactionProperty !== "get") {
+              const value = Reflect.get(
+                transactionTarget,
+                transactionProperty,
+                transactionTarget,
+              ) as unknown;
+              return typeof value === "function" ? value.bind(transactionTarget) : value;
+            }
+            return async (reference: FirebaseFirestore.DocumentReference) => {
+              const snapshot = await transactionTarget.get(reference);
+              if (shouldPause && reference.path === path) {
+                shouldPause = false;
+                paused.emit();
+                await release.wait;
+              }
+              return snapshot;
+            };
+          },
+        });
+        return operation(instrumented);
+      }, options);
+    },
+  });
 }
 
 function saveRequest(expectedRevision: number, operation: string, x = 0.1) {
@@ -194,6 +265,70 @@ test("atomic share lifecycle is idempotent, immutable, private at rest, bounded,
   }
 });
 
+test("a share transaction preflighted before deletion cannot commit after PUBLIC_SHARES cleanup", async () => {
+  const app = initializeApp({ projectId }, "mini-home-share-deletion-fence");
+  const firestore = getFirestore(app);
+  const paused = exactSignal();
+  const release = exactSignal();
+  const operationId = "share-operation-deletion-race-0001";
+  const shareStore = new FirestoreMiniHomeShareStore(
+    pauseTransactionAfterRead(
+      firestore,
+      `accountDeletionRequests/${ownerUid}`,
+      paused,
+      release,
+    ),
+  );
+  const deletionStore = new FirestoreAccountDeletionStore(firestore);
+  try {
+    await clear(firestore);
+    await seedSavedLayout(firestore);
+    const creation = executeCreateMiniHomeShareLink(
+      { uid: ownerUid },
+      { operationId, expectedRevision: 1 },
+      shareStore,
+      tokenKey,
+      at.toDate(),
+      publicEndpoint,
+    );
+    await paused.wait;
+    const requestedAt = at.toMillis() - ACCOUNT_DELETION_GRACE_MILLIS;
+    const deletionRequest = requestAccountDeletion(
+      { uid: ownerUid, authTimeSeconds: requestedAt / 1_000 },
+      {
+        expectedOwnerUid: ownerUid,
+        confirmed: true,
+        idempotencyKey: "share-deletion-race-request-0001",
+      },
+      {
+        store: deletionStore,
+        nowMillis: () => requestedAt,
+        requestId: () => "share-deletion-race-request",
+      },
+    );
+    release.emit();
+    await deletionRequest;
+    const claimed = await deletionStore.claimDue({
+      nowMillis: at.toMillis(),
+      leaseExpiresAtMillis: at.toMillis() + 60_000,
+      limit: 1,
+    });
+    assert.equal(claimed.length, 1);
+    await new FirebaseAccountDeletionCleaner(
+      firestore,
+      getStorage(app),
+      getAuth(app),
+    ).clean(ownerUid, "PUBLIC_SHARES");
+    await creation;
+    assert.equal((await firestore.collection(`users/${ownerUid}/shareLinks`).get()).size, 1);
+    assert.equal((await firestore.collection("publicShares").get()).size, 0);
+  } finally {
+    release.emit();
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
 test("revoke rejects malformed timestamps and a torn public mirror as data loss", async () => {
   const app = initializeApp({ projectId }, "mini-home-share-revoke-malformed");
   const firestore = getFirestore(app);
@@ -278,4 +413,6 @@ async function clear(firestore: ReturnType<typeof getFirestore>) {
   await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
   await firestore.recursiveDelete(firestore.collection("users"));
   await firestore.recursiveDelete(firestore.collection("publicShares"));
+  await firestore.recursiveDelete(firestore.collection("accountDeletionRequests"));
+  await firestore.recursiveDelete(firestore.collection("accountDeletionReceipts"));
 }

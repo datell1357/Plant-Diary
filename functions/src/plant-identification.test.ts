@@ -45,8 +45,14 @@ class MemoryRequestStore implements IdentificationRequestStore {
   constructor(
     private readonly request: StoredIdentificationRequest = {
       ownerUid: "user-a",
-      temporaryOriginalPath:
-        "identification-originals/user-a/request_12345678/original.webp",
+      media: {
+        reference: { reservationId: "reservation_12345678", generation: "7" },
+        ownerUid: "user-a",
+        mediaKind: "IDENTIFICATION_ORIGINAL",
+        objectPath: "private-media-v2/reservation_12345678",
+        contentType: "image/webp",
+        byteSize: 3,
+      },
     },
   ) {}
 

@@ -1,3 +1,5 @@
+import type { ResolvedPrivateMedia } from "./private-media-contract.js";
+
 export type IdentificationCandidate = Readonly<{
   publicContentId: string;
   koreanName: string | null;
@@ -21,7 +23,7 @@ export type IdentificationResponse =
 
 export type StoredIdentificationRequest = Readonly<{
   ownerUid: string;
-  temporaryOriginalPath: string;
+  media: ResolvedPrivateMedia;
 }>;
 
 export interface IdentificationRequestStore {
@@ -34,7 +36,7 @@ export interface IdentificationRequestStore {
 }
 
 export interface PlantIdProvider {
-  identify(photoPath: string): Promise<unknown>;
+  identify(media: ResolvedPrivateMedia): Promise<unknown>;
 }
 
 export type PlantIdentificationErrorReason =
@@ -162,7 +164,7 @@ export async function executePlantIdentification(
   return store.runOnce(auth.uid, parsed.requestId, parsed.idempotencyKey, async (request) => {
     if (request.ownerUid !== auth.uid) throw new PlantIdentificationError("permission_denied");
     try {
-      return normalizedResponse(await provider.identify(request.temporaryOriginalPath));
+      return normalizedResponse(await provider.identify(request.media));
     } catch (error: unknown) {
       if (!(error instanceof PlantIdentificationError)) throw error;
       switch (error.reason) {

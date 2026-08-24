@@ -15,7 +15,8 @@ const projectId = "demo-planterior";
 const ownerUid = "handoff-owner";
 const requestId = "handoff_request_12345678";
 const operationId = "handoff_operation_12345678";
-const photoPath = `identification-originals/${ownerUid}/${requestId}/original.webp`;
+const reservationId = "handoff_reservation_12345678";
+const photoPath = `private-media-v2/${reservationId}`;
 const requestPath = `users/${ownerUid}/identificationRequests/${requestId}`;
 const bucketName = `${projectId}.firebasestorage.app`;
 
@@ -28,6 +29,7 @@ test("approved photo handoff is retrieved from real local emulators before provi
   const storage = getStorage(app);
   const file = storage.bucket().file(photoPath);
   const request = firestore.doc(requestPath);
+  const reservation = firestore.doc(`privateMediaReservations/${reservationId}`);
   const bytes = Buffer.from([1, 4, 9, 16]);
   const createdAt = Timestamp.fromDate(new Date("2026-08-12T00:00:00Z"));
   const expiresAt = Timestamp.fromDate(new Date("2026-08-13T00:00:00Z"));
@@ -41,22 +43,41 @@ test("approved photo handoff is retrieved from real local emulators before provi
   });
 
   try {
-    await Promise.all([request.delete(), file.delete({ ignoreNotFound: true })]);
+    await Promise.all([
+      request.delete(),
+      reservation.delete(),
+      file.delete({ ignoreNotFound: true }),
+    ]);
 
     // When
     await file.save(bytes, {
       metadata: {
         contentType: "image/webp",
-        metadata: {
-          ownerUid,
-          requestId,
-          expiresAt: expiresAt.toDate().toISOString(),
-        },
+        metadata: { ownerUid, reservationId },
       },
+    });
+    const [uploaded] = await file.getMetadata();
+    await reservation.set({
+      schemaVersion: 1,
+      reservationId,
+      ownerUid,
+      mediaKind: "IDENTIFICATION_ORIGINAL",
+      contentType: "image/webp",
+      byteSize: bytes.length,
+      objectPath: photoPath,
+      idempotencyKeyHash: "a".repeat(64),
+      requestHash: "b".repeat(64),
+      state: "COMMITTED",
+      objectGeneration: uploaded.generation,
+      sealedGeneration: null,
+      createdAt,
+      expiresAt,
+      committedAt: createdAt,
+      sealedAt: null,
     });
     await request.set({
       ownerUid,
-      temporaryOriginalPath: photoPath,
+      mediaReference: { reservationId, generation: uploaded.generation },
       createdAt,
       expiresAt,
       revision: 1,
@@ -75,14 +96,20 @@ test("approved photo handoff is retrieved from real local emulators before provi
     assert.deepEqual(result, { kind: "no_candidates" });
     assert.equal(providerCalls, 1);
     const stored = await request.get();
-    assert.equal(stored.get("temporaryOriginalPath"), photoPath);
+    assert.deepEqual(stored.get("mediaReference"), {
+      reservationId,
+      generation: uploaded.generation,
+    });
     assert.equal(stored.get("expiresAt").toMillis() - stored.get("createdAt").toMillis(), 86_400_000);
     const [metadata] = await file.getMetadata();
     assert.equal(metadata.metadata?.ownerUid, ownerUid);
-    assert.equal(metadata.metadata?.requestId, requestId);
-    assert.equal(metadata.metadata?.expiresAt, expiresAt.toDate().toISOString());
+    assert.equal(metadata.metadata?.reservationId, reservationId);
   } finally {
-    await Promise.all([request.delete(), file.delete({ ignoreNotFound: true })]);
+    await Promise.all([
+      request.delete(),
+      reservation.delete(),
+      file.delete({ ignoreNotFound: true }),
+    ]);
     await deleteApp(app);
   }
 });

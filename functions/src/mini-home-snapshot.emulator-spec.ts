@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
-import { Timestamp, getFirestore } from "firebase-admin/firestore";
+import {
+  Timestamp,
+  getFirestore,
+  type DocumentSnapshot,
+} from "firebase-admin/firestore";
 import { FirestoreInventoryStore } from "./firestore-inventory-store.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
@@ -27,10 +31,13 @@ test("one pointer swap publishes coherent layout inventory and catalog projectio
     await clear(firestore);
     await seedItem(firestore, "decor-a");
     const initialStore = new FirestoreMiniHomeLayoutStore(firestore);
-    await executeSaveMiniHomeLayout(
-      { uid: ownerUid },
-      saveRequest(0, "snapshot-layout-save-0001", [placement("decor-a")]),
-      initialStore,
+    assert.deepEqual(
+      await executeSaveMiniHomeLayout(
+        { uid: ownerUid },
+        saveRequest(0, "snapshot-layout-save-0001", [placement("decor-a")]),
+        initialStore,
+      ),
+      { kind: "applied", revision: 1 },
     );
     const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
     const oldProjectionId = (await pointerRef.get()).get("projectionId") as string;
@@ -86,10 +93,13 @@ test("published projection is immutable and a missing owner pointer bootstraps f
     await clear(firestore);
     await seedItem(firestore, "decor-a");
     const layoutStore = new FirestoreMiniHomeLayoutStore(firestore);
-    await executeSaveMiniHomeLayout(
-      { uid: ownerUid },
-      saveRequest(0, "projection-layout-save-0001", [placement("decor-a")]),
-      layoutStore,
+    assert.deepEqual(
+      await executeSaveMiniHomeLayout(
+        { uid: ownerUid },
+        saveRequest(0, "projection-layout-save-0001", [placement("decor-a")]),
+        layoutStore,
+      ),
+      { kind: "applied", revision: 1 },
     );
     const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
     const pointer = await pointerRef.get();
@@ -195,10 +205,13 @@ test("projection pointer count and digest corruption fail closed", async () => {
   try {
     await clear(firestore);
     await seedItem(firestore, "decor-a");
-    await executeSaveMiniHomeLayout(
-      { uid: ownerUid },
-      saveRequest(0, "corruption-layout-save-0001", [placement("decor-a")]),
-      new FirestoreMiniHomeLayoutStore(firestore),
+    assert.deepEqual(
+      await executeSaveMiniHomeLayout(
+        { uid: ownerUid },
+        saveRequest(0, "corruption-layout-save-0001", [placement("decor-a")]),
+        new FirestoreMiniHomeLayoutStore(firestore),
+      ),
+      { kind: "applied", revision: 1 },
     );
     const snapshotStore = new FirestoreMiniHomeSnapshotStore(firestore);
     const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
@@ -245,10 +258,13 @@ test("completed owner publication atomically advances the pointer to an immutabl
     await clear(firestore);
     await seedItem(firestore, "decor-a");
     const layoutStore = new FirestoreMiniHomeLayoutStore(firestore);
-    await executeSaveMiniHomeLayout(
-      { uid: ownerUid },
-      saveRequest(0, "linearization-layout-save-0001", [placement("decor-a")]),
-      layoutStore,
+    assert.deepEqual(
+      await executeSaveMiniHomeLayout(
+        { uid: ownerUid },
+        saveRequest(0, "linearization-layout-save-0001", [placement("decor-a")]),
+        layoutStore,
+      ),
+      { kind: "applied", revision: 1 },
     );
     const pointerRef = firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`);
     const oldPointer = await pointerRef.get();
@@ -303,10 +319,13 @@ test("catalog publication swaps an immutable pointer and the owner remains bound
     await clear(firestore);
     await seedItem(firestore, "decor-a");
     const layoutStore = new FirestoreMiniHomeLayoutStore(firestore);
-    await executeSaveMiniHomeLayout(
-      { uid: ownerUid },
-      saveRequest(0, "catalog-layout-save-0001", [placement("decor-a")]),
-      layoutStore,
+    assert.deepEqual(
+      await executeSaveMiniHomeLayout(
+        { uid: ownerUid },
+        saveRequest(0, "catalog-layout-save-0001", [placement("decor-a")]),
+        layoutStore,
+      ),
+      { kind: "applied", revision: 1 },
     );
     const before = await executeLoadMiniHomeSnapshot(
       { uid: ownerUid },
@@ -392,23 +411,30 @@ function plant(plantId: string) {
 }
 
 async function seedCatalog(firestore: ReturnType<typeof getFirestore>, itemId: string) {
+  const published = exactCatalog(firestore, [[itemId, 1]]);
+  await published.ready;
   const digest = "a".repeat(64);
-  await firestore.doc(`shopItems/${itemId}`).set({
-    name: itemId,
-    description: `Catalog ${itemId}`,
-    category: "DECORATION",
-    assetPath: `catalog-assets/${itemId}/${digest}.webp`,
-    assetSha256: digest,
-    assetContentType: "image/webp",
-    assetByteSize: 3,
-    assetWidth: 96,
-    assetHeight: 64,
-    assetMediaRevision: 1,
-    acquisitionCondition: null,
-    publicationState: "PUBLIC",
-    revision: 1,
-    updatedAt: at,
-  });
+  try {
+    await firestore.doc(`shopItems/${itemId}`).set({
+      name: itemId,
+      description: `Catalog ${itemId}`,
+      category: "DECORATION",
+      assetPath: `catalog-assets/${itemId}/${digest}.webp`,
+      assetSha256: digest,
+      assetContentType: "image/webp",
+      assetByteSize: 3,
+      assetWidth: 96,
+      assetHeight: 64,
+      assetMediaRevision: 1,
+      acquisitionCondition: null,
+      publicationState: "PUBLIC",
+      revision: 1,
+      updatedAt: at,
+    });
+    await published.value;
+  } finally {
+    published.close();
+  }
 }
 
 async function seedItem(firestore: ReturnType<typeof getFirestore>, itemId: string) {
@@ -435,8 +461,119 @@ async function seedItem(firestore: ReturnType<typeof getFirestore>, itemId: stri
   });
 }
 
+function exactCatalog(
+  firestore: ReturnType<typeof getFirestore>,
+  expected: readonly (readonly [itemId: string, revision: number])[],
+): Readonly<{
+  ready: Promise<void>;
+  value: Promise<DocumentSnapshot>;
+  close: () => void;
+}> {
+  const reference = firestore.doc("catalogProjectionPointers/current");
+  let readyResolve!: () => void;
+  let valueResolve!: (snapshot: DocumentSnapshot) => void;
+  let valueReject!: (error: unknown) => void;
+  let readyObserved = false;
+  let settled = false;
+  const ready = new Promise<void>((resolve) => { readyResolve = resolve; });
+  const value = new Promise<DocumentSnapshot>((resolve, reject) => {
+    valueResolve = resolve;
+    valueReject = reject;
+  });
+  const timeout = setTimeout(() => {
+    if (!settled) valueReject(new Error("Timed out waiting for exact catalog projection"));
+  }, 10_000);
+  timeout.unref();
+  const unsubscribe = reference.onSnapshot(
+    (snapshot) => {
+      if (!readyObserved) {
+        readyObserved = true;
+        readyResolve();
+      }
+      if (settled) return;
+      void isExactCatalog(firestore, snapshot, expected)
+        .then((matches) => {
+          if (!settled && matches) {
+            settled = true;
+            clearTimeout(timeout);
+            valueResolve(snapshot);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            valueReject(error);
+          }
+        });
+    },
+    (error) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        valueReject(error);
+      }
+    },
+  );
+  return {
+    ready,
+    value,
+    close: () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    },
+  };
+}
+
+async function isExactCatalog(
+  firestore: ReturnType<typeof getFirestore>,
+  pointer: DocumentSnapshot,
+  expected: readonly (readonly [itemId: string, revision: number])[],
+): Promise<boolean> {
+  if (
+    !pointer.exists ||
+    pointer.get("itemCount") !== expected.length ||
+    pointer.get("rejectedCount") !== 0 ||
+    pointer.get("partial") !== false
+  ) return false;
+  const projectionId = pointer.get("projectionId");
+  if (typeof projectionId !== "string") return false;
+  const projection = await firestore.doc(`catalogProjections/${projectionId}`).get();
+  if (
+    !projection.exists ||
+    projection.get("projectionId") !== projectionId ||
+    projection.get("generation") !== pointer.get("generation") ||
+    projection.get("catalogToken") !== pointer.get("catalogToken") ||
+    projection.get("itemCount") !== expected.length ||
+    projection.get("rejectedCount") !== 0 ||
+    projection.get("partial") !== false
+  ) return false;
+  const catalog = projection.get("catalog");
+  if (!Array.isArray(catalog)) return false;
+  const actual = catalog.map((item: unknown) => {
+    if (item === null || typeof item !== "object") return null;
+    const record = item as Readonly<Record<string, unknown>>;
+    return [record.itemId, record.revision] as const;
+  });
+  return JSON.stringify(actual) === JSON.stringify(expected);
+}
+
 async function clear(firestore: ReturnType<typeof getFirestore>) {
-  await firestore.recursiveDelete(firestore.collection("shopItems"));
-  await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
-  await firestore.recursiveDelete(firestore.collection("users"));
+  const empty = exactCatalog(firestore, []);
+  await empty.ready;
+  try {
+    await firestore.recursiveDelete(firestore.collection("shopItems"));
+    await new FirestoreCatalogProjectionStore(firestore, () => at).rebuild();
+    await empty.value;
+  } finally {
+    empty.close();
+  }
+
+  await firestore.recursiveDelete(firestore.doc(`users/${ownerUid}`));
+  const [layouts, pointer] = await Promise.all([
+    firestore.collection(`users/${ownerUid}/miniHomes`).limit(1).get(),
+    firestore.doc(`users/${ownerUid}/miniHomeProjectionPointers/current`).get(),
+  ]);
+  assert.equal(layouts.empty, true);
+  assert.equal(pointer.exists, false);
 }

@@ -9,6 +9,7 @@ import {
   type Transaction,
 } from "firebase-admin/firestore";
 import type { Messaging } from "firebase-admin/messaging";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import { localDateTimeToInstant } from "./notification-settings.js";
 
 export type WateringDeliveryCandidate = Readonly<{
@@ -142,7 +143,9 @@ export async function executeConfirmNotificationOpened(
     .where("claimId", "==", deliveryId)
     .limit(2);
   const deliveryStore = new FirestoreWateringDeliveryStore(firestore);
-  const outcome = await firestore.runTransaction<NotificationOpenOutcome>(
+  const outcome = await runAccountMutationTransaction<NotificationOpenOutcome>(
+    firestore,
+    uid,
     async (transaction) => {
       const history = await transaction.get(historyRef);
       if (history.exists) {
@@ -466,7 +469,14 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     claimRef: DocumentReference,
     now: Date,
   ): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    const ownerUid = (await claimRef.get()).get("ownerUid");
+    const runTransaction =
+      typeof ownerUid === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(ownerUid)
+      ? <T>(operation: (transaction: Transaction) => Promise<T>) =>
+          runAccountMutationTransaction(this.firestore, ownerUid, operation)
+      : <T>(operation: (transaction: Transaction) => Promise<T>) =>
+          this.firestore.runTransaction(operation);
+    await runTransaction(async (transaction) => {
       const claim = await transaction.get(claimRef);
       if (!claim.exists) return;
       const state = claim.get("state");
@@ -642,7 +652,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
   }
 
   async claim(attempt: DueWateringAttempt, expiresAt: Date): Promise<string | null> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -791,7 +801,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
   ): Promise<readonly WateringEndpointTarget[] | null> {
     const requestedVersions = endpoints.flatMap((endpoint) => endpoint.endpointVersions ?? []);
     if (requestedVersions.length === 0) return null;
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -963,7 +973,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
       (endpoint) => endpoint.endpointVersions ?? [],
     );
     const boundaryNow = new Date();
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -1083,7 +1093,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
   }
 
   async markSendAmbiguous(attempt: DueWateringAttempt, claimId: string): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -1188,7 +1198,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     attempt: DueWateringAttempt,
     claimId: string,
   ): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -1260,7 +1270,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     claimId: string,
     results: readonly EndpointDeliveryResult[],
   ): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -1355,7 +1365,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     claimId: string,
     results?: readonly EndpointDeliveryResult[],
   ): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
       );
@@ -1440,7 +1450,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     }
     await Promise.all(
       [...versions.values()].map(async (expected) => {
-        await this.firestore.runTransaction(async (transaction) => {
+        await runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
           const endpointRef = this.firestore.doc(
             `users/${ownerUid}/notificationEndpoints/${expected.endpointId}`,
           );

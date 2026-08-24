@@ -7,6 +7,14 @@ service cloud.firestore {
     function contentAdmin() { return claim('contentAdmin'); }
     function opsAdmin() { return claim('opsAdmin'); }
     function trustedServer() { return claim('server'); }
+    function accountMutable(uid) {
+      let deletion = /databases/$(database)/documents/accountDeletionRequests/$(uid);
+      return !exists(deletion) || (
+        !(get(deletion).data.status in ['PROCESSING', 'PARTIALLY_FAILED', 'COMPLETED'])
+        && (!get(deletion).data.keys().hasAny(['completedScopes'])
+          || get(deletion).data.completedScopes.size() == 0)
+      );
+    }
     function validOpaqueId(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$'); }
     function validOperationKey(value) { return value is string && value.size() >= 8 && value.size() <= 128 && value.matches('^[A-Za-z0-9_-]+$'); }
     function leapYear(year) { return year % 400 == 0 || (year % 4 == 0 && year % 100 != 0); }
@@ -45,18 +53,41 @@ service cloud.firestore {
         && request.resource.data.revision == resource.data.revision + 1;
     }
     function approvedCollection(collection) {
-      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'miniHomeStates', 'placements', 'ownedItems', 'consents', 'deletionRequests', 'notificationDeliveries', 'notificationHistory', 'identificationRequests'];
+      return collection in ['personalPlants', 'wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'miniHomeStates', 'placements', 'ownedItems', 'consents', 'notificationDeliveries', 'notificationHistory', 'identificationRequests'];
     }
     function ownerWritable(collection) {
       return collection in ['consents', 'identificationRequests'];
     }
     function serverWritable(collection) {
-      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'miniHomeStates', 'placements', 'ownedItems', 'deletionRequests', 'notificationDeliveries', 'notificationHistory'];
+      return collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'weatherSnapshots', 'weatherRisks', 'miniHomes', 'miniHomeStates', 'placements', 'ownedItems', 'notificationDeliveries', 'notificationHistory'];
+    }
+    function validPrivateMediaReference(uid, value, mediaKind) {
+      let reservationId = value is map && value.keys().hasAll(['reservationId']) ? value.reservationId : '';
+      let reservation = /databases/$(database)/documents/privateMediaReservations/$(reservationId);
+      return value is map
+        && value.keys().hasAll(['reservationId', 'generation'])
+        && value.keys().hasOnly(['reservationId', 'generation'])
+        && validOpaqueId(value.reservationId)
+        && value.generation is string
+        && value.generation.matches('^[1-9][0-9]*$')
+        && exists(reservation)
+        && get(reservation).data.ownerUid == uid
+        && get(reservation).data.reservationId == value.reservationId
+        && get(reservation).data.mediaKind == mediaKind
+        && get(reservation).data.state == 'COMMITTED'
+        && get(reservation).data.objectGeneration == value.generation;
     }
     function validPersonalPlant() {
-      return validEntityKeys(['displayName', 'registrationMethod'], ['contentId', 'representativePhotoPath', 'location', 'note', 'lastWateredDate'])
+      return validEntityKeys(['displayName', 'registrationMethod'], ['contentId', 'representativeMediaReference', 'representativePhotoPath', 'location', 'note', 'lastWateredDate'])
         && request.resource.data.displayName is string
         && request.resource.data.registrationMethod in ['IDENTIFIED', 'IDENTIFICATION_EDITED', 'MANUAL']
+        && (!request.resource.data.keys().hasAny(['representativeMediaReference'])
+          || request.resource.data.representativeMediaReference == null
+          || validPrivateMediaReference(request.resource.data.ownerUid, request.resource.data.representativeMediaReference, 'PLANT_PHOTO'))
+        && (!request.resource.data.keys().hasAny(['representativePhotoPath'])
+          || (request.resource.data.keys().hasAny(['representativeMediaReference'])
+            && request.resource.data.representativeMediaReference != null
+            && request.resource.data.representativePhotoPath == get(/databases/$(database)/documents/privateMediaReservations/$(request.resource.data.representativeMediaReference.reservationId)).data.objectPath))
         && (!request.resource.data.keys().hasAny(['lastWateredDate']) || request.resource.data.lastWateredDate == null || validDate(request.resource.data.lastWateredDate));
     }
     function validOwnerEntity(collection) {
@@ -124,8 +155,9 @@ service cloud.firestore {
           && (!request.resource.data.keys().hasAny(['commandGeneration']) || (request.resource.data.commandGeneration is int && request.resource.data.commandGeneration >= 1 && request.resource.data.commandGeneration <= 9007199254740991))
           && (!request.resource.data.keys().hasAny(['legacyRecovery']) || (request.resource.data.legacyRecovery is bool && request.resource.data.type == 'LOCATION')))
         || (collection == 'identificationRequests'
-          && validEntityKeys(['temporaryOriginalPath', 'createdAt', 'expiresAt'], [])
-          && request.resource.data.temporaryOriginalPath is string && request.resource.data.createdAt is timestamp
+          && validEntityKeys(['mediaReference', 'createdAt', 'expiresAt'], [])
+          && validPrivateMediaReference(request.resource.data.ownerUid, request.resource.data.mediaReference, 'IDENTIFICATION_ORIGINAL')
+          && request.resource.data.createdAt is timestamp
           && request.resource.data.expiresAt is timestamp && request.resource.data.expiresAt > request.resource.data.createdAt);
     }
     function validPlacementMetadata(uid) {
@@ -164,15 +196,6 @@ service cloud.firestore {
         && (request.resource.data.status != 'FAILED' || request.resource.data.failedAt is timestamp)
         && (!request.resource.data.destinationOpened || request.resource.data.openedAt is timestamp);
     }
-    function validDeletion() {
-      return validEntityKeys(['status', 'requestedAt', 'scheduledFor', 'completedAt'], [])
-        && request.resource.data.status in ['RECEIVED', 'PROCESSING', 'COMPLETED', 'FAILED', 'PARTIALLY_FAILED', 'CANCELLED']
-        && request.resource.data.requestedAt is timestamp && request.resource.data.scheduledFor is timestamp
-        && request.resource.data.scheduledFor >= request.resource.data.requestedAt
-        && (request.resource.data.completedAt == null || request.resource.data.completedAt is timestamp)
-        && (request.resource.data.completedAt == null || request.resource.data.completedAt >= request.resource.data.scheduledFor)
-        && (request.resource.data.status != 'COMPLETED' || request.resource.data.completedAt is timestamp);
-    }
     function validServerEntity(collection) {
       return (collection == 'notificationDeliveries' && validDelivery())
         || (collection == 'notificationHistory' && validNotificationHistory())
@@ -194,7 +217,6 @@ service cloud.firestore {
           && request.resource.data.detectedAt is timestamp && request.resource.data.observedAt is timestamp
           && request.resource.data.active is bool && request.resource.data.transition is int && request.resource.data.transition >= 0
           && (request.resource.data.deliveredTransition == null || request.resource.data.deliveredTransition is int))
-        || (collection == 'deletionRequests' && validDeletion())
         || (collection == 'ownedItems'
           && validEntityKeys(
             ['itemId', 'acquiredAt', 'applied'],
@@ -356,6 +378,18 @@ service cloud.firestore {
         && request.resource.data.zoneId is string;
     }
     function publicDocument() { return resource.data.publicationState == 'PUBLIC'; }
+    match /accountDeletionRequests/{uid} {
+      allow read, write: if false;
+    }
+    match /accountDeletionReceipts/{uid}/commands/{commandId} {
+      allow read, write: if false;
+    }
+    match /privateMediaReservations/{reservationId} {
+      allow read, write: if false;
+    }
+    match /privateMediaReservationReceipts/{receiptId} {
+      allow read, write: if false;
+    }
     match /appleAuthSessions/{sessionId} {
       allow read, write: if false;
     }
@@ -370,32 +404,32 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read: if owns(uid);
-      allow create: if trustedServer() && validCreate(uid);
-      allow update: if trustedServer() && validUpdate(uid);
-      allow delete: if trustedServer() && resource.data.ownerUid == uid;
+      allow create: if trustedServer() && accountMutable(uid) && validCreate(uid);
+      allow update: if trustedServer() && accountMutable(uid) && validUpdate(uid);
+      allow delete: if trustedServer() && accountMutable(uid) && resource.data.ownerUid == uid;
     }
     match /users/{uid}/operations/{operationId} {
       allow read: if owns(uid);
-      allow create: if trustedServer()
+      allow create: if trustedServer() && accountMutable(uid)
         && (validGenericOperation(uid, operationId)
           || validWateringOperation(uid, operationId));
       allow update, delete: if false;
     }
     match /users/{uid}/{collection}/{documentId} {
       allow read: if approvedCollection(collection) && owns(uid);
-      allow create: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && validCreate(uid) && validOwnerEntity(collection);
-      allow update: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && validUpdate(uid) && validOwnerEntity(collection);
-      allow create: if collection == 'consents' && documentId == 'location' && trustedServer() && validCreate(uid) && validOwnerEntity(collection);
-      allow update: if collection == 'consents' && documentId == 'location' && trustedServer() && validUpdate(uid) && validOwnerEntity(collection);
-      allow create: if collection == 'placements' && trustedServer() && validPlacementMetadata(uid) && validOwnerEntity(collection);
-      allow update: if collection == 'placements' && trustedServer() && validPlacementMetadata(uid) && validOwnerEntity(collection);
-      allow create: if serverWritable(collection) && collection != 'placements' && trustedServer() && validCreate(uid)
+      allow create: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && accountMutable(uid) && validCreate(uid) && validOwnerEntity(collection);
+      allow update: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && accountMutable(uid) && validUpdate(uid) && validOwnerEntity(collection);
+      allow create: if collection == 'consents' && documentId == 'location' && trustedServer() && accountMutable(uid) && validCreate(uid) && validOwnerEntity(collection);
+      allow update: if collection == 'consents' && documentId == 'location' && trustedServer() && accountMutable(uid) && validUpdate(uid) && validOwnerEntity(collection);
+      allow create: if collection == 'placements' && trustedServer() && accountMutable(uid) && validPlacementMetadata(uid) && validOwnerEntity(collection);
+      allow update: if collection == 'placements' && trustedServer() && accountMutable(uid) && validPlacementMetadata(uid) && validOwnerEntity(collection);
+      allow create: if serverWritable(collection) && collection != 'placements' && trustedServer() && accountMutable(uid) && validCreate(uid)
         && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'miniHomes', 'miniHomeStates'] && validOwnerEntity(collection)));
-      allow update: if serverWritable(collection) && collection != 'notificationDeliveries' && collection != 'placements' && trustedServer() && validUpdate(uid)
+      allow update: if serverWritable(collection) && collection != 'notificationDeliveries' && collection != 'placements' && trustedServer() && accountMutable(uid) && validUpdate(uid)
         && (validServerEntity(collection) || (collection in ['wateringRecords', 'wateringSchedules', 'notificationSettings', 'notificationPlantSettings', 'weatherSettings', 'weatherPlantSettings', 'miniHomes', 'miniHomeStates'] && validOwnerEntity(collection)));
-      allow delete: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && resource.data.ownerUid == uid;
-      allow delete: if collection == 'consents' && documentId == 'location' && trustedServer() && resource.data.ownerUid == uid;
-      allow delete: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && resource.data.ownerUid == uid;
+      allow delete: if ownerWritable(collection) && !(collection == 'consents' && documentId == 'location') && owns(uid) && accountMutable(uid) && resource.data.ownerUid == uid;
+      allow delete: if collection == 'consents' && documentId == 'location' && trustedServer() && accountMutable(uid) && resource.data.ownerUid == uid;
+      allow delete: if serverWritable(collection) && collection != 'notificationDeliveries' && trustedServer() && accountMutable(uid) && resource.data.ownerUid == uid;
     }
     match /users/{uid}/shareLinks/{shareId} {
       allow read, write: if false;
@@ -414,8 +448,8 @@ service cloud.firestore {
     }
     match /users/{uid}/weatherAlerts/{alertId} {
       allow read: if owns(uid);
-      allow create, update: if trustedServer() && request.resource.data.ownerUid == uid;
-      allow delete: if trustedServer() && resource.data.ownerUid == uid;
+      allow create, update: if trustedServer() && accountMutable(uid) && request.resource.data.ownerUid == uid;
+      allow delete: if trustedServer() && accountMutable(uid) && resource.data.ownerUid == uid;
     }
     match /plantContents/{documentId} {
       allow read: if contentAdmin() || publicDocument();

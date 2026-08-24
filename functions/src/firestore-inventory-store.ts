@@ -1,4 +1,5 @@
 import { Timestamp, type DocumentSnapshot, type Firestore } from "firebase-admin/firestore";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import {
   catalogProjectionForPublishedOwner,
   ownerProjectionDraft,
@@ -37,7 +38,7 @@ export class FirestoreInventoryStore implements InventoryStore {
   ) {}
 
   async load(ownerUid: string): Promise<InventorySnapshot> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const readTime = this.now();
       const catalogSource = await readCatalogForWriter(transaction, this.firestore);
       const owner = await readOwnerForWriter(
@@ -73,7 +74,7 @@ export class FirestoreInventoryStore implements InventoryStore {
   }
 
   async acquire(command: InventoryAcquireCommand): Promise<InventoryAcquireResult> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const ownerRoot = `users/${command.ownerUid}`;
       const operationRef = this.firestore.doc(`${ownerRoot}/inventoryOperations/${command.operationId}`);
       const operation = await transaction.get(operationRef);

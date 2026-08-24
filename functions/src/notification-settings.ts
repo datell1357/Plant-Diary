@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
+import {
+  assertAccountMutationAllowed,
+  runAccountMutationTransaction,
+} from "./account-mutation-lock.js";
 
 export type NotificationAuthContext = Readonly<{ uid: string }>;
 
@@ -254,7 +258,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
   ) {}
 
   async registerEndpoint(command: NotificationEndpointCommand): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const ownerRef = this.firestore.doc(`notificationEndpointOwners/${command.installationId}`);
       const owner = await transaction.get(ownerRef);
       const currentSecretHash = secretHash(command.installationSecret);
@@ -317,6 +321,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
           );
         }
         if (typeof previousOwner === "string" && previousOwner !== command.ownerUid) {
+          await assertAccountMutationAllowed(transaction, this.firestore, previousOwner);
           transaction.delete(
             this.firestore.doc(`users/${previousOwner}/notificationEndpoints/${command.installationId}`),
           );
@@ -352,7 +357,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
   async unregisterEndpoint(
     command: NotificationEndpointUnregistration,
   ): Promise<EndpointRevocationStatus> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const ownerRef = this.firestore.doc(`notificationEndpointOwners/${command.installationId}`);
       const owner = await transaction.get(ownerRef);
       if (!owner.exists) {
@@ -420,7 +425,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
   }
 
   async ensureWateringSettings(ownerUid: string): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const accountRef = this.firestore.doc(`users/${ownerUid}`);
       const settingsRef = this.firestore.doc(`users/${ownerUid}/notificationSettings/watering`);
       const scheduleQuery = this.firestore.collection(`users/${ownerUid}/wateringSchedules`).limit(maximumPlants + 1);
@@ -471,7 +476,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
 
   async updateWateringSettings(command: WateringNotificationSettingsCommand): Promise<number> {
     await this.hooks.beforeWateringSettingsTransaction?.();
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const accountRef = this.firestore.doc(`users/${command.ownerUid}`);
       const settingsRef = this.firestore.doc(`users/${command.ownerUid}/notificationSettings/watering`);
       const plantsQuery = this.firestore
@@ -591,7 +596,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
   }
 
   async updateAccountProfile(command: AccountProfileCommand): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const accountRef = this.firestore.doc(`users/${command.ownerUid}`);
       const settingsRef = this.firestore.doc(
         `users/${command.ownerUid}/notificationSettings/watering`,
@@ -689,7 +694,7 @@ export class FirestoreNotificationSettingsStore implements NotificationSettingsS
   }
 
   async reconcileWateringTimezone(ownerUid: string): Promise<void> {
-    await this.firestore.runTransaction(async (transaction) => {
+    await runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const accountRef = this.firestore.doc(`users/${ownerUid}`);
       const settingsRef = this.firestore.doc(`users/${ownerUid}/notificationSettings/watering`);
       const schedulesQuery = this.firestore

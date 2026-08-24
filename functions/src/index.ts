@@ -1,14 +1,45 @@
+// allow: SIZE_OK — Firebase deployment composition root owns exported trigger wiring.
 import { getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { createHmac, randomUUID } from "node:crypto";
 import { getFirestore } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
-import { defineSecret } from "firebase-functions/params";
+import { getStorage } from "firebase-admin/storage";
+import { defineSecret, defineString } from "firebase-functions/params";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
-import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import {
+  type CallableOptions,
+  type CallableRequest,
+  HttpsError,
+  onCall,
+  onRequest,
+} from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onObjectFinalized } from "firebase-functions/v2/storage";
+import {
+  type AccountDeletionAuth,
+  AccountDeletionError,
+} from "./account-deletion-contract.js";
+import { runAccountDeletionScan } from "./account-deletion-processor.js";
+import {
+  cancelAccountDeletion as cancelDeletion,
+  getAccountDeletionStatus as getDeletionStatus,
+  previewAccountDeletion as previewDeletion,
+  requestAccountDeletion as requestDeletion,
+  retryAccountDeletion as retryDeletion,
+} from "./account-deletion-service.js";
+import {
+  AccountMutationLockedError,
+  FirestoreAccountMutationLock,
+  withAccountMutationLock,
+} from "./account-mutation-lock.js";
 import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeCompleteAppleSignIn } from "./apple-auth.js";
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
+import { FirebaseAccountDeletionCleaner } from "./firebase-account-deletion-cleaner.js";
+import { FirebasePrivateMediaObjectStore, FirebasePrivateMediaSigner } from "./firebase-private-media.js";
+import { FirestoreAccountDeletionStore } from "./firestore-account-deletion-store.js";
+import { FirestorePrivateMediaReservationRepository } from "./firestore-private-media.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
@@ -47,6 +78,12 @@ import {
   productionPlantIdHttpClient,
 } from "./plant-identification-runtime.js";
 import { executePlantIdentification, PlantIdentificationError } from "./plant-identification.js";
+import {
+  commitPrivateMediaReservation as commitMediaReservation,
+  PrivateMediaError,
+  reservePrivateMediaUpload as reserveMediaUpload,
+} from "./private-media.js";
+import { handlePrivateMediaFinalized } from "./private-media-seal.js";
 import { WateringError, executeWateringCompletion } from "./watering.js";
 import {
   executeRefreshWeather,
@@ -73,6 +110,17 @@ import {
 
 if (getApps().length === 0) initializeApp();
 const firestore = getFirestore();
+const storage = getStorage();
+const accountDeletionStore = new FirestoreAccountDeletionStore(firestore);
+const accountDeletionCleaner = new FirebaseAccountDeletionCleaner(
+  firestore,
+  storage,
+  getAuth(),
+);
+const privateMediaRepository = new FirestorePrivateMediaReservationRepository(firestore);
+const privateMediaObjects = new FirebasePrivateMediaObjectStore(storage);
+const privateMediaSigner = new FirebasePrivateMediaSigner(storage);
+const accountMutationLock = new FirestoreAccountMutationLock(firestore);
 const store = new FirestoreMutationStore(firestore);
 const wateringStore = new FirestoreWateringCompletionStore(firestore);
 const catalogProjectionStore = new FirestoreCatalogProjectionStore(firestore);
@@ -88,7 +136,46 @@ const appleAbuseHashKey = defineSecret("APPLE_ABUSE_HASH_KEY");
 const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
 const openWeatherApiKey = defineSecret("OPENWEATHER_API_KEY");
 const miniHomeShareTokenKey = defineSecret("MINI_HOME_SHARE_TOKEN_KEY");
+const storageBucket = defineString("STORAGE_BUCKET");
 const weatherStore = new FirestoreWeatherStore(firestore);
+
+type MutationHandler = (request: CallableRequest<unknown>) => Promise<unknown>;
+
+function onMutationCall(
+  options: CallableOptions<unknown>,
+  handler: MutationHandler,
+) {
+  const guarded = withAccountMutationLock(accountMutationLock, handler);
+  return onCall(options, async (request) => {
+    try {
+      return await guarded(request);
+    } catch (error: unknown) {
+      if (error instanceof AccountMutationLockedError) {
+        throw new HttpsError("failed-precondition", error.message);
+      }
+      throw error;
+    }
+  });
+}
+
+function deletionAuth(request: CallableRequest<unknown>): AccountDeletionAuth | null {
+  if (request.auth === undefined) return null;
+  const authTime = request.auth.token.auth_time;
+  return {
+    uid: request.auth.uid,
+    authTimeSeconds: typeof authTime === "number" ? authTime : null,
+  };
+}
+
+function deletionHttpsError(error: unknown): never {
+  if (!(error instanceof AccountDeletionError)) throw error;
+  throw new HttpsError(error.code, error.message);
+}
+
+function privateMediaHttpsError(error: unknown): never {
+  if (!(error instanceof PrivateMediaError)) throw error;
+  throw new HttpsError(error.code, error.message);
+}
 
 function requiredEnvironment(name: "APPLE_CLIENT_ID" | "APPLE_REDIRECT_URI" | "APPLE_TEAM_ID" | "APPLE_KEY_ID"): string {
   const value = process.env[name];
@@ -116,6 +203,122 @@ function appleHttpsError(error: unknown): never {
   }
 }
 
+const deletionCallableOptions = { enforceAppCheck: true, region: "us-central1" } as const;
+
+export const previewAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+  try {
+    return await previewDeletion(deletionAuth(request), request.data, accountDeletionStore);
+  } catch (error: unknown) {
+    return deletionHttpsError(error);
+  }
+});
+
+export const requestAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+  try {
+    return await requestDeletion(deletionAuth(request), request.data, {
+      store: accountDeletionStore,
+      nowMillis: Date.now,
+      requestId: randomUUID,
+    });
+  } catch (error: unknown) {
+    return deletionHttpsError(error);
+  }
+});
+
+export const getAccountDeletionStatus = onCall(deletionCallableOptions, async (request) => {
+  try {
+    return await getDeletionStatus(deletionAuth(request), request.data, accountDeletionStore);
+  } catch (error: unknown) {
+    return deletionHttpsError(error);
+  }
+});
+
+export const cancelAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+  try {
+    return await cancelDeletion(deletionAuth(request), request.data, {
+      store: accountDeletionStore,
+      nowMillis: Date.now,
+    });
+  } catch (error: unknown) {
+    return deletionHttpsError(error);
+  }
+});
+
+export const retryAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+  try {
+    return await retryDeletion(deletionAuth(request), request.data, {
+      store: accountDeletionStore,
+      nowMillis: Date.now,
+      requestId: randomUUID,
+    });
+  } catch (error: unknown) {
+    return deletionHttpsError(error);
+  }
+});
+
+export const executeDueAccountDeletions = onSchedule(
+  { schedule: "every 5 minutes", timeZone: "UTC", timeoutSeconds: 540 },
+  async () => {
+    await runAccountDeletionScan({
+      store: accountDeletionStore,
+      cleaner: accountDeletionCleaner,
+      nowMillis: Date.now,
+    });
+  },
+);
+
+export const reservePrivateMediaUpload = onMutationCall(
+  { enforceAppCheck: true, region: "us-central1" },
+  async (request) => {
+    try {
+      return await reserveMediaUpload(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        {
+          repository: privateMediaRepository,
+          signer: privateMediaSigner,
+          nowMillis: Date.now,
+          reservationId: () => randomUUID().replaceAll("-", ""),
+        },
+      );
+    } catch (error: unknown) {
+      return privateMediaHttpsError(error);
+    }
+  },
+);
+
+export const commitPrivateMediaReservation = onMutationCall(
+  { enforceAppCheck: true, region: "us-central1" },
+  async (request) => {
+    try {
+      return await commitMediaReservation(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        { repository: privateMediaRepository, objects: privateMediaObjects, nowMillis: Date.now },
+      );
+    } catch (error: unknown) {
+      return privateMediaHttpsError(error);
+    }
+  },
+);
+
+export const deleteFinalizedPrivateMediaDuringDeletion = onObjectFinalized(
+  { bucket: storageBucket, region: "us-central1", retry: true },
+  async (event) => {
+    await handlePrivateMediaFinalized({
+      object: {
+        path: event.data.name,
+        generation: String(event.data.generation),
+        byteSize: event.data.size,
+        contentType: event.data.contentType ?? "application/octet-stream",
+        customMetadata: event.data.metadata ?? {},
+      },
+      repository: privateMediaRepository,
+      objects: privateMediaObjects,
+    });
+  },
+);
+
 export function createCatalogProjectionWriteHandler(
   rebuilder: Pick<FirestoreCatalogProjectionStore, "rebuild">,
 ): () => Promise<void> {
@@ -132,7 +335,7 @@ export const publishCatalogProjectionOnWrite = onDocumentWritten(
   createCatalogProjectionWriteHandler(catalogProjectionStore),
 );
 
-export const applyRevisionedOwnerWrite = onCall({ enforceAppCheck: true }, async (request) => {
+export const applyRevisionedOwnerWrite = onMutationCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeOwnerMutation(request.auth === undefined ? null : { uid: request.auth.uid }, request.data, store);
   } catch (error: unknown) {
@@ -204,7 +407,7 @@ function miniHomeSharePublicEndpoint(host: string | undefined): string {
   return `https://us-central1-${projectId}.cloudfunctions.net/publicMiniHomeShare`;
 }
 
-export const createMiniHomeShareLink = onCall(
+export const createMiniHomeShareLink = onMutationCall(
   { enforceAppCheck: true, secrets: [miniHomeShareTokenKey] },
   async (request) => {
     try {
@@ -222,7 +425,7 @@ export const createMiniHomeShareLink = onCall(
   },
 );
 
-export const revokeMiniHomeShareLink = onCall(
+export const revokeMiniHomeShareLink = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -243,7 +446,7 @@ export const publicMiniHomeShare = onRequest(
   createPublicMiniHomeShareHandler(miniHomeShareStore),
 );
 
-export const deleteMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
+export const deleteMiniHomeLayout = onMutationCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeDeleteMiniHomeLayout(
       request.auth === undefined ? null : { uid: request.auth.uid },
@@ -264,7 +467,7 @@ export const deleteMiniHomeLayout = onCall({ enforceAppCheck: true }, async (req
   }
 });
 
-export const saveMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
+export const saveMiniHomeLayout = onMutationCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeSaveMiniHomeLayout(
       request.auth === undefined ? null : { uid: request.auth.uid },
@@ -309,7 +512,7 @@ export function createLoadInventoryCallable(store: InventoryStore) {
 
 export const loadInventory = createLoadInventoryCallable(inventoryStore);
 
-export const acquireInventoryItem = onCall({ enforceAppCheck: true }, async (request) => {
+export const acquireInventoryItem = onMutationCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeAcquireInventoryItem(
       request.auth === undefined ? null : { uid: request.auth.uid },
@@ -321,7 +524,7 @@ export const acquireInventoryItem = onCall({ enforceAppCheck: true }, async (req
   }
 });
 
-export const completeWatering = onCall({ enforceAppCheck: true }, async (request) => {
+export const completeWatering = onMutationCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeWateringCompletion(
       request.auth === undefined ? null : { uid: request.auth.uid },
@@ -339,7 +542,7 @@ function notificationHttpsError(error: unknown): never {
   throw new HttpsError(error.code, error.message);
 }
 
-export const registerNotificationEndpoint = onCall(
+export const registerNotificationEndpoint = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -354,7 +557,7 @@ export const registerNotificationEndpoint = onCall(
   },
 );
 
-export const unregisterNotificationEndpoint = onCall(
+export const unregisterNotificationEndpoint = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -369,7 +572,7 @@ export const unregisterNotificationEndpoint = onCall(
   },
 );
 
-export const ensureWateringNotificationSettings = onCall(
+export const ensureWateringNotificationSettings = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -384,7 +587,7 @@ export const ensureWateringNotificationSettings = onCall(
   },
 );
 
-export const updateAccountProfile = onCall(
+export const updateAccountProfile = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -399,7 +602,7 @@ export const updateAccountProfile = onCall(
   },
 );
 
-export const reconcileWateringNotificationTimezone = onCall(
+export const reconcileWateringNotificationTimezone = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -414,7 +617,7 @@ export const reconcileWateringNotificationTimezone = onCall(
   },
 );
 
-export const updateWateringNotificationSettings = onCall(
+export const updateWateringNotificationSettings = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -429,7 +632,7 @@ export const updateWateringNotificationSettings = onCall(
   },
 );
 
-export const confirmNotificationOpened = onCall(
+export const confirmNotificationOpened = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -485,7 +688,7 @@ export const searchWeatherRegions = onCall(
   },
 );
 
-export const setWeatherLocationConsent = onCall(
+export const setWeatherLocationConsent = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -500,7 +703,7 @@ export const setWeatherLocationConsent = onCall(
   },
 );
 
-export const setManualWeatherRegion = onCall(
+export const setManualWeatherRegion = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -515,7 +718,7 @@ export const setManualWeatherRegion = onCall(
   },
 );
 
-export const updateWeatherAlerts = onCall(
+export const updateWeatherAlerts = onMutationCall(
   { enforceAppCheck: true },
   async (request) => {
     try {
@@ -530,7 +733,7 @@ export const updateWeatherAlerts = onCall(
   },
 );
 
-export const refreshWeather = onCall(
+export const refreshWeather = onMutationCall(
   { enforceAppCheck: true, secrets: [openWeatherApiKey], timeoutSeconds: 30 },
   async (request) => {
     try {
@@ -635,7 +838,7 @@ export const cleanupExpiredAppleAuthSessions = onSchedule(
   },
 );
 
-export const identifyPlant = onCall({ enforceAppCheck: true, secrets: [plantIdApiKey] }, async (request) => {
+export const identifyPlant = onMutationCall({ enforceAppCheck: true, secrets: [plantIdApiKey] }, async (request) => {
   try {
     return await executePlantIdentification(
       request.auth === undefined ? null : { uid: request.auth.uid },

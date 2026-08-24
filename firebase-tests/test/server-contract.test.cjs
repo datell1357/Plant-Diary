@@ -78,6 +78,27 @@ describe("canonical QA gate contracts", () => {
     assert.deepEqual(staleReferences, []);
   });
 
+  it("keeps backend account deletion categories equal to Android wire mappings", () => {
+    const backend = readRepositoryFile("functions/src/account-deletion-contract.ts");
+    const android = readRepositoryFile(
+      "app/src/main/kotlin/com/planterior/helper/accountdeletion/FirebaseAccountDeletionRepository.kt",
+    );
+    const backendBlock = backend.match(
+      /export const ACCOUNT_DELETION_SCOPES = \[([\s\S]*?)\] as const;/,
+    );
+    const androidBlock = android.match(
+      /(?:private|internal) val SERVER_SCOPES\s*=\s*listOf\(([\s\S]*?)\n\s*\)/,
+    );
+    assert.ok(backendBlock, "backend account deletion scope declaration is missing");
+    assert.ok(androidBlock, "Android account deletion wire mapping is missing");
+    const wireValues = (block) => [...block.matchAll(/"([A-Z_]+)"/g)].map((match) => match[1]);
+    const backendValues = wireValues(backendBlock[1]);
+    const androidValues = wireValues(androidBlock[1]);
+    assert.equal(new Set(backendValues).size, backendValues.length);
+    assert.equal(new Set(androidValues).size, androidValues.length);
+    assert.deepEqual([...androidValues].sort(), [...backendValues].sort());
+  });
+
   it("limits deterministic gitleaks exemptions to exact emulator fixture values", () => {
     const config = readRepositoryFile(".gitleaks.toml");
     const description = "Deterministic mini-home emulator idempotency fixtures";
@@ -267,7 +288,6 @@ describe("strict server-derived Firebase contract", () => {
     const fixtures = {
       notificationDeliveries: { ...write("user-a"), plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: ts("2026-08-12T00:00:00Z"), deliveredAt: ts("2026-08-12T00:01:00Z"), deduplicationKey: "user-a:plant-a:2026-08-12:0" },
       weatherRisks: { ...write("user-a"), plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", action: "mist", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null },
-      deletionRequests: { ...write("user-a"), status: "COMPLETED", requestedAt: ts("2026-08-01T00:00:00Z"), scheduledFor: ts("2026-08-08T00:00:00Z"), completedAt: ts("2026-08-08T00:01:00Z") },
       ownedItems: { ...write("user-a"), itemId: "item-a", acquiredAt: ts("2026-08-12T00:00:00Z"), applied: true },
     };
     for (const [collection, fixture] of Object.entries(fixtures)) {

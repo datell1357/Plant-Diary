@@ -12,11 +12,13 @@ const { connectFirestoreEmulator, doc, getDoc, getFirestore } = require("firebas
 const { connectFunctionsEmulator, getFunctions, httpsCallable } = require("firebase/functions");
 
 const projectId = "demo-planterior";
+let app;
+let adminApp;
 
 async function main() {
   assert.equal(process.env.GCLOUD_PROJECT, projectId);
   assert.equal(process.env.GOOGLE_APPLICATION_CREDENTIALS, undefined);
-  const app = initializeApp({ projectId, apiKey: "demo-key", appId: "demo-app" });
+  app = initializeApp({ projectId, apiKey: "demo-key", appId: "demo-app" });
   const auth = getAuth(app);
   const debugAppCheckToken = [
     Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url"),
@@ -68,6 +70,8 @@ async function main() {
     (error) => error.code === "functions/unauthenticated",
   );
   const credential = await signInAnonymously(auth);
+  adminApp = initializeAdminApp({ projectId }, "apple-callback-smoke");
+  const adminFirestore = getAdminFirestore(adminApp);
   const mutation = { ...mutationPayload, expectedOwnerUid: credential.user.uid };
   const first = await applyWrite(mutation);
   const duplicate = await applyWrite(mutation);
@@ -78,6 +82,116 @@ async function main() {
   const snapshot = await getDoc(doc(firestore, `users/${credential.user.uid}/personalPlants/callable-plant`));
   assert.equal(snapshot.data().ownerUid, credential.user.uid);
   assert.equal(snapshot.data().revision, 1);
+
+  const previewDeletion = httpsCallable(functions, "previewAccountDeletion");
+  const requestDeletion = httpsCallable(functions, "requestAccountDeletion");
+  const getDeletionStatus = httpsCallable(functions, "getAccountDeletionStatus");
+  const cancelDeletion = httpsCallable(functions, "cancelAccountDeletion");
+  const retryDeletion = httpsCallable(functions, "retryAccountDeletion");
+  const deletionOwner = { expectedOwnerUid: credential.user.uid };
+  const deletionPreview = await previewDeletion(deletionOwner);
+  assert.equal(deletionPreview.data.request, null);
+  assert.equal(deletionPreview.data.scope.gracePeriodMillis, 7 * 24 * 60 * 60 * 1000);
+  assert.deepEqual(deletionPreview.data.scope.categories, [
+    "PUBLIC_SHARES",
+    "NOTIFICATION_ENDPOINT_OWNERS",
+    "PRIVATE_MEDIA_RESERVATIONS",
+    "IDENTIFICATION_ORIGINALS",
+    "PLANT_PHOTOS",
+    "SHARE_IMAGES",
+    "USER_DOCUMENTS",
+    "AUTH_ACCOUNT",
+  ]);
+  await assert.rejects(
+    () => previewDeletion({ expectedOwnerUid: "foreign-owner" }),
+    (error) => error.code === "functions/permission-denied",
+  );
+  const deletionCommand = {
+    ...deletionOwner,
+    confirmed: true,
+    idempotencyKey: "delete-aaaaaaaa",
+  };
+  const deletionRequested = await requestDeletion(deletionCommand);
+  const deletionDuplicate = await requestDeletion(deletionCommand);
+  const deletionStatus = await getDeletionStatus(deletionOwner);
+  assert.deepEqual(deletionDuplicate.data, deletionRequested.data);
+  assert.deepEqual(deletionStatus.data, deletionRequested.data);
+  assert.equal(
+    deletionRequested.data.scheduledForMillis - deletionRequested.data.requestedAtMillis,
+    7 * 24 * 60 * 60 * 1000,
+  );
+  const storedDeletionRef = adminFirestore.doc(`accountDeletionRequests/${credential.user.uid}`);
+  const storedDeletion = await storedDeletionRef.get();
+  assert.equal(storedDeletion.exists, true);
+  assert.equal(JSON.stringify(storedDeletion.data()).includes(deletionCommand.idempotencyKey), false);
+  const cancelledDeletion = await cancelDeletion({
+    ...deletionOwner,
+    requestId: deletionRequested.data.requestId,
+  });
+  assert.equal(cancelledDeletion.data.status, "CANCELLED");
+  const rerequestedDeletion = await requestDeletion({
+    ...deletionOwner,
+    confirmed: true,
+    idempotencyKey: "delete-bbbbbbbb",
+  });
+  assert.equal(rerequestedDeletion.data.status, "RECEIVED");
+  const partialFailureAt = Timestamp.now();
+  await storedDeletionRef.update({
+    status: "PARTIALLY_FAILED",
+    scheduledFor: partialFailureAt,
+    nextAttemptAt: null,
+    leaseExpiresAt: null,
+    claimGeneration: 1,
+    updatedAt: partialFailureAt,
+    completedScopes: ["PUBLIC_SHARES"],
+    failedScopes: [
+      "NOTIFICATION_ENDPOINT_OWNERS",
+      "PRIVATE_MEDIA_RESERVATIONS",
+      "IDENTIFICATION_ORIGINALS",
+      "PLANT_PHOTOS",
+      "SHARE_IMAGES",
+      "USER_DOCUMENTS",
+      "AUTH_ACCOUNT",
+    ],
+  });
+  const retriedDeletion = await retryDeletion({
+    ...deletionOwner,
+    confirmed: true,
+    idempotencyKey: "delete-cccccccc",
+  });
+  assert.equal(retriedDeletion.data.status, "PARTIALLY_FAILED");
+  await storedDeletionRef.update({ status: "PROCESSING" });
+  await assert.rejects(
+    () => applyWrite({
+      ...mutation,
+      mutationType: "UPDATE",
+      expectedRevision: 1,
+      idempotencyKey: "operation-callable-frozen",
+      payload: { note: "blocked" },
+    }),
+    (error) => error.code === "functions/failed-precondition",
+  );
+  await storedDeletionRef.delete();
+
+  const reserveMedia = httpsCallable(functions, "reservePrivateMediaUpload");
+  const commitMedia = httpsCallable(functions, "commitPrivateMediaReservation");
+  await assert.rejects(
+    () => reserveMedia({
+      expectedOwnerUid: "foreign-owner",
+      mediaKind: "PLANT_PHOTO",
+      contentType: "image/webp",
+      byteSize: 3,
+      idempotencyKey: "media-smoke-operation-0001",
+    }),
+    (error) => error.code === "functions/permission-denied",
+  );
+  await assert.rejects(
+    () => commitMedia({
+      expectedOwnerUid: credential.user.uid,
+      reservationId: "reservation_missing_12345678",
+    }),
+    (error) => error.code === "functions/not-found",
+  );
 
   const loadMiniHomeSnapshot = httpsCallable(functions, "loadMiniHomeSnapshot");
   const combined = await loadMiniHomeSnapshot({ expectedOwnerUid: credential.user.uid });
@@ -122,8 +236,6 @@ async function main() {
   const unknownShare = await fetch(share.data.url.replace(/token=[A-Za-z0-9_-]{43}/, `token=${"z".repeat(43)}`));
   assert.equal(unknownShare.status, 404);
 
-  const adminApp = initializeAdminApp({ projectId }, "apple-callback-smoke");
-  const adminFirestore = getAdminFirestore(adminApp);
   const storedShare = await adminFirestore.doc(`users/${credential.user.uid}/shareLinks/${share.data.shareId}`).get();
   const rawToken = new URL(share.data.url).searchParams.get("token");
   assert.ok(rawToken);
@@ -207,12 +319,21 @@ async function main() {
   assert.equal(errorCallback.status, 302);
   assert.equal(errorCallback.headers.get("location"), "planterior://auth/apple?error=cancelled");
   await deleteAdminApp(adminApp);
+  adminApp = undefined;
 
-  console.log(`FUNCTIONS_QA appCheck=valid missingAppCheck=rejected ownerDerived=true atomicMiniHomeSnapshot=${combined.data.snapshotGeneration} revision=${snapshot.data().revision} duplicate=${duplicate.data.kind} conflict=${conflict.data.kind} shareReplay=exact revokeReplay=original-timestamp revokeFields=exact publicJson=200 publicHtml=200 revoked=404 rawTokenAtRest=false appleStandardCallback=accepted appleReplay=rejected appleError=accepted`);
+  console.log(`FUNCTIONS_QA appCheck=valid missingAppCheck=rejected ownerDerived=true atomicMiniHomeSnapshot=${combined.data.snapshotGeneration} revision=${snapshot.data().revision} duplicate=${duplicate.data.kind} conflict=${conflict.data.kind} deletionCallables=5 mediaCallables=2 mediaForeign=denied mediaMissing=not-found deletionDuplicate=exact deletionForeign=denied deletionRetry=immediate processingFreeze=denied idempotencyRawAtRest=false shareReplay=exact revokeReplay=original-timestamp revokeFields=exact publicJson=200 publicHtml=200 revoked=404 rawTokenAtRest=false appleStandardCallback=accepted appleReplay=rejected appleError=accepted`);
   await deleteApp(app);
+  app = undefined;
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(error);
+  const cleanup = await Promise.allSettled([
+    adminApp === undefined ? Promise.resolve() : deleteAdminApp(adminApp),
+    app === undefined ? Promise.resolve() : deleteApp(app),
+  ]);
+  for (const result of cleanup) {
+    if (result.status === "rejected") console.error(result.reason);
+  }
   process.exitCode = 1;
 });

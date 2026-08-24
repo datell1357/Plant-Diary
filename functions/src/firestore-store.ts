@@ -1,5 +1,11 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import { ContractError, type MutationResult, type MutationStore, type OwnerMutationCommand, type ServerStateCommand } from "./contracts.js";
+import { FirestorePrivateMediaReservationRepository } from "./firestore-private-media.js";
+import {
+  parsePrivateMediaReference,
+  type ResolvePrivateMediaCommand,
+} from "./private-media-contract.js";
 import {
   ownerProjectionDraft,
   projectionPlant,
@@ -18,10 +24,18 @@ function timestampPayload(payload: Readonly<Record<string, unknown>>): Readonly<
 }
 
 export class FirestoreMutationStore implements MutationStore {
+  private readonly privateMedia: FirestorePrivateMediaReservationRepository;
+
   constructor(
     private readonly firestore: Firestore,
     private readonly now: () => Timestamp = Timestamp.now,
-  ) {}
+  ) {
+    this.privateMedia = new FirestorePrivateMediaReservationRepository(firestore);
+  }
+
+  async resolvePrivateMedia(command: ResolvePrivateMediaCommand) {
+    return this.privateMedia.resolve(command);
+  }
 
   async publicPlantContentExists(contentId: string): Promise<boolean> {
     const content = await this.firestore.doc(`plantContents/${contentId}`).get();
@@ -36,7 +50,25 @@ export class FirestoreMutationStore implements MutationStore {
   }
 
   async applyOwnerMutation(command: OwnerMutationCommand): Promise<MutationResult> {
-    return this.firestore.runTransaction(async (transaction) => {
+    let persistedPayload = command.payload;
+    if (
+      command.collection === "personalPlants" &&
+      command.mutationType === "CREATE" &&
+      command.payload.representativeMediaReference !== undefined &&
+      command.payload.representativeMediaReference !== null
+    ) {
+      const reference = parsePrivateMediaReference(command.payload.representativeMediaReference);
+      const media = await this.privateMedia.resolve({
+        ownerUid: command.ownerUid,
+        reference,
+        mediaKind: "PLANT_PHOTO",
+      });
+      if (media === null) {
+        throw new ContractError("invalid-argument", "Representative media is unavailable");
+      }
+      persistedPayload = { ...command.payload, representativePhotoPath: media.objectPath };
+    }
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const operationRef = this.firestore.doc(`users/${command.ownerUid}/operations/${command.idempotencyKey}`);
       const documentRef = this.firestore.doc(command.documentPath);
       const operation = await transaction.get(operationRef);
@@ -81,7 +113,7 @@ export class FirestoreMutationStore implements MutationStore {
           throw new ContractError("resource-exhausted", "An account can contain at most 200 plants");
         }
       }
-      const write = { ...command.payload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: projectionTime };
+      const write = { ...persistedPayload, ownerUid: command.ownerUid, revision, expectedRevision: command.expectedRevision, idempotencyKey: command.idempotencyKey, updatedAt: projectionTime };
       let commitScheduleWrite: (() => void) | null = null;
       if (command.collection === "personalPlants" && "lastWateredDate" in command.payload) {
         const scheduleRef = this.firestore.doc(
@@ -210,6 +242,20 @@ export class FirestoreMutationStore implements MutationStore {
   }
 
   async writeServerState(command: ServerStateCommand): Promise<void> {
-    await this.firestore.doc(command.documentPath).set({ ...timestampPayload(command.payload), ownerUid: command.ownerUid, updatedAt: FieldValue.serverTimestamp() }, { merge: false });
+    await runAccountMutationTransaction(
+      this.firestore,
+      command.ownerUid,
+      async (transaction) => {
+        transaction.set(
+          this.firestore.doc(command.documentPath),
+          {
+            ...timestampPayload(command.payload),
+            ownerUid: command.ownerUid,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: false },
+        );
+      },
+    );
   }
 }

@@ -2,14 +2,32 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function owns(uid) { return request.auth != null && request.auth.uid == uid; }
+    function accountMutable(uid) {
+      let deletion = /databases/(default)/documents/accountDeletionRequests/$(uid);
+      return !firestore.exists(deletion) || (
+        firestore.get(deletion).data.status in ['RECEIVED', 'FAILED', 'CANCELLED']
+        && (!firestore.get(deletion).data.keys().hasAny(['completedScopes'])
+          || (firestore.get(deletion).data.completedScopes is list
+            && firestore.get(deletion).data.completedScopes.size() == 0))
+      );
+    }
     function safeSegment(value) { return value.matches('^[A-Za-z0-9_-]{1,128}$'); }
     function safeFileName(value) { return value.matches('^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$') && !value.matches('.*[.][.].*'); }
-    function validImage(uid) {
-      return request.resource != null
-        && request.resource.size > 0
-        && request.resource.size <= 20 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|webp|heif|heic)')
-        && request.resource.metadata.ownerUid == uid;
+    function readablePrivateMedia(reservationId) {
+      let reservation = /databases/(default)/documents/privateMediaReservations/$(reservationId);
+      return request.auth != null
+        && firestore.exists(reservation)
+        && firestore.get(reservation).data.ownerUid == request.auth.uid
+        && firestore.get(reservation).data.reservationId == reservationId
+        && firestore.get(reservation).data.state == 'COMMITTED'
+        && accountMutable(request.auth.uid)
+        && resource.generation == int(firestore.get(reservation).data.objectGeneration)
+        && resource.size == firestore.get(reservation).data.byteSize
+        && resource.contentType == firestore.get(reservation).data.contentType
+        && resource.metadata.keys().hasAll(['ownerUid', 'reservationId'])
+        && resource.metadata.keys().hasOnly(['ownerUid', 'reservationId'])
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.reservationId == reservationId;
     }
     function validCatalogAsset(itemId, fileName) {
       return safeSegment(itemId)
@@ -70,16 +88,20 @@ service firebase.storage {
       allow write: if false;
     }
     match /identification-originals/{uid}/{requestId}/{fileName} {
-      allow read, delete: if owns(uid);
-      allow create, update: if owns(uid) && safeSegment(requestId) && safeFileName(fileName) && validImage(uid);
+      allow read: if owns(uid);
+      allow write: if false;
     }
     match /plant-photos/{uid}/{plantId}/{fileName} {
-      allow read, delete: if owns(uid);
-      allow create, update: if owns(uid) && safeSegment(plantId) && safeFileName(fileName) && validImage(uid);
+      allow read: if owns(uid);
+      allow write: if false;
     }
     // Mini-home shares are local-only static documents; no client share artifact exists.
     match /share-images/{uid}/{shareId}/{fileName} {
       allow read, write: if false;
+    }
+    match /private-media-v2/{reservationId} {
+      allow read: if safeSegment(reservationId) && readablePrivateMedia(reservationId);
+      allow write: if false;
     }
     match /{allPaths=**} { allow read, write: if false; }
   }

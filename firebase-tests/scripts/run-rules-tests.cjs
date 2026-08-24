@@ -6,7 +6,7 @@ const { waitForExactSignal } = require("./exact-signal.cjs");
 
 const HUB_SAFETY_MS = 30_000;
 const SUITE_SAFETY_MS = 300_000;
-const EXPECTED_RULE_TESTS = 41;
+const EXPECTED_RULE_TESTS = 45;
 const requiredEmulators = ["firestore", "storage"];
 
 function awaitEmulatorReadiness() {

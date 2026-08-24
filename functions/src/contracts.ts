@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+import {
+  parsePrivateMediaReference,
+  PrivateMediaError,
+  type PrivateMediaReference,
+  type ResolvePrivateMediaCommand,
+  type ResolvedPrivateMedia,
+} from "./private-media-contract.js";
 
 export type AuthContext = Readonly<{ uid: string }>;
 export type ServerContext = Readonly<{ trusted: boolean }>;
@@ -12,7 +19,6 @@ export type ServerCollection =
   | "notificationDeliveries"
   | "weatherSnapshots"
   | "weatherRisks"
-  | "deletionRequests"
   | "ownedItems"
   | "shareLinks";
 
@@ -48,6 +54,7 @@ export interface MutationStore {
   writeServerState(command: ServerStateCommand): Promise<void>;
   ownerZoneId(ownerUid: string): Promise<string>;
   publicPlantContentExists(contentId: string): Promise<boolean>;
+  resolvePrivateMedia(command: ResolvePrivateMediaCommand): Promise<ResolvedPrivateMedia | null>;
 }
 
 export type ContractErrorCode =
@@ -118,6 +125,17 @@ function nullableStringField(value: Readonly<Record<string, unknown>>, field: st
   if (candidate === null || candidate === undefined) return null;
   if (typeof candidate !== "string") throw new ContractError("invalid-argument", `${field} must be a string or null`);
   return candidate;
+}
+
+function mediaReference(value: unknown): PrivateMediaReference {
+  try {
+    return parsePrivateMediaReference(value);
+  } catch (error: unknown) {
+    if (error instanceof PrivateMediaError) {
+      throw new ContractError("invalid-argument", "Media reference is invalid");
+    }
+    throw error;
+  }
 }
 
 function booleanField(value: Readonly<Record<string, unknown>>, field: string): boolean {
@@ -232,7 +250,6 @@ function serverCollection(value: string): ServerCollection {
     case "notificationDeliveries":
     case "weatherSnapshots":
     case "weatherRisks":
-    case "deletionRequests":
     case "ownedItems":
     case "shareLinks":
       return value;
@@ -273,7 +290,7 @@ async function validateOwnerPayload(
         }
         return;
       }
-      exactFields(payload, ["displayName", "registrationMethod"], ["contentId", "representativePhotoPath", "location", "note", "lastWateredDate"]);
+      exactFields(payload, ["displayName", "registrationMethod"], ["contentId", "representativeMediaReference", "location", "note", "lastWateredDate"]);
       const displayName = stringField(payload, "displayName");
       const graphemes = graphemeCount(displayName);
       if (displayName !== displayName.trim() || graphemes < 1 || graphemes > 100) {
@@ -287,9 +304,21 @@ async function validateOwnerPayload(
           throw new ContractError("invalid-argument", "contentId must reference published plant content");
         }
       }
-      const photoPath = nullableStringField(payload, "representativePhotoPath");
-      if (photoPath !== null && !new RegExp(`^plant-photos/${ownerUid}/${documentId}/representative[.](jpg|png|webp|heif|heic)$`).test(photoPath)) {
-        throw new ContractError("invalid-argument", "representativePhotoPath must belong to the target plant");
+      if (
+        payload.representativeMediaReference !== undefined &&
+        payload.representativeMediaReference !== null
+      ) {
+        const reference = mediaReference(payload.representativeMediaReference);
+        if ((await store.resolvePrivateMedia({
+          ownerUid,
+          reference,
+          mediaKind: "PLANT_PHOTO",
+        })) === null) {
+          throw new ContractError(
+            "invalid-argument",
+            "representativeMediaReference must be committed and owned",
+          );
+        }
       }
       const location = nullableStringField(payload, "location");
       const note = nullableStringField(payload, "note");
@@ -312,8 +341,18 @@ async function validateOwnerPayload(
       isoInstant(payload, "recordedAt");
       return;
     case "identificationRequests": {
-      exactFields(payload, ["temporaryOriginalPath", "createdAt", "expiresAt"]);
-      stringField(payload, "temporaryOriginalPath");
+      exactFields(payload, ["mediaReference", "createdAt", "expiresAt"]);
+      const reference = mediaReference(payload.mediaReference);
+      if ((await store.resolvePrivateMedia({
+        ownerUid,
+        reference,
+        mediaKind: "IDENTIFICATION_ORIGINAL",
+      })) === null) {
+        throw new ContractError(
+          "invalid-argument",
+          "mediaReference must be committed and owned",
+        );
+      }
       const created = isoInstant(payload, "createdAt");
       const expires = isoInstant(payload, "expiresAt");
       if (created !== null && expires !== null && expires <= created) throw new ContractError("invalid-argument", "expiresAt must follow createdAt");
@@ -372,17 +411,6 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       if (integerField(payload, "transition") < 0) throw new ContractError("invalid-argument", "transition must not be negative");
       if (payload.deliveredTransition !== null && integerField(payload, "deliveredTransition") < 0) throw new ContractError("invalid-argument", "deliveredTransition must not be negative");
       return;
-    case "deletionRequests": {
-      exactFields(payload, ["status", "requestedAt", "scheduledFor", "completedAt"]);
-      const status = oneOf(stringField(payload, "status"), ["RECEIVED", "PROCESSING", "COMPLETED", "FAILED", "PARTIALLY_FAILED", "CANCELLED"] as const, "status");
-      const requested = isoInstant(payload, "requestedAt");
-      const scheduled = isoInstant(payload, "scheduledFor");
-      const completed = isoInstant(payload, "completedAt", true);
-      if (requested !== null && scheduled !== null && scheduled < requested) throw new ContractError("invalid-argument", "scheduledFor precedes requestedAt");
-      if (completed !== null && scheduled !== null && completed < scheduled) throw new ContractError("invalid-argument", "completedAt precedes scheduledFor");
-      if (status === "COMPLETED" && completed === null) throw new ContractError("invalid-argument", "completedAt is required");
-      return;
-    }
     case "ownedItems":
       exactFields(payload, ["itemId", "acquiredAt", "applied"]);
       opaqueField(payload, "itemId");

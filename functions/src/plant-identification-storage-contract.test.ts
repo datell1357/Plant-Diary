@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Timestamp } from "firebase-admin/firestore";
 import {
   FirestoreIdentificationRequestStore,
   IdentificationRuntimeError,
@@ -9,7 +10,7 @@ import { executePlantIdentification } from "./plant-identification.js";
 type RequestData = Record<string, unknown>;
 
 class ReferenceFixture {
-  constructor(readonly data: RequestData) {}
+  constructor(readonly path: string, readonly data: RequestData) {}
 
   async update(value: RequestData): Promise<void> {
     Object.assign(this.data, value);
@@ -18,21 +19,39 @@ class ReferenceFixture {
 
 class FirestoreFixture {
   readonly reference: ReferenceFixture;
+  readonly lockReference = new ReferenceFixture("accountDeletionRequests/user-a", {});
+  readonly reservationReference = new ReferenceFixture(
+    "privateMediaReservations/reservation_12345678",
+    reservationData(),
+  );
 
   constructor(data: RequestData) {
-    this.reference = new ReferenceFixture(data);
+    this.reference = new ReferenceFixture(
+      "users/user-a/identificationRequests/request_12345678",
+      data,
+    );
   }
 
-  doc(): ReferenceFixture {
+  doc(path: string): ReferenceFixture {
+    if (path === this.lockReference.path) return this.lockReference;
+    if (path === this.reservationReference.path) return this.reservationReference;
     return this.reference;
   }
 
   async runTransaction<T>(operation: (transaction: {
-    get(reference: ReferenceFixture): Promise<{ exists: boolean; data(): RequestData }>;
+    get(reference: ReferenceFixture): Promise<{
+      exists: boolean;
+      data(): RequestData;
+      get(field: string): unknown;
+    }>;
     update(reference: ReferenceFixture, value: RequestData): void;
   }) => Promise<T>): Promise<T> {
     return operation({
-      get: async (reference) => ({ exists: true, data: () => reference.data }),
+      get: async (reference) => ({
+        exists: reference !== this.lockReference,
+        data: () => reference.data,
+        get: (field) => reference.data[field],
+      }),
       update: (reference, value) => Object.assign(reference.data, value),
     });
   }
@@ -41,7 +60,28 @@ class FirestoreFixture {
 function requestData(): RequestData {
   return {
     ownerUid: "user-a",
-    temporaryOriginalPath: "identification-originals/user-a/request_12345678/original.webp",
+    mediaReference: { reservationId: "reservation_12345678", generation: "7" },
+  };
+}
+
+function reservationData(): RequestData {
+  return {
+    schemaVersion: 1,
+    reservationId: "reservation_12345678",
+    ownerUid: "user-a",
+    mediaKind: "IDENTIFICATION_ORIGINAL",
+    contentType: "image/webp",
+    byteSize: 3,
+    objectPath: "private-media-v2/reservation_12345678",
+    idempotencyKeyHash: "a".repeat(64),
+    requestHash: "b".repeat(64),
+    state: "COMMITTED",
+    objectGeneration: "7",
+    sealedGeneration: null,
+    createdAt: Timestamp.fromMillis(1),
+    expiresAt: Timestamp.fromMillis(2),
+    committedAt: Timestamp.fromMillis(2),
+    sealedAt: null,
   };
 }
 

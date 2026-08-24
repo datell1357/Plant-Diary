@@ -3,6 +3,7 @@ import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import type { Messaging } from "firebase-admin/messaging";
+import { AccountMutationLockedError } from "./account-mutation-lock.js";
 import {
   executeRefreshWeather,
   executeSetLocationConsent,
@@ -451,6 +452,43 @@ test("unchanged weather pre-send authorization sends exactly once", async () => 
     await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now);
     assert.equal(sends, 1);
     assert.equal((await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!.get("status"), "SENT");
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("weather outbox fences the path owner even when stored ownership is malformed", async () => {
+  const app = initializeApp({ projectId }, "weather-malformed-owner-fence");
+  const firestore = getFirestore(app);
+  const store = new FirestoreWeatherStore(firestore);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" },
+      { expectedOwnerUid: "user-a" },
+      store,
+      singleRiskProvider,
+      now,
+    );
+    const alert = (await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!;
+    await alert.ref.update({ ownerUid: "user-b" });
+    await firestore.doc("accountDeletionRequests/user-a").set({
+      status: "PROCESSING",
+      completedScopes: [],
+    });
+    const messaging = {
+      async sendEachForMulticast() {
+        throw new Error("FCM must not run for a deletion-locked path owner");
+      },
+    } as unknown as Messaging;
+
+    await assert.rejects(
+      deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now),
+      AccountMutationLockedError,
+    );
+    assert.equal((await alert.ref.get()).get("status"), "PENDING");
   } finally {
     await clear(firestore);
     await deleteApp(app);
@@ -1405,6 +1443,7 @@ async function clear(firestore: FirebaseFirestore.Firestore) {
     "users/user-a/notificationEndpoints/endpoint-a",
     "notificationEndpointOwners/endpoint-a",
     "users/user-a/weatherSnapshots/current",
+    "accountDeletionRequests/user-a",
     "users/user-a",
     "plantContents/species-a",
   ];

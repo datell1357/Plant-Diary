@@ -4,23 +4,34 @@ import test from "node:test";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import express from "express";
+import { FirestoreAccountMutationLock } from "./account-mutation-lock.js";
 import {
   acquireInventoryItem,
   applyRevisionedOwnerWrite,
   beginAppleSignIn,
+  cancelAccountDeletion,
+  commitPrivateMediaReservation,
   completeAppleSignIn,
   completeWatering,
   confirmNotificationOpened,
+  deleteFinalizedPrivateMediaDuringDeletion,
+  deleteMiniHomeLayout,
+  executeDueAccountDeletions,
   createCatalogProjectionWriteHandler,
   createMiniHomeShareLink,
   createLoadInventoryCallable,
+  getAccountDeletionStatus,
   ensureWateringNotificationSettings,
   identifyPlant,
   loadInventory,
   loadMiniHomeLayout,
   loadMiniHomeSnapshot,
+  previewAccountDeletion,
   reconcileWateringNotificationTimezone,
   refreshWeather,
+  requestAccountDeletion,
+  reservePrivateMediaUpload,
+  retryAccountDeletion,
   revokeMiniHomeShareLink,
   registerNotificationEndpoint,
   saveMiniHomeLayout,
@@ -99,11 +110,19 @@ test("catalog projection trigger surfaces failure so the exact event retry can c
 test("all owner watering mini-home and Apple callable boundaries reject missing App Check first", async () => {
   const endpoints: CallableHandler[] = [
     (request, response) => applyRevisionedOwnerWrite(request, response),
+    (request, response) => previewAccountDeletion(request, response),
+    (request, response) => requestAccountDeletion(request, response),
+    (request, response) => getAccountDeletionStatus(request, response),
+    (request, response) => cancelAccountDeletion(request, response),
+    (request, response) => retryAccountDeletion(request, response),
+    (request, response) => reservePrivateMediaUpload(request, response),
+    (request, response) => commitPrivateMediaReservation(request, response),
     (request, response) => completeWatering(request, response),
     (request, response) => loadMiniHomeLayout(request, response),
     (request, response) => loadMiniHomeSnapshot(request, response),
     (request, response) => createMiniHomeShareLink(request, response),
     (request, response) => revokeMiniHomeShareLink(request, response),
+    (request, response) => deleteMiniHomeLayout(request, response),
     (request, response) => saveMiniHomeLayout(request, response),
     (request, response) => loadInventory(request, response),
     (request, response) => acquireInventoryItem(request, response),
@@ -124,8 +143,10 @@ test("valid debug App Check reaches application validation on hardened callables
   const auth = getAuth();
   const verifyAppCheckToken = appCheck.verifyToken;
   const verifyAuthToken = auth.verifyIdToken;
+  const isProcessing = FirestoreAccountMutationLock.prototype.isProcessing;
   appCheck.verifyToken = async () => ({ appId: "debug-app", token: {} }) as never;
   auth.verifyIdToken = async () => ({ uid: "debug-user" }) as never;
+  FirestoreAccountMutationLock.prototype.isProcessing = async () => false;
   const environment = {
     APPLE_CLIENT_ID: process.env.APPLE_CLIENT_ID,
     APPLE_REDIRECT_URI: process.env.APPLE_REDIRECT_URI,
@@ -188,10 +209,91 @@ test("valid debug App Check reaches application validation on hardened callables
   } finally {
     appCheck.verifyToken = verifyAppCheckToken;
     auth.verifyIdToken = verifyAuthToken;
+    FirestoreAccountMutationLock.prototype.isProcessing = isProcessing;
     for (const [name, value] of Object.entries(environment)) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
   }
+});
+
+test("every owner-mutating callable is frozen by the shared processing boundary", async () => {
+  // Given
+  const appCheck = getAppCheck();
+  const auth = getAuth();
+  const verifyAppCheckToken = appCheck.verifyToken;
+  const verifyAuthToken = auth.verifyIdToken;
+  const isProcessing = FirestoreAccountMutationLock.prototype.isProcessing;
+  const lockedOwners: string[] = [];
+  appCheck.verifyToken = async () => ({ appId: "debug-app", token: {} }) as never;
+  auth.verifyIdToken = async () => ({ uid: "user-a" }) as never;
+  FirestoreAccountMutationLock.prototype.isProcessing = async (ownerUid) => {
+    lockedOwners.push(ownerUid);
+    return true;
+  };
+  const endpoints: readonly Readonly<{ name: string; handler: CallableHandler }>[] = [
+    { name: "applyRevisionedOwnerWrite", handler: applyRevisionedOwnerWrite },
+    { name: "reservePrivateMediaUpload", handler: reservePrivateMediaUpload },
+    { name: "commitPrivateMediaReservation", handler: commitPrivateMediaReservation },
+    { name: "createMiniHomeShareLink", handler: createMiniHomeShareLink },
+    { name: "revokeMiniHomeShareLink", handler: revokeMiniHomeShareLink },
+    { name: "deleteMiniHomeLayout", handler: deleteMiniHomeLayout },
+    { name: "saveMiniHomeLayout", handler: saveMiniHomeLayout },
+    { name: "acquireInventoryItem", handler: acquireInventoryItem },
+    { name: "completeWatering", handler: completeWatering },
+    { name: "registerNotificationEndpoint", handler: registerNotificationEndpoint },
+    { name: "unregisterNotificationEndpoint", handler: unregisterNotificationEndpoint },
+    { name: "ensureWateringNotificationSettings", handler: ensureWateringNotificationSettings },
+    { name: "updateAccountProfile", handler: updateAccountProfile },
+    { name: "reconcileWateringNotificationTimezone", handler: reconcileWateringNotificationTimezone },
+    { name: "updateWateringNotificationSettings", handler: updateWateringNotificationSettings },
+    { name: "confirmNotificationOpened", handler: confirmNotificationOpened },
+    { name: "setWeatherLocationConsent", handler: setWeatherLocationConsent },
+    { name: "setManualWeatherRegion", handler: setManualWeatherRegion },
+    { name: "updateWeatherAlerts", handler: updateWeatherAlerts },
+    { name: "refreshWeather", handler: refreshWeather },
+    { name: "identifyPlant", handler: identifyPlant },
+  ];
+
+  try {
+    // When / Then
+    for (const [index, endpoint] of endpoints.entries()) {
+      const response = await invokeCallable(
+        endpoint.handler,
+        "debug.valid.token",
+        { deliberately: "invalid" },
+        "debug.auth.token",
+      );
+      assert.equal(response.status, 400, endpoint.name);
+      const body = await response.json() as { error?: { status?: string } };
+      assert.equal(body.error?.status, "FAILED_PRECONDITION", endpoint.name);
+      assert.deepEqual(lockedOwners, Array(index + 1).fill("user-a"), endpoint.name);
+    }
+  } finally {
+    appCheck.verifyToken = verifyAppCheckToken;
+    auth.verifyIdToken = verifyAuthToken;
+    FirestoreAccountMutationLock.prototype.isProcessing = isProcessing;
+  }
+});
+
+test("account deletion trigger metadata is App Check protected and scans every five minutes UTC", () => {
+  const callables = [
+    previewAccountDeletion,
+    requestAccountDeletion,
+    getAccountDeletionStatus,
+    cancelAccountDeletion,
+    retryAccountDeletion,
+  ];
+  for (const callable of callables) {
+    assert.ok(callable.__endpoint.callableTrigger !== undefined);
+    assert.equal(callable.__endpoint.platform, "gcfv2");
+  }
+  assert.equal(executeDueAccountDeletions.__endpoint.scheduleTrigger?.schedule, "every 5 minutes");
+  assert.equal(executeDueAccountDeletions.__endpoint.scheduleTrigger?.timeZone, "UTC");
+  assert.equal(
+    deleteFinalizedPrivateMediaDuringDeletion.__endpoint.eventTrigger?.eventType,
+    "google.cloud.storage.object.v1.finalized",
+  );
+  assert.equal(deleteFinalizedPrivateMediaDuringDeletion.__endpoint.eventTrigger?.retry, true);
 });
 
 test("share callable factories enforce App Check and bind only the create secret", () => {
@@ -346,6 +448,8 @@ test("hardened callable boundaries reject invalid App Check before application v
   try {
     const endpoints: CallableHandler[] = [
       (request, response) => applyRevisionedOwnerWrite(request, response),
+      (request, response) => reservePrivateMediaUpload(request, response),
+      (request, response) => commitPrivateMediaReservation(request, response),
       (request, response) => completeWatering(request, response),
       (request, response) => loadMiniHomeLayout(request, response),
       (request, response) => loadMiniHomeSnapshot(request, response),

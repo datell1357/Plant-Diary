@@ -1,4 +1,5 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import type { MutationResult } from "./contracts.js";
 import { localDateTimeToInstant } from "./notification-settings.js";
 import {
@@ -13,7 +14,7 @@ export class FirestoreWateringCompletionStore implements WateringCompletionStore
   constructor(private readonly firestore: Firestore) {}
 
   async completeWatering(command: WateringCompletionCommand, now: Date): Promise<MutationResult> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const accountRef = this.firestore.doc(`users/${command.ownerUid}`);
       const plantRef = this.firestore.doc(
         `users/${command.ownerUid}/personalPlants/${command.plantId}`,

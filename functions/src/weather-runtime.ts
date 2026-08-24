@@ -8,6 +8,7 @@ import {
   type Firestore,
 } from "firebase-admin/firestore";
 import type { Messaging } from "firebase-admin/messaging";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import {
   WeatherConsentConflictError,
   WeatherError,
@@ -224,7 +225,7 @@ export class FirestoreWeatherStore implements WeatherStore {
   ): Promise<Readonly<{ stale: boolean }>> {
     const snapshotRef = this.firestore.doc(`users/${ownerUid}/weatherSnapshots/current`);
     const consentRef = this.firestore.doc(`users/${ownerUid}/consents/location`);
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const [snapshot, consent] = await Promise.all([
         transaction.get(snapshotRef),
         transaction.get(consentRef),
@@ -256,7 +257,7 @@ export class FirestoreWeatherStore implements WeatherStore {
   ): Promise<Readonly<{ commandGeneration: number; granted: boolean }>> {
     const ref = this.firestore.doc(`users/${ownerUid}/consents/location`);
     const settingsRef = this.firestore.doc(`users/${ownerUid}/weatherSettings/current`);
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const [existing, settings] = await Promise.all([
         transaction.get(ref),
         transaction.get(settingsRef),
@@ -319,7 +320,7 @@ export class FirestoreWeatherStore implements WeatherStore {
   ): Promise<Readonly<{ commandGeneration: number; granted: boolean; recovered: true }>> {
     const ref = this.firestore.doc(`users/${ownerUid}/consents/location`);
     const settingsRef = this.firestore.doc(`users/${ownerUid}/weatherSettings/current`);
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const [existing, settings] = await Promise.all([
         transaction.get(ref),
         transaction.get(settingsRef),
@@ -383,7 +384,7 @@ export class FirestoreWeatherStore implements WeatherStore {
 
   async updateAlerts(ownerUid: string, globalEnabled: boolean, plants: ReadonlyMap<string, boolean>, expectedRevision: number): Promise<number> {
     const settingsRef = this.firestore.doc(`users/${ownerUid}/weatherSettings/current`);
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const settings = await transaction.get(settingsRef);
       const revision = settings.exists ? integer(settings.get("revision"), "Weather settings revision") : 0;
       if (revision !== expectedRevision) throw new WeatherError("aborted", "Weather settings changed on another device");
@@ -431,7 +432,7 @@ export class FirestoreWeatherStore implements WeatherStore {
     const refs = new Map<string, FirebaseFirestore.DocumentReference>();
     activeRisks.docs.forEach((risk) => refs.set(risk.id, risk.ref));
     evaluated.forEach((_, id) => refs.set(id, this.firestore.doc(`users/${command.ownerUid}/weatherRisks/${id}`)));
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const [settings, consent, existingRisks, authoritativePlants] = await Promise.all([
         transaction.get(settingsRef),
         transaction.get(consentRef),
@@ -563,7 +564,7 @@ export class FirestoreWeatherStore implements WeatherStore {
 
   private async updateSettings(ownerUid: string, expectedRevision: number, patch: Readonly<Record<string, unknown>>): Promise<number> {
     const ref = this.firestore.doc(`users/${ownerUid}/weatherSettings/current`);
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const existing = await transaction.get(ref);
       const revision = existing.exists ? integer(existing.get("revision"), "Weather settings revision") : 0;
       if (revision !== expectedRevision) throw new WeatherError("aborted", "Weather settings changed on another device");
@@ -859,12 +860,20 @@ export async function deliverPendingWeatherAlerts(
         : [];
     });
     if (endpointVersions.length === 0) {
-      await alert.ref.update({
-        status: "FAILED",
-        failureKind: "NO_ENDPOINT",
-        leaseExpiresAt: FieldValue.delete(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      await runAccountMutationTransaction(
+        firestore,
+        claimed.ownerUid,
+        async (transaction) => {
+          const current = await transaction.get(alert.ref);
+          if (!current.exists || current.get("status") !== "CLAIMED") return;
+          transaction.update(alert.ref, {
+            status: "FAILED",
+            failureKind: "NO_ENDPOINT",
+            leaseExpiresAt: FieldValue.delete(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        },
+      );
       continue;
     }
     await hooks.beforeSendBoundary?.(alert.ref);
@@ -879,6 +888,7 @@ export async function deliverPendingWeatherAlerts(
     if (authorized === null) continue;
     const tokens = authorized.map((endpoint) => endpoint.token);
     let success = false;
+    let transportAmbiguous = false;
     try {
       const response = await messaging.sendEachForMulticast({
         tokens,
@@ -896,36 +906,55 @@ export async function deliverPendingWeatherAlerts(
         },
       });
       success = response.successCount > 0;
-      await alert.ref.update({
-        status: success ? "SENT" : "FAILED",
-        sentAt: success ? FieldValue.serverTimestamp() : null,
-        failureKind: success ? null : "FCM_REJECTED",
-        leaseExpiresAt: FieldValue.delete(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
     } catch {
-      await alert.ref.update({
-        status: "SENT_AMBIGUOUS",
-        failureKind: "TRANSPORT_AMBIGUOUS",
-        leaseExpiresAt: FieldValue.delete(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      transportAmbiguous = true;
     }
-    await releaseWeatherEndpointLeases(firestore, claimed.ownerUid, alert.id, authorized);
-    if (success) {
-      const riskRef = firestore.doc(`users/${claimed.ownerUid}/weatherRisks/${claimed.riskId}`);
-      await firestore.runTransaction(async (transaction) => {
-        const risk = await transaction.get(riskRef);
-        if (risk.exists && risk.get("transition") === claimed.transition) {
-          transaction.update(riskRef, {
-            deliveredTransition: claimed.transition,
-            revision: integer(risk.get("revision"), "Weather risk revision") + 1,
-            expectedRevision: integer(risk.get("revision"), "Weather risk revision"),
-            idempotencyKey: `weather-delivered-${alert.id}`,
+    try {
+      await runAccountMutationTransaction(
+        firestore,
+        claimed.ownerUid,
+        async (transaction) => {
+          const riskRef = firestore.doc(
+            `users/${claimed.ownerUid}/weatherRisks/${claimed.riskId}`,
+          );
+          const [currentAlert, risk] = await Promise.all([
+            transaction.get(alert.ref),
+            transaction.get(riskRef),
+          ]);
+          if (
+            !currentAlert.exists ||
+            currentAlert.get("status") !== "SEND_MAY_HAVE_OCCURRED"
+          ) return;
+          transaction.update(alert.ref, {
+            status: transportAmbiguous ? "SENT_AMBIGUOUS" : success ? "SENT" : "FAILED",
+            sentAt: success ? FieldValue.serverTimestamp() : null,
+            failureKind: transportAmbiguous
+              ? "TRANSPORT_AMBIGUOUS"
+              : success
+                ? null
+                : "FCM_REJECTED",
+            leaseExpiresAt: FieldValue.delete(),
             updatedAt: FieldValue.serverTimestamp(),
           });
-        }
-      });
+          if (success && risk.exists && risk.get("transition") === claimed.transition) {
+            const riskRevision = integer(risk.get("revision"), "Weather risk revision");
+            transaction.update(riskRef, {
+              deliveredTransition: claimed.transition,
+              revision: riskRevision + 1,
+              expectedRevision: riskRevision,
+              idempotencyKey: `weather-delivered-${alert.id}`,
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+        },
+      );
+    } finally {
+      await releaseWeatherEndpointLeases(
+        firestore,
+        claimed.ownerUid,
+        alert.id,
+        authorized,
+      );
     }
   }
 }
@@ -957,14 +986,16 @@ async function claimWeatherAlert(
   alertRef: FirebaseFirestore.DocumentReference,
   now: Date,
 ): Promise<ClaimedAlert | null> {
-  return firestore.runTransaction(async (transaction) => {
+  const ownerUid = alertRef.parent.parent?.id;
+  if (ownerUid === undefined || !opaqueId.test(ownerUid)) return null;
+  return runAccountMutationTransaction(firestore, ownerUid, async (transaction) => {
     const alert = await transaction.get(alertRef);
     if (!alert.exists || alert.get("status") !== "PENDING") return null;
-    const ownerUid = alert.get("ownerUid");
+    const storedOwnerUid = alert.get("ownerUid");
     const plantId = alert.get("plantId");
     const riskId = alert.get("riskId");
     const transition = alert.get("transition");
-    if (typeof ownerUid !== "string" || typeof plantId !== "string" || typeof riskId !== "string" || typeof transition !== "number") {
+    if (storedOwnerUid !== ownerUid || typeof plantId !== "string" || typeof riskId !== "string" || typeof transition !== "number") {
       transaction.update(alertRef, { status: "CANCELLED", failureKind: "MALFORMED", updatedAt: FieldValue.serverTimestamp() });
       return null;
     }
@@ -1046,7 +1077,7 @@ async function authorizeWeatherAlertSend(
   endpoints: readonly WeatherEndpointVersion[],
   now: Date,
 ): Promise<readonly WeatherEndpointVersion[] | null> {
-  return firestore.runTransaction(async (transaction) => {
+  return runAccountMutationTransaction(firestore, claimed.ownerUid, async (transaction) => {
     const plantRef = firestore.doc(`users/${claimed.ownerUid}/personalPlants/${claimed.plantId}`);
     const riskRef = firestore.doc(`users/${claimed.ownerUid}/weatherRisks/${claimed.riskId}`);
     const snapshotRef = firestore.doc(`users/${claimed.ownerUid}/weatherSnapshots/current`);
@@ -1219,7 +1250,9 @@ async function recoverExpiredWeatherAlerts(
     .limit(limit)
     .get();
   for (const candidate of candidates.docs) {
-    await firestore.runTransaction(async (transaction) => {
+    const candidateOwnerUid = candidate.ref.parent.parent?.id;
+    if (candidateOwnerUid === undefined) continue;
+    await runAccountMutationTransaction(firestore, candidateOwnerUid, async (transaction) => {
       const current = await transaction.get(candidate.ref);
       const expiresAt = current.get("leaseExpiresAt");
       if (!(expiresAt instanceof Timestamp) || expiresAt.toDate() > now) return;

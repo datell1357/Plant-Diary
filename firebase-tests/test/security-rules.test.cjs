@@ -37,10 +37,10 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "deletionRequests") return { status: "RECEIVED", requestedAt: ts("2026-08-12T00:00:00Z"), scheduledFor: ts("2026-08-19T00:00:00Z"), completedAt: null };
   if (collectionName === "notificationDeliveries") return { plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: ts("2026-08-12T00:00:00Z"), deliveredAt: ts("2026-08-12T00:00:00Z"), deduplicationKey: "user-a:plant-a:2026-08-12:0" };
   if (collectionName === "notificationHistory") return { plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", deliveryConfirmedAt: ts("2026-08-12T00:00:00Z"), destinationOpened: false, deduplicationKey: "user-a:plant-a:2026-08-12:0" };
-  if (collectionName === "identificationRequests") return { temporaryOriginalPath: "identification-originals/user-a/request-a/original.webp", createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-13T00:00:00Z") };
+  if (collectionName === "identificationRequests") return { mediaReference: { reservationId: "reservation-identify-12345678", generation: "7" }, createdAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-13T00:00:00Z") };
   throw new Error(`Missing fixture for ${collectionName}`);
 };
-const serverCollections = new Set(["wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings", "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems", "shareLinks", "deletionRequests", "notificationDeliveries", "notificationHistory"]);
+const serverCollections = new Set(["wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings", "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems", "shareLinks", "notificationDeliveries", "notificationHistory"]);
 
 describe("Planterior Firebase ownership contract", () => {
   before(async () => {
@@ -86,12 +86,21 @@ describe("Planterior Firebase ownership contract", () => {
     const collections = [
       "personalPlants", "wateringRecords", "wateringSchedules", "notificationSettings", "notificationPlantSettings",
       "weatherSettings", "weatherPlantSettings", "weatherSnapshots", "weatherRisks", "miniHomes", "placements", "ownedItems",
-      "consents", "deletionRequests", "notificationDeliveries", "notificationHistory", "identificationRequests"
+      "consents", "notificationDeliveries", "notificationHistory", "identificationRequests"
     ];
     const owner = env.authenticatedContext("user-a").firestore();
     const server = env.authenticatedContext("service", { server: true }).firestore();
     const foreign = env.authenticatedContext("user-b").firestore();
     const anonymous = env.unauthenticatedContext().firestore();
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "privateMediaReservations/reservation-identify-12345678"), {
+        reservationId: "reservation-identify-12345678",
+        ownerUid: "user-a",
+        mediaKind: "IDENTIFICATION_ORIGINAL",
+        state: "COMMITTED",
+        objectGeneration: "7",
+      });
+    });
     for (const collectionName of collections) {
       const path = `users/user-a/${collectionName}/fixture`;
       const writer = serverCollections.has(collectionName) ? server : owner;
@@ -107,6 +116,93 @@ describe("Planterior Firebase ownership contract", () => {
       await assertFails(getDoc(doc(foreign, path)));
       await assertFails(setDoc(doc(foreign, path), { ...write("user-b"), ...collectionFixture(collectionName) }));
       await assertFails(getDoc(doc(anonymous, path)));
+    }
+  });
+
+  it("denies every client role direct access to authoritative account deletion requests", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const foreign = env.authenticatedContext("user-b").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "accountDeletionRequests/user-a"), {
+        ownerUid: "user-a",
+        status: "RECEIVED",
+      });
+    });
+    for (const context of [owner, foreign, server]) {
+      await assertFails(getDoc(doc(context, "accountDeletionRequests/user-a")));
+      await assertFails(setDoc(doc(context, "accountDeletionRequests/user-a"), {
+        ownerUid: "user-a",
+        status: "CANCELLED",
+      }));
+      await assertFails(getDoc(doc(
+        context,
+        "accountDeletionReceipts/user-a/commands/request_aaaaaaaa",
+      )));
+      await assertFails(setDoc(doc(
+        context,
+        "accountDeletionReceipts/user-a/commands/request_aaaaaaaa",
+      ), { ownerUid: "user-a", commandKind: "REQUEST" }));
+    }
+  });
+
+  it("permanently freezes private and public writes after deletion progress", async () => {
+    const owner = env.authenticatedContext("user-a").firestore();
+    const server = env.authenticatedContext("service", { server: true }).firestore();
+    const other = env.authenticatedContext("user-b").firestore();
+    const consent = (idempotencyKey) => ({
+      ...write("user-a", 1, 0, idempotencyKey),
+      type: "ANALYTICS",
+      granted: false,
+      recordedAt: ts("2026-08-12T00:00:00Z"),
+    });
+    const lockedStates = [
+      { status: "PROCESSING", completedScopes: [] },
+      { status: "PARTIALLY_FAILED", completedScopes: ["PUBLIC_SHARES"] },
+      { status: "COMPLETED", completedScopes: ["PUBLIC_SHARES"] },
+      { status: "RECEIVED", completedScopes: ["PUBLIC_SHARES"] },
+    ];
+
+    for (const [index, state] of lockedStates.entries()) {
+      await env.withSecurityRulesDisabled(async (admin) => {
+        await setDoc(doc(admin.firestore(), "accountDeletionRequests/user-a"), {
+          ownerUid: "user-a",
+          ...state,
+        });
+      });
+      await assertFails(setDoc(
+        doc(owner, `users/user-a/consents/locked-${index}`),
+        consent(`consent-locked-${index}`),
+      ));
+      await assertFails(setDoc(
+        doc(server, `users/user-a/weatherSettings/locked-${index}`),
+        { ...write("user-a", 1, 0, `weather-locked-${index}`), globalAlertsEnabled: true },
+      ));
+      await assertFails(setDoc(doc(server, `publicShares/locked-${index}`), {
+        ownerUid: "user-a",
+      }));
+    }
+
+    await assertSucceeds(setDoc(
+      doc(other, "users/user-b/consents/unaffected"),
+      { ...write("user-b", 1, 0, "other-owner-unaffected"), type: "ANALYTICS", granted: false, recordedAt: ts("2026-08-12T00:00:00Z") },
+    ));
+  });
+
+  it("denies every direct client write to legacy and private-media-v2 paths", async () => {
+    const owner = env.authenticatedContext("user-a").storage();
+    const bytes = new Uint8Array([1, 2, 3]);
+    for (const path of [
+      "identification-originals/user-a/request-a/original.webp",
+      "plant-photos/user-a/plant-a/representative.webp",
+      "share-images/user-a/share-a/share.webp",
+      "private-media-v2/reservation_12345678",
+    ]) {
+      await assertFails(uploadBytes(
+        ref(owner, path),
+        bytes,
+        { contentType: "image/webp", customMetadata: { ownerUid: "user-a" } },
+      ));
     }
   });
 
@@ -621,26 +717,81 @@ describe("Planterior Firebase ownership contract", () => {
     await assertFails(getBytes(ref(ownerStorage, "catalog-assets/public/nested/preview.webp")));
   });
 
-  it("binds private photo prefixes to auth uid and disables obsolete share-image artifacts", async () => {
+  it("allows only an active reservation owner to read private-media-v2 and never exposes seals", async () => {
     const owner = env.authenticatedContext("user-a").storage();
     const foreign = env.authenticatedContext("user-b").storage();
     const anonymous = env.unauthenticatedContext().storage();
-    const target = ref(owner, "plant-photos/user-a/plant-a/photo.jpg");
+    const activeId = "reservation_active_12345678";
+    const sealedId = "reservation_sealed_12345678";
+    const activePath = `private-media-v2/${activeId}`;
+    const sealedPath = `private-media-v2/${sealedId}`;
     const bytes = new Uint8Array([1, 2, 3]);
-    await assertSucceeds(uploadBytes(target, bytes, { contentType: "image/jpeg", customMetadata: { ownerUid: "user-a" } }));
-    await assertSucceeds(getBytes(target));
-    await assertFails(getBytes(ref(foreign, "plant-photos/user-a/plant-a/photo.jpg")));
-    await assertFails(getBytes(ref(anonymous, "plant-photos/user-a/plant-a/photo.jpg")));
-    await assertFails(uploadBytes(ref(owner, "plant-photos/user-b/plant-a/spoof.jpg"), bytes, { contentType: "image/jpeg", customMetadata: { ownerUid: "user-a" } }));
-    await assertFails(uploadBytes(ref(owner, "identification-originals/user-a/request-a/bad.txt"), bytes, { contentType: "text/plain", customMetadata: { ownerUid: "user-a" } }));
-    await assertFails(uploadBytes(ref(owner, "share-images/user-a/share-a/spoof.png"), bytes, { contentType: "image/png", customMetadata: { ownerUid: "user-b" } }));
-    const original = ref(owner, "identification-originals/user-a/request-a/original.webp");
-    const share = ref(owner, "share-images/user-a/share-a/share.png");
-    await assertSucceeds(uploadBytes(original, bytes, { contentType: "image/webp", customMetadata: { ownerUid: "user-a" } }));
-    await assertFails(uploadBytes(share, bytes, { contentType: "image/png", customMetadata: { ownerUid: "user-a" } }));
-    await assertFails(getBytes(share));
-    await assertFails(getBytes(ref(foreign, "identification-originals/user-a/request-a/original.webp")));
-    await assertFails(getBytes(ref(foreign, "share-images/user-a/share-a/share.png")));
-    await assertFails(uploadBytes(ref(owner, "plant-photos/user-a/../traversal.jpg"), bytes, { contentType: "image/jpeg", customMetadata: { ownerUid: "user-a" } }));
+    let activeGeneration;
+    await env.withSecurityRulesDisabled(async (admin) => {
+      const activeUpload = await uploadBytes(ref(admin.storage(), activePath), bytes, {
+        contentType: "image/webp",
+        customMetadata: { ownerUid: "user-a", reservationId: activeId },
+      });
+      activeGeneration = activeUpload.metadata.generation;
+      await setDoc(doc(admin.firestore(), `privateMediaReservations/${activeId}`), {
+        schemaVersion: 1,
+        reservationId: activeId,
+        ownerUid: "user-a",
+        state: "COMMITTED",
+        objectGeneration: activeGeneration === "1" ? "2" : "1",
+        byteSize: 3,
+        contentType: "image/webp",
+      });
+      await setDoc(doc(admin.firestore(), `privateMediaReservations/${sealedId}`), {
+        schemaVersion: 1,
+        reservationId: sealedId,
+        ownerUid: "user-a",
+        state: "SEALED",
+        byteSize: 0,
+        contentType: "application/x.planterior-private-media-seal",
+      });
+      await uploadBytes(ref(admin.storage(), sealedPath), new Uint8Array(), {
+        contentType: "application/x.planterior-private-media-seal",
+        customMetadata: { privateMediaSeal: "true" },
+      });
+    });
+
+    await assertFails(getBytes(ref(owner, activePath)));
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await updateDoc(
+        doc(admin.firestore(), `privateMediaReservations/${activeId}`),
+        { objectGeneration: activeGeneration },
+      );
+    });
+    await assertSucceeds(getBytes(ref(owner, activePath)));
+    await assertFails(getBytes(ref(foreign, activePath)));
+    await assertFails(getBytes(ref(anonymous, activePath)));
+    await assertFails(getBytes(ref(owner, sealedPath)));
+    await assertFails(uploadBytes(ref(owner, activePath), bytes, {
+      contentType: "image/webp",
+      customMetadata: { ownerUid: "user-a", reservationId: activeId },
+    }));
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await setDoc(doc(admin.firestore(), "accountDeletionRequests/user-a"), {
+        ownerUid: "user-a",
+        status: "CORRUPTED",
+        completedScopes: [],
+      });
+    });
+    await assertFails(getBytes(ref(owner, activePath)));
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await updateDoc(
+        doc(admin.firestore(), "accountDeletionRequests/user-a"),
+        { status: "RECEIVED", completedScopes: "" },
+      );
+    });
+    await assertFails(getBytes(ref(owner, activePath)));
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await updateDoc(
+        doc(admin.firestore(), "accountDeletionRequests/user-a"),
+        { status: "PROCESSING", completedScopes: [] },
+      );
+    });
+    await assertFails(getBytes(ref(owner, activePath)));
   });
 });

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Timestamp, type DocumentSnapshot, type Firestore } from "firebase-admin/firestore";
+import { assertAccountMutationAllowed } from "./account-mutation-lock.js";
 import { readPublishedOwnerProjection, projectionSnapshot } from "./firestore-mini-home-projection.js";
 import {
   MINI_HOME_SHARE_CONTRACT_VERSION,
@@ -36,6 +37,7 @@ export class FirestoreMiniHomeShareStore implements MiniHomeShareStore {
     const envelopeHash = sha256(canonicalJson({ expectedRevision: command.expectedRevision }));
 
     return this.firestore.runTransaction(async (transaction) => {
+      await assertAccountMutationAllowed(transaction, this.firestore, command.ownerUid);
       const existing = await transaction.get(metadataRef);
       if (existing.exists) {
         const replay = parseMetadata(existing, command.ownerUid, lookupIdentity.shareId);
@@ -133,6 +135,7 @@ export class FirestoreMiniHomeShareStore implements MiniHomeShareStore {
   async revoke(command: RevokeMiniHomeShareCommand): Promise<string> {
     const metadataRef = this.firestore.doc(`users/${command.ownerUid}/shareLinks/${command.shareId}`);
     return this.firestore.runTransaction(async (transaction) => {
+      await assertAccountMutationAllowed(transaction, this.firestore, command.ownerUid);
       const metadataDocument = await transaction.get(metadataRef);
       if (!metadataDocument.exists) {
         throw new MiniHomeShareError("not-found", "Share link was not found", { field: "shareId" });

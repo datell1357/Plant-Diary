@@ -9,6 +9,13 @@ import type {
   StoredIdentificationRequest,
 } from "./plant-identification.js";
 import { PlantIdentificationError } from "./plant-identification.js";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
+import { parseStoredPrivateMediaReservation } from "./firestore-private-media.js";
+import {
+  parsePrivateMediaReference,
+  PrivateMediaError,
+  type ResolvedPrivateMedia,
+} from "./private-media-contract.js";
 
 export type IdentificationRuntimeErrorReason = "not_found" | "permission_denied" | "malformed_state";
 
@@ -96,7 +103,10 @@ export class FirestoreIdentificationRequestStore implements IdentificationReques
     operation: (request: StoredIdentificationRequest) => Promise<IdentificationResponse>,
   ): Promise<IdentificationResponse> {
     const reference = this.firestore.doc(`users/${ownerUid}/identificationRequests/${requestId}`);
-    const claim = await this.firestore.runTransaction<Claim>(async (transaction) => {
+    const claim = await runAccountMutationTransaction<Claim>(
+      this.firestore,
+      ownerUid,
+      async (transaction) => {
       const snapshot = await transaction.get(reference);
       if (!snapshot.exists) throw new IdentificationRuntimeError("not_found");
       const data = record(snapshot.data());
@@ -126,20 +136,36 @@ export class FirestoreIdentificationRequestStore implements IdentificationReques
           return { kind: "replay", response: { kind: "pending" } };
         }
       }
-      if (typeof data.temporaryOriginalPath !== "string") {
-        throw new IdentificationRuntimeError("malformed_state");
+      let mediaReference;
+      try {
+        mediaReference = parsePrivateMediaReference(data.mediaReference);
+      } catch (error: unknown) {
+        if (error instanceof PrivateMediaError) {
+          throw new IdentificationRuntimeError("malformed_state");
+        }
+        throw error;
       }
-      const expectedPrefix = `identification-originals/${ownerUid}/${requestId}/`;
-      const fileName = data.temporaryOriginalPath.slice(expectedPrefix.length);
+      const mediaSnapshot = await transaction.get(
+        this.firestore.doc(`privateMediaReservations/${mediaReference.reservationId}`),
+      );
+      if (!mediaSnapshot.exists) throw new IdentificationRuntimeError("malformed_state");
+      const reservation = parseStoredPrivateMediaReservation(mediaSnapshot.data());
       if (
-        !data.temporaryOriginalPath.startsWith(expectedPrefix)
-        || fileName.length === 0
-        || fileName.includes("/")
-        || fileName === "."
-        || fileName === ".."
+        reservation.ownerUid !== ownerUid ||
+        reservation.mediaKind !== "IDENTIFICATION_ORIGINAL" ||
+        reservation.state !== "COMMITTED" ||
+        reservation.objectGeneration !== mediaReference.generation
       ) {
-        throw new IdentificationRuntimeError("malformed_state");
+        throw new IdentificationRuntimeError("permission_denied");
       }
+      const media: ResolvedPrivateMedia = {
+        reference: mediaReference,
+        ownerUid,
+        mediaKind: reservation.mediaKind,
+        objectPath: reservation.objectPath,
+        contentType: reservation.contentType,
+        byteSize: reservation.byteSize,
+      };
       const startedAt = this.now();
       transaction.update(reference, {
         identificationOperationKey: idempotencyKey,
@@ -148,14 +174,17 @@ export class FirestoreIdentificationRequestStore implements IdentificationReques
       });
       return {
         kind: "start",
-        request: { ownerUid, temporaryOriginalPath: data.temporaryOriginalPath },
+        request: { ownerUid, media },
       };
-    });
+      },
+    );
     if (claim.kind === "replay") return claim.response;
     const response = await operation(claim.request);
-    await reference.update({
-      identificationStatus: response.kind.toUpperCase(),
-      identificationResult: response,
+    await runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
+      transaction.update(reference, {
+        identificationStatus: response.kind.toUpperCase(),
+        identificationResult: response,
+      });
     });
     return response;
   }
@@ -167,14 +196,22 @@ export class PlantIdStorageProvider implements PlantIdProvider {
     private readonly storage: Storage = getStorage(),
   ) {}
 
-  async identify(photoPath: string): Promise<unknown> {
-    const file = this.storage.bucket().file(photoPath);
+  async identify(media: ResolvedPrivateMedia): Promise<unknown> {
+    const file = this.storage.bucket().file(media.objectPath, {
+      generation: media.reference.generation,
+    });
     const [[bytes], [metadata]] = await Promise.all([file.download(), file.getMetadata()]);
-    const contentType = metadata.contentType;
-    if (typeof contentType !== "string" || !contentType.startsWith("image/")) {
+    const size = typeof metadata.size === "string" ? Number(metadata.size) : metadata.size;
+    if (
+      metadata.contentType !== media.contentType ||
+      size !== media.byteSize ||
+      metadata.metadata?.ownerUid !== media.ownerUid ||
+      metadata.metadata?.reservationId !== media.reference.reservationId ||
+      Object.keys(metadata.metadata ?? {}).length !== 2
+    ) {
       throw new PlantIdentificationError("provider_unavailable");
     }
-    return this.client.identify(bytes, contentType);
+    return this.client.identify(bytes, media.contentType);
   }
 }
 

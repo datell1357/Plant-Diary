@@ -1,4 +1,5 @@
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import {
   ownerProjectionDraft,
   projectionOwnedItem,
@@ -40,7 +41,7 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
   }
 
   async load(ownerUid: string): Promise<MiniHomeAuthoritativeRead> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const attempt = ++this.loadAttempts;
       const ownerRoot = `users/${ownerUid}`;
       const stateRef = this.firestore.doc(`${ownerRoot}/miniHomeStates/current`);
@@ -182,7 +183,7 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
   }
 
   async save(command: MiniHomeLayoutCommand): Promise<MiniHomeSaveResult> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const ownerRoot = `users/${command.ownerUid}`;
       const operationRef = this.firestore.doc(`${ownerRoot}/operations/${command.idempotencyKey}`);
       const homeRef = this.firestore.doc(`${ownerRoot}/miniHomes/${command.miniHomeId}`);
@@ -587,7 +588,7 @@ export class FirestoreMiniHomeLayoutStore implements MiniHomeLayoutStore, MiniHo
   }
 
   async delete(command: MiniHomeDeleteCommand): Promise<Readonly<{ kind: "deleted"; generation: number; tombstoneId: string }>> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const projectionTime = this.now();
       const catalogProjection = await readCatalogForWriter(transaction, this.firestore);
       const ownerProjection = await readOwnerForWriter(

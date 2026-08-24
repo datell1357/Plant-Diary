@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Timestamp } from "firebase-admin/firestore";
 import { TimeoutError } from "ky";
 import {
   FirestoreIdentificationRequestStore,
@@ -67,36 +68,96 @@ class FakeReference {
 
 class FakeFirestore {
   readonly reference: FakeReference;
+  readonly lockReference = new FakeReference("accountDeletionRequests/user-a", {});
+  readonly reservationReference: FakeReference;
   readonly requestedPaths: string[] = [];
   readonly writtenPaths: string[] = [];
+  /** Transaction queue is mutable because serial execution is the fake's behavior. */
+  private transactionTail: Promise<void> = Promise.resolve();
 
-  constructor(data: FakeRequestData, private readonly exists = true) {
+  constructor(
+    data: FakeRequestData,
+    private readonly exists = true,
+    reservation: FakeRequestData = reservationData(),
+  ) {
     this.reference = new FakeReference("users/user-a/identificationRequests/request_12345678", data);
+    this.reservationReference = new FakeReference(
+      "privateMediaReservations/reservation_12345678",
+      reservation,
+    );
   }
 
   doc(path: string) {
     this.requestedPaths.push(path);
+    if (path === this.lockReference.path) return this.lockReference;
+    if (path === this.reservationReference.path) return this.reservationReference;
     assert.equal(path, this.reference.path);
     return this.reference;
   }
 
   async runTransaction<T>(operation: (transaction: {
-    get(reference: FakeReference): Promise<{ exists: boolean; data(): FakeRequestData }>;
+    get(reference: FakeReference): Promise<{
+      exists: boolean;
+      data(): FakeRequestData;
+      get(field: string): unknown;
+    }>;
     update(reference: FakeReference, value: FakeRequestData): void;
   }) => Promise<T>): Promise<T> {
-    return operation({
-      get: async (reference) => ({ exists: this.exists, data: () => reference.data }),
-      update: (reference, value) => {
-        this.writtenPaths.push(reference.path);
-        reference.updates.push(value);
-        Object.assign(reference.data, value);
-      },
+    const previous = this.transactionTail;
+    let release: () => void = () => undefined;
+    this.transactionTail = new Promise<void>((resolve) => {
+      release = resolve;
     });
+    await previous;
+    try {
+      return await operation({
+        get: async (reference) => ({
+          exists: reference === this.lockReference
+            ? false
+            : reference === this.reservationReference
+              ? true
+              : this.exists,
+          data: () => reference.data,
+          get: (field) => reference.data[field],
+        }),
+        update: (reference, value) => {
+          this.writtenPaths.push(reference.path);
+          reference.updates.push(value);
+          Object.assign(reference.data, value);
+        },
+      });
+    } finally {
+      release();
+    }
   }
 }
 
-function requestData(path = "identification-originals/user-a/request_12345678/original.webp") {
-  return { ownerUid: "user-a", temporaryOriginalPath: path };
+function requestData() {
+  return {
+    ownerUid: "user-a",
+    mediaReference: { reservationId: "reservation_12345678", generation: "7" },
+  };
+}
+
+function reservationData(ownerUid = "user-a"): FakeRequestData {
+  return {
+    schemaVersion: 1,
+    reservationId: "reservation_12345678",
+    ownerUid,
+    mediaKind: "IDENTIFICATION_ORIGINAL",
+    contentType: "image/webp",
+    byteSize: 3,
+    objectPath: "private-media-v2/reservation_12345678",
+    idempotencyKeyHash: "a".repeat(64),
+    requestHash: "b".repeat(64),
+    state: "COMMITTED",
+    objectGeneration: "7",
+    sealedGeneration: null,
+    createdAt: Timestamp.fromMillis(1),
+    expiresAt: Timestamp.fromMillis(2),
+    committedAt: Timestamp.fromMillis(2),
+    sealedAt: null,
+  };
 }
 
 test("production store returns not_found without calling the provider when the request is missing", async () => {
@@ -117,13 +178,14 @@ test("production store returns not_found without calling the provider when the r
   assert.equal(providerCalls, 0);
 });
 
-test("production store rejects arbitrary and cross-owner original paths before download", async () => {
-  for (const path of [
-    "identification-originals/user-b/request_12345678/original.webp",
-    "identification-originals/user-a/another_request/original.webp",
-    "arbitrary/user-a/request_12345678/original.webp",
+test("production store rejects raw and unowned media references before download", async () => {
+  for (const firestore of [
+    new FakeFirestore({
+      ownerUid: "user-a",
+      temporaryOriginalPath: "private-media-v2/reservation_12345678",
+    }),
+    new FakeFirestore(requestData(), true, reservationData("user-b")),
   ]) {
-    const firestore = new FakeFirestore(requestData(path));
     const store = new FirestoreIdentificationRequestStore(firestore as never);
     let downloadCount = 0;
 
@@ -132,7 +194,7 @@ test("production store rejects arbitrary and cross-owner original paths before d
         downloadCount += 1;
         return { kind: "no_candidates" };
       }),
-      (error: unknown) => error instanceof Error && error.message === "malformed_state",
+      IdentificationRuntimeError,
     );
     assert.equal(downloadCount, 0);
   }

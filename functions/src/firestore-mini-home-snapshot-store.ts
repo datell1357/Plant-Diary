@@ -1,4 +1,5 @@
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
+import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import {
   MINI_HOME_PROJECTION_BOOTSTRAP_MAX_DOCUMENT_READS,
   MINI_HOME_PROJECTION_MAX_DOCUMENT_READS,
@@ -26,7 +27,7 @@ export class FirestoreMiniHomeSnapshotStore implements MiniHomeSnapshotStore {
   }
 
   async load(ownerUid: string): Promise<MiniHomeSnapshot> {
-    return this.firestore.runTransaction(async (transaction) => {
+    return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const attempt = ++this.attempts;
       const readTime = this.now();
       const published = await readAndRefreshPublishedOwnerProjection(

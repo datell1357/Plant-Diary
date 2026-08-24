@@ -14,6 +14,21 @@ class FakeStore implements MutationStore {
 
   async ownerZoneId(_ownerUid: string) { return "Asia/Seoul"; }
   async publicPlantContentExists(contentId: string) { return contentId === "species-public"; }
+  async resolvePrivateMedia(command: Parameters<MutationStore["resolvePrivateMedia"]>[0]) {
+    if (
+      command.ownerUid !== "user-a" ||
+      command.reference.reservationId !== "reservation-owned-12345678" ||
+      command.reference.generation !== "7"
+    ) return null;
+    return {
+      reference: command.reference,
+      ownerUid: command.ownerUid,
+      mediaKind: command.mediaKind,
+      objectPath: "private-media-v2/reservation-owned-12345678",
+      contentType: "image/webp",
+      byteSize: 3,
+    };
+  }
 
   async applyOwnerMutation(command: Parameters<MutationStore["applyOwnerMutation"]>[0]) {
     const operationPath = `users/${command.ownerUid}/operations/${command.idempotencyKey}`;
@@ -136,15 +151,34 @@ test("owner callable rejects impossible dates enums and unknown sensitive fields
   );
 });
 
-test("personal plant registration rejects unnormalized names and foreign representative paths", async () => {
+test("personal plant registration rejects raw and unowned media but accepts an owned reference", async () => {
   const store = new FakeStore();
   await assert.rejects(
     () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: " 몬스테라 ", registrationMethod: "MANUAL" } }, store),
     ContractError,
   );
   await assert.rejects(
-    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "몬스테라", registrationMethod: "MANUAL", representativePhotoPath: "plant-photos/user-b/plant-a/representative.webp" } }, store),
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "몬스테라", registrationMethod: "MANUAL", representativePhotoPath: "private-media-v2/reservation-owned-12345678" } }, store),
     ContractError,
+  );
+  await assert.rejects(
+    () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "몬스테라", registrationMethod: "MANUAL", representativeMediaReference: { reservationId: "reservation-foreign-12345678", generation: "7" } } }, store),
+    ContractError,
+  );
+  await executeOwnerMutation(
+    { uid: "user-a" },
+    {
+      ...validMutation,
+      payload: {
+        displayName: "몬스테라",
+        registrationMethod: "MANUAL",
+        representativeMediaReference: {
+          reservationId: "reservation-owned-12345678",
+          generation: "7",
+        },
+      },
+    },
+    store,
   );
   await assert.rejects(
     () => executeOwnerMutation({ uid: "user-a" }, { ...validMutation, payload: { displayName: "🌱".repeat(101), registrationMethod: "MANUAL" } }, store),
@@ -202,7 +236,7 @@ test("personal plant update accepts only a non-empty care patch and preserves im
   const store = new FakeStore();
   await executeOwnerMutation(
     { uid: "user-a" },
-    { ...validMutation, payload: { ...validMutation.payload, contentId: "species-public", representativePhotoPath: null } },
+    { ...validMutation, payload: { ...validMutation.payload, contentId: "species-public", representativeMediaReference: null } },
     store,
   );
   const update = {
@@ -218,7 +252,7 @@ test("personal plant update accepts only a non-empty care patch and preserves im
     displayName: "몬스테라",
     registrationMethod: "MANUAL",
     contentId: "species-public",
-    representativePhotoPath: null,
+    representativeMediaReference: null,
     location: "거실",
     note: null,
     lastWateredDate: "2026-08-18",
@@ -272,29 +306,46 @@ test("personal plant content links must resolve to public content", async () => 
   );
 });
 
-test("server-only delivery weather deletion and item writes validate state", async () => {
+test("server-only delivery weather and item writes exclude authoritative deletion requests", async () => {
   const store = new FakeStore();
   const commands = [
     { collection: "notificationDeliveries", documentId: "delivery-a", payload: { plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: "2026-08-12T00:00:00Z", deliveredAt: "2026-08-12T00:01:00Z", deduplicationKey: "user-a:plant-a:2026-08-12:0" } },
     { collection: "weatherRisks", documentId: "risk-a", payload: { plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", detectedAt: "2026-08-12T00:00:00Z", observedAt: "2026-08-12T00:00:00Z", active: true, transition: 1, deliveredTransition: null } },
-    { collection: "deletionRequests", documentId: "deletion-a", payload: { status: "COMPLETED", requestedAt: "2026-08-01T00:00:00Z", scheduledFor: "2026-08-08T00:00:00Z", completedAt: "2026-08-08T00:01:00Z" } },
     { collection: "ownedItems", documentId: "owned-a", payload: { itemId: "item-a", acquiredAt: "2026-08-12T00:00:00Z", applied: false } },
     { collection: "weatherSnapshots", documentId: "snapshot-a", payload: { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: "2026-08-12T00:00:00Z", expiresAt: "2026-08-12T03:00:00Z", zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"] } },
     { collection: "shareLinks", documentId: "share-a", payload: { miniHomeId: "home-a", sourceRevision: 2, snapshotPath: "share-images/user-a/share-a/share.png", createdAt: "2026-08-12T00:00:00Z", expiresAt: "2026-09-12T00:00:00Z", revokedAt: null } },
   ] as const;
   for (const command of commands) await executeServerStateWrite({ trusted: true }, "user-a", command, store);
-  assert.equal(store.writes.size, 6);
+  assert.equal(store.writes.size, 5);
+  await assert.rejects(
+    () => executeServerStateWrite(
+      { trusted: true },
+      "user-a",
+      {
+        collection: "deletionRequests",
+        documentId: "deletion-a",
+        payload: {
+          status: "COMPLETED",
+          requestedAt: "2026-08-01T00:00:00Z",
+          scheduledFor: "2026-08-08T00:00:00Z",
+          completedAt: "2026-08-08T00:01:00Z",
+        },
+      },
+      store,
+    ),
+    ContractError,
+  );
   await assert.rejects(() => executeServerStateWrite({ trusted: false }, "user-a", commands[0], store), (error: unknown) => error instanceof ContractError && error.code === "permission-denied");
   await assert.rejects(() => executeServerStateWrite({ trusted: true }, "user-a", { ...commands[1], payload: { ...commands[1].payload, type: "FORGED" } }, store), ContractError);
   await assert.rejects(
-    () => executeServerStateWrite({ trusted: true }, "user-a", { ...commands[5], payload: { ...commands[5].payload, expiresAt: "2026-08-01T00:00:00Z" } }, store),
+    () => executeServerStateWrite({ trusted: true }, "user-a", { ...commands[4], payload: { ...commands[4].payload, expiresAt: "2026-08-01T00:00:00Z" } }, store),
     ContractError,
   );
   await assert.rejects(
     () => executeServerStateWrite(
       { trusted: true },
       "user-a",
-      { ...commands[4], payload: { ...commands[4].payload, unavailablePlantIds: ["bad/id"] } },
+      { ...commands[3], payload: { ...commands[3].payload, unavailablePlantIds: ["bad/id"] } },
       store,
     ),
     ContractError,
@@ -304,9 +355,9 @@ test("server-only delivery weather deletion and item writes validate state", asy
       { trusted: true },
       "user-a",
       {
-        ...commands[4],
+        ...commands[3],
         payload: {
-          ...commands[4].payload,
+          ...commands[3].payload,
           unavailablePlantIds: Array.from({ length: 201 }, (_, index) => `plant-${index}`),
         },
       },
