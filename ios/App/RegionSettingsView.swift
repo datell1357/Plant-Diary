@@ -79,9 +79,6 @@ struct RegionSettingsView: View {
         }, trailing: {
             EmptyView()
         })
-        .background {
-            SettingsTopBarFrame(identifier: "region-settings.top-bar")
-        }
         .settingsReferenceTopBar()
     }
 

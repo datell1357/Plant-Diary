@@ -10,9 +10,6 @@ extension QuietHoursSettingsView {
         }, trailing: {
             EmptyView()
         })
-        .background {
-            SettingsTopBarFrame(identifier: "quiet-hours.top-bar")
-        }
         .settingsReferenceTopBar()
     }
 
@@ -28,38 +25,30 @@ struct SettingsWarningCard: View {
 
     private static let accessibilityCopy =
         "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는 "
-            + "기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이 즉시 발송됩니다."
+            + "기상 특보 및 재난 알림은 시간 설정과 관계없이 즉시 발송됩니다."
     private static let referenceCopy =
         "태풍, 한파, 폭염 등 식물 생존에 직접적 영향을 미치는\n"
-            + "기\u{2060}상 특보 및 재난 알림은 시간 설정과 관계없이\n"
+            + "기상 특보 및 재난 알림은 시간 설정과 관계없이\n"
             + "즉시 발송됩니다."
 
     var body: some View {
         HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
             Image(systemName: "lightbulb")
-                .foregroundStyle(PlanteriorPalette.warning.color)
+                .foregroundStyle(PlanteriorPalette.warningText.color)
                 .frame(
                     width: SettingsReferenceMetrics.warningIconWidth,
                     height: PlanteriorSpacing.extraLarge
                 )
-                .accessibilityElement()
-                .accessibilityIdentifier("quiet-hours.warning-icon")
+                .accessibilityHidden(true)
             Text(
                 isAccessibilityCategory
                     ? Self.accessibilityCopy
                     : Self.referenceCopy
             )
             .font(PlanteriorTypography.caption.weight(.semibold))
-            .foregroundStyle(PlanteriorPalette.warning.color)
+            .foregroundStyle(PlanteriorPalette.warningText.color)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("quiet-hours.warning-copy")
-            .background {
-                if Self.referenceCopy.contains("기\u{2060}상") {
-                    SettingsLayoutFrame(
-                        identifier: "quiet-hours.warning-copy.intact-weather"
-                    )
-                }
-            }
         }
         .padding(PlanteriorSpacing.large)
         .frame(

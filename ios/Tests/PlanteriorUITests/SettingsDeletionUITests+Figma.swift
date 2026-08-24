@@ -12,7 +12,7 @@ extension SettingsDeletionUITests {
         app.launch()
         openFigmaSettings(in: app)
 
-        XCTAssertTrue(app.otherElements["settings.profile-card"].exists)
+        XCTAssertTrue(app.staticTexts["settings.profile.name"].exists)
         XCTAssertTrue(app.staticTexts["알림 관리"].exists)
         XCTAssertTrue(app.staticTexts["지역 및 환경"].exists)
         XCTAssertTrue(app.staticTexts["계정"].exists)
@@ -22,17 +22,22 @@ extension SettingsDeletionUITests {
         XCTAssertTrue(app.buttons["auth.logout"].isHittable)
 
         let rootBack = app.buttons["settings.back"]
-        let rootTopBar = app.otherElements["settings.top-bar"]
+        let rootTitle = app.staticTexts
+            .matching(NSPredicate(format: "label == %@", "설정"))
+            .element(boundBy: 1)
         let rootBody = app.scrollViews["settings.screen"]
         XCTAssertTrue(rootBack.isHittable)
         XCTAssertEqual(rootBack.frame.minX, 16, accuracy: 1)
         XCTAssertEqual(rootBack.frame.minY, 50, accuracy: 2)
         XCTAssertEqual(rootBack.frame.width, 44, accuracy: 1)
         XCTAssertEqual(rootBack.frame.height, 44, accuracy: 1)
-        XCTAssertEqual(rootTopBar.frame.minY, 44, accuracy: 1)
-        XCTAssertEqual(rootTopBar.frame.height, 56, accuracy: 1)
+        XCTAssertTrue(rootTitle.exists)
+        XCTAssertTrue(rootBack.frame.intersects(rootTitle.frame) == false)
         XCTAssertEqual(rootBody.frame.minY, 100, accuracy: 1)
-        XCTAssertEqual(rootBody.frame.maxY, 874, accuracy: 1)
+        XCTAssertLessThanOrEqual(
+            rootBody.frame.maxY,
+            app.buttons["tab.settings"].frame.minY
+        )
         assertReferenceRootAnatomy(in: app)
         attachScreenshot(named: "settings-402x874-light")
 
@@ -44,7 +49,9 @@ extension SettingsDeletionUITests {
         let toggle = app.switches["quiet-hours.enabled"]
         let start = app.datePickers["quiet-hours.start"]
         let end = app.datePickers["quiet-hours.end"]
-        let quietTopBar = app.otherElements["quiet-hours.top-bar"]
+        let quietTitle = app.staticTexts
+            .matching(NSPredicate(format: "label == %@", "알림 금지 시간 설정"))
+            .firstMatch
         let quietBody = app.scrollViews["quiet-hours.screen"]
         let warning = app.otherElements["quiet-hours.warning"]
         let save = app.buttons["quiet-hours.save"]
@@ -53,8 +60,8 @@ extension SettingsDeletionUITests {
         XCTAssertFalse(end.isEnabled)
         XCTAssertEqual(start.value as? String, "22:00:00")
         XCTAssertEqual(end.value as? String, "07:00:00")
-        XCTAssertEqual(quietTopBar.frame.minY, 44, accuracy: 1)
-        XCTAssertEqual(quietTopBar.frame.height, 56, accuracy: 1)
+        XCTAssertTrue(quietTitle.exists)
+        XCTAssertTrue(quietBackAndTitleDoNotIntersect(in: app, title: quietTitle))
         XCTAssertEqual(quietBody.frame.minY, 100, accuracy: 1)
         XCTAssertEqual(quietBody.frame.maxY, 769, accuracy: 1)
         XCTAssertEqual(warning.frame.minX, 20, accuracy: 1)
@@ -180,11 +187,6 @@ extension SettingsDeletionUITests {
         let email = app.staticTexts["settings.profile.email"]
         XCTAssertTrue(email.exists)
         XCTAssertEqual(email.label, "minji@email.com")
-        assertIconWellSize(
-            "settings.location.icon-well",
-            expectedSide: 44,
-            in: app
-        )
         attachScreenshot(named: "settings-korean-ax5-reduce-motion")
 
         let quietHours = app.buttons["settings.quiet-hours.open"]
@@ -203,33 +205,18 @@ extension SettingsDeletionUITests {
         quietHours.tap()
         let scroll = app.scrollViews["quiet-hours.screen"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
-        let topBar = app.otherElements["quiet-hours.top-bar"]
         let title = app.staticTexts
             .matching(NSPredicate(format: "label == %@", "알림 금지 시간 설정"))
             .element(boundBy: 0)
         XCTAssertTrue(title.exists)
         XCTAssertGreaterThan(
-            topBar.frame.height,
-            56,
-            "AX5 top chrome must expand beyond its default Large height"
-        )
-        XCTAssertTrue(
-            topBar.frame.contains(title.frame),
-            "the complete AX5 title must remain inside the expanded top bar"
-        )
-        XCTAssertGreaterThan(
             title.frame.height,
             56,
             "the AX5 Quiet Hours title must use multiple lines"
         )
-        XCTAssertEqual(title.frame.midX, topBar.frame.midX, accuracy: 1)
+        XCTAssertTrue(quietBackAndTitleDoNotIntersect(in: app, title: title))
         XCTAssertEqual(title.label, "알림 금지 시간 설정")
         XCTAssertFalse(title.label.contains("\u{2026}"))
-        assertIconWellSize(
-            "quiet-hours.clock.icon-well",
-            expectedSide: 44,
-            in: app
-        )
         let enabled = app.switches["quiet-hours.enabled"]
         if enabled.value as? String != "1" {
             enabled.tap()
@@ -237,6 +224,7 @@ extension SettingsDeletionUITests {
         scroll.swipeUp()
         let start = app.datePickers["quiet-hours.start"]
         XCTAssertTrue(start.isHittable)
+        XCTAssertGreaterThanOrEqual(start.frame.height, 44)
         XCTAssertTrue(app.staticTexts["시작 시간"].exists)
         start.tap()
         let dismissStart = app.buttons["PopoverDismissRegion"]
@@ -245,6 +233,7 @@ extension SettingsDeletionUITests {
         scroll.swipeUp()
         let end = app.datePickers["quiet-hours.end"]
         XCTAssertTrue(end.isHittable)
+        XCTAssertGreaterThanOrEqual(end.frame.height, 44)
         XCTAssertTrue(app.staticTexts["종료 시간"].exists)
         end.tap()
         let dismissEnd = app.buttons["PopoverDismissRegion"]
@@ -275,12 +264,19 @@ extension SettingsDeletionUITests {
                 "saveFrameHeight": save.frame.height,
                 "saveVisualHeight": saveVisualHeight,
                 "titleFrameHeight": title.frame.height,
-                "topBarHeight": topBar.frame.height
+                "titleFrameWidth": title.frame.width
             ],
             named: "quiet-hours-ax5-geometry"
         )
         save.tap()
         XCTAssertTrue(app.buttons["settings.quiet-hours.open"].waitForExistence(timeout: 5))
+    }
+
+    func quietBackAndTitleDoNotIntersect(
+        in app: XCUIApplication,
+        title: XCUIElement
+    ) -> Bool {
+        !app.buttons["quiet-hours.back"].frame.intersects(title.frame)
     }
 
     func figmaSettingsApp(

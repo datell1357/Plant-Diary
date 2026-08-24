@@ -23,13 +23,12 @@ extension SettingsView {
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("settings.profile-card")
     }
 
     private var profileAvatar: some View {
-        Text("🌿")
+        Image(systemName: "leaf.fill")
             .font(.system(size: 28))
+            .foregroundStyle(PlanteriorPalette.accent.color)
             .frame(
                 width: SettingsReferenceMetrics.profileAvatarSize,
                 height: SettingsReferenceMetrics.profileAvatarSize

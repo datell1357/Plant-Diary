@@ -133,17 +133,7 @@ final class PlantCollectionUITests: XCTestCase {
         app.textFields["plant.detail.note"].typeText("새잎이 자랐어요\n")
         app.buttons["plant.detail.add-note"].tap()
         XCTAssertTrue(app.staticTexts["plant.detail.timeline"].waitForExistence(timeout: 5))
-        app.swipeUp()
-        app.buttons["plant.detail.delete"].tap()
-        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            app.buttons["plant.detail.delete-confirm"].waitForExistence(timeout: 5)
-        )
-        app.buttons.matching(
-            identifier: "plant.detail.delete-cancel"
-        ).firstMatch.tap()
-        XCTAssertFalse(app.sheets.firstMatch.exists)
-        XCTAssertTrue(app.buttons["plant.detail.delete"].exists)
+        assertDeleteIsReachableAndRequiresConfirmation(in: app)
     }
 
     func testFilteredEmptyDoesNotClaimCollectionIsEmpty() {
@@ -179,6 +169,31 @@ final class PlantCollectionUITests: XCTestCase {
 
     func testStaleStateDoesNotLeakPrivateContent() {
         assertState("stale", label: "저장된 정보를 표시하고 있어요.")
+    }
+
+    private func assertDeleteIsReachableAndRequiresConfirmation(
+        in app: XCUIApplication
+    ) {
+        let detailScroll = app.scrollViews["plant.detail.screen"]
+        let delete = app.buttons["plant.detail.delete"]
+        scrollToHittable(delete, in: detailScroll)
+        let tabBar = app.buttons["tab.collection"]
+        XCTAssertTrue(delete.isHittable)
+        XCTAssertFalse(
+            delete.frame.intersects(tabBar.frame),
+            "the delete action must clear the persistent tab bar"
+        )
+        attachScreenshot(named: "collection-detail-delete-hittable")
+        delete.tap()
+        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["plant.detail.delete-confirm"].waitForExistence(timeout: 5)
+        )
+        app.buttons.matching(
+            identifier: "plant.detail.delete-cancel"
+        ).firstMatch.tap()
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        XCTAssertTrue(app.buttons["plant.detail.delete"].exists)
     }
 
     private func assertState(_ state: String, label: String) {

@@ -26,6 +26,9 @@ final class PlantCollectionIntegrityUITests: XCTestCase {
         let row = app.buttons["collection.row.0"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
+        let edit = app.buttons["plant.detail.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
         let location = app.textFields["plant.detail.location"]
         XCTAssertTrue(location.waitForExistence(timeout: 5))
         location.tap()

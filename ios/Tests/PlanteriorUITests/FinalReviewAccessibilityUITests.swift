@@ -139,7 +139,7 @@ extension PlantCollectionFigmaUITests {
         scrollToHittable(link, in: remedy.scrollViews["plant.detail.screen"])
         link.tap()
         let context = remedy.staticTexts["remedy.context"]
-        let navigationBar = remedy.navigationBars["증상 대처법"]
+        let topBar = remedy.otherElements["remedy.top-bar"]
         XCTAssertTrue(context.waitForExistence(timeout: 5))
         for content in [
             context,
@@ -148,7 +148,7 @@ extension PlantCollectionFigmaUITests {
             remedy.staticTexts["remedy.action.0"]
         ] where content.exists {
             XCTAssertFalse(
-                navigationBar.frame.intersects(content.frame),
+                topBar.frame.intersects(content.frame),
                 "remedy content must stay below navigation chrome"
             )
         }

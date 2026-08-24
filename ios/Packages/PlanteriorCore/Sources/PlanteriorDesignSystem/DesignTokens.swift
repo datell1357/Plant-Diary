@@ -32,6 +32,7 @@ public enum PlanteriorPalette {
     public static let border = PlanteriorColorToken(hex: "#E5E7EB")
     public static let warningSurface = PlanteriorColorToken(hex: "#FFF7D6")
     public static let warning = PlanteriorColorToken(hex: "#E97800")
+    public static let warningText = PlanteriorColorToken(hex: "#8A4B00")
     public static let successSurface = PlanteriorColorToken(hex: "#EEF5EE")
     public static let attention = PlanteriorColorToken(hex: "#FF4D4F")
     public static let attentionSurface = PlanteriorColorToken(hex: "#FFE8E8")

@@ -8,6 +8,7 @@ struct SettingsView: View {
     let openMilestones: () -> Void
     @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) var openURL
+    @Environment(\.sizeCategory) var sizeCategory
     @EnvironmentObject var auth: AuthRuntime
     @StateObject var weather = WeatherRuntime()
     @State var notificationStatus = "확인 중"
@@ -26,9 +27,6 @@ struct SettingsView: View {
                     dismiss()
                 }
             })
-            .background {
-                SettingsTopBarFrame(identifier: "settings.top-bar")
-            }
             .settingsReferenceTopBar()
             ScrollView {
                 VStack(

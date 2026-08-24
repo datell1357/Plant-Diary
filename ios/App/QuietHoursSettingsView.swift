@@ -77,9 +77,6 @@ struct QuietHoursSettingsView: View {
             }
             .padding(.horizontal, PlanteriorSpacing.large)
             .frame(minHeight: PlanteriorControl.rowHeight)
-            .background {
-                SettingsLayoutFrame(identifier: "quiet-hours.enabled.row")
-            }
         }
     }
 
@@ -124,41 +121,32 @@ struct QuietHoursSettingsView: View {
                 .accessibilityIdentifier(id)
             }
             .padding(.vertical, PlanteriorSpacing.small)
-            .background {
-                SettingsLayoutFrame(identifier: "\(id).row")
-            }
             .disabled(!enabled)
         } else {
-            ZStack {
-                SettingsLayoutFrame(identifier: "\(id).row")
-                DatePicker(
-                    title,
-                    selection: selection,
-                    displayedComponents: .hourAndMinute
-                )
-                .datePickerStyle(.compact)
-                .padding(.horizontal, PlanteriorSpacing.large)
-                .disabled(!enabled)
-                .accessibilityValue(
-                    QuietHoursPresentation.localTime(
-                        from: selection.wrappedValue
-                    )?.rawValue ?? ""
-                )
-                .accessibilityIdentifier(id)
-                .overlay(alignment: .trailing) {
-                    ZStack {
-                        SettingsLayoutFrame(identifier: "\(id).chevron")
-                        Image(systemName: "chevron.right")
-                            .font(PlanteriorTypography.caption)
-                            .foregroundStyle(
-                                PlanteriorPalette.textTertiary.color
-                            )
-                            .accessibilityHidden(true)
-                    }
+            DatePicker(
+                title,
+                selection: selection,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.compact)
+            .frame(minHeight: PlanteriorControl.minimumTarget)
+            .padding(.horizontal, PlanteriorSpacing.large)
+            .padding(.vertical, PlanteriorSpacing.extraSmall)
+            .disabled(!enabled)
+            .accessibilityValue(
+                QuietHoursPresentation.localTime(
+                    from: selection.wrappedValue
+                )?.rawValue ?? ""
+            )
+            .accessibilityIdentifier(id)
+            .overlay(alignment: .trailing) {
+                Image(systemName: "chevron.right")
+                    .font(PlanteriorTypography.caption)
+                    .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                    .accessibilityHidden(true)
                     .frame(width: 16, height: 16)
                     .padding(.trailing, PlanteriorSpacing.large)
                     .allowsHitTesting(false)
-                }
             }
             .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)
         }

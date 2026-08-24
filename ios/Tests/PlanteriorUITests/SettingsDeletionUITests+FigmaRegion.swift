@@ -25,16 +25,19 @@ extension SettingsDeletionUITests {
             "선택됨"
         )
         let back = app.buttons["weather.region.back"]
-        let topBar = app.otherElements["region-settings.top-bar"]
         let body = app.scrollViews["region-settings.screen"]
+        let titles = app.staticTexts.matching(identifier: "관리 지역 설정")
+        let title = titles.allElementsBoundByIndex.first {
+            $0.frame.maxY <= body.frame.minY
+        } ?? titles.firstMatch
         XCTAssertTrue(back.isHittable)
         XCTAssertFalse(app.buttons["weather.region.save"].exists)
         XCTAssertEqual(back.frame.minX, 16, accuracy: 1)
         XCTAssertEqual(back.frame.minY, 50, accuracy: 2)
         XCTAssertEqual(back.frame.width, 44, accuracy: 1)
         XCTAssertEqual(back.frame.height, 44, accuracy: 1)
-        XCTAssertEqual(topBar.frame.minY, 44, accuracy: 1)
-        XCTAssertEqual(topBar.frame.height, 56, accuracy: 1)
+        XCTAssertTrue(title.exists)
+        XCTAssertFalse(back.frame.intersects(title.frame))
         XCTAssertEqual(body.frame.minY, 100, accuracy: 1)
         XCTAssertEqual(body.frame.maxY, 874, accuracy: 1)
         assertReferenceRegionAnatomy(in: app)
@@ -94,26 +97,18 @@ extension SettingsDeletionUITests {
             app.buttons["weather.use-current-location"]
                 .waitForExistence(timeout: 5)
         )
-        let topBar = app.otherElements["region-settings.top-bar"]
         let title = app.staticTexts
             .matching(NSPredicate(format: "label == %@", "관리 지역 설정"))
             .element(boundBy: 0)
         XCTAssertTrue(title.exists)
         XCTAssertGreaterThan(
-            topBar.frame.height,
-            56,
-            "AX5 top chrome must expand beyond its default Large height"
-        )
-        XCTAssertTrue(
-            topBar.frame.contains(title.frame),
-            "the complete AX5 title must remain inside the expanded top bar"
-        )
-        XCTAssertGreaterThan(
             title.frame.height,
             56,
             "the AX5 Region title must use multiple lines"
         )
-        XCTAssertEqual(title.frame.midX, topBar.frame.midX, accuracy: 1)
+        XCTAssertFalse(
+            app.buttons["weather.region.back"].frame.intersects(title.frame)
+        )
         XCTAssertEqual(title.label, "관리 지역 설정")
         XCTAssertFalse(title.label.contains("\u{2026}"))
         XCTAssertTrue(app.buttons["weather.region.back"].isHittable)
@@ -158,7 +153,7 @@ extension SettingsDeletionUITests {
                 "secondRowHeight": secondRow.frame.height,
                 "thirdRowHeight": thirdRow.frame.height,
                 "titleFrameHeight": title.frame.height,
-                "topBarHeight": topBar.frame.height
+                "titleFrameWidth": title.frame.width
             ],
             named: "region-ax5-geometry"
         )

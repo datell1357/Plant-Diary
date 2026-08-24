@@ -6,6 +6,9 @@ import SwiftUI
 enum PlantCareReferenceMetrics {
     static let topSafeAreaCorrection: CGFloat = -18
     static let heroTopInset: CGFloat = 8
+    /// Keeps destructive detail actions above the shell's persistent tab bar.
+    static let detailBottomScrollClearance = PlanteriorLayout.tabBarHeight
+        + PlanteriorSpacing.large
 }
 
 struct PlantCareTopBarFrame: View {

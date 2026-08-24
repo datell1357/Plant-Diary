@@ -28,17 +28,6 @@ enum SettingsReferenceMetrics {
     static let saveBarVerticalInset: CGFloat = 11
 }
 
-struct SettingsTopBarFrame: View {
-    let identifier: String
-
-    var body: some View {
-        Rectangle()
-            .fill(PlanteriorPalette.canvas.color)
-            .accessibilityElement()
-            .accessibilityIdentifier(identifier)
-    }
-}
-
 struct SettingsBackButton: View {
     let identifier: String
     let action: () -> Void

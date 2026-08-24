@@ -44,7 +44,6 @@ extension RegionSettingsView {
         } label: {
             HStack(alignment: .top, spacing: PlanteriorSpacing.small) {
                 SettingsLocationGlyph(
-                    identifier: "region-settings.location-glyph",
                     size: SettingsReferenceMetrics.regionLocationGlyphSize,
                     translation: CGSize(width: 1, height: -1),
                     tailInset: 1.5

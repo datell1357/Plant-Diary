@@ -6,17 +6,6 @@ enum SettingsIcon: Hashable {
     case system(String)
 }
 
-struct SettingsLayoutFrame: View {
-    let identifier: String
-
-    var body: some View {
-        Rectangle()
-            .fill(PlanteriorPalette.surface.color.opacity(0.001))
-            .accessibilityElement()
-            .accessibilityIdentifier(identifier)
-    }
-}
-
 struct SettingsIconWell: View {
     let icon: SettingsIcon
 
@@ -24,45 +13,25 @@ struct SettingsIconWell: View {
         switch icon {
         case .location:
             PlanteriorIconWell {
-                SettingsLocationGlyph(identifier: "settings.location-glyph")
+                SettingsLocationGlyph()
                     .padding(.bottom, 2)
-            }
-            .background {
-                SettingsLayoutFrame(identifier: wellIdentifier)
             }
         case let .system(name):
             PlanteriorIconWell(systemImage: name)
-                .background {
-                    SettingsLayoutFrame(identifier: wellIdentifier)
-                }
-        }
-    }
-
-    private var wellIdentifier: String {
-        switch icon {
-        case .location:
-            "settings.location.icon-well"
-        case .system("clock"):
-            "quiet-hours.clock.icon-well"
-        case let .system(name):
-            "settings.\(name).icon-well"
         }
     }
 }
 
 struct SettingsLocationGlyph: View {
-    let identifier: String
     let size: CGSize
     let translation: CGSize
     let tailInset: CGFloat
 
     init(
-        identifier: String,
         size: CGSize = SettingsReferenceMetrics.locationGlyphSize,
         translation: CGSize = CGSize(width: 0, height: 1),
         tailInset: CGFloat = 2.5
     ) {
-        self.identifier = identifier
         self.size = size
         self.translation = translation
         self.tailInset = tailInset
@@ -79,9 +48,6 @@ struct SettingsLocationGlyph: View {
         )
         .frame(width: size.width, height: size.height)
         .accessibilityHidden(true)
-        .background {
-            SettingsLayoutFrame(identifier: identifier)
-        }
     }
 }
 
@@ -149,11 +115,8 @@ struct SettingsToggle: View {
                     .allowsHitTesting(false)
                     .accessibilityLabel(title)
                     .accessibilityIdentifier(identifier)
-                SettingsToggleIndicator(
-                    isOn: isOn,
-                    identifier: "\(identifier).visual"
-                )
-                .allowsHitTesting(false)
+                SettingsToggleIndicator(isOn: isOn)
+                    .allowsHitTesting(false)
             }
             .frame(
                 width: PlanteriorControl.minimumTarget,
@@ -169,7 +132,6 @@ struct SettingsToggle: View {
 
 private struct SettingsToggleIndicator: View {
     let isOn: Bool
-    let identifier: String
 
     var body: some View {
         Capsule()
@@ -191,7 +153,5 @@ private struct SettingsToggleIndicator: View {
                     )
                     .padding(SettingsReferenceMetrics.toggleThumbInset)
             }
-            .accessibilityElement()
-            .accessibilityIdentifier(identifier)
     }
 }

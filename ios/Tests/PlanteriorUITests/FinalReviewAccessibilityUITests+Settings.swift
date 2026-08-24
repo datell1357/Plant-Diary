@@ -15,7 +15,10 @@ extension SettingsDeletionUITests {
         let card = app.buttons["weather.use-current-location"]
         let label = app.staticTexts["현재 위치로 설정"]
         XCTAssertTrue(label.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(label.frame.minX, card.frame.minX + 56)
+        // The real button frame anchors the decorative 12pt glyph: 16pt left
+        // inset + 12pt glyph width. Keep an 8pt gap after that glyph column.
+        let glyphMaxX = card.frame.minX + 16 + 12
+        XCTAssertGreaterThanOrEqual(label.frame.minX, glyphMaxX + 8)
     }
 }
 

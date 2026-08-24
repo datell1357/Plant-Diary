@@ -53,7 +53,7 @@ struct PlantCareDetailView: View {
                     deleteAction
                 }
                 .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.bottom, PlanteriorSpacing.large)
+                .padding(.bottom, PlantCareReferenceMetrics.detailBottomScrollClearance)
             }
             .plantCareReferenceBody()
             .scrollClipDisabled(!dynamicTypeSize.isAccessibilitySize)

@@ -20,32 +20,32 @@ extension SettingsView {
         isOn: Binding<Bool>,
         id: String
     ) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                SettingsIconWell(icon: icon)
-                SettingsToggle(title: title, isOn: isOn, identifier: id)
-            }
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+        Group {
+            if sizeCategory.isAccessibilityCategory {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                    HStack(spacing: PlanteriorSpacing.medium) {
+                        SettingsIconWell(icon: icon)
+                        Text(title)
+                    }
+                    .font(PlanteriorTypography.body)
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    SettingsToggle(
+                        title: "알림 사용",
+                        isOn: isOn,
+                        identifier: id
+                    )
+                    .accessibilityLabel(title)
+                }
+            } else {
                 HStack(spacing: PlanteriorSpacing.medium) {
                     SettingsIconWell(icon: icon)
-                    Text(title)
+                    SettingsToggle(title: title, isOn: isOn, identifier: id)
                 }
-                .font(PlanteriorTypography.body)
-                .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                SettingsToggle(
-                    title: "알림 사용",
-                    isOn: isOn,
-                    identifier: id
-                )
-                .accessibilityLabel(title)
             }
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.vertical, PlanteriorSpacing.extraSmall)
         .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)
-        .background {
-            SettingsLayoutFrame(identifier: "\(id).row")
-        }
     }
 
     func permissionRow(_ title: String, value: String, id: String) -> some View {
@@ -78,39 +78,42 @@ extension SettingsView {
         value: String? = nil,
         disclosure: Bool = true
     ) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                SettingsIconWell(icon: icon)
-                Text(title)
-                    .font(PlanteriorTypography.body)
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                Spacer(minLength: PlanteriorSpacing.small)
-                if let value {
-                    Text(value)
-                        .font(PlanteriorTypography.supporting)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                        .multilineTextAlignment(.trailing)
+        Group {
+            if sizeCategory.isAccessibilityCategory {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                    HStack(spacing: PlanteriorSpacing.medium) {
+                        SettingsIconWell(icon: icon)
+                        Text(title)
+                            .font(PlanteriorTypography.body)
+                            .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                        Spacer(minLength: PlanteriorSpacing.small)
+                        if disclosure {
+                            disclosureIndicator
+                        }
+                    }
+                    if let value {
+                        Text(value)
+                            .font(PlanteriorTypography.supporting)
+                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                if disclosure {
-                    disclosureIndicator
-                }
-            }
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+            } else {
                 HStack(spacing: PlanteriorSpacing.medium) {
                     SettingsIconWell(icon: icon)
                     Text(title)
                         .font(PlanteriorTypography.body)
                         .foregroundStyle(PlanteriorPalette.textPrimary.color)
                     Spacer(minLength: PlanteriorSpacing.small)
+                    if let value {
+                        Text(value)
+                            .font(PlanteriorTypography.supporting)
+                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                            .multilineTextAlignment(.trailing)
+                    }
                     if disclosure {
                         disclosureIndicator
                     }
-                }
-                if let value {
-                    Text(value)
-                        .font(PlanteriorTypography.supporting)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
