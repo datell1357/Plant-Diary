@@ -2,37 +2,35 @@ import PlanteriorDesignSystem
 import SwiftUI
 import UIKit
 
-/// Figma `Screen-Photo-Review` (figma-analysis §6.11): back + "사진 확인" nav, a
-/// `radius-xl` photo card, a centered caption, and stacked primary identify /
-/// secondary retake actions.
+/// Figma `Screen-Photo-Review`: the selected photo keeps the reference crop and
+/// the state exposes only the identify and retake decisions shown on the board.
 extension CameraActionView {
     var photoReviewSurface: some View {
         VStack(spacing: 0) {
             reviewNavigationBar
             ScrollView {
-                VStack(spacing: PlanteriorSpacing.large) {
-                    reviewPhotoCard
-                    Text("이 사진으로 식물을 식별할까요?")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("capture.review.caption")
+                VStack(spacing: 0) {
+                    reviewPhotoRegion
                     if let errorMessage {
                         Text(errorMessage)
                             .font(PlanteriorTypography.caption)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(PlanteriorPalette.warning.color)
+                            .padding(.top, PlanteriorSpacing.small)
                             .accessibilityIdentifier("photo.error")
                     }
                 }
-                .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.vertical, PlanteriorSpacing.large)
+                .frame(maxWidth: .infinity)
+                .padding(.top, sizeCategory.isAccessibilityCategory ? 16 : 84)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 reviewActions
             }
         }
-        .background(PlanteriorPalette.canvas.color)
+        .padding(.top, 48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PlanteriorPalette.canvas.color.ignoresSafeArea())
+        .ignoresSafeArea(edges: .top)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture.photo-review")
     }
@@ -62,82 +60,124 @@ extension CameraActionView {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, PlanteriorSpacing.small)
+        .padding(.horizontal, PlanteriorSpacing.large)
         .frame(height: PlanteriorControl.navigationBarHeight)
-        .background(PlanteriorPalette.surface.color)
+        .background(PlanteriorPalette.canvas.color)
     }
 
-    /// Renders the photo the user actually chose. The DEBUG fixture path feeds
-    /// the same `draft`, so QA and production render one code path.
-    @ViewBuilder
-    private var reviewPhotoCard: some View {
-        if let draft, let image = UIImage(data: draft.data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: sizeCategory.isAccessibilityCategory ? 232 : 420)
-                .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-                .accessibilityIdentifier("photo.review")
-                .accessibilityLabel("촬영한 식물 사진")
-        } else {
-            Image(.capturePhoto)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: sizeCategory.isAccessibilityCategory ? 232 : 420)
-                .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-                .accessibilityIdentifier("photo.review")
-                .accessibilityLabel("촬영한 식물 사진")
+    private var reviewPhotoRegion: some View {
+        let contentHeight: CGFloat = sizeCategory.isAccessibilityCategory ? 232 : 420
+        let regionHeight: CGFloat = sizeCategory.isAccessibilityCategory ? 256 : 444
+        return ZStack(alignment: .top) {
+            reviewPhoto(contentHeight: contentHeight)
+            Text("식물의 초점이 맞고 잎이 선명한지 확인해주세요")
+                .font(PlanteriorTypography.caption)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .multilineTextAlignment(.center)
+                .padding(.top, contentHeight + 10)
+                .accessibilityIdentifier("capture.review.caption")
         }
+        .frame(width: 386, height: regionHeight, alignment: .top)
     }
 
-    /// §6.11 stacks the primary identify action above the secondary retake, both
-    /// 52pt tall. Direct registration stays reachable as a tertiary text action
-    /// so identification is never the only way forward.
+    @ViewBuilder
+    private func reviewPhoto(contentHeight: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            if usesFigmaPhotoFixture, !sizeCategory.isAccessibilityCategory {
+                Image(.capturePhoto)
+                    .resizable()
+                    .frame(width: 386, height: 444)
+                    .accessibilityIdentifier("photo.review")
+                    .accessibilityLabel("촬영한 식물 사진")
+            } else if let draft, let image = UIImage(data: draft.data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 362, height: contentHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("photo.review")
+                    .accessibilityLabel("촬영한 식물 사진")
+            } else {
+                Image(.capturePhoto)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 362, height: contentHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("photo.review")
+                    .accessibilityLabel("촬영한 식물 사진")
+            }
+            Color.clear
+                .frame(width: 362, height: contentHeight)
+                .padding(.top, 8)
+                .accessibilityElement()
+                .accessibilityLabel("사진 표시 영역")
+                .accessibilityIdentifier("capture.review.content")
+        }
+        .frame(width: 386, height: contentHeight + 8, alignment: .top)
+    }
+
     private var reviewActions: some View {
-        VStack(spacing: PlanteriorSpacing.medium) {
-            PlanteriorPrimaryButton("🌿 이 사진으로 식별하기") {
+        VStack(spacing: 14) {
+            reviewActionButton(
+                "이 사진으로 식별하기",
+                primary: true,
+                identifier: "photo.acknowledge"
+            ) {
                 showsAcknowledgement = true
             }
-            .accessibilityIdentifier("photo.acknowledge")
-            PlanteriorSecondaryButton("다시 촬영") {
+            reviewActionButton(
+                "다시 촬영",
+                primary: false,
+                identifier: "photo.retake"
+            ) {
                 discardDraft()
             }
-            .accessibilityIdentifier("photo.retake")
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: PlanteriorSpacing.large) {
-                    replacePhotoButton
-                    manualRegistrationButton
-                }
-                VStack(spacing: PlanteriorSpacing.extraSmall) {
-                    replacePhotoButton
-                    manualRegistrationButton
-                }
-            }
-            .font(PlanteriorTypography.caption)
-            .foregroundStyle(PlanteriorPalette.accent.color)
         }
-        .padding(.horizontal, PlanteriorSpacing.large)
+        .padding(.horizontal, PlanteriorSpacing.huge)
         .padding(.bottom, PlanteriorSpacing.large)
         .background(PlanteriorPalette.canvas.color)
     }
 
-    private var replacePhotoButton: some View {
-        Button("사진 다시 선택") {
-            showsLibrary = true
+    private func reviewActionButton(
+        _ title: String,
+        primary: Bool,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: PlanteriorSpacing.small) {
+                if primary {
+                    Image(systemName: "sparkles")
+                        .accessibilityHidden(true)
+                }
+                Text(title)
+            }
+            .font(PlanteriorTypography.body.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
         }
-        .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
-        .contentShape(Rectangle())
-        .accessibilityIdentifier("photo.replace")
-    }
-
-    private var manualRegistrationButton: some View {
-        Button("직접 등록하기") {
-            manualRegistration()
+        .buttonStyle(.plain)
+        .foregroundStyle(
+            primary
+                ? PlanteriorPalette.textOnAccent.color
+                : PlanteriorPalette.accent.color
+        )
+        .background(
+            primary
+                ? PlanteriorPalette.accent.color
+                : PlanteriorPalette.canvas.color
+        )
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
+        .overlay {
+            if !primary {
+                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
+                    .stroke(
+                        PlanteriorPalette.accent.color,
+                        lineWidth: PlanteriorControl.hairline
+                    )
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: PlanteriorControl.minimumTarget)
-        .contentShape(Rectangle())
-        .accessibilityIdentifier("photo.manual")
+        .accessibilityIdentifier(identifier)
     }
 }

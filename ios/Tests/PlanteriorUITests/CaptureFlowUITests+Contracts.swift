@@ -75,6 +75,9 @@ extension CaptureFlowUITests {
             app.scrollViews["plant.detail.screen"].waitForExistence(timeout: 10),
             "duplicate recovery must route to the exact existing PlantCare detail"
         )
-        XCTAssertEqual(app.staticTexts["plant.detail.title"].label, "몬스테라 델리오사")
+        XCTAssertTrue(
+            app.staticTexts["몬스테라 델리오사"].waitForExistence(timeout: 5),
+            "duplicate recovery must show the exact existing plant title"
+        )
     }
 }

@@ -9,20 +9,23 @@ extension IdentificationFlowView {
             resultNavigationBar
             ScrollView {
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                    resultHero
                     if let selected = selectedCandidate ?? candidates.items.first {
-                        resultSummaryCard(selected)
+                        compositeResultCard(selected)
                     }
                     alternatesSection(candidates)
                 }
-                .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.vertical, PlanteriorSpacing.large)
+                .padding(.horizontal, PlanteriorSpacing.extraLarge)
+                .padding(.top, 38)
+                .padding(.bottom, PlanteriorSpacing.large)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 resultActions(candidates)
             }
         }
-        .background(PlanteriorPalette.canvas.color)
+        .padding(.top, 48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PlanteriorPalette.canvas.color.ignoresSafeArea())
+        .ignoresSafeArea(edges: .top)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture.identification-result")
     }
@@ -51,20 +54,45 @@ extension IdentificationFlowView {
                 Spacer()
             }
         }
-        .padding(.horizontal, PlanteriorSpacing.small)
+        .padding(.horizontal, PlanteriorSpacing.large)
         .frame(height: PlanteriorControl.navigationBarHeight)
+        .background(PlanteriorPalette.canvas.color)
+    }
+
+    private func compositeResultCard(_ candidate: IdentificationCandidate) -> some View {
+        VStack(spacing: 0) {
+            resultHero
+            resultSummary(candidate)
+        }
+        .frame(maxWidth: .infinity)
         .background(PlanteriorPalette.surface.color)
+        .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+        .overlay {
+            RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge)
+                .stroke(
+                    PlanteriorPalette.border.color,
+                    lineWidth: PlanteriorControl.hairline
+                )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("capture.result.card")
     }
 
     @ViewBuilder
     private var resultHero: some View {
-        let height: CGFloat = sizeCategory.isAccessibilityCategory ? 140 : 220
-        if let data = submittedPhoto, let image = UIImage(data: data) {
+        let height: CGFloat = sizeCategory.isAccessibilityCategory ? 140 : 160
+        if usesFigmaPhotoFixture, !sizeCategory.isAccessibilityCategory {
+            Image(.capturePreview)
+                .resizable()
+                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+                .accessibilityIdentifier("capture.result.hero")
+                .accessibilityLabel("식별한 식물 사진")
+        } else if let data = submittedPhoto, let image = UIImage(data: data) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
-                .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+                .clipped()
                 .accessibilityIdentifier("capture.result.hero")
                 .accessibilityLabel("식별한 식물 사진")
         } else {
@@ -72,47 +100,56 @@ extension IdentificationFlowView {
                 .resizable()
                 .scaledToFill()
                 .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
-                .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+                .clipped()
                 .accessibilityIdentifier("capture.result.hero")
                 .accessibilityLabel("식별한 식물 사진")
         }
     }
 
-    private func resultSummaryCard(_ candidate: IdentificationCandidate) -> some View {
-        PlanteriorCard {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        confidencePill(candidate)
-                        Spacer()
-                        analysisCompleteLabel
-                    }
-                    VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                        confidencePill(candidate)
-                        analysisCompleteLabel
-                    }
+    private func resultSummary(_ candidate: IdentificationCandidate) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    confidencePill(candidate)
+                    Spacer()
+                    analysisCompleteLabel
                 }
-                Text(candidate.species.koreanName)
-                    .font(PlanteriorTypography.pageTitle)
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    .accessibilityIdentifier("capture.result.species")
-                Text(candidate.species.binomial)
-                    .font(PlanteriorTypography.supporting.italic())
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .accessibilityIdentifier("capture.result.binomial")
-                Text(candidate.species.summary)
-                    .font(PlanteriorTypography.supporting)
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("capture.result.summary")
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                    confidencePill(candidate)
+                    analysisCompleteLabel
+                }
             }
+            Text(candidate.species.koreanName)
+                .font(PlanteriorTypography.pageTitle)
+                .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                .padding(.top, PlanteriorSpacing.small)
+                .accessibilityIdentifier("capture.result.species")
+            Text(candidate.species.binomial)
+                .font(PlanteriorTypography.supporting.italic())
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .accessibilityIdentifier("capture.result.binomial")
+            Text(candidate.species.summary)
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, PlanteriorSpacing.medium)
+                .accessibilityIdentifier("capture.result.summary")
         }
+        .padding(.horizontal, PlanteriorSpacing.extraLarge)
+        .padding(.top, PlanteriorSpacing.extraLarge)
+        .padding(.bottom, 18)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: sizeCategory.isAccessibilityCategory ? nil : 166,
+            alignment: .topLeading
+        )
+        .background(PlanteriorPalette.surface.color)
     }
 
     private func confidencePill(_ candidate: IdentificationCandidate) -> some View {
         HStack(spacing: PlanteriorSpacing.extraSmall) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(PlanteriorTypography.caption)
+            Image(systemName: "checkmark")
+                .font(PlanteriorTypography.caption.weight(.bold))
                 .accessibilityHidden(true)
             Text("신뢰도 \(candidate.confidencePercentage)%")
                 .font(PlanteriorTypography.microLabel)
@@ -122,7 +159,7 @@ extension IdentificationFlowView {
         .foregroundStyle(PlanteriorPalette.accent.color)
         .padding(.horizontal, PlanteriorSpacing.medium)
         .padding(.vertical, PlanteriorSpacing.extraSmall)
-        .background(PlanteriorPalette.accentSurface.color)
+        .background(PlanteriorPalette.successSurface.color)
         .clipShape(Capsule())
         .accessibilityElement()
         .accessibilityLabel("신뢰도 \(candidate.confidencePercentage)%")
@@ -133,14 +170,16 @@ extension IdentificationFlowView {
     private func alternatesSection(_ candidates: IdentificationCandidates) -> some View {
         let alternates = Array(candidates.items.enumerated()).dropFirst()
         if !alternates.isEmpty {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                 Text("다른 후보")
                     .font(PlanteriorTypography.sectionTitle)
                     .foregroundStyle(PlanteriorPalette.textPrimary.color)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("capture.result.alternates.header")
-                ForEach(alternates, id: \.offset) { index, candidate in
-                    alternateRow(index: index, candidate: candidate)
+                VStack(spacing: 10) {
+                    ForEach(alternates, id: \.offset) { index, candidate in
+                        alternateRow(index: index, candidate: candidate)
+                    }
                 }
             }
         }

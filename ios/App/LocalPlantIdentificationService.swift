@@ -16,7 +16,7 @@ struct LocalPlantIdentificationService: PlantIdentificationService {
             let candidates = ids.enumerated().map {
                 IdentificationCandidate(
                     plantID: $0.element,
-                    confidence: 0.92 - Double($0.offset) * 0.12
+                    confidence: [0.95, 0.72, 0.45][$0.offset]
                 )
             }
             continuation.yield(

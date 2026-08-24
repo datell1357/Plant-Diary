@@ -29,14 +29,17 @@ extension CameraActionView {
     var cameraSurface: some View {
         VStack(spacing: 0) {
             cameraTopBar
-            Spacer(minLength: PlanteriorSpacing.large)
+            Spacer()
+                .frame(height: 161)
             cameraViewport
-            Spacer(minLength: PlanteriorSpacing.large)
+            Spacer(minLength: 0)
             cameraErrorRegion
             cameraControlRow
         }
+        .padding(.top, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Self.cameraBackdrop.ignoresSafeArea())
+        .ignoresSafeArea(edges: .top)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture.camera")
     }
@@ -63,42 +66,43 @@ extension CameraActionView {
             }
         }
         .padding(.horizontal, PlanteriorSpacing.large)
-        .padding(.top, PlanteriorSpacing.small)
+        .frame(height: PlanteriorControl.navigationBarHeight)
     }
 
-    /// The Simulator has no camera device, so DEBUG renders the deterministic
-    /// `FigmaCaptureCameraSimulation` fixture in the viewfinder. Production
-    /// keeps the live `AVCaptureVideoPreviewLayer` path through
-    /// `SystemCameraPicker`, which the shutter presents.
+    /// The Simulator uses a deterministic viewfinder fixture. The shutter and
+    /// flash affordance still enter the native capture pathway in production.
     private var cameraViewport: some View {
         ZStack {
             Image(.captureCameraSimulation)
                 .resizable()
                 .scaledToFill()
-                .frame(width: Self.viewportWidth, height: Self.viewportWidth * 4 / 3)
+                .frame(width: Self.viewportWidth, height: Self.viewportWidth)
                 .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
                 .accessibilityIdentifier("capture.viewport")
                 .accessibilityLabel("카메라 미리보기")
             focusReticle
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge)
+        .frame(width: Self.viewportWidth, height: Self.viewportWidth)
+    }
+
+    private var focusReticle: some View {
+        ZStack {
+            CameraCornerReticle()
+                .stroke(
+                    PlanteriorPalette.accent.color,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                )
+            Circle()
                 .stroke(
                     PlanteriorPalette.textOnAccent.color.opacity(0.9),
                     lineWidth: PlanteriorControl.hairline * 2
                 )
-                .frame(width: Self.viewportWidth, height: Self.viewportWidth * 4 / 3)
+                .frame(width: 160, height: 160)
         }
-    }
-
-    private var focusReticle: some View {
-        Circle()
-            .stroke(
-                PlanteriorPalette.textOnAccent.color.opacity(0.85),
-                lineWidth: PlanteriorControl.hairline * 2
-            )
-            .frame(width: 96, height: 96)
-            .accessibilityHidden(true)
+        .frame(width: 240, height: 240)
+        .accessibilityElement()
+        .accessibilityLabel("촬영 안내 프레임")
+        .accessibilityIdentifier("capture.reticle")
     }
 
     @ViewBuilder
@@ -131,10 +135,11 @@ extension CameraActionView {
             Spacer()
             shutterControl
             Spacer()
-            switchControl
+            flashControl
         }
-        .padding(.horizontal, PlanteriorSpacing.large)
-        .padding(.bottom, PlanteriorSpacing.section)
+        .frame(height: Self.shutterRingDiameter)
+        .padding(.horizontal, PlanteriorSpacing.extraLarge)
+        .padding(.bottom, PlanteriorSpacing.large)
     }
 
     private var shutterControl: some View {
@@ -157,25 +162,28 @@ extension CameraActionView {
         .accessibilityIdentifier("capture.shutter")
     }
 
-    private var switchControl: some View {
+    private var flashControl: some View {
         Button {
             requestCamera()
         } label: {
-            captureControlLabel(
-                systemImage: "arrow.triangle.2.circlepath",
-                title: "카메라 전환",
-                labelID: "capture.switch.label"
+            CameraControlLabel(
+                systemImage: "bolt.fill",
+                title: "플래시",
+                labelID: "capture.flash.label"
             )
         }
-        .accessibilityLabel("카메라 전환")
-        .accessibilityIdentifier("capture.switch")
+        .accessibilityLabel("플래시")
+        .accessibilityIdentifier("capture.flash")
     }
 
-    func captureControlLabel(
-        systemImage: String,
-        title: String,
-        labelID: String
-    ) -> some View {
+}
+
+struct CameraControlLabel: View {
+    let systemImage: String
+    let title: String
+    let labelID: String
+
+    var body: some View {
         VStack(spacing: PlanteriorSpacing.extraSmall) {
             Image(systemName: systemImage)
                 .font(.system(size: 22))
@@ -184,11 +192,32 @@ extension CameraActionView {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 80)
                 .accessibilityIdentifier(labelID)
         }
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-        .frame(width: 120)
+        .frame(width: 88)
         .frame(minHeight: PlanteriorControl.minimumTarget)
+    }
+}
+
+private struct CameraCornerReticle: Shape {
+    func path(in rect: CGRect) -> Path {
+        let arm: CGFloat = 44
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + arm))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + arm, y: rect.minY))
+        path.move(to: CGPoint(x: rect.maxX - arm, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + arm))
+        path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - arm))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - arm, y: rect.maxY))
+        path.move(to: CGPoint(x: rect.minX + arm, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - arm))
+        return path
     }
 }

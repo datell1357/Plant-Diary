@@ -25,19 +25,25 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["capture.review.title"].label, "사진 확인")
         XCTAssertTrue(app.buttons["capture.review.back"].exists)
         XCTAssertTrue(app.images["photo.review"].exists, "review renders the chosen photo")
+        let photoContent = app.otherElements["capture.review.content"]
+        XCTAssertTrue(photoContent.exists)
+        XCTAssertEqual(photoContent.frame.width, 362, accuracy: 2)
+        XCTAssertEqual(photoContent.frame.height, 420, accuracy: 2)
+        XCTAssertGreaterThan(photoContent.frame.minY, 190)
         XCTAssertTrue(app.staticTexts["capture.review.caption"].exists)
         let identify = app.buttons["photo.acknowledge"]
         let retake = app.buttons["photo.retake"]
         XCTAssertTrue(identify.exists)
-        XCTAssertEqual(identify.label, "🌿 이 사진으로 식별하기")
+        XCTAssertEqual(identify.label, "이 사진으로 식별하기")
         XCTAssertTrue(retake.exists)
         XCTAssertEqual(retake.label, "다시 촬영")
         XCTAssertLessThan(identify.frame.minY, retake.frame.minY)
         XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
-        XCTAssertTrue(app.buttons["photo.manual"].exists)
+        XCTAssertFalse(app.buttons["photo.replace"].exists)
+        XCTAssertFalse(app.buttons["photo.manual"].exists)
         assertMinimumTargets(
             app,
-            identifiers: ["photo.acknowledge", "photo.retake", "photo.replace", "photo.manual"]
+            identifiers: ["photo.acknowledge", "photo.retake"]
         )
     }
 
@@ -71,6 +77,9 @@ final class CaptureFlowUITests: XCTestCase {
         let progress = app.otherElements["capture.identifying.progress"]
         XCTAssertTrue(progress.exists, "progress must be a semantic element, not decoration")
         XCTAssertEqual(progress.value as? String, "분석 중")
+        XCTAssertEqual(progress.frame.width, 120, accuracy: 2)
+        XCTAssertEqual(progress.frame.height, 120, accuracy: 2)
+        XCTAssertEqual(progress.frame.minY, 200, accuracy: 3)
     }
 
     func testIdentifyingUnderReduceMotionKeepsStateWithoutSubstituteAnimation() {
@@ -98,10 +107,16 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["capture.result.title"].exists)
         XCTAssertEqual(app.staticTexts["capture.result.title"].label, "식별 결과")
-        XCTAssertTrue(app.images["capture.result.hero"].exists)
+        let hero = app.images["capture.result.hero"]
+        XCTAssertTrue(hero.exists)
+        XCTAssertEqual(hero.frame.height, 160, accuracy: 2)
+        let resultCard = app.otherElements["capture.result.card"]
+        XCTAssertTrue(resultCard.exists)
+        XCTAssertEqual(resultCard.frame.width, 362, accuracy: 2)
+        XCTAssertEqual(resultCard.frame.minY, hero.frame.minY, accuracy: 2)
         let confidence = app.descendants(matching: .any)["capture.result.confidence"]
         XCTAssertTrue(confidence.exists)
-        XCTAssertEqual(confidence.label, "신뢰도 92%", "the top candidate scores 0.92")
+        XCTAssertEqual(confidence.label, "신뢰도 95%", "the top candidate matches the fixture")
         XCTAssertTrue(app.staticTexts["capture.result.species"].exists)
         XCTAssertTrue(app.staticTexts["capture.result.binomial"].exists)
         XCTAssertTrue(app.staticTexts["capture.result.alternates.header"].exists)
@@ -109,15 +124,17 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["identification.candidate.1"].exists)
         XCTAssertEqual(
             app.buttons["identification.candidate.1"].label,
-            "몬스테라 아단소니, 신뢰도 80%"
+            "몬스테라 아단소니, 신뢰도 72%"
         )
         XCTAssertEqual(
             app.buttons["identification.candidate.2"].label,
-            "필로덴드론, 신뢰도 68%"
+            "필로덴드론, 신뢰도 45%"
         )
         let register = app.buttons["capture.result.register"]
         XCTAssertTrue(register.exists)
         XCTAssertEqual(register.label, "이 식물로 등록하기")
+        XCTAssertTrue(app.buttons["identification.manual"].exists)
+        XCTAssertTrue(app.buttons["identification.manual-registration"].exists)
         assertMinimumTargets(app, identifiers: ["capture.result.register"])
     }
 

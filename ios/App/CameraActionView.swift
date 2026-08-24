@@ -79,11 +79,19 @@ struct CameraActionView: View {
         }
     }
 
+    var usesFigmaPhotoFixture: Bool {
+        #if DEBUG
+            ProcessInfo.processInfo.environment["QA_PHOTO_FIXTURE"] == "valid"
+        #else
+            false
+        #endif
+    }
+
     var libraryControl: some View {
         Button {
             showsLibrary = true
         } label: {
-            captureControlLabel(
+            CameraControlLabel(
                 systemImage: "photo.on.rectangle",
                 title: "사진 보관함",
                 labelID: "capture.library.label"

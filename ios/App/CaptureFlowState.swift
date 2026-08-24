@@ -28,7 +28,7 @@ struct CaptureSpecies: Equatable {
             CaptureSpecies(
                 koreanName: "몬스테라 델리오사",
                 binomial: "Monstera deliciosa",
-                summary: "밝은 간접광을 좋아하고 겉흙이 마르면 물을 주세요. 습도가 높은 환경에서 잘 자라며 잎이 크게 자랍니다."
+                summary: "넓은 잎에 독특한 구멍이 특징인 열대 관엽식물이에요. 간접광을 좋아하며 겉흙이 마르면 물을 듬뿍 주세요."
             )
         case "local-candidate-2":
             CaptureSpecies(

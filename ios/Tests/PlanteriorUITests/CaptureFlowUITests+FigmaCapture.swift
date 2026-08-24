@@ -79,10 +79,18 @@ extension CaptureFlowUITests {
         XCTAssertEqual(hint.label, "식물을 초점에 맞춰주세요")
         let viewport = app.images["capture.viewport"]
         XCTAssertTrue(viewport.exists, "the viewfinder must render a real image layer")
-        XCTAssertGreaterThanOrEqual(viewport.frame.width.rounded(), 300)
-        XCTAssertTrue(app.buttons["capture.library"].exists)
-        XCTAssertEqual(app.buttons["capture.library"].label, "사진 보관함")
-        XCTAssertTrue(app.buttons["capture.switch"].exists)
+        XCTAssertEqual(viewport.frame.width, 320, accuracy: 2)
+        XCTAssertEqual(viewport.frame.height, 320, accuracy: 2)
+        let reticle = app.otherElements["capture.reticle"]
+        XCTAssertTrue(reticle.exists)
+        XCTAssertEqual(reticle.frame.width, 240, accuracy: 2)
+        XCTAssertEqual(reticle.frame.height, 240, accuracy: 2)
+        let library = app.buttons["capture.library"]
+        XCTAssertTrue(library.exists)
+        XCTAssertEqual(library.label, "사진 보관함")
+        let flash = app.buttons["capture.flash"]
+        XCTAssertTrue(flash.exists)
+        XCTAssertFalse(app.buttons["capture.switch"].exists)
         let shutter = app.buttons["capture.shutter"]
         XCTAssertTrue(shutter.exists)
         XCTAssertEqual(shutter.label, "촬영")
@@ -91,10 +99,12 @@ extension CaptureFlowUITests {
             64,
             "§6.11 shutter is a 72pt circle inside an 80pt ring"
         )
+        XCTAssertLessThan(library.frame.midX, shutter.frame.midX)
+        XCTAssertLessThan(shutter.frame.midX, flash.frame.midX)
         XCTAssertFalse(app.staticTexts["capture.result.species"].exists)
         assertMinimumTargets(
             app,
-            identifiers: ["capture.close", "capture.library", "capture.switch", "capture.shutter"]
+            identifiers: ["capture.close", "capture.library", "capture.shutter", "capture.flash"]
         )
     }
 
@@ -109,7 +119,7 @@ extension CaptureFlowUITests {
         launchCapture(app)
         openCamera(app)
 
-        for identifier in ["capture.library", "capture.switch"] {
+        for identifier in ["capture.library", "capture.flash"] {
             let control = app.buttons[identifier]
             XCTAssertTrue(control.waitForExistence(timeout: 5))
             XCTAssertGreaterThanOrEqual(control.frame.width, 88)
@@ -117,11 +127,13 @@ extension CaptureFlowUITests {
             XCTAssertFalse(control.label.contains("\u{2026}"))
         }
         let libraryLabel = app.staticTexts["capture.library.label"]
-        let switchLabel = app.staticTexts["capture.switch.label"]
+        let flashLabel = app.staticTexts["capture.flash.label"]
         XCTAssertTrue(libraryLabel.exists)
-        XCTAssertTrue(switchLabel.exists)
-        XCTAssertGreaterThanOrEqual(libraryLabel.frame.width, 80)
-        XCTAssertGreaterThanOrEqual(switchLabel.frame.width, 80)
+        XCTAssertTrue(flashLabel.exists)
+        XCTAssertEqual(libraryLabel.label, "사진 보관함")
+        XCTAssertEqual(flashLabel.label, "플래시")
+        XCTAssertTrue(app.buttons["capture.library"].frame.contains(libraryLabel.frame))
+        XCTAssertTrue(app.buttons["capture.flash"].frame.contains(flashLabel.frame))
     }
 
     func testKoreanAX5ReviewAndResultControlsReflowAndRemainReachable() async {
@@ -137,17 +149,15 @@ extension CaptureFlowUITests {
 
         let photo = app.images["photo.review"]
         XCTAssertTrue(photo.waitForExistence(timeout: 10))
-        let replace = app.buttons["photo.replace"]
-        let manual = app.buttons["photo.manual"]
-        XCTAssertGreaterThanOrEqual(replace.frame.height.rounded(), 44)
-        XCTAssertGreaterThanOrEqual(manual.frame.height.rounded(), 44)
-        XCTAssertGreaterThanOrEqual(
-            manual.frame.minY,
-            replace.frame.maxY,
-            "AX5 tertiary actions must stack instead of becoming narrow columns"
-        )
+        let identify = app.buttons["photo.acknowledge"]
+        let retake = app.buttons["photo.retake"]
+        XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(retake.frame.height.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(retake.frame.minY, identify.frame.maxY)
+        XCTAssertFalse(app.buttons["photo.replace"].exists)
+        XCTAssertFalse(app.buttons["photo.manual"].exists)
 
-        app.buttons["photo.acknowledge"].tap()
+        identify.tap()
         app.alerts["사진 처리 안내"].buttons["동의하고 계속"].tap()
         XCTAssertTrue(
             app.otherElements["capture.identification-result"].waitForExistence(timeout: 15)
