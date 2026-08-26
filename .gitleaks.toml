@@ -24,6 +24,16 @@ regexTarget = "secret"
 paths = ['''(?:^|/)functions/src/mini-home\.emulator-spec\.ts$''']
 regexes = ['''^(?:legacy-receipt-0001|inventory-fixture-0001)$''']
 
+# Identification lease owners are deterministic test identifiers, not credentials.
+# Keep the exemption path- and value-bound so production operation keys remain scanned.
+[[allowlists]]
+description = "Deterministic identification lease operation fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)functions/src/plant-identification-runtime\.test\.ts$''']
+regexes = ['''^operation_[AB]_12345678$''']
+
 # This is the exact stable HMAC output used to assert the Android/backend share contract,
 # not key material. Keep the exemption constrained to its test fixture and extracted value.
 [[allowlists]]

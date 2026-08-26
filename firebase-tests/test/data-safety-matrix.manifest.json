@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "invariants": [
+    {
+      "id": "analytics-wire-allowlist",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.test.ts",
+          "needle": "analytics contract enumerates the exact lifecycle vocabulary once"
+        },
+        {
+          "path": "core/model/src/test/kotlin/com/planterior/helper/core/model/AnalyticsModelsTest.kt",
+          "needle": "MINI_HOME_ACQUISITION_SOURCE_VIEWED"
+        },
+        {
+          "path": "docs/data-safety-matrix.md",
+          "needle": "ACCOUNT_DELETION_FAILED"
+        }
+      ]
+    },
+    {
+      "id": "analytics-wire-strict-fields",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.ts",
+          "needle": "analyticsEventInputSchema"
+        },
+        {
+          "path": "firebase-tests/test/data-safety-contract.test.cjs",
+          "needle": "closed contract"
+        }
+      ]
+    },
+    {
+      "id": "analytics-owner-derived",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.test.ts",
+          "needle": "bind Android ownerUid to Auth uid"
+        }
+      ]
+    },
+    {
+      "id": "analytics-server-timestamps-ttl",
+      "evidence": [
+        {
+          "path": "functions/src/firestore-analytics-store.ts",
+          "needle": "ANALYTICS_EVENT_TTL_MILLIS"
+        },
+        {
+          "path": "functions/src/analytics.emulator-spec.ts",
+          "needle": "expiresAt"
+        }
+      ]
+    },
+    {
+      "id": "analytics-forbidden-data",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/data-safety-contract.test.cjs",
+          "needle": "forbidden data classes"
+        }
+      ]
+    },
+    {
+      "id": "analytics-default-off",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.emulator-spec.ts",
+          "needle": "defaults off"
+        }
+      ]
+    },
+    {
+      "id": "analytics-exact-next-replay",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.emulator-spec.ts",
+          "needle": "exact-next generations"
+        }
+      ]
+    },
+    {
+      "id": "analytics-local-revoke-purge",
+      "evidence": [
+        {
+          "path": "app/src/test/kotlin/com/planterior/helper/analytics/AnalyticsConsentCoordinatorTest.kt",
+          "needle": "revoke disables and purges"
+        }
+      ]
+    },
+    {
+      "id": "analytics-revoke-race",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.emulator-spec.ts",
+          "needle": "versus revoke serializes"
+        }
+      ]
+    },
+    {
+      "id": "analytics-revoke-convergence",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.emulator-spec.ts",
+          "needle": "multiple pages"
+        }
+      ]
+    },
+    {
+      "id": "analytics-expiry-cleanup",
+      "evidence": [
+        {
+          "path": "functions/src/analytics.emulator-spec.ts",
+          "needle": "scheduled cleanup deletes"
+        }
+      ]
+    },
+    {
+      "id": "identification-terminal-retention",
+      "evidence": [
+        {
+          "path": "functions/src/identification-cleanup.emulator-spec.ts",
+          "needle": "committed orphan claim atomically fences exact-24h unlinked and legacy-missing records"
+        }
+      ]
+    },
+    {
+      "id": "identification-abandoned-retention",
+      "evidence": [
+        {
+          "path": "functions/src/identification-cleanup.test.ts",
+          "needle": "NONTERMINAL_HARD_DEADLINE"
+        }
+      ]
+    },
+    {
+      "id": "representative-media-retained",
+      "evidence": [
+        {
+          "path": "functions/src/identification-cleanup.emulator-spec.ts",
+          "needle": "preserves PLANT_PHOTO"
+        }
+      ]
+    },
+    {
+      "id": "location-revoke-atomic-cleanup",
+      "evidence": [
+        {
+          "path": "functions/src/weather.emulator-spec.ts",
+          "needle": "weather-location-revoke-provenance"
+        }
+      ]
+    },
+    {
+      "id": "weather-freshness-boundary",
+      "evidence": [
+        {
+          "path": "functions/src/weather-runtime.test.ts",
+          "needle": "freshness boundary"
+        }
+      ]
+    },
+    {
+      "id": "notification-claim-expiry",
+      "evidence": [
+        {
+          "path": "functions/src/watering-notifications.test.ts",
+          "needle": "expiring claim"
+        }
+      ]
+    },
+    {
+      "id": "share-expiry",
+      "evidence": [
+        {
+          "path": "functions/src/mini-home-share.emulator-spec.ts",
+          "needle": "MINI_HOME_SHARE_LIFETIME_MILLIS"
+        }
+      ]
+    },
+    {
+      "id": "share-owner-only-mutation",
+      "evidence": [
+        {
+          "path": "functions/src/mini-home-share.emulator-spec.ts",
+          "needle": "another-owner"
+        }
+      ]
+    },
+    {
+      "id": "share-public-data-minimized",
+      "evidence": [
+        {
+          "path": "functions/src/mini-home-share.test.ts",
+          "needle": "recursively omits private identity"
+        }
+      ]
+    },
+    {
+      "id": "sync-tombstone-shape",
+      "evidence": [
+        {
+          "path": "firestore.rules",
+          "needle": "state in ['ACTIVE', 'DELETED']"
+        }
+      ]
+    },
+    {
+      "id": "private-media-seal-convergence",
+      "evidence": [
+        {
+          "path": "functions/src/private-media-seal.test.ts",
+          "needle": "crash reclaim converge"
+        }
+      ]
+    },
+    {
+      "id": "account-deletion-lifecycle",
+      "evidence": [
+        {
+          "path": "functions/src/account-deletion-service.test.ts",
+          "needle": "seven-day request"
+        }
+      ]
+    },
+    {
+      "id": "owner-isolation-rules",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/security-rules.test.cjs",
+          "needle": "allows owner CRUD and denies unauthenticated and foreign users"
+        }
+      ]
+    },
+    {
+      "id": "analytics-direct-write-denial",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/analytics-rules.test.cjs",
+          "needle": "denies direct consent writes and all event access"
+        }
+      ]
+    },
+    {
+      "id": "identification-direct-write-denial",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/security-rules.test.cjs",
+          "needle": "identificationRequests"
+        }
+      ]
+    },
+    {
+      "id": "notification-token-direct-denial",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/todo17-security-rules.test.cjs",
+          "needle": "denies endpoint and token-owner records"
+        }
+      ]
+    },
+    {
+      "id": "operational-diagnostics-forbidden-data",
+      "evidence": [
+        {
+          "path": "functions/src/todo17-security-contract.test.ts",
+          "needle": "rejects endpoint diagnostics"
+        }
+      ]
+    },
+    {
+      "id": "retained-media-read-boundary",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/security-rules.test.cjs",
+          "needle": "identification original hard and terminal retention boundaries"
+        }
+      ]
+    },
+    {
+      "id": "app-check-boundary",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/functions-smoke.cjs",
+          "needle": "missingAppCheck.status"
+        }
+      ]
+    },
+    {
+      "id": "no-third-party-analytics-sdk",
+      "evidence": [
+        {
+          "path": "firebase-tests/test/data-safety-contract.test.cjs",
+          "needle": "no vendor SDK dependency"
+        }
+      ]
+    }
+  ]
+}

@@ -17,3 +17,5 @@ firebase-tests/node_modules/
 firebase-debug.log
 firestore-debug.log
 storage-debug.log
+functions/.env.local
+functions/.secret.local
