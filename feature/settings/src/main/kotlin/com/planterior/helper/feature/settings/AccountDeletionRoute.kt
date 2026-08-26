@@ -11,10 +11,16 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 fun AccountDeletionRoute(
     dependencies: AccountDeletionDependencies,
     onBack: () -> Unit,
+    analyticsDeletionGuard: AnalyticsDeletionGuard = dependencies.analyticsDeletionGuard,
 ) {
     val controller =
         viewModel<AccountDeletionController>(
-            factory = viewModelFactory { initializer { AccountDeletionController(dependencies) } }
+            factory =
+                viewModelFactory {
+                    initializer {
+                        AccountDeletionController(dependencies, analyticsDeletionGuard)
+                    }
+                }
         )
     val state by controller.state.collectAsState()
     AccountDeletionScreen(

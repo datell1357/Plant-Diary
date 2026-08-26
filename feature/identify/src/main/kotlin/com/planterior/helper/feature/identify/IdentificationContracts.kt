@@ -3,8 +3,10 @@ package com.planterior.helper.feature.identify
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.IdentificationRequestId
 import com.planterior.helper.core.model.PlantContentId
+import com.planterior.helper.core.model.ProductEventRecorder
 
 data class IdentificationCandidate(
     val publicContentId: PlantContentId,
@@ -77,41 +79,82 @@ class IdentificationController(
     private val requestId: IdentificationRequestId,
     private val onConfirmed: (ConfirmedIdentification) -> Unit,
     restoredState: IdentificationUiState = IdentificationUiState.Pending,
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
+    restoredResultAvailableRecorded: Boolean = restoredState is IdentificationUiState.Candidates,
+    restoredResolutionAccepted: Boolean = false,
+    restoredFailureRecorded: Boolean = false,
 ) {
     var state: IdentificationUiState by mutableStateOf(restoredState)
         private set
 
-    private var confirmed = false
+    private var resultAvailableRecorded = restoredResultAvailableRecorded
+    private var resolutionAccepted = restoredResolutionAccepted
+    private var failureRecorded = restoredFailureRecorded
 
     fun show(result: IdentificationResult) {
-        if (confirmed) return
-        state =
-            when (result) {
-                IdentificationResult.Pending -> IdentificationUiState.Pending
-                is IdentificationResult.Candidates ->
-                    IdentificationUiState.Candidates(result.candidates)
-                IdentificationResult.NoCandidates -> IdentificationUiState.NoCandidates
-                is IdentificationResult.Failed -> IdentificationUiState.Failed(result.reason)
-            }
+        if (resolutionAccepted) return
+        state = result.toUiState()
+        if (result is IdentificationResult.Candidates && !resultAvailableRecorded) {
+            resultAvailableRecorded = true
+            recordProductEvent(ClientProductEvent.IDENTIFICATION_RESULT_AVAILABLE)
+        }
+        if (result is IdentificationResult.Failed || result is IdentificationResult.NoCandidates) {
+            recordFailure()
+        }
+    }
+
+    fun showTransportFailure(reason: IdentificationFailureReason) {
+        if (resolutionAccepted) return
+        state = IdentificationUiState.Failed(reason)
+        recordFailure()
     }
 
     fun select(contentId: PlantContentId) {
-        if (confirmed) return
+        if (resolutionAccepted) return
         val candidates = state as? IdentificationUiState.Candidates ?: return
         if (candidates.candidates.none { it.publicContentId == contentId }) return
         state = candidates.copy(selectedId = contentId)
     }
 
     fun confirm(): Boolean {
-        if (confirmed) return false
+        if (resolutionAccepted) return false
         val candidates = state as? IdentificationUiState.Candidates ?: return false
         val selected =
             candidates.candidates.firstOrNull { it.publicContentId == candidates.selectedId }
                 ?: return false
-        confirmed = true
+        resolutionAccepted = true
         onConfirmed(ConfirmedIdentification(requestId, selected))
+        recordProductEvent(ClientProductEvent.IDENTIFICATION_RESULT_CONFIRMED)
         return true
     }
 
     fun snapshot(): IdentificationUiState = state
+
+    fun resultAvailableWasRecorded(): Boolean = resultAvailableRecorded
+
+    fun resolutionWasAccepted(): Boolean = resolutionAccepted
+
+    fun failureWasRecorded(): Boolean = failureRecorded
+
+    private fun recordFailure() {
+        if (failureRecorded) return
+        failureRecorded = true
+        recordProductEvent(ClientProductEvent.IDENTIFICATION_FAILED)
+    }
+
+    private fun recordProductEvent(event: ClientProductEvent) {
+        try {
+            productEventRecorder.record(event)
+        } catch (_: Exception) {
+            // Telemetry cannot alter identification state or confirmation.
+        }
+    }
 }
+
+private fun IdentificationResult.toUiState(): IdentificationUiState =
+    when (this) {
+        IdentificationResult.Pending -> IdentificationUiState.Pending
+        is IdentificationResult.Candidates -> IdentificationUiState.Candidates(candidates)
+        IdentificationResult.NoCandidates -> IdentificationUiState.NoCandidates
+        is IdentificationResult.Failed -> IdentificationUiState.Failed(reason)
+    }

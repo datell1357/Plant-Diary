@@ -79,6 +79,48 @@ class WeatherScreenTest {
     }
 
     @Test
+    fun `valid focused risk surface records one view while recomposition and list record none`() {
+        var state by mutableStateOf(ready(stale = false))
+        var views = 0
+        composeRule.setContent {
+            PlanteriorTheme {
+                WeatherScreen(
+                    state = state,
+                    focusedPlantId = "plant-a",
+                    onRiskAlertViewed = { views += 1 },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(1, views)
+
+        state = state.copy(refreshing = true)
+        composeRule.waitForIdle()
+        assertEquals(1, views)
+    }
+
+    @Test
+    fun `risk list and invalid focused risk surface never record a view`() {
+        var focusedPlantId by mutableStateOf<String?>(null)
+        var views = 0
+        composeRule.setContent {
+            PlanteriorTheme {
+                WeatherScreen(
+                    state = ready(stale = false),
+                    focusedPlantId = focusedPlantId,
+                    onRiskAlertViewed = { views += 1 },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals(0, views)
+
+        focusedPlantId = "missing-plant"
+        composeRule.waitForIdle()
+        assertEquals(0, views)
+    }
+
+    @Test
     fun `stale provider state keeps timestamp and refresh action without hiding risks`() {
         composeRule.setContent { PlanteriorTheme { WeatherScreen(state = ready(stale = true)) } }
         composeRule.onNodeWithTag(WeatherTestTags.STALE).assertIsDisplayed()

@@ -41,6 +41,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.component.PlanteriorScreenScaffold
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -76,6 +78,7 @@ fun WeatherRoute(
     onOpenCollection: () -> Unit = {},
     focusedPlantId: String? = null,
     clock: Clock = Clock.systemUTC(),
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val controller =
         viewModel<WeatherController>(
@@ -119,6 +122,13 @@ fun WeatherRoute(
         onSaveAlerts = controller::saveAlerts,
         onOpenCollection = onOpenCollection,
         focusedPlantId = focusedPlantId,
+        onRiskAlertViewed = {
+            try {
+                productEventRecorder.record(ClientProductEvent.WEATHER_RISK_ALERT_VIEWED)
+            } catch (_: Exception) {
+                // Telemetry cannot affect the visible weather surface.
+            }
+        },
     )
 }
 
@@ -141,7 +151,22 @@ fun WeatherScreen(
     onSaveAlerts: (Boolean, Map<String, Boolean>) -> Unit = { _, _ -> },
     onOpenCollection: () -> Unit = {},
     focusedPlantId: String? = null,
+    onRiskAlertViewed: () -> Unit = {},
 ) {
+    val ready = state as? WeatherUiState.Ready
+    val validFocusedRisk =
+        focusedPlantId != null &&
+            ready?.dashboard?.risks?.any { risk ->
+                risk.active && risk.plantId == focusedPlantId
+            } == true
+    var riskViewRecorded by
+        rememberSaveable(ready?.accountId, focusedPlantId) { mutableStateOf(false) }
+    LaunchedEffect(ready?.accountId, focusedPlantId, validFocusedRisk) {
+        if (validFocusedRisk && !riskViewRecorded) {
+            riskViewRecorded = true
+            onRiskAlertViewed()
+        }
+    }
     PlanteriorScreenScaffold(
         title = "날씨 관리",
         modifier = Modifier.testTag(WeatherTestTags.SCREEN),

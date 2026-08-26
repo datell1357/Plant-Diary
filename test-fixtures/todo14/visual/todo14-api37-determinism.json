@@ -1,11 +1,25 @@
 {
-  "contractVersion": 6,
+  "contractVersion": 7,
   "apiLevel": 37,
   "deviceProfile": "pixel_7",
   "renderer": "swiftshader_indirect",
   "independentlyWipedAvdRuns": 3,
+  "systemImageRevision": 6,
+  "systemImageBuildFingerprint": "google/sdk_gphone64_arm64/emu64a:17/CE2A.260420.019/15611780:userdebug/dev-keys",
+  "physicalDensityDpi": 420,
+  "fontScale": 1.0,
+  "locale": "ko-KR",
+  "animationScales": {
+    "window": 0.0,
+    "transition": 0.0,
+    "animator": 0.0
+  },
+  "sourceProvenance": {
+    "referenceCommit": "6efb7478984b6f6ba59448542787bde2c0bbea71",
+    "captureHarnessCommit": "768edfc66e060fa36434bac3ab730682a6f0294f"
+  },
   "evidenceDimensions": "1080x2400",
-  "visualEvidenceContractVersion": 2,
+  "visualEvidenceContractVersion": 3,
   "shell": "production-scaffold-and-bottom-navigation",
   "theme": "figma-light-only",
   "windowInsetsContract": "activity-enable-edge-to-edge",
@@ -51,9 +65,9 @@
     "asset-loaded:8:catalog-assets/api37-background/c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9.webp:c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9:96x64"
   ],
   "evidence": {
-    "shop": "196877f42eb10e6c29b9a5395a4b4890d5c5b10f79d22f4d283db4590582bfef",
-    "warehouse": "5d63ff77c6343a38897e52822a65cf618ac4f4485acccbc53ab6b527dd4ee817",
-    "itemDetail": "55ca1a83fe3f71b04d89d026f57c59ec286ac19832699bea70f0a6cac7ca9c3e",
-    "background": "9157f71c9fd4ee6157d2f95f7853b90205c1452ae5138ceb224439a3826787c2"
+    "shop": "8a4c38a0aefc6976c9cca1b165544b389f4043180ae8bd97c06336584bb8fc1f",
+    "warehouse": "998440007b40f0ab85e1a0fd3100fae1e1d7e22856aac3ec42f97f7a990bcfd3",
+    "itemDetail": "1d4c40e78c51f001750fa97018080c4838aa72debb29c4c63dfb3ee64e680da1",
+    "background": "fa3583a312b8f87e9c37bf4e71f36515d650e80b86e121abd5501b205901a241"
   }
 }

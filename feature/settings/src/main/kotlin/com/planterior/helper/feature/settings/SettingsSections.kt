@@ -12,13 +12,16 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -26,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.component.PlanteriorDestructiveButton
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.AnalyticsConsentState
 import com.planterior.helper.feature.auth.AuthProviderManagement
 import com.planterior.helper.feature.auth.AuthUiState
 import java.time.Instant
@@ -93,14 +97,48 @@ internal fun EnvironmentSettingsSection(state: SettingsUiState, actions: Setting
             "settings.os-location",
             actions.onOpenRegion,
         )
+        val locationConsent = state.locationConsentState
+        val locationConsentPending =
+            locationConsent is SettingsLocationConsentState.Loading ||
+                locationConsent is SettingsLocationConsentState.Enabling ||
+                locationConsent is SettingsLocationConsentState.Disabling
         SettingsSwitchRow(
-            "앱의 현재 위치 사용 동의",
-            state.appLocationConsentGranted,
-            { enabled ->
-                if (enabled) actions.onOpenRegion() else actions.onRevokeLocationConsent()
-            },
-            "settings.location-consent",
+            label = "앱의 현재 위치 사용 동의",
+            checked = locationConsent is SettingsLocationConsentState.Enabled,
+            onCheckedChange = actions.onLocationConsentChanged,
+            tag = "settings.location-consent",
+            enabled = !locationConsentPending,
+            description =
+                when (locationConsent) {
+                    SettingsLocationConsentState.Loading -> "불러오는 중"
+                    is SettingsLocationConsentState.Enabled -> "켜짐"
+                    SettingsLocationConsentState.Enabling -> "켜는 중"
+                    SettingsLocationConsentState.Disabled,
+                    SettingsLocationConsentState.FailedOff -> "꺼짐"
+                    SettingsLocationConsentState.Disabling -> "끄는 중"
+                },
         )
+        if (locationConsent is SettingsLocationConsentState.FailedOff) {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                        .testTag("settings.location-consent-failure"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "현재 위치 사용 중지를 확인하지 못했어요.",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = actions.onRetryLocationConsent,
+                    modifier = Modifier.testTag("settings.location-consent-retry"),
+                ) {
+                    Text("다시 시도")
+                }
+            }
+        }
         SettingsProse(
             text = SETTINGS_LOCATION_DISCLOSURE,
             style = MaterialTheme.typography.bodyMedium,
@@ -111,8 +149,58 @@ internal fun EnvironmentSettingsSection(state: SettingsUiState, actions: Setting
 }
 
 @Composable
-internal fun DataSettingsSection(state: SettingsUiState) {
+internal fun DataSettingsSection(state: SettingsUiState, actions: SettingsActions) {
     SettingsSection("데이터 관리", "settings.section.data") {
+        val analytics = state.analyticsConsentState
+        val checked = analytics is AnalyticsConsentState.Enabled
+        val pending =
+            analytics is AnalyticsConsentState.Loading ||
+                analytics is AnalyticsConsentState.Enabling ||
+                analytics is AnalyticsConsentState.Disabling
+        SettingsSwitchRow(
+            label = "사용 통계 보내기",
+            checked = checked,
+            onCheckedChange = actions.onAnalyticsConsentChanged,
+            tag = "settings.analytics-consent",
+            enabled = !pending,
+            description =
+                when (analytics) {
+                    AnalyticsConsentState.Loading -> "불러오는 중"
+                    AnalyticsConsentState.Enabling -> "켜는 중"
+                    AnalyticsConsentState.Disabling -> "끄는 중"
+                    is AnalyticsConsentState.Enabled -> "켜짐"
+                    AnalyticsConsentState.Disabled,
+                    AnalyticsConsentState.FailedOff -> "꺼짐"
+                },
+        )
+        SettingsProse(
+            text =
+                "기능 사용·완료 이벤트 전송은 선택 사항이에요. 동의·철회·계정 삭제 처리를 위해 계정별로 관리하며 35일간 보관해요. 이메일·프로필 값, 식물 이름·메모, 사진, 위치, 토큰·URL은 보내지 않아요.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("settings.analytics-disclosure"),
+        )
+        if (analytics is AnalyticsConsentState.FailedOff) {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .semantics { liveRegion = LiveRegionMode.Polite }
+                        .testTag("settings.analytics-failure"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "사용 통계 설정을 확인하지 못했어요.",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    onClick = actions.onRetryAnalyticsConsent,
+                    modifier = Modifier.testTag("settings.analytics-retry"),
+                ) {
+                    Text("다시 시도")
+                }
+            }
+        }
         SettingsValueRow(
             "마지막 동기화",
             state.lastSyncAt.displayTime(),
@@ -203,6 +291,8 @@ private fun SettingsSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     tag: String,
+    enabled: Boolean = true,
+    description: String = if (checked) "켜짐" else "꺼짐",
 ) {
     Row(
         modifier =
@@ -210,12 +300,11 @@ private fun SettingsSwitchRow(
                 .sizeIn(minHeight = 48.dp)
                 .toggleable(
                     value = checked,
+                    enabled = enabled,
                     role = Role.Switch,
                     onValueChange = onCheckedChange,
                 )
-                .semantics(mergeDescendants = true) {
-                    stateDescription = if (checked) "켜짐" else "꺼짐"
-                }
+                .semantics(mergeDescendants = true) { stateDescription = description }
                 .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PlanteriorTheme.spacing.medium),

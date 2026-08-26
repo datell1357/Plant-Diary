@@ -2,8 +2,10 @@ package com.planterior.helper.feature.watering
 
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -110,6 +112,56 @@ class WateringConfirmationControllerTest {
     }
 
     @Test
+    fun `completed and idempotent completed watering records once across restoration`() = runTest {
+        val events = mutableListOf<ClientProductEvent>()
+        val handle = SavedStateHandle()
+        val repository =
+            FakeRepository(
+                load = WateringLoad.Found(snapshot()),
+                results = ArrayDeque(listOf(WateringCompletionResult.Completed(receipt()))),
+            )
+        val recorder = ProductEventRecorder(events::add)
+        val original = controller(repository, handle, recorder)
+        original.start()
+
+        original.confirm()
+        original.confirm()
+        val restored = controller(repository, handle.snapshot(), recorder)
+        restored.start()
+
+        assertEquals(listOf(ClientProductEvent.WATERING_COMPLETED), events)
+        assertEquals(1, repository.requests.size)
+    }
+
+    @Test
+    fun `failed watering emits nothing and completed retry emits once`() = runTest {
+        val events = mutableListOf<ClientProductEvent>()
+        val repository =
+            FakeRepository(
+                load = WateringLoad.Found(snapshot()),
+                results =
+                    ArrayDeque(
+                        listOf(
+                            WateringCompletionResult.Failed(
+                                WateringCompletionFailure.REMOTE_WRITE_FAILED
+                            ),
+                            WateringCompletionResult.Completed(receipt()),
+                        )
+                    ),
+            )
+        val controller =
+            controller(repository, SavedStateHandle(), ProductEventRecorder(events::add))
+        controller.start()
+
+        controller.confirm()
+        assertTrue(events.isEmpty())
+        controller.confirm()
+        controller.confirm()
+
+        assertEquals(listOf(ClientProductEvent.WATERING_COMPLETED), events)
+    }
+
+    @Test
     fun `missing public interval is unavailable and cannot submit`() = runTest {
         val repository =
             FakeRepository(load = WateringLoad.Found(snapshot().copy(publicIntervalDays = null)))
@@ -209,7 +261,11 @@ class WateringConfirmationControllerTest {
             )
         }
 
-    private fun controller(repository: WateringRepository, handle: SavedStateHandle) =
+    private fun controller(
+        repository: WateringRepository,
+        handle: SavedStateHandle,
+        recorder: ProductEventRecorder = ProductEventRecorder {},
+    ) =
         WateringConfirmationController(
             plantId = PersonalPlantId("plant-a"),
             repository = repository,
@@ -220,6 +276,7 @@ class WateringConfirmationControllerTest {
                 ),
             savedStateHandle = handle,
             operationIdFactory = { OperationId("watering-operation-stable") },
+            productEventRecorder = recorder,
         )
 
     private fun snapshot() =

@@ -138,10 +138,21 @@ fun interface AccountDeletionTerminalCallback {
     suspend fun onCompleted(completion: AccountDeletionCompletion)
 }
 
+data class AccountDeletionReceived(val requestId: DeletionRequestId)
+
+fun interface AnalyticsDeletionGuard {
+    suspend fun onReceived(received: AccountDeletionReceived)
+
+    companion object {
+        val NO_OP = AnalyticsDeletionGuard {}
+    }
+}
+
 data class AccountDeletionDependencies(
     val repository: AccountDeletionRepository,
     val reauthenticator: AccountDeletionReauthenticator,
     val terminalCallback: AccountDeletionTerminalCallback,
+    val analyticsDeletionGuard: AnalyticsDeletionGuard = AnalyticsDeletionGuard.NO_OP,
 )
 
 enum class AccountDeletionFailure {

@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
 import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
 import com.planterior.helper.feature.minihome.PlaceholderMiniHomePhotoLoader
@@ -37,6 +38,7 @@ fun MiniHomeShareRoute(
     modifier: Modifier = Modifier,
     photoLoader: MiniHomePhotoLoader = PlaceholderMiniHomePhotoLoader,
     authOwnership: MiniHomeAuthOwnership = MiniHomeAuthOwnership.Unmanaged,
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val context = LocalContext.current
     val model =
@@ -76,6 +78,7 @@ fun MiniHomeShareRoute(
                 launch = { intent ->
                     sheetLauncher.launch(MiniHomeShareSheet.chooser(context, intent))
                 },
+                productEventRecorder = productEventRecorder,
             )
         }
 
@@ -129,16 +132,15 @@ fun MiniHomeShareRoute(
                 (state as? MiniHomeShareUiState.Ready)?.link as? MiniHomeShareLinkState.Active
             if (active != null) {
                 val payload = MiniHomeShareSheet.linkIntent(active.link.url)
-                if (!MiniHomeShareSheet.hasTarget(context, payload)) {
-                    controller.onSheetOutcome(MiniHomeShareSheetOutcome.NoTarget)
-                } else {
-                    runCatching {
-                        sheetLauncher.launch(MiniHomeShareSheet.chooser(context, payload))
-                    }
-                        .onFailure {
-                            controller.onSheetOutcome(MiniHomeShareSheetOutcome.Failed)
-                        }
-                }
+                val handoff =
+                    MiniHomeShareSheetHandoff(
+                        hasTarget = { MiniHomeShareSheet.hasTarget(context, it) },
+                        launch = sheetLauncher::launch,
+                        productEventRecorder = productEventRecorder,
+                    )
+                controller.onSheetOutcome(
+                    handoff.open(payload, MiniHomeShareSheet.chooser(context, payload))
+                )
             }
         },
         onRevokeLink = { scope.launch { controller.revokeLink() } },

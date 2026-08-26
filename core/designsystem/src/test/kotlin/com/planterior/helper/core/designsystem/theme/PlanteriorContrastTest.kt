@@ -15,6 +15,16 @@ import org.junit.Test
  */
 class PlanteriorContrastTest {
     @Test
+    fun `enabled inactive bottom navigation meets the normal text contrast minimum`() {
+        assertContrastAtLeast(
+            label = "TextTertiary/Surface enabled inactive bottom navigation",
+            foreground = PlanteriorPalette.TextTertiary,
+            background = PlanteriorPalette.Surface,
+            minimum = NORMAL_TEXT_MINIMUM,
+        )
+    }
+
+    @Test
     fun `weather risk body text meets the normal text contrast minimum`() {
         assertContrastAtLeast(
             label = "onWarningContainer/WarningContainer",

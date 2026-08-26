@@ -3,15 +3,18 @@ package com.planterior.helper.feature.identify
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.PlantContentId
+import com.planterior.helper.core.model.ProductEventRecorder
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +43,33 @@ class IdentificationRouteRestorationTest {
             confidence = 0.67,
             thumbnailUrl = null,
         )
+
+    @Test
+    fun `gateway failure stays visible and records failed once across saved state recreation`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
+            PlanteriorTheme {
+                IdentificationRoute(
+                    requestIdValue = "request_failure_1234",
+                    onExit = {},
+                    onRetakePhoto = {},
+                    onChangePhoto = {},
+                    onEditManually = {},
+                    onRegisterManually = {},
+                    onConfirmed = {},
+                    gateway = IdentificationGateway { _, _ -> error("gateway unavailable") },
+                    productEventRecorder = ProductEventRecorder(events::add),
+                )
+            }
+        }
+        compose.onNodeWithText("식물 분석을 사용할 수 없어요").assertExists()
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("식물 분석을 사용할 수 없어요").assertExists()
+
+        assertEquals(listOf(ClientProductEvent.IDENTIFICATION_FAILED), events)
+    }
 
     @Test
     fun `second candidate survives saved state recreation and remains confirmable`() {
@@ -75,9 +105,7 @@ class IdentificationRouteRestorationTest {
         compose
             .onNode(
                 hasTestTag(IdentificationTestTags.candidate(pothos.publicContentId.value)) and
-                    hasAnyDescendant(
-                        SemanticsMatcher.expectValue(SemanticsProperties.Selected, true)
-                    )
+                    SemanticsMatcher.expectValue(SemanticsProperties.Selected, true)
             )
             .assertExists()
     }

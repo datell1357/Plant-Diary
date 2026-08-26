@@ -713,6 +713,87 @@ class InventoryScreenTest {
     }
 
     @Test
+    fun `locked catalog acquisition detail records one source view across recomposition`() {
+        val account = AccountId("owner-a")
+        val locked = item("locked-item", AcquisitionCondition.REGISTERED_PLANT)
+        var state by
+            mutableStateOf(
+                InventoryUiState.Content(
+                    account,
+                    InventorySnapshot(
+                        account,
+                        listOf(locked),
+                        emptyList(),
+                        0,
+                        Instant.parse("2026-08-20T00:00:00Z"),
+                    ),
+                    InventorySection.SHOP,
+                    null,
+                )
+            )
+        var views = 0
+        compose.setContent {
+            PlanteriorTheme {
+                InventoryItemDetailScreen(
+                    state = state,
+                    itemId = locked.id,
+                    onBack = {},
+                    onAcquire = {},
+                    onOpenMiniHome = {},
+                    onAcquisitionSourceViewed = { views += 1 },
+                )
+            }
+        }
+        compose.waitForIdle()
+        assertEquals(1, views)
+
+        state = state.copy(searchQuery = "recomposition")
+        compose.waitForIdle()
+        assertEquals(1, views)
+    }
+
+    @Test
+    fun `owned catalog detail never records acquisition source view`() {
+        val account = AccountId("owner-a")
+        val owned = item("owned-item", AcquisitionCondition.REGISTERED_PLANT)
+        var views = 0
+        compose.setContent {
+            PlanteriorTheme {
+                InventoryItemDetailScreen(
+                    state =
+                        InventoryUiState.Content(
+                            account,
+                            InventorySnapshot(
+                                account,
+                                listOf(owned),
+                                listOf(
+                                    OwnedInventoryItem(
+                                        owned.id,
+                                        Instant.parse("2026-08-20T00:00:00Z"),
+                                        false,
+                                        Revision(1),
+                                    )
+                                ),
+                                0,
+                                Instant.parse("2026-08-20T00:00:00Z"),
+                            ),
+                            InventorySection.WAREHOUSE,
+                            null,
+                        ),
+                    itemId = owned.id,
+                    onBack = {},
+                    onAcquire = {},
+                    onOpenMiniHome = {},
+                    onAcquisitionSourceViewed = { views += 1 },
+                )
+            }
+        }
+        compose.waitForIdle()
+
+        assertEquals(0, views)
+    }
+
+    @Test
     fun `unavailable detail allows removal only when already applied`() {
         val account = AccountId("owner-a")
         val itemId = ItemId("retired")

@@ -1,71 +1,94 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "reference": {
+    "sourceCommit": "6efb7478984b6f6ba59448542787bde2c0bbea71",
     "deviceProfile": "pixel_7",
     "renderer": "swiftshader_indirect",
     "fixtureSha256": "c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9",
-    "productionApkSha256": "4823dd60cfea2196aefc0cbd51b2e8a860a8e6de7c1680447e00e7bd23092474"
+    "historicalPngBytesPreserved": true
   },
   "current": {
+    "qualifiedHead": "0b19e86bf3674ae55e363f88ae708cf28f815320",
+    "captureHarnessCommit": "768edfc66e060fa36434bac3ab730682a6f0294f",
+    "productionApkSha256": "5dca0e420fd62065c4fc38ea5bed297a72d2a52ed8a590c088716effeb510b6a",
     "deviceProfile": "pixel_7",
     "renderer": "swiftshader_indirect",
     "fixtureSha256": "c11adb8835e5dec5df7031c9cdcb88da4dc980c319d3434f4aff40f44de41db9",
-    "productionApkSha256": "c9ad3753c945967bf1628273fe990f2126aecdbe182eb6c0e2d075160ab4cc0c"
+    "independentlyWipedRuns": 3,
+    "systemImageRevision": 6,
+    "systemImageBuildFingerprint": "google/sdk_gphone64_arm64/emu64a:17/CE2A.260420.019/15611780:userdebug/dev-keys",
+    "physicalDensityDpi": 420,
+    "fontScale": 1.0,
+    "locale": "ko-KR",
+    "animationScales": {
+      "window": 0.0,
+      "transition": 0.0,
+      "animator": 0.0
+    }
   },
   "cause": {
-    "type": "figma-category-chip-chrome",
+    "type": "stale-contract-after-capture-and-production-source-changes",
+    "referenceCommit": "6efb7478984b6f6ba59448542787bde2c0bbea71",
+    "captureHarnessCommit": "768edfc66e060fa36434bac3ab730682a6f0294f",
     "productionSourceChanged": true,
-    "fixtureChanged": false,
-    "windowInsetsHardened": true,
-    "layoutEffect": "Selected category chip changes from Material purple to Planterior primary green; all geometry remains unchanged"
+    "captureHarnessChanged": true,
+    "historicalPngBytesPreserved": true,
+    "todo17LayoutModifiersChanged": false
   },
   "diffs": {
     "shop": {
       "changed": true,
-      "oldSha256": "8e2a28d2731c6c50b78fee0eab531fb8f9db58ab8449097ec6dbf976bb0ca646",
-      "newSha256": "196877f42eb10e6c29b9a5395a4b4890d5c5b10f79d22f4d283db4590582bfef",
-      "diffPixels": 30021,
-      "diffRatio": 0.0116,
-      "similarityScore": 99,
+      "oldSha256": "196877f42eb10e6c29b9a5395a4b4890d5c5b10f79d22f4d283db4590582bfef",
+      "newSha256": "8a4c38a0aefc6976c9cca1b165544b389f4043180ae8bd97c06336584bb8fc1f",
+      "diffPixels": 129384,
+      "diffRatio": 0.0499167,
+      "rmseNormalized": 0.180597,
+      "ssimDistortionNormalized": 0.0514394,
+      "perceptualHashDistance": 1.48584,
+      "psnrDb": 14.8658,
       "alphaChannelIntact": true
     },
     "warehouse": {
       "changed": true,
-      "oldSha256": "30adf5292dd42a24e073ffdf80a3faf2cc2ff251179245b545eb79529e3a2ad5",
-      "newSha256": "5d63ff77c6343a38897e52822a65cf618ac4f4485acccbc53ab6b527dd4ee817",
-      "diffPixels": 30022,
-      "diffRatio": 0.0116,
-      "similarityScore": 99,
+      "oldSha256": "5d63ff77c6343a38897e52822a65cf618ac4f4485acccbc53ab6b527dd4ee817",
+      "newSha256": "998440007b40f0ab85e1a0fd3100fae1e1d7e22856aac3ec42f97f7a990bcfd3",
+      "diffPixels": 102779,
+      "diffRatio": 0.0396523,
+      "rmseNormalized": 0.158817,
+      "ssimDistortionNormalized": 0.0550489,
+      "perceptualHashDistance": 0.0692283,
+      "psnrDb": 15.9821,
       "alphaChannelIntact": true
     },
     "itemDetail": {
-      "changed": false,
+      "changed": true,
       "oldSha256": "55ca1a83fe3f71b04d89d026f57c59ec286ac19832699bea70f0a6cac7ca9c3e",
-      "newSha256": "55ca1a83fe3f71b04d89d026f57c59ec286ac19832699bea70f0a6cac7ca9c3e",
-      "diffPixels": 0,
-      "diffRatio": 0.0,
-      "similarityScore": 100,
+      "newSha256": "1d4c40e78c51f001750fa97018080c4838aa72debb29c4c63dfb3ee64e680da1",
+      "diffPixels": 135938,
+      "diffRatio": 0.0524453,
+      "rmseNormalized": 0.185284,
+      "ssimDistortionNormalized": 0.041669,
+      "perceptualHashDistance": 1.4,
+      "psnrDb": 14.6433,
       "alphaChannelIntact": true
     },
     "background": {
-      "changed": false,
+      "changed": true,
       "oldSha256": "9157f71c9fd4ee6157d2f95f7853b90205c1452ae5138ceb224439a3826787c2",
-      "newSha256": "9157f71c9fd4ee6157d2f95f7853b90205c1452ae5138ceb224439a3826787c2",
-      "diffPixels": 0,
-      "diffRatio": 0.0,
-      "similarityScore": 100,
+      "newSha256": "fa3583a312b8f87e9c37bf4e71f36515d650e80b86e121abd5501b205901a241",
+      "diffPixels": 206950,
+      "diffRatio": 0.0798419,
+      "rmseNormalized": 0.209417,
+      "ssimDistortionNormalized": 0.0577728,
+      "perceptualHashDistance": 35.8877,
+      "psnrDb": 13.5798,
       "alphaChannelIntact": true
     }
   },
   "review": {
-    "figmaCategorySelectedFill": "#3D6642",
-    "figmaCategorySelectedContent": "#FFFFFF",
-    "figmaCategoryUnselectedContainer": "transparent",
-    "figmaCategoryUnselectedContent": "#6B7280",
-    "figmaCategoryUnselectedBorder": "#E5E7EB",
-    "defaultMaterialPurplePixels": 0,
     "koreanTextClipping": "pass",
     "touchTargetsAndSelectedSemantics": "pass",
-    "detailAndBackgroundUnchanged": "pass"
+    "productionControlFlow": "unchanged",
+    "historicalPngReferences": "preserved"
   }
 }

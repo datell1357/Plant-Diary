@@ -2,8 +2,10 @@ package com.planterior.helper.feature.watering
 
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -19,6 +21,7 @@ class WateringConfirmationController(
     private val clock: Clock,
     private val savedStateHandle: SavedStateHandle,
     private val operationIdFactory: () -> OperationId = OperationId::random,
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     private val restoredReceipt = restoreReceipt()
     private val _state =
@@ -28,6 +31,10 @@ class WateringConfirmationController(
         )
     val state: StateFlow<WateringConfirmationUiState> = _state.asStateFlow()
     private var generation = 0L
+
+    init {
+        restoredReceipt?.let(::recordCompletion)
+    }
 
     suspend fun start() {
         if (_state.value is WateringConfirmationUiState.Completed) return
@@ -166,6 +173,7 @@ class WateringConfirmationController(
                 saveReceipt(result.receipt)
                 clearDraft()
                 _state.value = WateringConfirmationUiState.Completed(result.receipt)
+                recordCompletion(result.receipt)
             }
             is WateringCompletionResult.Failed -> {
                 saveFrozenRequest(request, result.failure)
@@ -346,6 +354,12 @@ class WateringConfirmationController(
         savedStateHandle[RESULT_HASH] = receipt.requestHash
     }
 
+    private fun recordCompletion(receipt: WateringCompletionReceipt) {
+        if (savedStateHandle.get<String>(RECORDED_OPERATION) == receipt.operationId.value) return
+        productEventRecorder.record(ClientProductEvent.WATERING_COMPLETED)
+        savedStateHandle[RECORDED_OPERATION] = receipt.operationId.value
+    }
+
     private fun restoreReceipt(): WateringCompletionReceipt? = runCatching {
         WateringCompletionReceipt(
             AccountId(savedStateHandle.get<String>(RESULT_ACCOUNT) ?: return null),
@@ -390,6 +404,7 @@ class WateringConfirmationController(
         const val RESULT_RECORDED = "watering.result.recorded"
         const val RESULT_ZONE = "watering.result.zone"
         const val RESULT_HASH = "watering.result.hash"
+        const val RECORDED_OPERATION = "watering.analytics.recorded-operation"
     }
 }
 

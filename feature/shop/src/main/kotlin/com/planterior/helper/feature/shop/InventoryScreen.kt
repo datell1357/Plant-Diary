@@ -28,7 +28,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -56,8 +59,10 @@ import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.component.PlanteriorScreenScaffold
 import com.planterior.helper.core.designsystem.theme.PlanteriorBorderWidth
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
+import com.planterior.helper.core.model.ProductEventRecorder
 import kotlinx.coroutines.launch
 
 object InventoryTestTags {
@@ -591,6 +596,7 @@ fun InventoryItemDetailRoute(
     onOpenMiniHome: () -> Unit,
     bottomBar: @Composable () -> Unit = {},
     mediaLoader: CatalogMediaLoader = PlaceholderCatalogMediaLoader,
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val model =
         viewModel<InventoryViewModel>(
@@ -624,6 +630,13 @@ fun InventoryItemDetailRoute(
         onFeedbackConsumed = { token -> scope.launch { controller.feedbackConsumed(token) } },
         bottomBar = bottomBar,
         mediaLoader = mediaLoader,
+        onAcquisitionSourceViewed = {
+            try {
+                productEventRecorder.record(ClientProductEvent.MINI_HOME_ACQUISITION_SOURCE_VIEWED)
+            } catch (_: Exception) {
+                // Telemetry cannot affect the visible catalog detail.
+            }
+        },
     )
 }
 
@@ -638,7 +651,23 @@ fun InventoryItemDetailScreen(
     onFeedbackConsumed: (InventoryFeedbackPresentationToken) -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
     mediaLoader: CatalogMediaLoader = PlaceholderCatalogMediaLoader,
+    onAcquisitionSourceViewed: () -> Unit = {},
 ) {
+    val content = state as? InventoryUiState.Content
+    val detailEntry = content?.snapshot?.detailEntry(itemId)
+    val lockedAcquisitionSource =
+        detailEntry != null &&
+            detailEntry.ownership == null &&
+            detailEntry.item?.acquisitionCondition != null &&
+            detailEntry.eligibility == AcquisitionEligibility.CONDITION_NOT_MET
+    var acquisitionSourceRecorded by
+        rememberSaveable(content?.owner?.value, itemId.value) { mutableStateOf(false) }
+    LaunchedEffect(content?.owner, itemId, lockedAcquisitionSource) {
+        if (lockedAcquisitionSource && !acquisitionSourceRecorded) {
+            acquisitionSourceRecorded = true
+            onAcquisitionSourceViewed()
+        }
+    }
     PlanteriorScreenScaffold(
         title = "아이템 상세",
         bottomBar = bottomBar,
@@ -663,7 +692,7 @@ fun InventoryItemDetailScreen(
                 }
             }
             is InventoryUiState.Content -> {
-                val entry = state.snapshot.detailEntry(itemId)
+                val entry = detailEntry
                 if (entry == null) {
                     StateMessage("아이템을 찾을 수 없어요.")
                 } else {

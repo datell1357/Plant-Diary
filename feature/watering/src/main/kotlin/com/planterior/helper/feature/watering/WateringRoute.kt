@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import kotlinx.coroutines.launch
 
@@ -25,6 +26,7 @@ fun WateringConfirmationRoute(
     onDone: (WateringCompletionReceipt) -> Unit,
     clock: Clock = Clock.systemDefaultZone(),
     onCompleted: (WateringCompletionReceipt) -> Unit = {},
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val model =
         viewModel<WateringConfirmationViewModel>(
@@ -38,6 +40,7 @@ fun WateringConfirmationRoute(
                                 repository,
                                 clock,
                                 createSavedStateHandle(),
+                                productEventRecorder = productEventRecorder,
                             )
                         )
                     }

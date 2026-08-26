@@ -5,12 +5,14 @@ import java.security.MessageDigest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -63,13 +65,29 @@ class CatalogMediaFixtureContractTest {
         val visualWidth = visual.getValue("width").jsonPrimitive.int
         val visualHeight = visual.getValue("height").jsonPrimitive.int
         val files = visual.getValue("files").jsonObject
-        assertEquals(2, visual.getValue("contractVersion").jsonPrimitive.int)
+        assertEquals(3, visual.getValue("contractVersion").jsonPrimitive.int)
         assertEquals(37, visual.getValue("apiLevel").jsonPrimitive.int)
         assertEquals("pixel_7", visual.string("deviceProfile"))
         assertEquals("swiftshader_indirect", visual.string("renderer"))
         assertEquals(1080, visualWidth)
         assertEquals(2400, visualHeight)
         assertEquals(3, visual.getValue("requiredIndependentWipedRuns").jsonPrimitive.int)
+        assertEquals(6, visual.getValue("systemImageRevision").jsonPrimitive.int)
+        assertEquals(SYSTEM_IMAGE_FINGERPRINT, visual.string("systemImageBuildFingerprint"))
+        assertEquals(420, visual.getValue("physicalDensityDpi").jsonPrimitive.int)
+        assertEquals(1.0, visual.getValue("fontScale").jsonPrimitive.double, 0.0)
+        assertEquals("ko-KR", visual.string("locale"))
+        val animationScales = visual.getValue("animationScales").jsonObject
+        setOf("window", "transition", "animator").forEach { name ->
+            assertEquals(0.0, animationScales.getValue(name).jsonPrimitive.double, 0.0)
+        }
+        val sourceProvenance = visual.getValue("sourceProvenance").jsonObject
+        assertEquals(REFERENCE_SOURCE_COMMIT, sourceProvenance.string("referenceCommit"))
+        assertEquals(CAPTURE_HARNESS_COMMIT, sourceProvenance.string("captureHarnessCommit"))
+        assertNotEquals(
+            sourceProvenance.string("referenceCommit"),
+            sourceProvenance.string("captureHarnessCommit"),
+        )
         assertEquals("activity-enable-edge-to-edge", visual.string("windowInsetsContract"))
         assertEquals(
             setOf(
@@ -86,11 +104,14 @@ class CatalogMediaFixtureContractTest {
             assertTrue("$name is not PNG", image.copyOfRange(0, 8).contentEquals(PNG_MAGIC))
             assertEquals(visualWidth, bigEndianInt(image, 16))
             assertEquals(visualHeight, bigEndianInt(image, 20))
-            assertEquals(entry.string("sha256"), sha256(image))
+            assertEquals(REFERENCE_VISUAL_HASHES.getValue(name), entry.string("referenceSha256"))
+            assertEquals(CURRENT_VISUAL_HASHES.getValue(name), entry.string("sha256"))
+            assertEquals(entry.string("referenceSha256"), sha256(image))
+            assertNotEquals(entry.string("referenceSha256"), entry.string("sha256"))
         }
 
         val metadata = jsonResource(visual.string("metadataFile"))
-        assertEquals(6, metadata.getValue("contractVersion").jsonPrimitive.int)
+        assertEquals(7, metadata.getValue("contractVersion").jsonPrimitive.int)
         assertEquals(37, metadata.getValue("apiLevel").jsonPrimitive.int)
         assertEquals(visual.string("deviceProfile"), metadata.string("deviceProfile"))
         assertEquals(visual.string("renderer"), metadata.string("renderer"))
@@ -103,6 +124,19 @@ class CatalogMediaFixtureContractTest {
             visual.getValue("contractVersion").jsonPrimitive.int,
             metadata.getValue("visualEvidenceContractVersion").jsonPrimitive.int,
         )
+        assertEquals(
+            visual.getValue("systemImageRevision"),
+            metadata.getValue("systemImageRevision"),
+        )
+        assertEquals(
+            visual.string("systemImageBuildFingerprint"),
+            metadata.string("systemImageBuildFingerprint"),
+        )
+        assertEquals(visual.getValue("physicalDensityDpi"), metadata.getValue("physicalDensityDpi"))
+        assertEquals(visual.getValue("fontScale"), metadata.getValue("fontScale"))
+        assertEquals(visual.string("locale"), metadata.string("locale"))
+        assertEquals(visual.getValue("animationScales"), metadata.getValue("animationScales"))
+        assertEquals(visual.getValue("sourceProvenance"), metadata.getValue("sourceProvenance"))
         assertEquals(visual.string("windowInsetsContract"), metadata.string("windowInsetsContract"))
         assertEquals("#FF3D6642", metadata.string("selectedCategoryContainerArgb"))
         assertEquals("#FFFFFFFF", metadata.string("selectedCategoryContentArgb"))
@@ -131,33 +165,51 @@ class CatalogMediaFixtureContractTest {
         )
 
         val diff = jsonResource(visual.string("diffMetadataFile"))
-        assertEquals(2, diff.getValue("contractVersion").jsonPrimitive.int)
+        assertEquals(3, diff.getValue("contractVersion").jsonPrimitive.int)
+        val reference = diff.getValue("reference").jsonObject
+        val current = diff.getValue("current").jsonObject
+        assertEquals(REFERENCE_SOURCE_COMMIT, reference.string("sourceCommit"))
+        assertEquals(CAPTURE_HARNESS_COMMIT, current.string("captureHarnessCommit"))
+        assertEquals(3, current.getValue("independentlyWipedRuns").jsonPrimitive.int)
+        assertEquals(SYSTEM_IMAGE_FINGERPRINT, current.string("systemImageBuildFingerprint"))
         val cause = diff.getValue("cause").jsonObject
-        assertEquals("figma-category-chip-chrome", cause.string("type"))
+        assertEquals(
+            "stale-contract-after-capture-and-production-source-changes",
+            cause.string("type"),
+        )
         assertTrue(cause.getValue("productionSourceChanged").jsonPrimitive.boolean)
-        assertFalse(cause.getValue("fixtureChanged").jsonPrimitive.boolean)
-        assertTrue(cause.getValue("windowInsetsHardened").jsonPrimitive.boolean)
-        assertEquals("pixel_7", diff.getValue("reference").jsonObject.string("deviceProfile"))
-        assertEquals("pixel_7", diff.getValue("current").jsonObject.string("deviceProfile"))
+        assertTrue(cause.getValue("captureHarnessChanged").jsonPrimitive.boolean)
+        assertTrue(cause.getValue("historicalPngBytesPreserved").jsonPrimitive.boolean)
+        assertFalse(cause.getValue("todo17LayoutModifiersChanged").jsonPrimitive.boolean)
+        assertEquals(REFERENCE_SOURCE_COMMIT, cause.string("referenceCommit"))
+        assertEquals(CAPTURE_HARNESS_COMMIT, cause.string("captureHarnessCommit"))
+        assertNotEquals(cause.string("referenceCommit"), cause.string("captureHarnessCommit"))
         val diffs = diff.getValue("diffs").jsonObject
-        setOf("shop", "warehouse").forEach { name ->
-            val entry = diffs.getValue(name).jsonObject
+        val evidenceNames =
+            mapOf(
+                "shop" to "todo14-api37-shop.png",
+                "warehouse" to "todo14-api37-warehouse.png",
+                "itemDetail" to "todo14-api37-item-detail.png",
+                "background" to "todo14-api37-background.png",
+            )
+        evidenceNames.forEach { (diffName, fileName) ->
+            val entry = diffs.getValue(diffName).jsonObject
+            val fileEntry = files.getValue(fileName).jsonObject
             assertTrue(entry.getValue("changed").jsonPrimitive.boolean)
-            assertTrue(entry.getValue("diffPixels").jsonPrimitive.int > 0)
-            assertTrue(entry.string("oldSha256") != entry.string("newSha256"))
+            assertEquals(REFERENCE_VISUAL_HASHES.getValue(fileName), entry.string("oldSha256"))
+            assertEquals(CURRENT_VISUAL_HASHES.getValue(fileName), entry.string("newSha256"))
+            assertEquals(fileEntry.string("referenceSha256"), entry.string("oldSha256"))
+            assertEquals(fileEntry.string("sha256"), entry.string("newSha256"))
+            assertEquals(evidence.string(diffName), entry.string("newSha256"))
+            assertEquals(
+                DIFF_PIXELS.getValue(diffName),
+                entry.getValue("diffPixels").jsonPrimitive.int,
+            )
+            assertTrue(entry.getValue("diffRatio").jsonPrimitive.double > 0.0)
+            assertTrue(entry.getValue("rmseNormalized").jsonPrimitive.double > 0.0)
+            assertTrue(entry.getValue("ssimDistortionNormalized").jsonPrimitive.double > 0.0)
             assertTrue(entry.getValue("alphaChannelIntact").jsonPrimitive.boolean)
         }
-        setOf("itemDetail", "background").forEach { name ->
-            val entry = diffs.getValue(name).jsonObject
-            assertFalse(entry.getValue("changed").jsonPrimitive.boolean)
-            assertEquals(0, entry.getValue("diffPixels").jsonPrimitive.int)
-            assertEquals(entry.string("oldSha256"), entry.string("newSha256"))
-            assertTrue(entry.getValue("alphaChannelIntact").jsonPrimitive.boolean)
-        }
-        val review = diff.getValue("review").jsonObject
-        assertEquals("#3D6642", review.string("figmaCategorySelectedFill"))
-        assertEquals("#FFFFFF", review.string("figmaCategorySelectedContent"))
-        assertEquals(0, review.getValue("defaultMaterialPurplePixels").jsonPrimitive.int)
     }
 
     private fun jsonResource(path: String): JsonObject =
@@ -196,6 +248,39 @@ class CatalogMediaFixtureContractTest {
         }
 
     private companion object {
+        const val REFERENCE_SOURCE_COMMIT = "6efb7478984b6f6ba59448542787bde2c0bbea71"
+        const val CAPTURE_HARNESS_COMMIT = "768edfc66e060fa36434bac3ab730682a6f0294f"
+        const val SYSTEM_IMAGE_FINGERPRINT =
+            "google/sdk_gphone64_arm64/emu64a:17/CE2A.260420.019/15611780:userdebug/dev-keys"
+        val REFERENCE_VISUAL_HASHES =
+            mapOf(
+                "todo14-api37-shop.png" to
+                    "196877f42eb10e6c29b9a5395a4b4890d5c5b10f79d22f4d283db4590582bfef",
+                "todo14-api37-warehouse.png" to
+                    "5d63ff77c6343a38897e52822a65cf618ac4f4485acccbc53ab6b527dd4ee817",
+                "todo14-api37-item-detail.png" to
+                    "55ca1a83fe3f71b04d89d026f57c59ec286ac19832699bea70f0a6cac7ca9c3e",
+                "todo14-api37-background.png" to
+                    "9157f71c9fd4ee6157d2f95f7853b90205c1452ae5138ceb224439a3826787c2",
+            )
+        val CURRENT_VISUAL_HASHES =
+            mapOf(
+                "todo14-api37-shop.png" to
+                    "8a4c38a0aefc6976c9cca1b165544b389f4043180ae8bd97c06336584bb8fc1f",
+                "todo14-api37-warehouse.png" to
+                    "998440007b40f0ab85e1a0fd3100fae1e1d7e22856aac3ec42f97f7a990bcfd3",
+                "todo14-api37-item-detail.png" to
+                    "1d4c40e78c51f001750fa97018080c4838aa72debb29c4c63dfb3ee64e680da1",
+                "todo14-api37-background.png" to
+                    "fa3583a312b8f87e9c37bf4e71f36515d650e80b86e121abd5501b205901a241",
+            )
+        val DIFF_PIXELS =
+            mapOf(
+                "shop" to 129384,
+                "warehouse" to 102779,
+                "itemDetail" to 135938,
+                "background" to 206950,
+            )
         val PNG_MAGIC = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
     }
 }

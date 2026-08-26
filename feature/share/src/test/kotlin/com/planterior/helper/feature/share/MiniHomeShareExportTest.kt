@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.core.model.Revision
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -45,6 +47,48 @@ class MiniHomeShareExportTest {
         assertEquals(listOf(Revision(7)), sink.written)
         assertEquals(listOf(uri), launcher.launched)
         assertEquals(0, sink.clearCount)
+    }
+
+    @Test
+    fun `successful chooser handoff records sheet opened exactly once`() = runTest {
+        val events = mutableListOf<ClientProductEvent>()
+        val exporter =
+            exporter(
+                FakeSink(uri),
+                FakeLauncher(hasTarget = true),
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        exporter.export(token)
+
+        assertEquals(listOf(ClientProductEvent.MINI_HOME_SHARE_SHEET_OPENED), events)
+    }
+
+    @Test
+    fun `no target stale and launch failure record no sheet event`() = runTest {
+        val events = mutableListOf<ClientProductEvent>()
+        val recorder = ProductEventRecorder(events::add)
+        exporter(
+                FakeSink(uri),
+                FakeLauncher(hasTarget = false),
+                productEventRecorder = recorder,
+            )
+            .export(token)
+        exporter(
+                FakeSink(uri),
+                FakeLauncher(hasTarget = true, launchFailure = IllegalStateException("blocked")),
+                productEventRecorder = recorder,
+            )
+            .export(token)
+        exporter(
+                FakeSink(uri),
+                FakeLauncher(hasTarget = true),
+                isCurrent = { false },
+                productEventRecorder = recorder,
+            )
+            .export(token)
+
+        assertTrue(events.isEmpty())
     }
 
     @Test
@@ -190,6 +234,7 @@ class MiniHomeShareExportTest {
         isCurrent: (MiniHomeShareCaptureToken) -> Boolean = { it == token },
         onWritten: () -> Unit = {},
         onTargetChecked: () -> Unit = {},
+        productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
     ) =
         MiniHomeShareImageExporter(
             sink = sink,
@@ -211,6 +256,7 @@ class MiniHomeShareExportTest {
             },
             launch = launcher::launch,
             onWritten = onWritten,
+            productEventRecorder = productEventRecorder,
         )
 
     private class FakeSink(private val uri: Uri) : MiniHomeShareImageSink {
@@ -228,10 +274,14 @@ class MiniHomeShareExportTest {
         }
     }
 
-    private class FakeLauncher(val hasTarget: Boolean) {
+    private class FakeLauncher(
+        val hasTarget: Boolean,
+        private val launchFailure: Throwable? = null,
+    ) {
         val launched = mutableListOf<Uri>()
 
         fun launch(intent: Intent) {
+            launchFailure?.let { throw it }
             launched +=
                 requireNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java))
         }

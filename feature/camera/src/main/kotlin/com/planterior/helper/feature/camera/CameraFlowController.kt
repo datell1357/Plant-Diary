@@ -3,6 +3,8 @@ package com.planterior.helper.feature.camera
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import java.time.Instant
 
@@ -106,6 +108,7 @@ class CameraFlowController(
     private val launch: (CameraCommand) -> Unit,
     private val discard: (String) -> Unit = {},
     restored: CameraFlowSnapshot? = null,
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     var state: CameraFlowState by
         mutableStateOf(restored?.state.safeRestoredState() ?: CameraFlowState.Source())
@@ -195,6 +198,7 @@ class CameraFlowController(
         state = CameraFlowState.Submitted(submission)
         try {
             gateway.submit(submission)
+            productEventRecorder.record(ClientProductEvent.IDENTIFICATION_REQUEST_SUBMITTED)
         } catch (error: kotlinx.coroutines.CancellationException) {
             state = CameraFlowState.Review(disclosureState.photo, PhotoError.SubmissionFailed)
             throw error

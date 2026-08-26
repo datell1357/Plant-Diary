@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.IdentificationRequestId
 import com.planterior.helper.core.model.OperationId
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.util.UUID
 
 @Composable
@@ -25,11 +26,19 @@ fun IdentificationRoute(
     onRegisterManually: () -> Unit,
     onConfirmed: (ConfirmedIdentification) -> Unit,
     gateway: IdentificationGateway = remember { FirebaseIdentificationGateway() },
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val requestId = remember(requestIdValue) { IdentificationRequestId(requestIdValue) }
     val controller =
-        rememberSaveable(requestIdValue, saver = controllerSaver(requestId, onConfirmed)) {
-            IdentificationController(requestId, onConfirmed)
+        rememberSaveable(
+            requestIdValue,
+            saver = controllerSaver(requestId, onConfirmed, productEventRecorder),
+        ) {
+            IdentificationController(
+                requestId,
+                onConfirmed,
+                productEventRecorder = productEventRecorder,
+            )
         }
     var attempt by rememberSaveable(requestIdValue) { mutableIntStateOf(0) }
     val operationId =
@@ -46,12 +55,15 @@ fun IdentificationRoute(
         )
     LaunchedEffect(requestId, operationId) {
         val selectedId = (controller.state as? IdentificationUiState.Candidates)?.selectedId
-        val result = runCatching {
-            gateway.identify(requestId, operationId)
+        try {
+            val result = gateway.identify(requestId, operationId)
+            controller.show(result)
+            selectedId?.let(controller::select)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            controller.showTransportFailure(error.toIdentificationFailure())
         }
-            .getOrElse { IdentificationResult.Failed(it.toIdentificationFailure()) }
-        controller.show(result)
-        selectedId?.let(controller::select)
     }
     BackHandler(onBack = onExit)
     IdentificationScreen(
@@ -77,11 +89,26 @@ fun IdentificationRoute(
 private fun controllerSaver(
     requestId: IdentificationRequestId,
     onConfirmed: (ConfirmedIdentification) -> Unit,
+    productEventRecorder: ProductEventRecorder,
 ): Saver<IdentificationController, Bundle> =
     Saver(
-        save = { it.snapshot().toBundle() },
+        save = {
+            it.snapshot().toBundle().apply {
+                putBoolean("resultAvailableRecorded", it.resultAvailableWasRecorded())
+                putBoolean("resolutionAccepted", it.resolutionWasAccepted())
+                putBoolean("failureRecorded", it.failureWasRecorded())
+            }
+        },
         restore = {
-            IdentificationController(requestId, onConfirmed, it.toIdentificationUiState())
+            IdentificationController(
+                requestId,
+                onConfirmed,
+                it.toIdentificationUiState(),
+                productEventRecorder,
+                it.getBoolean("resultAvailableRecorded"),
+                it.getBoolean("resolutionAccepted"),
+                it.getBoolean("failureRecorded"),
+            )
         },
     )
 

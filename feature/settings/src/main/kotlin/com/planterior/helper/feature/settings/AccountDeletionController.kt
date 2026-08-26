@@ -13,12 +13,15 @@ import kotlinx.coroutines.launch
 
 class AccountDeletionController(
     private val dependencies: AccountDeletionDependencies,
+    private val analyticsDeletionGuard: AnalyticsDeletionGuard =
+        dependencies.analyticsDeletionGuard,
     private val dispatcher: CoroutineContext = Dispatchers.Main.immediate,
 ) : ViewModel() {
     private val mutableState =
         MutableStateFlow<AccountDeletionUiState>(AccountDeletionUiState.Loading)
     val state: StateFlow<AccountDeletionUiState> = mutableState.asStateFlow()
     private val completedCallbacks = mutableSetOf<String>()
+    private val guardedReceivedRequests = mutableSetOf<String>()
     private var refreshing = false
 
     init {
@@ -32,6 +35,7 @@ class AccountDeletionController(
             try {
                 val scope = dependencies.repository.preview()
                 val workflow = dependencies.repository.status()
+                invokeAnalyticsGuard(workflow)
                 val current = mutableState.value as? AccountDeletionUiState.Ready
                 mutableState.value =
                     AccountDeletionUiState.Ready(
@@ -145,6 +149,7 @@ class AccountDeletionController(
                         )
                     return@launch
                 }
+                invokeAnalyticsGuard(workflow)
                 mutableState.value =
                     active.copy(
                         workflow = workflow,
@@ -198,6 +203,24 @@ class AccountDeletionController(
                     ready.copy(submitting = false, failure = AccountDeletionFailure.CANCEL_FAILED)
                 }
             }
+        }
+    }
+
+    private suspend fun invokeAnalyticsGuard(workflow: AccountDeletionWorkflow?) {
+        if (
+            workflow?.status != DeletionStatus.RECEIVED ||
+                workflow.requestId.value in guardedReceivedRequests
+        ) {
+            return
+        }
+        try {
+            analyticsDeletionGuard.onReceived(AccountDeletionReceived(workflow.requestId))
+            guardedReceivedRequests += workflow.requestId.value
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The authoritative deletion remains accepted. A later status refresh retries only the
+            // local fail-safe cleanup while analytics stays off.
         }
     }
 

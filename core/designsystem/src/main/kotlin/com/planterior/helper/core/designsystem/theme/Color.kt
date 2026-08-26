@@ -30,8 +30,8 @@ internal object PlanteriorPalette {
     /** 보조 설명 텍스트. */
     val TextSecondary = Color(0xFF6B7280)
 
-    /** 비활성 탭 아이콘과 라벨. */
-    val TextTertiary = Color(0xFF9CA3AF)
+    /** 활성화된 비활성 탭 아이콘과 라벨. 본문 대비를 충족하는 기존 중립색을 공유한다. */
+    val TextTertiary = TextSecondary
 
     /** 화면과 탭 바 경계선. */
     val Border = Color(0xFFE5E7EB)

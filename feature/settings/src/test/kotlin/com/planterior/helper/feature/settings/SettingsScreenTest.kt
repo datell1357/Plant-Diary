@@ -7,6 +7,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
+import com.planterior.helper.core.model.AnalyticsConsentState
 import com.planterior.helper.feature.auth.AuthAccount
 import com.planterior.helper.feature.auth.AuthProvider
 import com.planterior.helper.feature.auth.AuthUiState
@@ -84,6 +87,126 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun `authoritative location switch renders pending disabled and failed retry states`() {
+        compose.setContent {
+            PlanteriorTheme {
+                SettingsScreen(
+                    readyState()
+                        .copy(
+                            appLocationConsentGranted = false,
+                            locationConsentState = SettingsLocationConsentState.Disabling,
+                        ),
+                    SettingsActions(),
+                )
+            }
+        }
+
+        compose
+            .onNodeWithTag("settings.location-consent")
+            .performScrollTo()
+            .assertIsOff()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun `failed location revoke stays off and invokes authoritative retry`() {
+        var retries = 0
+        compose.setContent {
+            PlanteriorTheme {
+                SettingsScreen(
+                    readyState()
+                        .copy(
+                            appLocationConsentGranted = false,
+                            locationConsentState = SettingsLocationConsentState.FailedOff,
+                        ),
+                    SettingsActions(onRetryLocationConsent = { retries += 1 }),
+                )
+            }
+        }
+
+        compose
+            .onNodeWithTag("settings.location-consent-failure")
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithTag("settings.location-consent-retry").performClick()
+        assertEquals(1, retries)
+    }
+
+    @Test
+    fun `authoritative enabled location switch invokes revoke callback once`() {
+        var requested: Boolean? = null
+        compose.setContent {
+            PlanteriorTheme {
+                SettingsScreen(
+                    readyState()
+                        .copy(locationConsentState = SettingsLocationConsentState.Enabled(7)),
+                    SettingsActions(onLocationConsentChanged = { requested = it }),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("settings.location-consent").performScrollTo().performClick()
+        assertEquals(false, requested)
+    }
+
+    @Test
+    fun `analytics switch exposes role state and invokes one consent callback`() {
+        var requested: Boolean? = null
+        compose.setContent {
+            PlanteriorTheme {
+                SettingsScreen(
+                    readyState().copy(analyticsConsentState = AnalyticsConsentState.Enabled(3)),
+                    SettingsActions(onAnalyticsConsentChanged = { requested = it }),
+                )
+            }
+        }
+
+        compose
+            .onNodeWithTag("settings.analytics-consent")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsOn()
+            .performClick()
+
+        assertEquals(false, requested)
+    }
+
+    @Test
+    fun `analytics pending state is off and disabled`() {
+        compose.setContent {
+            PlanteriorTheme {
+                SettingsScreen(
+                    readyState().copy(analyticsConsentState = AnalyticsConsentState.Enabling),
+                    SettingsActions(),
+                )
+            }
+        }
+
+        compose
+            .onNodeWithTag("settings.analytics-consent")
+            .performScrollTo()
+            .assertIsOff()
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun `analytics failure is visible and retryable`() {
+        var retries = 0
+        compose.setContent {
+            PlanteriorTheme {
+                SettingsScreen(
+                    readyState().copy(analyticsConsentState = AnalyticsConsentState.FailedOff),
+                    SettingsActions(onRetryAnalyticsConsent = { retries += 1 }),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("settings.analytics-failure").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("settings.analytics-retry").performClick()
+        assertEquals(1, retries)
+    }
+
+    @Test
     fun `root owns one vertical scroll and keeps audited section hierarchy`() {
         compose.setContent { PlanteriorTheme { SettingsScreen(readyState(), SettingsActions()) } }
 
@@ -139,6 +262,18 @@ class SettingsScreenTest {
             .performScrollTo()
             .assertIsDisplayed()
             .assertIsOn()
+        compose
+            .onNodeWithTag("settings.analytics-consent")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsOff()
+        val analyticsDisclosure =
+            compose
+                .onNodeWithTag("settings.analytics-disclosure", useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .fetchSemanticsNode()
+        assertTrue(analyticsDisclosure.config.contains(SemanticsProperties.Text))
     }
 
     private fun collectTags(node: SemanticsNode): List<String> = buildList {

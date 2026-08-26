@@ -23,7 +23,7 @@
 | primary 위 전경 | `onPrimary` | `#FFFFFF` |
 | 제목과 본문 | `onBackground`, `onSurface` | `#1F2937` |
 | 보조 설명 | `onSurfaceVariant` | `#6B7280` |
-| 비활성 탭 | `PlanteriorTheme.tertiaryText` | `#9CA3AF` |
+| 활성화된 비활성 탭 | `PlanteriorTheme.tertiaryText` | `#6B7280` |
 | 구분선과 외곽선 | `outline` | `#E5E7EB` |
 | 경고 강조 | `error` | `#D97706` |
 | 경고 배경 | `errorContainer` | `#FEF3C7` |
@@ -228,6 +228,7 @@ Inter의 한글 글리프 대체 결과와 맞도록 `FontFamily.SansSerif`를 �
 - 화면 제목은 heading으로 표시한다.
 - 색상만으로 선택, 오류, 경고를 구분하지 않고 텍스트나 아이콘을 함께 사용한다.
 - 일반 본문은 WCAG 2.1 기준 4.5:1 이상의 대비를 유지한다.
+- 활성화된 비활성 하단 탭은 `tertiaryText`(`#6B7280`)를 사용한다. 흰색 `surface` 위 대비는 4.834490:1로 10sp 라벨의 4.5:1과 아이콘의 3:1을 모두 충족하며, 선택된 탭과 비활성화된 컨트롤의 의미는 바꾸지 않는다.
 - 경고 본문은 `onErrorContainer`를 사용한다. `error` 색은 경고 배경 위 본문색으로 사용하지 않는다.
 - 비동기 상태 전환은 재구성이나 Activity 재생성 뒤에도 같은 사용자 선택을 복원해야 한다.
 - 알림 권한 거부 안내는 `권한이 없어도 앱에서 예정일을 확인하고 완료할 수 있음`을 텍스트로 명시하고, 권한 CTA와 핵심 관리 행동을 독립적으로 유지한다.

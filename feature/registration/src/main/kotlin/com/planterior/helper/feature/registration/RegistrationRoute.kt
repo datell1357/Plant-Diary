@@ -20,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.feature.camera.ContentResolverPhotoUriReader
 import com.planterior.helper.feature.camera.PhotoPreparationException
 import com.planterior.helper.feature.camera.PhotoPreparer
@@ -44,6 +45,7 @@ fun RegistrationRoute(
     onCompleted: (PersonalPlantId) -> Unit,
     onCancel: () -> Unit,
     authOwnership: RegistrationAuthOwnership = RegistrationAuthOwnership.Unknown,
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val model =
         viewModel<RegistrationViewModel>(
@@ -56,6 +58,7 @@ fun RegistrationRoute(
                                 seed,
                                 repository,
                                 savedStateHandle = createSavedStateHandle(),
+                                productEventRecorder = productEventRecorder,
                             )
                         )
                     }

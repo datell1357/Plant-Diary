@@ -2,8 +2,10 @@ package com.planterior.helper.feature.collection
 
 import android.icu.text.BreakIterator
 import androidx.lifecycle.SavedStateHandle
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.feature.watering.WateringScheduleCalculator
 import com.planterior.helper.feature.watering.WateringScheduleStatus
 import com.planterior.helper.feature.watering.WateringUnavailableReason
@@ -82,6 +84,7 @@ class PlantDetailController(
     private val clock: Clock,
     private val savedStateHandle: SavedStateHandle,
     private val operationIdFactory: () -> OperationId = OperationId::random,
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     private var restoredEditor = restoreEditor()
     private val _state = MutableStateFlow<PlantDetailUiState>(PlantDetailUiState.Loading)
@@ -271,6 +274,7 @@ class PlantDetailController(
             }
         if (request != generation) return
         applyLoad(result)
+        recordCarePresentation()
         saveEditor(currentEditor())
     }
 
@@ -325,6 +329,20 @@ class PlantDetailController(
                 DetailLoad.NotFound -> PlantDetailUiState.NotFound
                 DetailLoad.Failed -> PlantDetailUiState.Error
             }
+    }
+
+    private fun recordCarePresentation() {
+        if (savedStateHandle.get<Boolean>(CARE_PRESENTED) == true) return
+        when (_state.value) {
+            is PlantDetailUiState.Content,
+            is PlantDetailUiState.Partial,
+            is PlantDetailUiState.Stale,
+            is PlantDetailUiState.NoStandardContent -> {
+                savedStateHandle[CARE_PRESENTED] = true
+                productEventRecorder.record(ClientProductEvent.CARE_INFORMATION_VIEWED)
+            }
+            else -> Unit
+        }
     }
 
     private fun editorFor(plant: PersonalPlantDetail): EditorState {
@@ -524,5 +542,6 @@ class PlantDetailController(
         const val LOCATION = "detail.location"
         const val NOTE = "detail.note"
         const val FAILURE = "detail.failure"
+        const val CARE_PRESENTED = "detail.care-presented"
     }
 }

@@ -11,6 +11,7 @@ import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.Revision
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.Clock
 
 /**
  * 공유 이미지의 고정 규격이다.
@@ -97,11 +98,19 @@ data class MiniHomeShareExportRequest(
 /**
  * 앱 전용 `cache/share/`에만 이미지를 두는 저장소이다.
  *
- * 항상 최신 한 개만 남겨 URI 권한이 필요한 파일 외에는 남기지 않는다. 계정 전환·로그아웃에서는 [clear]로 전부 지운다.
+ * 항상 최신 한 개만 남겨 URI 권한이 필요한 파일 외에는 남기지 않는다. 계정 전환·로그아웃에서는 [clear]로 전부 지운다. 화면 종료 정리가 실행되지 못한 프로세스도
+ * 다음 저장소 접근에서 공유 링크의 최대 수명보다 오래된 산출물을 제거한다.
  */
-class MiniHomeShareImageStore(private val context: Context) : MiniHomeShareImageSink {
+class MiniHomeShareImageStore(
+    private val context: Context,
+    private val clock: Clock = Clock.systemUTC(),
+) : MiniHomeShareImageSink {
     private val directory: File
         get() = File(context.cacheDir, DIRECTORY).apply { mkdirs() }
+
+    init {
+        purgeExpired()
+    }
 
     override fun write(owner: AccountId, revision: Revision, bytes: ByteArray): Uri {
         require(owner.value.isNotEmpty())
@@ -113,6 +122,14 @@ class MiniHomeShareImageStore(private val context: Context) : MiniHomeShareImage
 
     override fun clear() {
         directory.listFiles().orEmpty().forEach { it.delete() }
+    }
+
+    fun purgeExpired(): Int {
+        val now = clock.millis()
+        val expiryBoundary = now - MiniHomeShareLink.LIFETIME.toMillis()
+        return directory.listFiles().orEmpty().count { file ->
+            file.isFile && file.lastModified() in 1..expiryBoundary && file.delete()
+        }
     }
 
     private companion object {

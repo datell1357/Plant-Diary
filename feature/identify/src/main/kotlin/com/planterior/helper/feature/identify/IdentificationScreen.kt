@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -23,13 +23,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.planterior.helper.core.designsystem.component.PlanteriorCard
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import java.text.NumberFormat
 
 object IdentificationTestTags {
+    const val SCREEN = "identify:screen"
     const val PENDING = "identify:pending"
     const val CANDIDATES = "identify:candidates"
     const val CONFIRM = "identify:confirm"
@@ -51,7 +55,7 @@ fun IdentificationScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Scaffold(modifier = modifier.fillMaxSize()) { padding ->
+    Scaffold(modifier = modifier.fillMaxSize().testTag(IdentificationTestTags.SCREEN)) { padding ->
         Column(
             modifier =
                 Modifier.fillMaxSize()
@@ -63,7 +67,11 @@ fun IdentificationScreen(
             TextButton(onClick = onBack, modifier = Modifier.sizeIn(minHeight = 48.dp)) {
                 Text("이전")
             }
-            Text("식물 후보 확인", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "식물 후보 확인",
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.headlineSmall,
+            )
             when (state) {
                 IdentificationUiState.Pending -> PendingContent()
                 is IdentificationUiState.Candidates ->
@@ -117,20 +125,27 @@ private fun CandidateContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         state.candidates.forEach { candidate ->
-            Card(
-                onClick = { onSelect(candidate) },
-                modifier =
-                    Modifier.fillMaxWidth()
-                        .testTag(IdentificationTestTags.candidate(candidate.publicContentId.value)),
+            val selected = state.selectedId == candidate.publicContentId
+            PlanteriorCard(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = 0.dp,
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .testTag(
+                                IdentificationTestTags.candidate(candidate.publicContentId.value)
+                            )
+                            .selectable(
+                                selected = selected,
+                                role = Role.RadioButton,
+                                onClick = { onSelect(candidate) },
+                            )
+                            .sizeIn(minHeight = 48.dp)
+                            .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RadioButton(
-                        selected = state.selectedId == candidate.publicContentId,
-                        onClick = { onSelect(candidate) },
-                    )
+                    RadioButton(selected = selected, onClick = null)
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             candidate.koreanName

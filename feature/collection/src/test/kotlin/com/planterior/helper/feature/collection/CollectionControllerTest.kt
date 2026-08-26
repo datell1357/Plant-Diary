@@ -2,9 +2,11 @@ package com.planterior.helper.feature.collection
 
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.core.model.RegistrationMethod
 import com.planterior.helper.feature.watering.WateringScheduleStatus
 import java.time.Clock
@@ -168,6 +170,59 @@ class CollectionControllerTest {
             controller.retry()
             assertEquals(PlantDetailUiState.NotFound, controller.state.value)
         }
+
+    @Test
+    fun `first valid detail presentation records care viewed once across retries and restore`() =
+        runTest {
+            val events = mutableListOf<ClientProductEvent>()
+            val handle = SavedStateHandle()
+            val repository = FakeRepository(detailBlock = { DetailLoad.Fresh(detail()) })
+            val recorder = ProductEventRecorder(events::add)
+            val controller =
+                PlantDetailController(
+                    PersonalPlantId("plant-a"),
+                    repository,
+                    clock,
+                    handle,
+                    productEventRecorder = recorder,
+                )
+
+            controller.start()
+            repository.detailBlock = { DetailLoad.Partial(detail(), setOf(CareField.HUMIDITY)) }
+            controller.retry()
+            val restored =
+                PlantDetailController(
+                    PersonalPlantId("plant-a"),
+                    repository,
+                    clock,
+                    handle,
+                    productEventRecorder = recorder,
+                )
+            restored.start()
+
+            assertEquals(listOf(ClientProductEvent.CARE_INFORMATION_VIEWED), events)
+        }
+
+    @Test
+    fun `failed detail load records no care view until a valid presentation arrives`() = runTest {
+        val events = mutableListOf<ClientProductEvent>()
+        val repository = FakeRepository(detailBlock = { DetailLoad.Failed })
+        val controller =
+            PlantDetailController(
+                PersonalPlantId("plant-a"),
+                repository,
+                clock,
+                SavedStateHandle(),
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        controller.start()
+        assertTrue(events.isEmpty())
+        repository.detailBlock = { DetailLoad.NoStandardContent(detail().plant, ZoneId.of("UTC")) }
+        controller.retry()
+
+        assertEquals(listOf(ClientProductEvent.CARE_INFORMATION_VIEWED), events)
+    }
 
     @Test
     fun `detail resume reclassifies schedule across account zone midnight with a virtual clock`() =

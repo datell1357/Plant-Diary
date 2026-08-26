@@ -28,7 +28,7 @@ fun SettingsScreen(
             SettingsProfile(state.authState)
             NotificationSettingsSection(state, actions)
             EnvironmentSettingsSection(state, actions)
-            DataSettingsSection(state)
+            DataSettingsSection(state, actions)
             AccountSettingsSection(state, actions)
             OtherSettingsSection(state, actions)
         }

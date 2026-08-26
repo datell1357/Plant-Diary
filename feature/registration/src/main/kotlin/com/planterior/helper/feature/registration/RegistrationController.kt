@@ -3,8 +3,10 @@ package com.planterior.helper.feature.registration
 import android.icu.text.BreakIterator
 import androidx.lifecycle.SavedStateHandle
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.core.model.RegistrationMethod
 import com.planterior.helper.feature.camera.PhotoError
 import java.time.Clock
@@ -25,6 +27,7 @@ class RegistrationController(
     },
     private val navigationIdentityFactory: () -> String = { UUID.randomUUID().toString() },
     private val savedStateHandle: SavedStateHandle? = null,
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     private val restored = RegistrationSavedState.restore(savedStateHandle)
     private var session: RegistrationSession? = restored?.session
@@ -49,6 +52,7 @@ class RegistrationController(
     private var navigationCollectorGeneration = 0L
     private var activeNavigationCollector: RegistrationNavigationCollector? = null
     private var searchGeneration = 0L
+    private var registrationCompletionRecorded = restored?.state is RegistrationUiState.Completed
 
     init {
         saveState()
@@ -342,6 +346,13 @@ class RegistrationController(
         when (result) {
             is RegistrationAttempt.Completed -> {
                 _state.value = RegistrationUiState.Completed(result.plant)
+                if (!registrationCompletionRecorded) {
+                    registrationCompletionRecorded = true
+                    if (submission.method == RegistrationMethod.IDENTIFICATION_EDITED) {
+                        productEventRecorder.record(ClientProductEvent.IDENTIFICATION_RESULT_EDITED)
+                    }
+                    productEventRecorder.record(ClientProductEvent.PLANT_REGISTRATION_COMPLETED)
+                }
                 enqueueNavigation(
                     result.plant.id,
                     submission.accountId,

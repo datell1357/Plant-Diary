@@ -1,7 +1,9 @@
 package com.planterior.helper.feature.identify
 
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.IdentificationRequestId
 import com.planterior.helper.core.model.PlantContentId
+import com.planterior.helper.core.model.ProductEventRecorder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,6 +78,171 @@ class IdentificationControllerTest {
         assertFalse(failedConfirmation)
         assertFalse(emptyConfirmation)
         assertEquals(0, confirmationCount)
+    }
+
+    @Test
+    fun `only rendered candidates record result available while failure states record failed`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val controller =
+            IdentificationController(
+                requestId,
+                {},
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        controller.show(IdentificationResult.Failed(IdentificationFailureReason.RATE_LIMITED))
+        controller.show(IdentificationResult.NoCandidates)
+        controller.show(IdentificationResult.Pending)
+        controller.show(IdentificationResult.Candidates(listOf(monstera)))
+
+        assertEquals(
+            listOf(
+                ClientProductEvent.IDENTIFICATION_FAILED,
+                ClientProductEvent.IDENTIFICATION_RESULT_AVAILABLE,
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun `visible transport failure records failed once across retry and restore`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val recorder = ProductEventRecorder(events::add)
+        val original = IdentificationController(requestId, {}, productEventRecorder = recorder)
+
+        original.showTransportFailure(IdentificationFailureReason.PROVIDER_UNAVAILABLE)
+        original.show(IdentificationResult.Pending)
+        original.showTransportFailure(IdentificationFailureReason.PROVIDER_UNAVAILABLE)
+        val restored =
+            IdentificationController(
+                requestId,
+                {},
+                original.snapshot(),
+                recorder,
+                original.resultAvailableWasRecorded(),
+                original.resolutionWasAccepted(),
+                original.failureWasRecorded(),
+            )
+        restored.showTransportFailure(IdentificationFailureReason.PROVIDER_UNAVAILABLE)
+
+        assertEquals(listOf(ClientProductEvent.IDENTIFICATION_FAILED), events)
+    }
+
+    @Test
+    fun `failure then rendered candidates are each recorded once across retry and restore`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val recorder = ProductEventRecorder(events::add)
+        val original = IdentificationController(requestId, {}, productEventRecorder = recorder)
+
+        original.show(IdentificationResult.NoCandidates)
+        original.show(IdentificationResult.Pending)
+        original.show(IdentificationResult.Candidates(listOf(monstera)))
+        val restored =
+            IdentificationController(
+                requestId,
+                {},
+                original.snapshot(),
+                recorder,
+                original.resultAvailableWasRecorded(),
+                original.resolutionWasAccepted(),
+                original.failureWasRecorded(),
+            )
+        restored.show(IdentificationResult.Failed(IdentificationFailureReason.RATE_LIMITED))
+
+        assertEquals(
+            listOf(
+                ClientProductEvent.IDENTIFICATION_FAILED,
+                ClientProductEvent.IDENTIFICATION_RESULT_AVAILABLE,
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun `authoritative persisted failure and no-result failure each record failed once`() {
+        listOf<IdentificationResult>(
+                IdentificationResult.Failed(IdentificationFailureReason.RATE_LIMITED),
+                IdentificationResult.NoCandidates,
+            )
+            .forEach { result ->
+                val events = mutableListOf<ClientProductEvent>()
+                val controller =
+                    IdentificationController(
+                        requestId,
+                        {},
+                        productEventRecorder = ProductEventRecorder(events::add),
+                    )
+
+                controller.show(result)
+                controller.show(IdentificationResult.Pending)
+                controller.show(result)
+
+                assertEquals(
+                    listOf(ClientProductEvent.IDENTIFICATION_FAILED),
+                    events,
+                )
+            }
+    }
+
+    @Test
+    fun `telemetry failure cannot replace an authoritative identification failure`() {
+        val controller =
+            IdentificationController(
+                requestId,
+                {},
+                productEventRecorder = ProductEventRecorder { error("telemetry unavailable") },
+            )
+
+        controller.show(IdentificationResult.Failed(IdentificationFailureReason.RATE_LIMITED))
+
+        assertEquals(
+            IdentificationUiState.Failed(IdentificationFailureReason.RATE_LIMITED),
+            controller.state,
+        )
+    }
+
+    @Test
+    fun `transport failure emits failed but no result available event`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val controller =
+            IdentificationController(
+                requestId,
+                {},
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        controller.showTransportFailure(IdentificationFailureReason.PROVIDER_UNAVAILABLE)
+
+        assertEquals(listOf(ClientProductEvent.IDENTIFICATION_FAILED), events)
+        assertEquals(
+            IdentificationUiState.Failed(IdentificationFailureReason.PROVIDER_UNAVAILABLE),
+            controller.state,
+        )
+    }
+
+    @Test
+    fun `accepted confirmation records exactly once while invalid confirmation records zero`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val controller =
+            IdentificationController(
+                requestId,
+                {},
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+        controller.show(IdentificationResult.Candidates(listOf(monstera)))
+
+        controller.confirm()
+        controller.select(monstera.publicContentId)
+        controller.confirm()
+        controller.confirm()
+
+        assertEquals(
+            listOf(
+                ClientProductEvent.IDENTIFICATION_RESULT_AVAILABLE,
+                ClientProductEvent.IDENTIFICATION_RESULT_CONFIRMED,
+            ),
+            events,
+        )
     }
 
     @Test

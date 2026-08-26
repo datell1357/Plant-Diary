@@ -21,7 +21,7 @@ class PlanteriorDesignTokenTest {
         assertEquals(Color(0xFFEEF3F0), PlanteriorPalette.PrimaryContainer)
         assertEquals(Color(0xFF1F2937), PlanteriorPalette.TextPrimary)
         assertEquals(Color(0xFF6B7280), PlanteriorPalette.TextSecondary)
-        assertEquals(Color(0xFF9CA3AF), PlanteriorPalette.TextTertiary)
+        assertEquals(PlanteriorPalette.TextSecondary, PlanteriorPalette.TextTertiary)
         assertEquals(Color(0xFFE5E7EB), PlanteriorPalette.Border)
         assertEquals(Color(0xFFD97706), PlanteriorPalette.Warning)
         assertEquals(Color(0xFFFEF3C7), PlanteriorPalette.WarningContainer)

@@ -11,6 +11,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -35,6 +37,98 @@ class AccountDeletionControllerTest {
             advanceUntilIdle()
             assertEquals(listOf("reauthenticate", "request"), events)
             assertEquals(1, repository.requestCalls)
+        }
+
+    @Test
+    fun `received request invokes analytics guard once before exposing success`() = runTest {
+        val guardStarted = CompletableDeferred<Unit>()
+        val releaseGuard = CompletableDeferred<Unit>()
+        val events = mutableListOf<String>()
+        val repository = FakeDeletionRepository().apply { eventLog = events }
+        val controller =
+            controller(repository, events = events) {
+                events += "analytics-guard"
+                guardStarted.complete(Unit)
+                releaseGuard.await()
+            }
+        advanceUntilIdle()
+        controller.reauthenticate()
+        advanceUntilIdle()
+        controller.setFinalConfirmation(true)
+
+        controller.submit()
+        guardStarted.await()
+
+        assertNull(controller.ready().workflow)
+        assertTrue(controller.ready().submitting)
+        releaseGuard.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("reauthenticate", "request", "analytics-guard"), events)
+        assertEquals(DeletionStatus.RECEIVED, controller.ready().workflow?.status)
+    }
+
+    @Test
+    fun `failed request never invokes analytics guard`() = runTest {
+        var guardCalls = 0
+        val repository = FakeDeletionRepository().apply { requestFailure = true }
+        val controller = controller(repository, onReceived = { guardCalls += 1 })
+        advanceUntilIdle()
+        controller.reauthenticate()
+        advanceUntilIdle()
+        controller.setFinalConfirmation(true)
+
+        controller.submit()
+        advanceUntilIdle()
+
+        assertEquals(0, guardCalls)
+        assertEquals(AccountDeletionFailure.REQUEST_FAILED, controller.ready().failure)
+    }
+
+    @Test
+    fun `received replay is idempotent while cleanup failure retries without invalidating deletion`() =
+        runTest {
+            var guardCalls = 0
+            val received = workflow(DeletionStatus.RECEIVED)
+            val repository = FakeDeletionRepository(statusResult = received)
+            val controller =
+                controller(repository) {
+                    guardCalls += 1
+                    if (guardCalls == 1) error("local cleanup unavailable")
+                }
+            advanceUntilIdle()
+
+            assertEquals(DeletionStatus.RECEIVED, controller.ready().workflow?.status)
+            assertEquals(1, guardCalls)
+            controller.refresh()
+            advanceUntilIdle()
+            controller.refresh()
+            advanceUntilIdle()
+
+            assertEquals(2, guardCalls)
+            assertEquals(DeletionStatus.RECEIVED, controller.ready().workflow?.status)
+            assertNull(controller.ready().failure)
+        }
+
+    @Test
+    fun `cancelling accepted deletion does not invoke guard again or restore analytics`() =
+        runTest {
+            var analyticsOff = false
+            var guardCalls = 0
+            val repository =
+                FakeDeletionRepository(statusResult = workflow(DeletionStatus.RECEIVED))
+            val controller =
+                controller(repository) {
+                    guardCalls += 1
+                    analyticsOff = true
+                }
+            advanceUntilIdle()
+
+            controller.cancel()
+            advanceUntilIdle()
+
+            assertEquals(DeletionStatus.CANCELLED, controller.ready().workflow?.status)
+            assertEquals(1, guardCalls)
+            assertTrue(analyticsOff)
         }
 
     @Test
@@ -237,6 +331,7 @@ class AccountDeletionControllerTest {
         repository: FakeDeletionRepository,
         events: MutableList<String>? = null,
         onCompleted: suspend (AccountDeletionCompletion) -> Unit = {},
+        onReceived: suspend (AccountDeletionReceived) -> Unit = {},
     ) =
         AccountDeletionController(
             AccountDeletionDependencies(
@@ -247,6 +342,7 @@ class AccountDeletionControllerTest {
                         AccountDeletionReauthenticationResult.SUCCEEDED
                     },
                 terminalCallback = AccountDeletionTerminalCallback(onCompleted),
+                analyticsDeletionGuard = AnalyticsDeletionGuard(onReceived),
             ),
             dispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -266,6 +362,7 @@ class AccountDeletionControllerTest {
         var retryGate: CompletableDeferred<Unit>? = null
         var cancelResult: AccountDeletionWorkflow = workflow(DeletionStatus.CANCELLED)
         var retryResult: AccountDeletionWorkflow? = null
+        var requestFailure = false
 
         override suspend fun preview(): AccountDeletionScope = scope
 
@@ -280,6 +377,7 @@ class AccountDeletionControllerTest {
             requestCalls += 1
             eventLog?.add("request")
             requestGate?.await()
+            if (requestFailure) error("request failed")
             return workflow(DeletionStatus.RECEIVED)
         }
 

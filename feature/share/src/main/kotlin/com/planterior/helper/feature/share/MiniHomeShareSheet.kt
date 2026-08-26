@@ -8,6 +8,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.PersistableBundle
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 
 /**
  * 시스템 공유 시트로 넘길 intent를 만든다.
@@ -43,6 +45,24 @@ object MiniHomeShareSheet {
 
     fun hasTarget(context: Context, intent: Intent): Boolean =
         intent.resolveActivity(context.packageManager) != null
+}
+
+/** Opens a chooser only when resolvable and records only a successful Android handoff. */
+class MiniHomeShareSheetHandoff(
+    private val hasTarget: (Intent) -> Boolean,
+    private val launch: (Intent) -> Unit,
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
+) {
+    fun open(payload: Intent, chooser: Intent = payload): MiniHomeShareSheetOutcome {
+        if (!hasTarget(payload)) return MiniHomeShareSheetOutcome.NoTarget
+        return try {
+            launch(chooser)
+            productEventRecorder.record(ClientProductEvent.MINI_HOME_SHARE_SHEET_OPENED)
+            MiniHomeShareSheetOutcome.Opened
+        } catch (_: Exception) {
+            MiniHomeShareSheetOutcome.Failed
+        }
+    }
 }
 
 /**

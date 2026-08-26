@@ -39,6 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
@@ -54,6 +55,7 @@ fun CameraRoute(
     onDirectRegistration: () -> Unit,
     onIdentificationRequested: suspend (PhotoSubmission) -> Unit,
     modifier: Modifier = Modifier,
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -112,6 +114,7 @@ fun CameraRoute(
                     gateway = IdentificationGateway(onIdentificationRequested),
                     launch = commandSink::emit,
                     discard = store::delete,
+                    productEventRecorder = productEventRecorder,
                 )
         ) {
             CameraFlowController(
@@ -121,6 +124,7 @@ fun CameraRoute(
                 gateway = IdentificationGateway(onIdentificationRequested),
                 launch = commandSink::emit,
                 discard = store::delete,
+                productEventRecorder = productEventRecorder,
             )
         }
     holder.controller = controller
@@ -400,6 +404,7 @@ private fun controllerSaver(
     gateway: IdentificationGateway,
     launch: (CameraCommand) -> Unit,
     discard: (String) -> Unit,
+    productEventRecorder: ProductEventRecorder,
 ): Saver<CameraFlowController, Bundle> =
     Saver(
         save = { it.snapshot().toBundle() },
@@ -412,6 +417,7 @@ private fun controllerSaver(
                 launch = launch,
                 discard = discard,
                 restored = CameraFlowSnapshot(it.toCameraState()),
+                productEventRecorder = productEventRecorder,
             )
         },
     )

@@ -5,10 +5,13 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.test.core.app.ApplicationProvider
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -69,6 +72,46 @@ class MiniHomeShareSheetTest {
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         assertNotNull(chooser.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java))
         assertFalse(chooser.extras?.keySet().orEmpty().contains(Intent.EXTRA_TEXT))
+    }
+
+    @Test
+    fun `link chooser handoff records only after launch returns successfully`() {
+        val events = mutableListOf<ClientProductEvent>()
+        var launches = 0
+        val handoff =
+            MiniHomeShareSheetHandoff(
+                hasTarget = { true },
+                launch = { launches += 1 },
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        val outcome = handoff.open(MiniHomeShareSheet.linkIntent(URL))
+
+        assertEquals(MiniHomeShareSheetOutcome.Opened, outcome)
+        assertEquals(1, launches)
+        assertEquals(listOf(ClientProductEvent.MINI_HOME_SHARE_SHEET_OPENED), events)
+    }
+
+    @Test
+    fun `link no target and launch failure record no sheet event`() {
+        val events = mutableListOf<ClientProductEvent>()
+        val recorder = ProductEventRecorder(events::add)
+
+        assertEquals(
+            MiniHomeShareSheetOutcome.NoTarget,
+            MiniHomeShareSheetHandoff({ false }, {}, recorder)
+                .open(MiniHomeShareSheet.linkIntent(URL)),
+        )
+        assertEquals(
+            MiniHomeShareSheetOutcome.Failed,
+            MiniHomeShareSheetHandoff(
+                    { true },
+                    { throw IllegalStateException("chooser blocked") },
+                    recorder,
+                )
+                .open(MiniHomeShareSheet.linkIntent(URL)),
+        )
+        assertTrue(events.isEmpty())
     }
 
     @Test

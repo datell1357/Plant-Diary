@@ -1,8 +1,10 @@
 package com.planterior.helper.feature.registration
 
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.core.model.RegistrationMethod
 import java.time.Clock
 import java.time.Instant
@@ -231,6 +233,56 @@ class RegistrationControllerTest {
             controller.editing().failure,
         )
     }
+
+    @Test
+    fun `authoritative identified edit completion records edited and registration once`() =
+        runTest {
+            val events = mutableListOf<ClientProductEvent>()
+            val controller =
+                RegistrationController(
+                    RegistrationSeed.Identified(candidate),
+                    FakeRegistrationRepository(),
+                    clock,
+                    idFactory = { PersonalPlantId("plant-instrumented") },
+                    productEventRecorder = ProductEventRecorder(events::add),
+                )
+            controller.start()
+            controller.changeName("내 몬스테라")
+
+            controller.submit()
+            controller.submit()
+
+            assertEquals(
+                listOf(
+                    ClientProductEvent.IDENTIFICATION_RESULT_EDITED,
+                    ClientProductEvent.PLANT_REGISTRATION_COMPLETED,
+                ),
+                events,
+            )
+        }
+
+    @Test
+    fun `failed registration emits nothing and successful stable retry emits completion once`() =
+        runTest {
+            val events = mutableListOf<ClientProductEvent>()
+            val controller =
+                RegistrationController(
+                    RegistrationSeed.Manual,
+                    FakeRegistrationRepository(failFirst = true),
+                    clock,
+                    idFactory = { PersonalPlantId("plant-instrumented") },
+                    productEventRecorder = ProductEventRecorder(events::add),
+                )
+            controller.start()
+            controller.changeName("고무나무")
+
+            controller.submit()
+            assertTrue(events.isEmpty())
+            controller.retry()
+            controller.retry()
+
+            assertEquals(listOf(ClientProductEvent.PLANT_REGISTRATION_COMPLETED), events)
+        }
 
     @Test
     fun `double submit while persistence is suspended writes once`() = runTest {

@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.core.model.Revision
 import kotlinx.coroutines.CancellationException
 
@@ -39,6 +41,7 @@ class MiniHomeShareImageExporter(
     private val hasTarget: (Uri) -> Boolean,
     private val launch: (Intent) -> Unit,
     private val onWritten: () -> Unit = {},
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     suspend fun export(token: MiniHomeShareCaptureToken): MiniHomeShareExportOutcome {
         if (!isCurrent(token)) return abandon()
@@ -84,6 +87,7 @@ class MiniHomeShareImageExporter(
 
         return try {
             launch(intent)
+            productEventRecorder.record(ClientProductEvent.MINI_HOME_SHARE_SHEET_OPENED)
             MiniHomeShareExportOutcome.Launched
         } catch (error: CancellationException) {
             throw error

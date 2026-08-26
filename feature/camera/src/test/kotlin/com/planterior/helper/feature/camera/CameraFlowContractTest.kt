@@ -1,5 +1,7 @@
 package com.planterior.helper.feature.camera
 
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -144,6 +146,39 @@ class CameraFlowContractTest {
     }
 
     @Test
+    fun `successful photo submission records the request event exactly once`() = runBlocking {
+        val events = mutableListOf<ClientProductEvent>()
+        val fixture = fixture(recorder = ProductEventRecorder(events::add))
+        fixture.flow.photoPrepared(photo)
+        fixture.flow.requestIdentification()
+
+        fixture.flow.approveDisclosure()
+        fixture.flow.approveDisclosure()
+
+        assertEquals(listOf(ClientProductEvent.IDENTIFICATION_REQUEST_SUBMITTED), events)
+    }
+
+    @Test
+    fun `failed or cancelled photo submission records no request event`() = runBlocking {
+        val events = mutableListOf<ClientProductEvent>()
+        val failed =
+            fixture(
+                recorder = ProductEventRecorder(events::add),
+                gatewayFailure = IllegalStateException("offline"),
+            )
+        failed.flow.photoPrepared(photo)
+        failed.flow.requestIdentification()
+        failed.flow.approveDisclosure()
+
+        val cancelled = fixture(recorder = ProductEventRecorder(events::add))
+        cancelled.flow.photoPrepared(photo)
+        cancelled.flow.requestIdentification()
+        cancelled.flow.cancelDisclosure()
+
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
     fun `recreation restores review draft without replaying launcher or request`() {
         val first = fixture()
         first.flow.photoPrepared(photo)
@@ -156,9 +191,13 @@ class CameraFlowContractTest {
         assertTrue(restored.gateway.submissions.isEmpty())
     }
 
-    private fun fixture(snapshot: CameraFlowSnapshot? = null): Fixture {
+    private fun fixture(
+        snapshot: CameraFlowSnapshot? = null,
+        recorder: ProductEventRecorder = ProductEventRecorder {},
+        gatewayFailure: Throwable? = null,
+    ): Fixture {
         val commands = mutableListOf<CameraCommand>()
-        val gateway = RecordingGateway()
+        val gateway = RecordingGateway(gatewayFailure)
         val flow =
             CameraFlowController(
                 temporaryUriFactory = TemporaryUriFactory { photo.privateUri },
@@ -170,6 +209,7 @@ class CameraFlowContractTest {
                     ),
                 gateway = gateway,
                 launch = commands::add,
+                productEventRecorder = recorder,
                 restored = snapshot,
             )
         return Fixture(flow, commands, gateway)
@@ -181,11 +221,12 @@ class CameraFlowContractTest {
         val gateway: RecordingGateway,
     )
 
-    private class RecordingGateway : IdentificationGateway {
+    private class RecordingGateway(private val failure: Throwable? = null) : IdentificationGateway {
         val submissions = mutableListOf<PhotoSubmission>()
 
         override suspend fun submit(submission: PhotoSubmission) {
             submissions += submission
+            failure?.let { throw it }
         }
     }
 }

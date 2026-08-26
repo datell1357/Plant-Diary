@@ -1159,7 +1159,11 @@ class FirebaseMiniHomeRepository(
         return runCatching {
             val watermark = state.watermark
             require(watermark.accountId == account.value)
-            if (watermark.verified && watermark.kind == MiniHomeCacheWatermarkKind.DELETED) {
+            if (
+                watermark.verified &&
+                    (watermark.kind == MiniHomeCacheWatermarkKind.DELETED ||
+                        watermark.kind == MiniHomeCacheWatermarkKind.CONVERGED_ABSENCE)
+            ) {
                 require(state.home == null && state.placements.isEmpty())
                 return@runCatching CachedMiniHomeRecovery.Missing
             }
