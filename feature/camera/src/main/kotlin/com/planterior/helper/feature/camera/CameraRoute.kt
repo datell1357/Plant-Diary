@@ -131,10 +131,32 @@ fun CameraRoute(
     commandSink.consumer = { command ->
         when (command) {
             CameraCommand.RequestPermission -> permissionLauncher.launch(Manifest.permission.CAMERA)
-            CameraCommand.LaunchPhotoPicker ->
-                pickerLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
+            CameraCommand.LaunchPhotoPicker -> {
+                val debugUri = todo18DebugPhotoPickerUri()
+                if (debugUri == null) {
+                    pickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                } else {
+                    holder.controller?.let { controller ->
+                        controller.captureStarted()
+                        scope.launch {
+                            val result =
+                                withContext(Dispatchers.IO) {
+                                    preparer.prepare(debugUri, PhotoSource.Picker)
+                                }
+                            todo18DebugPhotoPreparationFinished(
+                                debugUri,
+                                result.isSuccess,
+                            )
+                            result.fold(
+                                onSuccess = controller::photoPrepared,
+                                onFailure = { controller.photoRejected(it.photoError()) },
+                            )
+                        }
+                    }
+                }
+            }
             CameraCommand.OpenAppSettings ->
                 context.startActivity(
                     Intent(
@@ -166,14 +188,18 @@ fun CameraRoute(
     CameraScreen(
         state = state,
         preview = preview,
-        onCamera = { controller.chooseCamera(context.currentCameraPermission()) },
+        onCamera = {
+            controller.chooseCamera(todo18DebugCameraPermission(context.currentCameraPermission()))
+        },
         onPicker = controller::choosePicker,
         onDirect = controller::chooseDirectRegistration,
         onSettings = controller::openSettings,
         onCapture = captureSession::capture,
         onCloseCapture = controller::captureCancelled,
         onReplace = controller::replacePhoto,
-        onRetake = { controller.retakePhoto(context.currentCameraPermission()) },
+        onRetake = {
+            controller.retakePhoto(todo18DebugCameraPermission(context.currentCameraPermission()))
+        },
         onSubmit = controller::requestIdentification,
         onApprove = { scope.launch { controller.approveDisclosure() } },
         onCancelDisclosure = controller::cancelDisclosure,

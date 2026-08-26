@@ -451,6 +451,7 @@ internal fun PlanteriorApp(
             weatherRepository = authRuntime?.weatherRepository,
             weatherLocationGateway = weatherLocationGateway,
             weatherPermissionCapabilities = authRuntime?.weatherPermissionCapabilities,
+            accountDeletionDependencies = authRuntime?.accountDeletionDependencies,
             accountDeletionDependencyFactory =
                 authRuntime?.accountDeletionRuntime?.let { runtime -> runtime::dependencies },
             onOpenLocationSettings = onOpenLocationSettings,

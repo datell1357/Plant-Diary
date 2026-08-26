@@ -34,6 +34,11 @@ fun debugIdentificationGateway(requestId: String): IdentificationGateway? =
                 requestId,
                 IdentificationResult.Failed(IdentificationFailureReason.RATE_LIMITED),
             )
+        "fixture-provider-unavailable" ->
+            fixture(
+                requestId,
+                IdentificationResult.Failed(IdentificationFailureReason.PROVIDER_UNAVAILABLE),
+            )
         "fixture-no-candidates" -> fixture(requestId, IdentificationResult.NoCandidates)
         else -> if (CAMERA_REQUEST_ID.matches(requestId)) successFixture(requestId) else null
     }

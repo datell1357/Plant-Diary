@@ -1,0 +1,125 @@
+package com.planterior.helper
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import com.planterior.helper.core.model.ItemId
+import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.feature.collection.PlantDetailTestTags
+import com.planterior.helper.feature.minihome.MiniHomeTestTags
+import com.planterior.helper.feature.share.MiniHomeShareTestTags
+import com.planterior.helper.feature.shop.InventoryTestTags
+import com.planterior.helper.feature.watering.WateringTestTags
+import com.planterior.helper.feature.weather.WeatherTestTags
+import com.planterior.helper.navigation.PlanteriorRoute
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+
+/** Assertions for the complete persisted product journey. */
+internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsInRoom() {
+    val plantId = registerPlantThroughProductRoute()
+
+    navigateDirectly(PlanteriorRoute.PlantDetail(plantId))
+    compose.onNodeWithTag(PlantDetailTestTags.SCREEN).assertIsDisplayed()
+
+    events.navigateTo(PlanteriorRoute.WateringConfirmation(plantId)) {
+        compose.onNodeWithTag(WateringTestTags.RECORD).performScrollTo().performClick()
+    }
+    events.awaitBoundary("watering-receipt") {
+        compose.onNodeWithTag(WateringTestTags.CONFIRM).performScrollTo().performClick()
+    }
+    compose.waitForIdle()
+    compose.onNodeWithTag(WateringTestTags.RESULT).assertIsDisplayed()
+    assertNotNull(
+        runBlocking {
+            runtime.database
+                .cacheDao()
+                .plant(Todo18IntegratedRuntimeRule.ACCOUNT_UID, plantId)
+                ?.lastWateredDate
+        }
+    )
+
+    events.navigateAndAwaitBoundary(
+        route = PlanteriorRoute.Storage,
+        boundaryKind = "inventory-loaded",
+    )
+    compose.onNodeWithTag(InventoryTestTags.SHOP).performClick()
+    compose
+        .onNodeWithTag(InventoryTestTags.item(ItemId("todo18-planter")))
+        .performScrollTo()
+        .assertIsDisplayed()
+    events.awaitBoundary("inventory-acquired") {
+        compose.onNodeWithTag(InventoryTestTags.acquire(ItemId("todo18-planter"))).performClick()
+    }
+    compose.waitForIdle()
+    compose.onNodeWithTag(InventoryTestTags.FEEDBACK).assertIsDisplayed()
+    assertEquals(
+        1,
+        runBlocking {
+            runtime.database.cacheDao().ownedItems(Todo18IntegratedRuntimeRule.ACCOUNT_UID).size
+        },
+    )
+
+    events.navigateAndAwaitBoundary(
+        route = PlanteriorRoute.MiniHome,
+        boundaryKind = "mini-home-loaded",
+    )
+    compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
+    compose
+        .onNodeWithTag(MiniHomeTestTags.plant(PersonalPlantId(plantId)))
+        .performScrollTo()
+        .performClick()
+    events.awaitBoundary("mini-home-committed") {
+        compose.onNodeWithTag(MiniHomeTestTags.SAVE).performScrollTo().performClick()
+    }
+    compose.waitForIdle()
+    compose.onNodeWithText("저장했어요").assertIsDisplayed()
+    assertEquals(
+        1,
+        runBlocking {
+            val dao = runtime.database.cacheDao()
+            val home = requireNotNull(dao.miniHome(Todo18IntegratedRuntimeRule.ACCOUNT_UID))
+            dao.miniHomePlacements(
+                    Todo18IntegratedRuntimeRule.ACCOUNT_UID,
+                    home.miniHomeId,
+                    home.revision,
+                )
+                .size
+        },
+    )
+
+    events.navigateAndAwaitBoundary(
+        route = PlanteriorRoute.MiniHomeShare,
+        boundaryKind = "mini-home-loaded",
+    )
+    events.awaitBoundary("share-create") {
+        compose.onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE).performScrollTo().performClick()
+    }
+    compose.waitForIdle()
+    compose.onNodeWithTag(MiniHomeShareTestTags.LINK_URL).assertIsDisplayed()
+    compose.onNodeWithTag(MiniHomeShareTestTags.LINK_EXPIRY).assertIsDisplayed()
+
+    events.navigateAndAwaitBoundary(
+        route = PlanteriorRoute.Weather,
+        boundaryKind = "weather-loaded",
+    )
+    compose.onNodeWithTag(WeatherTestTags.STALE).assertIsDisplayed()
+
+    events.navigateAndAwaitBoundary(
+        route = PlanteriorRoute.AccountDeletion,
+        boundaryKind = "account-deletion-partial",
+    )
+    compose.onNodeWithTag("account-deletion.account-retained").performScrollTo().assertIsDisplayed()
+    compose
+        .onNodeWithTag("account-deletion.remaining.AUTH_ACCOUNT")
+        .performScrollTo()
+        .assertIsDisplayed()
+
+    captureReceipt(
+        "integrated-major-journeys",
+        "registration,collection,watering,inventory,minihome,share,weather,partial-deletion",
+    )
+}

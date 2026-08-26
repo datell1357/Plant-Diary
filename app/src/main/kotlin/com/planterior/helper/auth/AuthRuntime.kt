@@ -41,6 +41,7 @@ import com.planterior.helper.feature.home.HomeSyncStatus
 import com.planterior.helper.feature.home.HomeWeather
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.feature.registration.RegistrationRepository
+import com.planterior.helper.feature.settings.AccountDeletionDependencies
 import com.planterior.helper.feature.share.MiniHomeShareRepository
 import com.planterior.helper.feature.shop.CatalogMediaLoader
 import com.planterior.helper.feature.shop.InventoryRepository
@@ -87,6 +88,7 @@ private constructor(
     val catalogMediaLoader: CatalogMediaLoader,
     val analyticsRuntime: AnalyticsRuntime?,
     val accountDeletionRuntime: AppAccountDeletionRuntime?,
+    val accountDeletionDependencies: AccountDeletionDependencies?,
 ) {
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -167,62 +169,97 @@ private constructor(
                 )
             val forcedSessions = debugHomeSessions(activity)
             return AuthRuntime(
-                coordinator,
-                apple,
-                identity.current() != null,
-                forcedSessions != null,
-                debugHomeAccountUid(activity),
-                if (closesSharedRuntime) shared::close else ({}),
-                // 데이터는 항상 실제 캐시에서 읽는다. 디버그 QA는 세션과 날씨만 고정할 수 있다.
-                run {
-                    var forcedUid: String? = null
-                    val repository =
-                        CachedHomeRepository(
-                            shared.database,
-                            coordinator.state,
-                            debugHomeWeatherSource(
-                                activity.applicationContext,
-                                WeatherHomeSource(shared.auth, shared.weatherRepository),
-                            ),
-                            activeAccountUid = {
-                                forcedUid
-                                    ?: (coordinator.state.value as? AuthUiState.Authenticated)
-                                        ?.account
-                                        ?.uid
-                            },
-                        )
-                    if (forcedSessions == null) repository
-                    else
-                        ForcedSessionHomeRepository(repository, forcedSessions) { uid ->
-                            forcedUid = uid
-                        }
-                },
-                debugRegistrationRepository(
-                    activity.applicationContext,
-                    shared.registrationRepository,
-                ),
-                shared.collectionRepository,
-                debugMiniHomeRepository(
-                    activity.applicationContext,
-                    shared.database,
-                    shared.miniHomeRepository,
-                ),
-                shared.miniHomeShareRepository,
-                shared.inventoryRepository,
-                shared.wateringRepository,
-                shared.wateringNotificationSettingsRepository,
-                shared.weatherRepository,
-                shared.weatherPermissionCapabilities,
-                shared.collectionThumbnailLoader,
-                shared.catalogMediaLoader,
-                shared.analyticsRuntime,
-                AppAccountDeletionRuntime(
-                    activity.applicationContext,
-                    shared.functions,
-                    shared.database,
                     coordinator,
+                    apple,
+                    identity.current() != null,
+                    forcedSessions != null,
+                    debugHomeAccountUid(activity),
+                    if (closesSharedRuntime) shared::close else ({}),
+                    // 데이터는 항상 실제 캐시에서 읽는다. 디버그 QA는 세션과 날씨만 고정할 수 있다.
+                    run {
+                        var forcedUid: String? = null
+                        val repository =
+                            CachedHomeRepository(
+                                shared.database,
+                                coordinator.state,
+                                debugHomeWeatherSource(
+                                    activity.applicationContext,
+                                    WeatherHomeSource(shared.auth, shared.weatherRepository),
+                                ),
+                                activeAccountUid = {
+                                    forcedUid
+                                        ?: (coordinator.state.value as? AuthUiState.Authenticated)
+                                            ?.account
+                                            ?.uid
+                                },
+                            )
+                        if (forcedSessions == null) repository
+                        else
+                            ForcedSessionHomeRepository(repository, forcedSessions) { uid ->
+                                forcedUid = uid
+                            }
+                    },
+                    debugRegistrationRepository(
+                        activity.applicationContext,
+                        shared.registrationRepository,
+                    ),
+                    shared.collectionRepository,
+                    debugMiniHomeRepository(
+                        activity.applicationContext,
+                        shared.database,
+                        shared.miniHomeRepository,
+                    ),
+                    shared.miniHomeShareRepository,
+                    shared.inventoryRepository,
+                    shared.wateringRepository,
+                    shared.wateringNotificationSettingsRepository,
+                    shared.weatherRepository,
+                    shared.weatherPermissionCapabilities,
+                    shared.collectionThumbnailLoader,
+                    shared.catalogMediaLoader,
                     shared.analyticsRuntime,
-                ),
+                    AppAccountDeletionRuntime(
+                        activity.applicationContext,
+                        shared.functions,
+                        shared.database,
+                        coordinator,
+                        shared.analyticsRuntime,
+                    ),
+                    null,
+                )
+                .withTodo18DebugOverrides()
+        }
+
+        private fun AuthRuntime.withTodo18DebugOverrides(): AuthRuntime {
+            val overrides = todo18DebugRuntimeDependencyOverrides() ?: return this
+            return AuthRuntime(
+                coordinator = coordinator,
+                apple = apple,
+                hasSession = hasSession,
+                forcedHomeSession = forcedHomeSession,
+                forcedHomeAccountUid = forcedHomeAccountUid,
+                closeAction = this::close,
+                homeRepository = homeRepository,
+                registrationRepository = overrides.registrationRepository ?: registrationRepository,
+                collectionRepository = overrides.collectionRepository ?: collectionRepository,
+                miniHomeRepository = overrides.miniHomeRepository ?: miniHomeRepository,
+                miniHomeShareRepository =
+                    overrides.miniHomeShareRepository ?: miniHomeShareRepository,
+                inventoryRepository = overrides.inventoryRepository ?: inventoryRepository,
+                wateringRepository = overrides.wateringRepository ?: wateringRepository,
+                wateringNotificationSettingsRepository =
+                    overrides.wateringNotificationSettingsRepository
+                        ?: wateringNotificationSettingsRepository,
+                weatherRepository = overrides.weatherRepository ?: weatherRepository,
+                weatherPermissionCapabilities =
+                    overrides.weatherPermissionCapabilities ?: weatherPermissionCapabilities,
+                collectionThumbnailLoader =
+                    overrides.collectionThumbnailLoader ?: collectionThumbnailLoader,
+                catalogMediaLoader = overrides.catalogMediaLoader ?: catalogMediaLoader,
+                analyticsRuntime = analyticsRuntime,
+                accountDeletionRuntime = accountDeletionRuntime,
+                accountDeletionDependencies =
+                    overrides.accountDeletionDependencies ?: accountDeletionDependencies,
             )
         }
 
@@ -298,6 +335,7 @@ private constructor(
                 null,
                 PlaceholderPlantThumbnailLoader,
                 PlaceholderCatalogMediaLoader,
+                null,
                 null,
                 null,
             )
