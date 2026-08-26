@@ -9,9 +9,13 @@ object FirebaseRuntime {
         val projectId: String,
         val applicationId: String,
         val apiKey: String,
+        val storageBucket: String,
     ) {
         fun isComplete(): Boolean =
-            projectId.isNotBlank() && applicationId.isNotBlank() && apiKey.isNotBlank()
+            projectId.isNotBlank() &&
+                applicationId.isNotBlank() &&
+                apiKey.isNotBlank() &&
+                storageBucket.isNotBlank()
     }
 
     @Synchronized
@@ -22,6 +26,7 @@ object FirebaseRuntime {
                 BuildConfig.FIREBASE_PROJECT_ID,
                 BuildConfig.FIREBASE_APP_ID,
                 BuildConfig.FIREBASE_API_KEY,
+                BuildConfig.FIREBASE_STORAGE_BUCKET,
             ),
     ): FirebaseApp? {
         if (!configuration.isComplete()) return null
@@ -34,6 +39,7 @@ object FirebaseRuntime {
                 .setProjectId(configuration.projectId)
                 .setApplicationId(configuration.applicationId)
                 .setApiKey(configuration.apiKey)
+                .setStorageBucket(configuration.storageBucket)
                 .build(),
         )
     }

@@ -22,6 +22,9 @@ GOOGLE_CLIENT_ID="123456789012-verificationonlyclient.apps.googleusercontent.com
 FIREBASE_PROJECT_ID="demo-planterior-release"
 FIREBASE_APP_ID="1:123456789012:android:0123456789abcdef"
 FIREBASE_API_KEY="AIza$(printf 'v%.0s' {1..35})"
+FIREBASE_STORAGE_BUCKET="demo-planterior-release.firebasestorage.app"
+BUNDLETOOL_JAR="${BUNDLETOOL_JAR:-}"
+BUNDLETOOL_CLASSPATH="${BUNDLETOOL_CLASSPATH:-}"
 GRADLE=("$ROOT_DIR/gradlew" --no-daemon --console=plain)
 CACHED_GRADLE=("$ROOT_DIR/gradlew" --console=plain --configuration-cache)
 LOCAL_PROPERTIES="$ROOT_DIR/local.properties"
@@ -32,6 +35,7 @@ AUTH_ENV=(
     -u PLANTERIOR_FIREBASE_PROJECT_ID
     -u PLANTERIOR_FIREBASE_APP_ID
     -u PLANTERIOR_FIREBASE_API_KEY
+    -u PLANTERIOR_FIREBASE_STORAGE_BUCKET
     -u PLANTERIOR_RELEASE_STORE_FILE
     -u PLANTERIOR_RELEASE_STORE_PASSWORD
     -u PLANTERIOR_RELEASE_KEY_ALIAS
@@ -68,6 +72,7 @@ assert_redacted() {
         "$FIREBASE_PROJECT_ID" \
         "$FIREBASE_APP_ID" \
         "$FIREBASE_API_KEY" \
+        "$FIREBASE_STORAGE_BUCKET" \
         "$STORE_PASSWORD" \
         "$SEPARATE_STORE_PASSWORD" \
         "$SEPARATE_KEY_PASSWORD" \
@@ -83,6 +88,7 @@ assert_redacted() {
         "INVALID_PROJECT" \
         "not-an-app" \
         "not-an-api-key" \
+        "not-a-bucket/" \
         "quote-escape-marker" \
         "backslash-escape-marker" \
         "newline-escape-marker"; do
@@ -106,6 +112,7 @@ planterior.release.googleWebClientId=not-a-client-quote-"-redaction-check
 planterior.release.firebaseProjectId=INVALID_PROJECT
 planterior.release.firebaseAppId=not-an-app
 planterior.release.firebaseApiKey=not-an-api-key
+planterior.release.firebaseStorageBucket=not-a-bucket/
 PROPERTIES
 
 if run_isolated \
@@ -122,6 +129,7 @@ env "${AUTH_ENV[@]}" \
     PLANTERIOR_FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
     PLANTERIOR_FIREBASE_APP_ID="$FIREBASE_APP_ID" \
     PLANTERIOR_FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+    PLANTERIOR_FIREBASE_STORAGE_BUCKET="$FIREBASE_STORAGE_BUCKET" \
     "${GRADLE[@]}" \
     -Pplanterior.release.configFile="$EMPTY_CONFIG" \
     :app:validateReleaseAuthConfiguration > "$TMP_DIR/environment.log" 2>&1 ||
@@ -133,6 +141,7 @@ env "${AUTH_ENV[@]}" \
     PLANTERIOR_FIREBASE_PROJECT_ID="  $FIREBASE_PROJECT_ID  " \
     PLANTERIOR_FIREBASE_APP_ID="  $FIREBASE_APP_ID  " \
     PLANTERIOR_FIREBASE_API_KEY="  $FIREBASE_API_KEY  " \
+    PLANTERIOR_FIREBASE_STORAGE_BUCKET="  $FIREBASE_STORAGE_BUCKET  " \
     "${GRADLE[@]}" \
     -Pplanterior.release.configFile="$EMPTY_CONFIG" \
     :app:validateReleaseAuthConfiguration > "$TMP_DIR/trimmed-environment.log" 2>&1 ||
@@ -145,6 +154,7 @@ run_isolated \
     -Pplanterior.release.firebaseProjectId="$FIREBASE_PROJECT_ID" \
     -Pplanterior.release.firebaseAppId="$FIREBASE_APP_ID" \
     -Pplanterior.release.firebaseApiKey="$FIREBASE_API_KEY" \
+    -Pplanterior.release.firebaseStorageBucket="$FIREBASE_STORAGE_BUCKET" \
     :app:validateReleaseAuthConfiguration > "$TMP_DIR/gradle-properties.log" 2>&1 ||
     fail "valid Gradle property configuration was rejected"
 assert_redacted "$TMP_DIR/gradle-properties.log"
@@ -155,6 +165,7 @@ planterior.release.googleWebClientId=$GOOGLE_CLIENT_ID
 planterior.release.firebaseProjectId=$FIREBASE_PROJECT_ID
 planterior.release.firebaseAppId=$FIREBASE_APP_ID
 planterior.release.firebaseApiKey=$FIREBASE_API_KEY
+planterior.release.firebaseStorageBucket=$FIREBASE_STORAGE_BUCKET
 PROPERTIES
 run_isolated :app:validateReleaseAuthConfiguration > "$TMP_DIR/local-properties.log" 2>&1 ||
     fail "valid ignored local.properties configuration was rejected"
@@ -166,12 +177,14 @@ planterior.release.googleWebClientId=invalid-local-precedence
 planterior.release.firebaseProjectId=INVALID_LOCAL_PRECEDENCE
 planterior.release.firebaseAppId=invalid-local-precedence
 planterior.release.firebaseApiKey=invalid-local-precedence
+planterior.release.firebaseStorageBucket=invalid/local/precedence
 PROPERTIES
 env "${AUTH_ENV[@]}" \
     PLANTERIOR_GOOGLE_WEB_CLIENT_ID="$GOOGLE_CLIENT_ID" \
     PLANTERIOR_FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
     PLANTERIOR_FIREBASE_APP_ID="$FIREBASE_APP_ID" \
     PLANTERIOR_FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+    PLANTERIOR_FIREBASE_STORAGE_BUCKET="$FIREBASE_STORAGE_BUCKET" \
     "${GRADLE[@]}" \
     :app:validateReleaseAuthConfiguration > "$TMP_DIR/environment-precedence.log" 2>&1 ||
     fail "environment configuration did not override local.properties"
@@ -182,11 +195,13 @@ env "${AUTH_ENV[@]}" \
     PLANTERIOR_FIREBASE_PROJECT_ID="INVALID_ENVIRONMENT_PRECEDENCE" \
     PLANTERIOR_FIREBASE_APP_ID="invalid-environment-precedence" \
     PLANTERIOR_FIREBASE_API_KEY="invalid-environment-precedence" \
+    PLANTERIOR_FIREBASE_STORAGE_BUCKET="invalid/environment/precedence" \
     "${GRADLE[@]}" \
     -Pplanterior.release.googleWebClientId="$GOOGLE_CLIENT_ID" \
     -Pplanterior.release.firebaseProjectId="$FIREBASE_PROJECT_ID" \
     -Pplanterior.release.firebaseAppId="$FIREBASE_APP_ID" \
     -Pplanterior.release.firebaseApiKey="$FIREBASE_API_KEY" \
+    -Pplanterior.release.firebaseStorageBucket="$FIREBASE_STORAGE_BUCKET" \
     :app:validateReleaseAuthConfiguration > "$TMP_DIR/gradle-precedence.log" 2>&1 ||
     fail "Gradle properties did not override environment and local.properties"
 assert_redacted "$TMP_DIR/gradle-precedence.log"
@@ -202,6 +217,7 @@ assert_malformed_environment_value() {
         PLANTERIOR_FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
         PLANTERIOR_FIREBASE_APP_ID="$FIREBASE_APP_ID" \
         PLANTERIOR_FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+        PLANTERIOR_FIREBASE_STORAGE_BUCKET="$FIREBASE_STORAGE_BUCKET" \
         "${GRADLE[@]}" \
         -Pplanterior.release.configFile="$EMPTY_CONFIG" \
         :app:validateReleaseAuthConfiguration > "$log_file" 2>&1; then
@@ -278,6 +294,7 @@ planterior.release.googleWebClientId=$GOOGLE_CLIENT_ID
 planterior.release.firebaseProjectId=$FIREBASE_PROJECT_ID
 planterior.release.firebaseAppId=$FIREBASE_APP_ID
 planterior.release.firebaseApiKey=$FIREBASE_API_KEY
+planterior.release.firebaseStorageBucket=$FIREBASE_STORAGE_BUCKET
 planterior.release.storeFile=$store_file
 planterior.release.storePassword=$store_password
 planterior.release.keyAlias=$key_alias
@@ -400,6 +417,7 @@ planterior.release.googleWebClientId=$GOOGLE_CLIENT_ID
 planterior.release.firebaseProjectId=$FIREBASE_PROJECT_ID
 planterior.release.firebaseAppId=$FIREBASE_APP_ID
 planterior.release.firebaseApiKey=$FIREBASE_API_KEY
+planterior.release.firebaseStorageBucket=$FIREBASE_STORAGE_BUCKET
 planterior.release.storeFile=$KEYSTORE
 planterior.release.storePassword=$STORE_PASSWORD
 planterior.release.keyAlias=$KEY_ALIAS
@@ -408,19 +426,100 @@ PROPERTIES
 
 run_isolated \
     -Pplanterior.release.configFile="$VALID_CONFIG" \
-    :app:assembleRelease > "$TMP_DIR/release.log" 2>&1 ||
+    :app:assembleRelease \
+    :app:bundleRelease > "$TMP_DIR/release.log" 2>&1 ||
     fail "valid external verification configuration did not build"
 assert_redacted "$TMP_DIR/release.log"
 
 APK="$ROOT_DIR/app/build/outputs/apk/release/app-release.apk"
+AAB="$ROOT_DIR/app/build/outputs/bundle/release/app-release.aab"
+APKS="$TMP_DIR/app-release.apks"
+UNIVERSAL_APK="$TMP_DIR/universal.apk"
 [[ -f "$APK" ]] || fail "release APK was not produced"
+[[ -f "$AAB" ]] || fail "release AAB was not produced"
+[[ -f "$BUNDLETOOL_JAR" ]] ||
+    fail "BUNDLETOOL_JAR must point to the bundletool JAR for APKS verification"
+
+BUNDLETOOL=(java -jar "$BUNDLETOOL_JAR")
+if [[ -n "$BUNDLETOOL_CLASSPATH" ]]; then
+    IFS=':' read -r -a bundletool_runtime_jars <<< "$BUNDLETOOL_CLASSPATH"
+    for runtime_jar in "${bundletool_runtime_jars[@]}"; do
+        [[ -f "$runtime_jar" ]] ||
+            fail "BUNDLETOOL_CLASSPATH contains a missing runtime JAR"
+    done
+    BUNDLETOOL=(
+        java
+        -cp "$BUNDLETOOL_CLASSPATH"
+        com.android.tools.build.bundletool.BundleToolMain
+    )
+fi
 
 APK_ANALYZER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}/cmdline-tools/latest/bin/apkanalyzer"
 APK_SIGNER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}/build-tools/37.0.0/apksigner"
+AAPT2="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}/build-tools/37.0.0/aapt2"
 [[ -x "$APK_ANALYZER" ]] || fail "apkanalyzer is unavailable"
 [[ -x "$APK_SIGNER" ]] || fail "apksigner is unavailable"
+[[ -x "$AAPT2" ]] || fail "aapt2 is unavailable"
+command -v jarsigner > /dev/null || fail "jarsigner is unavailable"
+command -v openssl > /dev/null || fail "openssl is unavailable"
+
+jarsigner -verify "$AAB" > "$TMP_DIR/aab-signature.log" 2>&1 ||
+    fail "ephemeral release AAB is not signed"
+assert_redacted "$TMP_DIR/aab-signature.log"
+
+printf '%s' "$STORE_PASSWORD" > "$TMP_DIR/store-password.txt"
+printf '%s' "$KEY_PASSWORD" > "$TMP_DIR/key-password.txt"
+chmod 600 "$TMP_DIR/store-password.txt" "$TMP_DIR/key-password.txt"
+"${BUNDLETOOL[@]}" build-apks \
+    --bundle="$AAB" \
+    --output="$APKS" \
+    --mode=universal \
+    --ks="$KEYSTORE" \
+    --ks-key-alias="$KEY_ALIAS" \
+    --ks-pass="file:$TMP_DIR/store-password.txt" \
+    --key-pass="file:$TMP_DIR/key-password.txt" \
+    --aapt2="$AAPT2" > "$TMP_DIR/bundletool.log" 2>&1 ||
+    fail "bundletool could not produce verification APKS"
+assert_redacted "$TMP_DIR/bundletool.log"
+unzip -p "$APKS" universal.apk > "$UNIVERSAL_APK" ||
+    fail "verification APKS does not contain universal.apk"
 
 "$APK_SIGNER" verify "$APK" > /dev/null || fail "ephemeral release APK is not signed"
+"$APK_SIGNER" verify "$UNIVERSAL_APK" > /dev/null ||
+    fail "ephemeral universal APK is not signed"
+
+keytool -exportcert \
+    -keystore "$KEYSTORE" \
+    -storepass "$STORE_PASSWORD" \
+    -alias "$KEY_ALIAS" \
+    -file "$TMP_DIR/expected-signing.cer" > /dev/null 2>&1
+keytool -printcert -rfc -jarfile "$AAB" |
+    awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' > "$TMP_DIR/aab-signing.pem"
+"$APK_SIGNER" verify --print-certs-pem "$UNIVERSAL_APK" |
+    awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' > "$TMP_DIR/apks-signing.pem"
+openssl x509 -in "$TMP_DIR/aab-signing.pem" -outform DER > "$TMP_DIR/aab-signing.cer"
+openssl x509 -in "$TMP_DIR/apks-signing.pem" -outform DER > "$TMP_DIR/apks-signing.cer"
+EXPECTED_CERTIFICATE_SHA256="$(shasum -a 256 "$TMP_DIR/expected-signing.cer" | awk '{print $1}')"
+AAB_CERTIFICATE_SHA256="$(shasum -a 256 "$TMP_DIR/aab-signing.cer" | awk '{print $1}')"
+APKS_CERTIFICATE_SHA256="$(shasum -a 256 "$TMP_DIR/apks-signing.cer" | awk '{print $1}')"
+[[ "$AAB_CERTIFICATE_SHA256" == "$EXPECTED_CERTIFICATE_SHA256" ]] ||
+    fail "AAB signing certificate does not match the configured private-key alias"
+[[ "$APKS_CERTIFICATE_SHA256" == "$EXPECTED_CERTIFICATE_SHA256" ]] ||
+    fail "APKS signing certificate does not match the configured private-key alias"
+printf 'verified release signatures: AAB and APKS match configured private-key alias\n'
+
+"${BUNDLETOOL[@]}" dump manifest --bundle="$AAB" > "$TMP_DIR/release-manifest.xml"
+grep -Fq 'package="com.planterior.helper"' "$TMP_DIR/release-manifest.xml" ||
+    fail "release bundle application ID is incorrect"
+grep -Fq 'android:versionCode="1"' "$TMP_DIR/release-manifest.xml" ||
+    fail "release bundle version code is incorrect"
+grep -Fq 'android:versionName="0.1.0"' "$TMP_DIR/release-manifest.xml" ||
+    fail "release bundle version name is incorrect"
+grep -Fq 'android:minSdkVersion="29"' "$TMP_DIR/release-manifest.xml" ||
+    fail "release bundle minimum SDK is incorrect"
+grep -Fq 'android:targetSdkVersion="37"' "$TMP_DIR/release-manifest.xml" ||
+    fail "release bundle target SDK is incorrect"
+printf 'verified release manifest: application ID, version, min SDK, target SDK\n'
 "$APK_ANALYZER" dex packages --defined-only "$APK" > "$TMP_DIR/packages.txt"
 for class_name in \
     "com.planterior.helper.auth.AuthRuntime" \
@@ -431,16 +530,36 @@ for class_name in \
     grep -Fq "$class_name" "$TMP_DIR/packages.txt" || fail "$class_name was stripped from release DEX"
     printf 'retained release class: %s\n' "$class_name"
 done
+for debug_class_name in \
+    "com.planterior.helper.feature.auth.DebugAuthHarness" \
+    "com.planterior.helper.feature.auth.DebugAuthControls"; do
+    if grep -Fq "$debug_class_name" "$TMP_DIR/packages.txt"; then
+        fail "$debug_class_name was packaged in release DEX"
+    fi
+done
 
 unzip -p "$APK" 'classes*.dex' > "$TMP_DIR/release.dex"
-for configured_value in "$GOOGLE_CLIENT_ID" "$FIREBASE_PROJECT_ID" "$FIREBASE_APP_ID" "$FIREBASE_API_KEY"; do
+for configured_value in \
+    "$GOOGLE_CLIENT_ID" \
+    "$FIREBASE_PROJECT_ID" \
+    "$FIREBASE_APP_ID" \
+    "$FIREBASE_API_KEY" \
+    "$FIREBASE_STORAGE_BUCKET"; do
     grep -aFq "$configured_value" "$TMP_DIR/release.dex" ||
         fail "external authentication configuration was not packaged"
 done
 
 unzip -p "$APK" > "$TMP_DIR/release.contents"
-if grep -aEq 'DebugAuthHarness|DebugAuthControls|QA 인증 시나리오|qa-google-account-a|KAKAO|Kakao|kakao|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' "$TMP_DIR/release.contents"; then
-    fail "release artifact contains debug auth, Kakao, or private-key material"
+unzip -Z1 "$AAB" |
+    while IFS= read -r bundle_entry; do
+        case "$bundle_entry" in
+            base/*) unzip -p "$AAB" "$bundle_entry" >> "$TMP_DIR/release.contents" ;;
+        esac
+    done
+unzip -p "$UNIVERSAL_APK" >> "$TMP_DIR/release.contents"
+if grep -aEq 'DebugAuthHarness|DebugAuthControls|QA 인증 시나리오|qa-google-account-a|KAKAO|Kakao|kakao|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|PLANT_ID_API_KEY|OPENWEATHER_API_KEY|APPLE_PRIVATE_KEY|APPLE_ABUSE_HASH_KEY|MINI_HOME_SHARE_TOKEN_KEY' "$TMP_DIR/release.contents"; then
+    fail "release artifacts contain debug auth or server-side provider secret material"
 fi
+printf 'scanned release APK, AAB, and APKS for debug and server-side provider secret material\n'
 
-printf 'release auth contract passed: missing/malformed auth and invalid signing credentials rejected early; signed supplied build retained Google+Apple production paths\n'
+printf 'release auth contract passed: missing/malformed auth and invalid signing credentials rejected early; signed APK/AAB/APKS retained Google+Apple production paths\n'

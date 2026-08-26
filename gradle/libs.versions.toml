@@ -30,6 +30,8 @@ firebase-messaging = "25.1.2"
 firebase-appcheck = "19.4.1"
 androidx-test-runner = "1.7.0"
 androidx-test-espresso = "3.7.0"
+androidx-baselineprofile = "1.5.0-rc01"
+androidx-uiautomator = "2.4.0"
 camerax = "1.6.1"
 exifinterface = "1.4.2"
 
@@ -74,6 +76,8 @@ firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appch
 firebase-appcheck-debug = { module = "com.google.firebase:firebase-appcheck-debug", version.ref = "firebase-appcheck" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidx-test-espresso" }
+androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "androidx-baselineprofile" }
+androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "androidx-uiautomator" }
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
 androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
@@ -83,6 +87,8 @@ androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", vers
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "androidx-baselineprofile" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

@@ -18,6 +18,7 @@ rootProject.name = "PlanteriorHelper"
 
 include(
     ":app",
+    ":baselineprofile",
     ":core:model",
     ":core:designsystem",
     ":core:data",

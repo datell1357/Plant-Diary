@@ -1,0 +1,429 @@
+{
+  "schemaVersion": 1,
+  "packetDate": "2026-08-26",
+  "product": {
+    "appName": "플랜테리어",
+    "applicationId": "com.planterior.helper",
+    "versionCode": 1,
+    "versionName": "0.1.0",
+    "minSdk": 29,
+    "targetSdk": 37,
+    "compileSdk": 37,
+    "defaultLocale": "ko",
+    "releaseArtifact": "app/build/outputs/bundle/release/app-release.aab"
+  },
+  "releaseControls": {
+    "debuggable": false,
+    "r8Minification": true,
+    "resourceShrinking": true,
+    "proguardFiles": [
+      "proguard-android-optimize.txt",
+      "app/proguard-rules.pro"
+    ],
+    "releaseAppCheckProvider": "PLAY_INTEGRITY",
+    "releaseAppCheckSource": "app/src/release/kotlin/com/planterior/helper/AppCheckProviderInstaller.kt",
+    "firebaseOptions": [
+      "projectId",
+      "applicationId",
+      "apiKey",
+      "storageBucket"
+    ],
+    "releaseInputPolicy": "REQUIRED_EXTERNAL_FAIL_CLOSED",
+    "signingAliasPolicy": "ALIAS_MUST_BE_A_PRIVATE_KEY_ENTRY_AND_UNLOCK_WITH_THE_SUPPLIED_KEY_PASSWORD"
+  },
+  "permissions": [
+    {
+      "name": "android.permission.POST_NOTIFICATIONS",
+      "origin": "app",
+      "runtime": true,
+      "optionalFeature": true,
+      "purpose": "Show watering reminders and weather-risk notifications after user approval."
+    },
+    {
+      "name": "android.permission.ACCESS_COARSE_LOCATION",
+      "origin": "app",
+      "runtime": true,
+      "optionalFeature": true,
+      "purpose": "Resolve an approximate device region for local weather after separate in-app location consent. Manual region selection remains available."
+    },
+    {
+      "name": "android.permission.CAMERA",
+      "origin": "feature/camera",
+      "runtime": true,
+      "optionalFeature": true,
+      "purpose": "Capture a plant photo only after the user chooses the camera path. The system photo picker requires no broad storage permission."
+    },
+    {
+      "name": "android.permission.INTERNET",
+      "origin": "dependency",
+      "runtime": false,
+      "optionalFeature": false,
+      "purpose": "Use Firebase authentication, sync, callable functions, storage, messaging, identification, and weather services."
+    },
+    {
+      "name": "android.permission.ACCESS_NETWORK_STATE",
+      "origin": "dependency",
+      "runtime": false,
+      "optionalFeature": false,
+      "purpose": "Apply network-aware retry and offline behavior for Firebase and background work."
+    },
+    {
+      "name": "android.permission.USE_BIOMETRIC",
+      "origin": "Google identity dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Support device-protected credential flows offered by the Google identity stack."
+    },
+    {
+      "name": "android.permission.USE_FINGERPRINT",
+      "origin": "Google identity dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Provide legacy fingerprint compatibility for device-protected credential flows."
+    },
+    {
+      "name": "android.permission.WAKE_LOCK",
+      "origin": "Firebase Messaging dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Allow bounded processing of an incoming push notification."
+    },
+    {
+      "name": "com.google.android.c2dm.permission.RECEIVE",
+      "origin": "Firebase Messaging dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Receive Firebase Cloud Messaging deliveries."
+    },
+    {
+      "name": "com.google.android.providers.gsf.permission.READ_GSERVICES",
+      "origin": "Google Play services dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Support Google Play services configuration used by identity and messaging dependencies."
+    },
+    {
+      "name": "android.permission.RECEIVE_BOOT_COMPLETED",
+      "origin": "WorkManager dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Restore eligible scheduled background work after device restart."
+    },
+    {
+      "name": "android.permission.FOREGROUND_SERVICE",
+      "origin": "WorkManager dependency",
+      "runtime": false,
+      "optionalFeature": true,
+      "purpose": "Permit WorkManager to run user-visible long-running work when Android requires foreground execution."
+    },
+    {
+      "name": "com.planterior.helper.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+      "origin": "AndroidX dependency",
+      "runtime": false,
+      "optionalFeature": false,
+      "purpose": "Protect app-internal dynamically registered broadcast receivers from external callers."
+    }
+  ],
+  "playDataSafety": {
+    "technicalDisclosureCandidates": [
+      {
+        "id": "personal_info.identity",
+        "playCategory": "PERSONAL_INFO",
+        "playDataTypes": ["NAME", "EMAIL_ADDRESS", "USER_IDS"],
+        "collected": true,
+        "sharedDeclaration": "NO_SUBJECT_TO_EXTERNAL_PROCESSOR_ROLE_CONFIRMATION",
+        "purposes": ["APP_FUNCTIONALITY", "ACCOUNT_MANAGEMENT"],
+        "optional": true,
+        "notes": "Collected when the user elects Google or Apple sign-in; guest use is supported."
+      },
+      {
+        "id": "photos.plant",
+        "playCategory": "PHOTOS_AND_VIDEOS",
+        "playDataTypes": ["PHOTOS"],
+        "collected": true,
+        "sharedDeclaration": "EXTERNAL_PROCESSOR_ROLE_CONFIRMATION_REQUIRED",
+        "purposes": ["APP_FUNCTIONALITY"],
+        "optional": true,
+        "notes": "Identification originals, optional representative photos, and optional mini-home share images have different retention boundaries in the obligation map."
+      },
+      {
+        "id": "location.approximate",
+        "playCategory": "LOCATION",
+        "playDataTypes": ["APPROXIMATE_LOCATION"],
+        "collected": true,
+        "sharedDeclaration": "EXTERNAL_PROCESSOR_ROLE_CONFIRMATION_REQUIRED",
+        "purposes": ["APP_FUNCTIONALITY"],
+        "optional": true,
+        "notes": "Requires OS coarse-location permission plus separate app consent; manual region is an alternative."
+      },
+      {
+        "id": "activity.interactions",
+        "playCategory": "APP_ACTIVITY",
+        "playDataTypes": ["APP_INTERACTIONS"],
+        "collected": true,
+        "sharedDeclaration": "NO_SUBJECT_TO_EXTERNAL_PROCESSOR_ROLE_CONFIRMATION",
+        "purposes": ["ANALYTICS"],
+        "optional": true,
+        "notes": "First-party allowlisted analytics is default-off and contains no free-form values."
+      },
+      {
+        "id": "activity.user_content",
+        "playCategory": "APP_ACTIVITY",
+        "playDataTypes": ["OTHER_USER_GENERATED_CONTENT"],
+        "collected": true,
+        "sharedDeclaration": "NO_SUBJECT_TO_EXTERNAL_PROCESSOR_ROLE_CONFIRMATION",
+        "purposes": ["APP_FUNCTIONALITY"],
+        "optional": true,
+        "notes": "Plant, watering, mini-home, and share content exists only when the user creates it."
+      },
+      {
+        "id": "device.messaging",
+        "playCategory": "DEVICE_OR_OTHER_IDS",
+        "playDataTypes": ["DEVICE_OR_OTHER_IDS"],
+        "collected": true,
+        "sharedDeclaration": "NO_SUBJECT_TO_EXTERNAL_PROCESSOR_ROLE_CONFIRMATION",
+        "purposes": ["APP_FUNCTIONALITY"],
+        "optional": true,
+        "notes": "FCM installation and registration identifiers are used for optional notifications."
+      }
+    ],
+    "obligationSource": "docs/data-safety-matrix.md#4-retention-and-deletion-matrix",
+    "obligationCount": 12,
+    "obligations": [
+      {
+        "id": "DSO-01",
+        "sourceLabel": "Raw analytics events",
+        "dataTypeIds": ["activity.interactions"],
+        "activeRetention": "35_DAYS",
+        "accountDeletion": "PURGE_AT_DELETION_REQUEST",
+        "playPurpose": ["ANALYTICS"]
+      },
+      {
+        "id": "DSO-02",
+        "sourceLabel": "Identification originals (normal path)",
+        "dataTypeIds": ["photos.plant"],
+        "activeRetention": "TERMINAL_PLUS_MAX_24_HOURS",
+        "accountDeletion": "SEAL_AND_DELETE",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-03",
+        "sourceLabel": "Identification originals (abandoned, no terminal state reached)",
+        "dataTypeIds": ["photos.plant"],
+        "activeRetention": "CREATION_PLUS_MAX_24_HOURS",
+        "accountDeletion": "SEAL_AND_DELETE",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-04",
+        "sourceLabel": "Representative photos (PLANT_PHOTO)",
+        "dataTypeIds": ["photos.plant", "activity.user_content"],
+        "activeRetention": "WHILE_OWNING_PLANT_RECORD_EXISTS",
+        "accountDeletion": "DELETE_STORAGE_PREFIX",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-05",
+        "sourceLabel": "Location (device region + weather state derived from it)",
+        "dataTypeIds": ["location.approximate"],
+        "activeRetention": "WHILE_LOCATION_CONSENT_IS_GRANTED",
+        "accountDeletion": "RECURSIVE_USER_DOCUMENT_DELETE",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-06",
+        "sourceLabel": "Weather state",
+        "dataTypeIds": ["location.approximate", "activity.user_content"],
+        "activeRetention": "35_DAYS_WITH_3_HOUR_DISPLAY_FRESHNESS",
+        "accountDeletion": "RECURSIVE_USER_DOCUMENT_DELETE",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-07",
+        "sourceLabel": "Notification diagnostics",
+        "dataTypeIds": ["device.messaging", "activity.interactions"],
+        "activeRetention": "TERMINAL_PLUS_35_DAYS",
+        "accountDeletion": "USER_DELETE_PLUS_OWNER_GLOBAL_SWEEP",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-08",
+        "sourceLabel": "Mini-home shares / public cache",
+        "dataTypeIds": ["photos.plant", "activity.user_content"],
+        "activeRetention": "30_DAYS_OR_EXPLICIT_REVOCATION",
+        "accountDeletion": "DELETE_METADATA_AND_PUBLIC_SNAPSHOT",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-09",
+        "sourceLabel": "Sync placement tombstones (mini-home)",
+        "dataTypeIds": ["activity.user_content"],
+        "activeRetention": "UNTIL_CONFIRMED_FULL_SYNC_CONVERGENCE",
+        "accountDeletion": "RECURSIVE_USER_DOCUMENT_DELETE",
+        "playPurpose": ["APP_FUNCTIONALITY"]
+      },
+      {
+        "id": "DSO-10",
+        "sourceLabel": "Private media metadata and seals",
+        "dataTypeIds": ["photos.plant", "personal_info.identity"],
+        "activeRetention": "STATE_MACHINE_WITH_10_MINUTE_UNCOMMITTED_UPLOAD_WINDOW",
+        "accountDeletion": "SEAL_OBJECT_THEN_PURGE_METADATA",
+        "playPurpose": ["APP_FUNCTIONALITY", "FRAUD_PREVENTION_SECURITY_COMPLIANCE"]
+      },
+      {
+        "id": "DSO-11",
+        "sourceLabel": "Account deletion request/receipt tombstones",
+        "dataTypeIds": ["personal_info.identity", "activity.interactions"],
+        "activeRetention": "7_DAY_GRACE_THEN_35_DAY_MINIMIZED_CANCEL_TOMBSTONE_OR_DELETE_ON_COMPLETION",
+        "accountDeletion": "WORKFLOW_BOOKKEEPING_REMOVED_ON_COMPLETION",
+        "playPurpose": ["ACCOUNT_MANAGEMENT", "FRAUD_PREVENTION_SECURITY_COMPLIANCE"]
+      },
+      {
+        "id": "DSO-12",
+        "sourceLabel": "Ownerless analytics daily aggregates",
+        "dataTypeIds": ["activity.interactions"],
+        "activeRetention": "UTC_BUCKET_PLUS_35_DAYS",
+        "accountDeletion": "NOT_LINKED_TO_AN_ACCOUNT",
+        "playPurpose": ["ANALYTICS"]
+      }
+    ]
+  },
+  "requiredExternalLaunchInputs": [
+    {
+      "id": "privacy_policy_url",
+      "value": null,
+      "status": "REQUIRED_EXTERNAL",
+      "mustBePublicHttps": true,
+      "instruction": "Provide the final public privacy-policy URL in Play Console and release metadata. Do not replace this null with an invented URL."
+    },
+    {
+      "id": "account_deletion_url",
+      "value": null,
+      "status": "REQUIRED_EXTERNAL",
+      "mustBePublicHttps": true,
+      "instruction": "Provide the public web account-deletion request/instructions URL required by Play. The in-app deletion flow does not replace this external URL requirement."
+    },
+    {
+      "id": "production_release_inputs",
+      "value": null,
+      "status": "REQUIRED_EXTERNAL_SECRET_OR_IDENTIFIER_SET",
+      "requiredEnvironmentVariables": [
+        "PLANTERIOR_GOOGLE_WEB_CLIENT_ID",
+        "PLANTERIOR_FIREBASE_PROJECT_ID",
+        "PLANTERIOR_FIREBASE_APP_ID",
+        "PLANTERIOR_FIREBASE_API_KEY",
+        "PLANTERIOR_FIREBASE_STORAGE_BUCKET",
+        "PLANTERIOR_RELEASE_STORE_FILE",
+        "PLANTERIOR_RELEASE_STORE_PASSWORD",
+        "PLANTERIOR_RELEASE_KEY_ALIAS",
+        "PLANTERIOR_RELEASE_KEY_PASSWORD"
+      ],
+      "instruction": "Supply through the protected release environment; never place values in this packet or build logs."
+    },
+    {
+      "id": "firebase_play_integrity_registration",
+      "value": null,
+      "status": "REQUIRED_EXTERNAL_CONSOLE_CONFIGURATION",
+      "instruction": "Register the production app/signing certificates and enable the Play Integrity App Check provider in the production Firebase project."
+    },
+    {
+      "id": "processor_role_confirmation",
+      "value": null,
+      "status": "REQUIRED_EXTERNAL_LEGAL_REVIEW",
+      "services": ["Firebase/Google", "Plant.id", "OpenWeather"],
+      "instruction": "Confirm current contracts and Play definitions before converting technical transfers into final shared/not-shared declarations."
+    }
+  ],
+  "commandContracts": {
+    "signingCertificateSha256": {
+      "requiredEnvironment": [
+        "PLANTERIOR_RELEASE_STORE_FILE",
+        "PLANTERIOR_RELEASE_STORE_PASSWORD",
+        "PLANTERIOR_RELEASE_KEY_ALIAS"
+      ],
+      "command": "keytool -list -v -keystore \"$PLANTERIOR_RELEASE_STORE_FILE\" -alias \"$PLANTERIOR_RELEASE_KEY_ALIAS\" -storepass:env PLANTERIOR_RELEASE_STORE_PASSWORD | awk -F': ' '/SHA256:/{print $2; exit}'",
+      "outputContract": "One colon-delimited uppercase SHA-256 certificate fingerprint; no password or private-key bytes."
+    },
+    "sourceAndHistorySecretScan": {
+      "command": "scripts/verify-secrets.sh --repository .",
+      "outputContract": "Exit 0 after both complete-history and tracked-plus-untracked-current-source scans."
+    },
+    "temporaryReleaseVerification": {
+      "requiredEnvironment": ["BUNDLETOOL_JAR"],
+      "command": "BUNDLETOOL_JAR=/absolute/path/to/bundletool-all.jar scripts/test-release-auth-config.sh",
+      "outputContract": "Exit 0 after fail-closed auth/signing fixtures, APK/AAB/APKS build, manifest inspection, signer equality, R8 class retention, and artifact secret/provider-key scan. Uses only generated verification credentials."
+    },
+    "aabSignatureVerification": {
+      "command": "jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.aab",
+      "outputContract": "Exit 0 with a signed JAR/AAB; compare its signer SHA-256 with the approved upload certificate before upload."
+    },
+    "apksSignatureVerification": {
+      "requiredEnvironment": ["ANDROID_HOME"],
+      "command": "tmp=$(mktemp -d); unzip -q app-release.apks -d \"$tmp\"; find \"$tmp\" -type f -name '*.apk' -exec \"$ANDROID_HOME/build-tools/37.0.0/apksigner\" verify --verbose --print-certs {} \\;; status=$?; rm -rf \"$tmp\"; exit $status",
+      "outputContract": "Every generated APK exits 0 and reports the approved signing-certificate SHA-256. Temporary extraction is removed."
+    },
+    "bundleManifestInspection": {
+      "requiredEnvironment": ["BUNDLETOOL_JAR"],
+      "command": "java -jar \"$BUNDLETOOL_JAR\" dump manifest --bundle=app/build/outputs/bundle/release/app-release.aab",
+      "outputContract": "Manifest reports package com.planterior.helper, versionCode 1, versionName 0.1.0, minSdk 29, and targetSdk 37."
+    }
+  },
+  "rolloutChecklist": [
+    {
+      "id": "R01",
+      "gate": "All required external launch inputs resolved in protected systems",
+      "status": "BLOCKED_EXTERNAL"
+    },
+    {
+      "id": "R02",
+      "gate": "Privacy policy and account deletion HTTPS pages publicly reachable and content reviewed",
+      "status": "BLOCKED_EXTERNAL"
+    },
+    {
+      "id": "R03",
+      "gate": "Play Console app content, permissions, Data safety, content rating, target audience, ads, and access declarations completed",
+      "status": "OPERATOR_ACTION_REQUIRED"
+    },
+    {
+      "id": "R04",
+      "gate": "Production Firebase Android app, SHA-256 certificates, Auth providers, Storage, Functions, Messaging, and Play Integrity App Check configured",
+      "status": "OPERATOR_ACTION_REQUIRED"
+    },
+    {
+      "id": "R05",
+      "gate": "Production AAB built fail-closed and source/history/artifact secret scans pass",
+      "status": "NOT_RUN_WITH_PRODUCTION_CREDENTIALS"
+    },
+    {
+      "id": "R06",
+      "gate": "AAB signer matches approved Play upload certificate and generated APKS signatures verify",
+      "status": "NOT_RUN_WITH_PRODUCTION_CREDENTIALS"
+    },
+    {
+      "id": "R07",
+      "gate": "Internal testing install exercises Google/Apple auth, App Check, photo identification, storage, sync, notifications, privacy controls, and account deletion",
+      "status": "OPERATOR_ACTION_REQUIRED"
+    },
+    {
+      "id": "R08",
+      "gate": "Pre-launch report and device compatibility findings reviewed with no release blocker",
+      "status": "OPERATOR_ACTION_REQUIRED"
+    },
+    {
+      "id": "R09",
+      "gate": "Staged rollout starts at operator-approved percentage with crash/ANR/auth/App Check/backend monitoring and halt criteria assigned",
+      "status": "OPERATOR_ACTION_REQUIRED"
+    },
+    {
+      "id": "R10",
+      "gate": "Rollout expansion requires stable metrics and an explicit human approval at each stage",
+      "status": "OPERATOR_ACTION_REQUIRED"
+    }
+  ],
+  "attestations": {
+    "storeUploadPerformed": false,
+    "externalCredentialsAvailableToThisPacket": false,
+    "productionArtifactVerified": false,
+    "packetContainsSecrets": false
+  }
+}

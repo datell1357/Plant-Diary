@@ -14,6 +14,7 @@ import org.gradle.work.DisableCachingByDefault
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.androidx.baselineprofile)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kover)
@@ -62,6 +63,12 @@ abstract class ValidateReleaseAuthConfigurationTask : DefaultTask() {
                 add("FIREBASE_APP_ID")
             if (!configured.getValue("FIREBASE_API_KEY").matches(Regex("^AIza[0-9A-Za-z_-]{35}$")))
                 add("FIREBASE_API_KEY")
+            if (
+                !configured
+                    .getValue("FIREBASE_STORAGE_BUCKET")
+                    .matches(Regex("^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$"))
+            )
+                add("FIREBASE_STORAGE_BUCKET")
         }
         if (malformed.isNotEmpty()) {
             throw GradleException(
@@ -181,6 +188,11 @@ val authInputs =
             ReleaseInput("planterior.release.firebaseAppId", "PLANTERIOR_FIREBASE_APP_ID"),
         "FIREBASE_API_KEY" to
             ReleaseInput("planterior.release.firebaseApiKey", "PLANTERIOR_FIREBASE_API_KEY"),
+        "FIREBASE_STORAGE_BUCKET" to
+            ReleaseInput(
+                "planterior.release.firebaseStorageBucket",
+                "PLANTERIOR_FIREBASE_STORAGE_BUCKET",
+            ),
     )
 val releaseAuth = authInputs.mapValues { releaseValue(it.value) }
 val signingInputs =
@@ -232,6 +244,7 @@ android {
             buildConfigField("String", "FIREBASE_PROJECT_ID", "\"demo-planterior\"")
             buildConfigField("String", "FIREBASE_APP_ID", "\"1:1234567890:android:debug\"")
             buildConfigField("String", "FIREBASE_API_KEY", "\"demo-api-key\"")
+            buildConfigField("String", "FIREBASE_STORAGE_BUCKET", "\"demo-planterior.appspot.com\"")
         }
         release {
             isDebuggable = false
@@ -263,6 +276,14 @@ android {
                 "FIREBASE_API_KEY",
                 javaStringLiteral(
                     releaseAuth["FIREBASE_API_KEY"] ?: ReleaseValidationConstants.MISSING_VALUE
+                ),
+            )
+            buildConfigField(
+                "String",
+                "FIREBASE_STORAGE_BUCKET",
+                javaStringLiteral(
+                    releaseAuth["FIREBASE_STORAGE_BUCKET"]
+                        ?: ReleaseValidationConstants.MISSING_VALUE
                 ),
             )
             signingConfig = signingConfigs.getByName("release")
@@ -298,6 +319,11 @@ android {
     }
 
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("test-fixtures"))
+}
+
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    saveInSrc = true
 }
 
 androidComponents {
@@ -353,6 +379,7 @@ tasks
     }
 
 dependencies {
+    baselineProfile(project(":baselineprofile"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:data"))
     implementation(project(":core:database"))
