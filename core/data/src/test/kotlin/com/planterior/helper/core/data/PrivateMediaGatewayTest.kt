@@ -19,6 +19,7 @@ class PrivateMediaGatewayTest {
         )
     private val headers =
         linkedMapOf(
+            "content-length" to "3",
             "content-type" to "image/webp",
             "x-goog-if-generation-match" to "0",
             "x-goog-meta-owner-uid" to "owner-a",
@@ -56,6 +57,26 @@ class PrivateMediaGatewayTest {
             mapOf("expectedOwnerUid" to "owner-a", "reservationId" to "reservation_12345678"),
             calls.payloads.last(),
         )
+    }
+
+    @Test
+    fun `reserve rejects omitted or non-exact signed content length`() = runTest {
+        listOf(
+                headers - "content-length",
+                headers + ("content-length" to "4"),
+            )
+            .forEach { requiredHeaders ->
+                val calls = RecordingCallable(reserve = reserved(requiredHeaders))
+                val error =
+                    assertSuspendFails<PrivateMediaGatewayException> {
+                        FirebasePrivateMediaGateway(
+                                calls,
+                                RecordingPut(SignedPutResult.Uploaded),
+                            )
+                            .upload(request)
+                    }
+                assertEquals(PrivateMediaGatewayError.MALFORMED_RESPONSE, error.reason)
+            }
     }
 
     @Test
@@ -133,6 +154,7 @@ class PrivateMediaGatewayTest {
     }
 
     private class RecordingCallable(
+        private val reserve: Any? = reserved(),
         private val commit: Any? = committed(),
         private val events: MutableList<String> = mutableListOf(),
     ) : PrivateMediaCallable {
@@ -141,7 +163,7 @@ class PrivateMediaGatewayTest {
         override suspend fun call(name: String, payload: Map<String, Any>): Any? {
             events += name
             payloads += payload
-            return if (name == "reservePrivateMediaUpload") reserved() else commit
+            return if (name == "reservePrivateMediaUpload") reserve else commit
         }
     }
 
@@ -183,7 +205,7 @@ class PrivateMediaGatewayTest {
     }
 
     private companion object {
-        fun reserved(): Map<String, Any> =
+        fun reserved(requiredHeaders: Map<String, String> = defaultHeaders()): Map<String, Any> =
             mapOf(
                 "reservationId" to "reservation_12345678",
                 "upload" to
@@ -191,14 +213,17 @@ class PrivateMediaGatewayTest {
                         "method" to "PUT",
                         "url" to "https://upload.example/signed",
                         "expiresAtMillis" to 2_000_000_000_000L,
-                        "requiredHeaders" to
-                            mapOf(
-                                "content-type" to "image/webp",
-                                "x-goog-if-generation-match" to "0",
-                                "x-goog-meta-owner-uid" to "owner-a",
-                                "x-goog-meta-reservation-id" to "reservation_12345678",
-                            ),
+                        "requiredHeaders" to requiredHeaders,
                     ),
+            )
+
+        private fun defaultHeaders(): Map<String, String> =
+            mapOf(
+                "content-length" to "3",
+                "content-type" to "image/webp",
+                "x-goog-if-generation-match" to "0",
+                "x-goog-meta-owner-uid" to "owner-a",
+                "x-goog-meta-reservation-id" to "reservation_12345678",
             )
 
         fun committed(

@@ -224,6 +224,8 @@ class FirestoreAccountSynchronizer(
     private val database: PlanteriorDatabase,
     private val outbox: OfflineFirstSyncRepository? = null,
     private val now: () -> Instant = Instant::now,
+    private val isCurrentOwner: (String) -> Boolean = { true },
+    private val writeGate: AccountSyncWriteGate = AccountSyncWriteGate(),
 ) : AccountSynchronizer {
     constructor(
         firestore: FirebaseFirestore,
@@ -231,99 +233,151 @@ class FirestoreAccountSynchronizer(
         database: PlanteriorDatabase,
         outbox: OfflineFirstSyncRepository? = null,
         now: () -> Instant = Instant::now,
-    ) : this(FirestoreAccountSyncRemote(firestore, functions), database, outbox, now)
+        isCurrentOwner: (String) -> Boolean = { true },
+        writeGate: AccountSyncWriteGate = AccountSyncWriteGate(),
+    ) : this(
+        FirestoreAccountSyncRemote(firestore, functions),
+        database,
+        outbox,
+        now,
+        isCurrentOwner,
+        writeGate,
+    )
 
     override suspend fun sync(accountUid: String): SyncSummary {
         require(accountUid.matches(Regex("^[A-Za-z0-9_-]{1,128}$")))
-        syncDomain(accountUid, SyncDomain.PLANTS) {
-            val replay = outbox?.sync(AccountId(accountUid))
-            val entities =
-                remote.plants(accountUid).map {
-                    CachedPlantEntity(
-                        accountId = accountUid,
-                        plantId = it.id,
-                        displayName = it.displayName,
-                        representativePhotoPath = it.representativePhotoPath,
-                        revision = it.revision,
-                        updatedAtEpochMillis = it.updatedAtEpochMillis,
-                        contentId = it.contentId,
-                        registrationMethod = it.registrationMethod,
-                        location = it.location,
-                        note = it.note,
-                        lastWateredDate = it.lastWateredDate,
-                        detailsComplete = true,
-                    )
+        val completedThisAttempt = linkedSetOf<SyncDomain>()
+        var confirmedDeletion: RemoteMiniHomeAuthoritativeState? = null
+        if (
+            syncDomain(accountUid, SyncDomain.PLANTS) {
+                val replay = outbox?.let { repository ->
+                    writeGate.writeIfCurrent(accountUid) {
+                        repository.sync(AccountId(accountUid))
+                    }
                 }
-            database.cacheDao().reconcilePlants(accountUid, entities)
-            check(replay == null || (replay.conflicts == 0 && replay.failed == 0)) {
-                "Outbox replay did not reach an authoritative result"
+                val entities =
+                    remote.plants(accountUid).map {
+                        CachedPlantEntity(
+                            accountId = accountUid,
+                            plantId = it.id,
+                            displayName = it.displayName,
+                            representativePhotoPath = it.representativePhotoPath,
+                            revision = it.revision,
+                            updatedAtEpochMillis = it.updatedAtEpochMillis,
+                            contentId = it.contentId,
+                            registrationMethod = it.registrationMethod,
+                            location = it.location,
+                            note = it.note,
+                            lastWateredDate = it.lastWateredDate,
+                            detailsComplete = true,
+                        )
+                    }
+                writeGate.writeIfCurrent(accountUid) {
+                    database.cacheDao().reconcilePlants(accountUid, entities)
+                    check(replay == null || (replay.conflicts == 0 && replay.failed == 0)) {
+                        "Outbox replay did not reach an authoritative result"
+                    }
+                }
             }
+        ) {
+            completedThisAttempt += SyncDomain.PLANTS
         }
-        syncDomain(accountUid, SyncDomain.WATERING) {
-            val entities =
-                remote.wateringSchedules(accountUid).map {
-                    CachedWateringScheduleEntity(
-                        accountUid,
-                        it.id,
-                        it.plantId,
-                        it.dueDate,
-                        it.reminderTime,
-                        it.zoneId,
-                        it.revision,
-                        it.updatedAtEpochMillis,
-                        it.enabled,
-                    )
-                }
-            database.cacheDao().reconcileSchedules(accountUid, entities)
-        }
-        syncDomain(accountUid, SyncDomain.NOTIFICATIONS) {
-            remote.verifyDomain(accountUid, SyncDomain.NOTIFICATIONS)
-        }
-        syncDomain(accountUid, SyncDomain.MINI_HOME) {
-            val authoritative = remote.miniHomeAuthoritativeState(accountUid)
-            val remoteMiniHome = authoritative.layout
-            val write =
-                if (remoteMiniHome == null) {
-                    AuthoritativeMiniHomeCacheWrite.Deletion(
-                        accountUid,
-                        authoritative.generation,
-                        requireNotNull(authoritative.tombstoneId),
-                        authoritative.authoritativeAtEpochMillis,
-                    )
-                } else {
-                    AuthoritativeMiniHomeCacheWrite.Layout(
-                        accountUid,
-                        authoritative.generation,
-                        requireNotNull(authoritative.operationId),
-                        requireNotNull(authoritative.payloadHash),
-                        CachedMiniHomeEntity(
+        if (
+            syncDomain(accountUid, SyncDomain.WATERING) {
+                val entities =
+                    remote.wateringSchedules(accountUid).map {
+                        CachedWateringScheduleEntity(
                             accountUid,
-                            remoteMiniHome.id,
-                            remoteMiniHome.name,
-                            remoteMiniHome.placedPlantCount,
-                            remoteMiniHome.revision,
-                            remoteMiniHome.updatedAtEpochMillis,
-                        ),
-                        remoteMiniHome.placements.map {
-                            CachedMiniHomePlacementEntity(
-                                accountUid,
-                                it.id,
-                                remoteMiniHome.id,
-                                it.plantId,
-                                it.itemId,
-                                it.normalizedX,
-                                it.normalizedY,
-                                it.zIndex,
-                                it.layoutRevision,
-                            )
-                        },
-                    )
+                            it.id,
+                            it.plantId,
+                            it.dueDate,
+                            it.reminderTime,
+                            it.zoneId,
+                            it.revision,
+                            it.updatedAtEpochMillis,
+                            it.enabled,
+                        )
+                    }
+                writeGate.writeIfCurrent(accountUid) {
+                    database.cacheDao().reconcileSchedules(accountUid, entities)
                 }
-            check(
-                database.cacheDao().applyAuthoritativeMiniHome(write)
-                    !is MiniHomeCacheApplyResult.Conflict
-            ) {
-                "Authoritative mini-home cache identity conflicted"
+            }
+        ) {
+            completedThisAttempt += SyncDomain.WATERING
+        }
+        if (
+            syncDomain(accountUid, SyncDomain.NOTIFICATIONS) {
+                remote.verifyDomain(accountUid, SyncDomain.NOTIFICATIONS)
+            }
+        ) {
+            completedThisAttempt += SyncDomain.NOTIFICATIONS
+        }
+        if (
+            syncDomain(accountUid, SyncDomain.MINI_HOME) {
+                val authoritative = remote.miniHomeAuthoritativeState(accountUid)
+                val remoteMiniHome = authoritative.layout
+                val write =
+                    if (remoteMiniHome == null) {
+                        AuthoritativeMiniHomeCacheWrite.Deletion(
+                            accountUid,
+                            authoritative.generation,
+                            requireNotNull(authoritative.tombstoneId),
+                            authoritative.authoritativeAtEpochMillis,
+                        )
+                    } else {
+                        AuthoritativeMiniHomeCacheWrite.Layout(
+                            accountUid,
+                            authoritative.generation,
+                            requireNotNull(authoritative.operationId),
+                            requireNotNull(authoritative.payloadHash),
+                            CachedMiniHomeEntity(
+                                accountUid,
+                                remoteMiniHome.id,
+                                remoteMiniHome.name,
+                                remoteMiniHome.placedPlantCount,
+                                remoteMiniHome.revision,
+                                remoteMiniHome.updatedAtEpochMillis,
+                            ),
+                            remoteMiniHome.placements.map {
+                                CachedMiniHomePlacementEntity(
+                                    accountUid,
+                                    it.id,
+                                    remoteMiniHome.id,
+                                    it.plantId,
+                                    it.itemId,
+                                    it.normalizedX,
+                                    it.normalizedY,
+                                    it.zIndex,
+                                    it.layoutRevision,
+                                )
+                            },
+                        )
+                    }
+                writeGate.writeIfCurrent(accountUid) {
+                    check(
+                        database.cacheDao().applyAuthoritativeMiniHome(write)
+                            !is MiniHomeCacheApplyResult.Conflict
+                    ) {
+                        "Authoritative mini-home cache identity conflicted"
+                    }
+                }
+                confirmedDeletion = authoritative.takeIf { it.layout == null }
+            }
+        ) {
+            completedThisAttempt += SyncDomain.MINI_HOME
+        }
+        val deletion = confirmedDeletion
+        if (completedThisAttempt.size == SyncDomain.entries.size && deletion != null) {
+            writeGate.writeIfCurrent(accountUid) {
+                if (isCurrentOwner(accountUid)) {
+                    database
+                        .cacheDao()
+                        .purgeConvergedMiniHomeDeletionTombstone(
+                            accountUid,
+                            deletion.generation,
+                            requireNotNull(deletion.tombstoneId),
+                        )
+                }
             }
         }
         return lastKnown(accountUid)
@@ -356,13 +410,17 @@ class FirestoreAccountSynchronizer(
         accountUid: String,
         domain: SyncDomain,
         block: suspend () -> Unit,
-    ) {
+    ): Boolean {
         val attemptedAt = now().toEpochMilli()
+        var succeeded = false
         val record =
             try {
                 block()
+                succeeded = true
                 LastSyncEntity(accountUid, domain.name, attemptedAt, SyncStatus.SUCCESS.name, null)
             } catch (error: CancellationException) {
+                throw error
+            } catch (error: SyncNotAttemptedException) {
                 throw error
             } catch (_: Exception) {
                 LastSyncEntity(
@@ -373,6 +431,7 @@ class FirestoreAccountSynchronizer(
                     "unavailable",
                 )
             }
-        database.syncDao().upsertLastSync(record)
+        writeGate.writeIfCurrent(accountUid) { database.syncDao().upsertLastSync(record) }
+        return succeeded
     }
 }

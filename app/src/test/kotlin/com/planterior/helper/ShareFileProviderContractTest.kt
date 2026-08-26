@@ -10,6 +10,9 @@ import com.planterior.helper.core.model.Revision
 import com.planterior.helper.feature.share.MiniHomeShareImage
 import com.planterior.helper.feature.share.MiniHomeShareImageStore
 import java.io.File
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -29,6 +32,38 @@ import org.robolectric.annotation.Config
 class ShareFileProviderContractTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val owner = AccountId("owner-share-1")
+
+    @Test
+    fun `expired share cache is swept on store access while active artifacts remain`() {
+        val directory =
+            File(context.cacheDir, "share").apply {
+                deleteRecursively()
+                mkdirs()
+            }
+        val now = Instant.parse("2026-08-25T12:00:00Z")
+        val expired = File(directory, "expired.png").apply { writeBytes(byteArrayOf(1)) }
+        val active = File(directory, "active.png").apply { writeBytes(byteArrayOf(2)) }
+        assertTrue(
+            expired.setLastModified(
+                now.minus(com.planterior.helper.feature.share.MiniHomeShareLink.LIFETIME)
+                    .minusMillis(1)
+                    .toEpochMilli()
+            )
+        )
+        assertTrue(
+            active.setLastModified(
+                now.minus(com.planterior.helper.feature.share.MiniHomeShareLink.LIFETIME)
+                    .plusMillis(1)
+                    .toEpochMilli()
+            )
+        )
+
+        MiniHomeShareImageStore(context, Clock.fixed(now, ZoneOffset.UTC))
+
+        assertFalse(expired.exists())
+        assertTrue(active.exists())
+        active.delete()
+    }
 
     @Test
     fun `share and camera paths are exposed as private read only content uris`() {

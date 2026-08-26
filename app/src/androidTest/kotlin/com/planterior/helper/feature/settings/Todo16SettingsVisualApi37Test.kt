@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -29,7 +31,10 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -37,6 +42,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.Density
 import androidx.core.view.ViewCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -47,10 +53,24 @@ import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.DeletionRequestId
 import com.planterior.helper.core.model.DeletionStatus
+import com.planterior.helper.core.model.PlantContentId
 import com.planterior.helper.feature.auth.AuthAccount
 import com.planterior.helper.feature.auth.AuthProvider
 import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.feature.auth.SyncSummary
+import com.planterior.helper.feature.identify.IdentificationCandidate
+import com.planterior.helper.feature.identify.IdentificationScreen
+import com.planterior.helper.feature.identify.IdentificationTestTags
+import com.planterior.helper.feature.identify.IdentificationUiState
+import com.planterior.helper.feature.weather.ApproximateLocation
+import com.planterior.helper.feature.weather.LocationPermission
+import com.planterior.helper.feature.weather.WeatherConsentMutationResult
+import com.planterior.helper.feature.weather.WeatherLoad
+import com.planterior.helper.feature.weather.WeatherLocationGateway
+import com.planterior.helper.feature.weather.WeatherPermissionCapabilityState
+import com.planterior.helper.feature.weather.WeatherPermissionCapabilityStore
+import com.planterior.helper.feature.weather.WeatherRegion
+import com.planterior.helper.feature.weather.WeatherRepository
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
@@ -58,6 +78,8 @@ import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -97,6 +119,16 @@ internal enum class Todo16CaptureContract(
         "todo16-api37-settings-root-font-200.png",
         "settings.screen",
         "settings.region",
+    ),
+    ANALYTICS_FONT_200(
+        "todo17-api37-analytics-font-200.png",
+        "settings.screen",
+        "settings.analytics-disclosure",
+    ),
+    IDENTIFICATION_CANDIDATES(
+        "todo17-api37-identification-candidates.png",
+        IdentificationTestTags.SCREEN,
+        IdentificationTestTags.candidate("species-pothos"),
     ),
     DELETION_PREVIEW_READY(
         "todo16-api37-deletion-preview-ready.png",
@@ -144,7 +176,7 @@ class Todo16SettingsVisualApi37Test {
         )
 
     @Test
-    fun eightReviewedStatesUseFreshProductionScreensAndExactApi37Pixels() {
+    fun tenReviewedStatesUseFreshProductionScreensAndExactApi37Pixels() {
         assertEquals(37, Build.VERSION.SDK_INT)
         val arguments = InstrumentationRegistry.getArguments()
         val evidenceSource =
@@ -152,6 +184,7 @@ class Todo16SettingsVisualApi37Test {
                 arguments.getString("todo16SourceHead"),
                 arguments.getString("todo16SourceTree"),
             )
+        clearFrameDiagnostics()
         var scenario by mutableStateOf("settings-root")
         var fontScale by mutableStateOf(1f)
         var surface by mutableStateOf<VisualSurface>(VisualSurface.Settings(settingsState()))
@@ -180,11 +213,30 @@ class Todo16SettingsVisualApi37Test {
                                             onOpenNotificationSettings = {
                                                 notificationSettingsCallbacks += 1
                                             },
-                                            onRevokeLocationConsent = {
-                                                locationRevocationCallbacks += 1
+                                            onLocationConsentChanged = { enabled ->
+                                                if (!enabled) locationRevocationCallbacks += 1
                                             },
                                         ),
                                     bottomBar = { SettingsBottomBar() },
+                                )
+                            is VisualSurface.Identification ->
+                                IdentificationScreen(
+                                    state = current.state,
+                                    onSelect = { candidate ->
+                                        val candidates =
+                                            (surface as? VisualSurface.Identification)?.state
+                                        if (candidates != null) {
+                                            surface =
+                                                VisualSurface.Identification(
+                                                    candidates.copy(
+                                                        selectedId = candidate.publicContentId
+                                                    )
+                                                )
+                                        }
+                                    },
+                                    onConfirm = {},
+                                    onFallback = {},
+                                    onBack = {},
                                 )
                             is VisualSurface.Deletion ->
                                 AccountDeletionScreen(
@@ -266,6 +318,58 @@ class Todo16SettingsVisualApi37Test {
         compose.onNodeWithTag("account-delete").performScrollTo().assertIsDisplayed()
         assertInsideRoot("account-delete")
         assertNoReplacementCharacters()
+        compose.onNodeWithTag("settings.analytics-consent").performScrollTo().assertIsDisplayed()
+        compose
+            .onNodeWithTag("settings.analytics-disclosure", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.waitForIdle()
+        compose.onNodeWithTag("settings.analytics-consent").assertIsDisplayed()
+        assertMinimumTouchTarget("settings.analytics-consent")
+        assertInsideRoot("settings.analytics-consent")
+        assertInsideRoot("settings.analytics-disclosure", useUnmergedTree = true)
+        capture(Todo16CaptureContract.ANALYTICS_FONT_200)
+
+        show(
+            name = "identification-candidates",
+            next = VisualSurface.Identification(identificationState()),
+        )
+        compose.onNodeWithTag(IdentificationTestTags.SCREEN).assertIsDisplayed()
+        compose
+            .onNodeWithText("식물 후보 확인")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        val candidateRadio =
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton) and
+                SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick)
+        compose.onAllNodes(candidateRadio, useUnmergedTree = true).assertCountEquals(2)
+        val monsteraTag = IdentificationTestTags.candidate("species-monstera")
+        val pothosTag = IdentificationTestTags.candidate("species-pothos")
+        compose
+            .onNodeWithTag(monsteraTag, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        compose
+            .onNodeWithTag(pothosTag, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
+            .performSemanticsAction(SemanticsActions.OnClick)
+        compose
+            .onNodeWithTag(monsteraTag, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, false))
+        compose
+            .onNodeWithTag(pothosTag, useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        listOf(monsteraTag, pothosTag).forEach { tag ->
+            compose
+                .onAllNodes(
+                    hasAnyAncestor(hasTestTag(tag)) and hasClickAction(),
+                    useUnmergedTree = true,
+                )
+                .assertCountEquals(0)
+            assertMinimumTouchTarget(tag)
+            assertInsideRoot(tag)
+        }
+        assertNoReplacementCharacters()
+        compose.waitForIdle()
+        capture(Todo16CaptureContract.IDENTIFICATION_CANDIDATES)
 
         show(
             name = "deletion-preview-ready",
@@ -335,7 +439,10 @@ class Todo16SettingsVisualApi37Test {
         val locationController =
             SettingsLocationController(
                 initialRegion = SettingsRegion.Manual("서울특별시"),
-                boundary = locationBoundary,
+                accountId = "account-a",
+                repository = locationBoundary,
+                permissionCapabilities = locationBoundary,
+                locationGateway = locationBoundary,
                 scope = CoroutineScope(Dispatchers.Unconfined),
                 dispatcher = Dispatchers.Unconfined,
             )
@@ -435,9 +542,13 @@ class Todo16SettingsVisualApi37Test {
         assertEquals(expectedDp, (root.right - bounds.right) / density, 0.6f)
     }
 
-    private fun assertInsideRoot(tag: String) {
+    private fun assertInsideRoot(tag: String, useUnmergedTree: Boolean = false) {
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
-        val bounds = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+        val bounds =
+            compose
+                .onNodeWithTag(tag, useUnmergedTree = useUnmergedTree)
+                .fetchSemanticsNode()
+                .boundsInRoot
         assertTrue(
             "$tag was clipped horizontally",
             bounds.left >= root.left && bounds.right <= root.right,
@@ -494,31 +605,167 @@ class Todo16SettingsVisualApi37Test {
         compose.waitForIdle()
         val previous = compose.mainClock.autoAdvance
         compose.mainClock.autoAdvance = false
-        val first: Bitmap
+        var first: Bitmap? = null
+        var second: Bitmap? = null
         try {
             first = compose.onRoot().captureToImage().asAndroidBitmap()
             compose.mainClock.advanceTimeByFrame()
-            val second = compose.onRoot().captureToImage().asAndroidBitmap()
-            assertTrue(
-                "${contract.file} changed across a deterministic frame",
-                first.sameAs(second),
-            )
-            second.recycle()
+            second = compose.onRoot().captureToImage().asAndroidBitmap()
+
+            val firstPixels = first.pixelData()
+            val secondPixels = second.pixelData()
+            val firstPng = first.pngBytes()
+            val secondPng = second.pngBytes()
+            val rawPixelsEqual =
+                first.width == second.width &&
+                    first.height == second.height &&
+                    firstPixels.contentEquals(secondPixels)
+            val pngBytesEqual = firstPng.contentEquals(secondPng)
+            if (!rawPixelsEqual || !pngBytesEqual) {
+                persistFrameDiagnostics(
+                    contract = contract,
+                    first = first,
+                    second = second,
+                    firstPixels = firstPixels,
+                    secondPixels = secondPixels,
+                    firstPng = firstPng,
+                    secondPng = secondPng,
+                    rawPixelsEqual = rawPixelsEqual,
+                    pngBytesEqual = pngBytesEqual,
+                )
+            }
+            assertExactFrameEquality(contract, rawPixelsEqual, pngBytesEqual, firstPng, secondPng)
+
+            assertEquals(1080, first.width)
+            assertEquals(2400, first.height)
+            val file = File(evidenceDirectory(), contract.file)
+            file.writeBytes(firstPng)
+            copyToDownloads(file, contract.file)
         } finally {
+            second?.recycle()
+            first?.recycle()
             compose.mainClock.autoAdvance = previous
         }
-        assertEquals(1080, first.width)
-        assertEquals(2400, first.height)
-        val bytes =
-            ByteArrayOutputStream().use { output ->
-                check(first.compress(Bitmap.CompressFormat.PNG, 100, output))
-                output.toByteArray()
-            }
-        first.recycle()
-        val file = File(evidenceDirectory(), contract.file)
-        file.writeBytes(bytes)
-        copyToDownloads(file, contract.file)
     }
+
+    private fun Bitmap.pixelData(): IntArray =
+        IntArray(width * height).also { pixels ->
+            getPixels(pixels, 0, width, 0, 0, width, height)
+        }
+
+    private fun Bitmap.pngBytes(): ByteArray =
+        ByteArrayOutputStream().use { output ->
+            check(compress(Bitmap.CompressFormat.PNG, 100, output))
+            output.toByteArray()
+        }
+
+    private fun assertExactFrameEquality(
+        contract: Todo16CaptureContract,
+        rawPixelsEqual: Boolean,
+        pngBytesEqual: Boolean,
+        firstPng: ByteArray,
+        secondPng: ByteArray,
+    ) {
+        val rawFailure = runCatching {
+            assertTrue(
+                "${contract.file} changed across a deterministic raw-pixel frame",
+                rawPixelsEqual,
+            )
+        }
+            .exceptionOrNull()
+        val pngFailure = runCatching {
+            assertArrayEquals(
+                "${contract.file} changed across independently compressed PNG frames",
+                firstPng,
+                secondPng,
+            )
+        }
+            .exceptionOrNull()
+        if (rawFailure != null || pngFailure != null) {
+            throw AssertionError(
+                    "${contract.file} failed strict deterministic-frame equality " +
+                        "(rawPixelsEqual=$rawPixelsEqual, pngBytesEqual=$pngBytesEqual)"
+                )
+                .also { combined ->
+                    rawFailure?.let(combined::addSuppressed)
+                    pngFailure?.let(combined::addSuppressed)
+                }
+        }
+    }
+
+    private fun clearFrameDiagnostics() {
+        Todo16CaptureContract.entries.flatMap(::frameDiagnosticNames).forEach { name ->
+            File(evidenceDirectory(), name).delete()
+            executeDeviceShell("rm -f /sdcard/Download/$name")
+        }
+    }
+
+    private fun persistFrameDiagnostics(
+        contract: Todo16CaptureContract,
+        first: Bitmap,
+        second: Bitmap,
+        firstPixels: IntArray,
+        secondPixels: IntArray,
+        firstPng: ByteArray,
+        secondPng: ByteArray,
+        rawPixelsEqual: Boolean,
+        pngBytesEqual: Boolean,
+    ) {
+        val names = frameDiagnosticNames(contract)
+        val frameA = File(evidenceDirectory(), names[0]).apply { writeBytes(firstPng) }
+        val frameB = File(evidenceDirectory(), names[1]).apply { writeBytes(secondPng) }
+        val differenceIndex =
+            firstPixels.indices.firstOrNull { firstPixels[it] != secondPixels[it] }
+        val differenceJson =
+            if (differenceIndex == null) {
+                "null"
+            } else {
+                val x = differenceIndex % first.width
+                val y = differenceIndex / first.width
+                """{"x":$x,"y":$y,"argbA":"${argb(firstPixels[differenceIndex])}","argbB":"${argb(secondPixels[differenceIndex])}"}"""
+            }
+        val metadata =
+            File(evidenceDirectory(), names[2]).apply {
+                writeText(
+                    buildString {
+                        appendLine("{")
+                        appendLine("  \"contractFile\": \"${contract.file}\",")
+                        appendLine("  \"widthA\": ${first.width},")
+                        appendLine("  \"heightA\": ${first.height},")
+                        appendLine("  \"widthB\": ${second.width},")
+                        appendLine("  \"heightB\": ${second.height},")
+                        appendLine("  \"rawPixelsEqual\": $rawPixelsEqual,")
+                        appendLine("  \"pngBytesEqual\": $pngBytesEqual,")
+                        appendLine(
+                            "  \"frameA\": {\"file\": \"${names[0]}\", \"sha256\": \"${sha256(firstPng)}\"},"
+                        )
+                        appendLine(
+                            "  \"frameB\": {\"file\": \"${names[1]}\", \"sha256\": \"${sha256(secondPng)}\"},"
+                        )
+                        appendLine("  \"firstDifferingPixel\": $differenceJson")
+                        appendLine("}")
+                    },
+                    Charsets.UTF_8,
+                )
+            }
+        copyToDownloads(frameA, names[0])
+        copyToDownloads(frameB, names[1])
+        copyToDownloads(metadata, names[2])
+    }
+
+    private fun frameDiagnosticNames(contract: Todo16CaptureContract): List<String> {
+        val base = contract.file.removeSuffix(".png")
+        return listOf("$base.frame-a.png", "$base.frame-b.png", "$base.frame-diff.json")
+    }
+
+    private fun executeDeviceShell(command: String) {
+        val descriptor =
+            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        FileInputStream(descriptor.fileDescriptor).use { it.readBytes() }
+        descriptor.close()
+    }
+
+    private fun argb(pixel: Int): String = "0x%08X".format(pixel)
 
     private fun writeManifest(source: Todo16EvidenceSource) {
         val files =
@@ -527,7 +774,7 @@ class Todo16SettingsVisualApi37Test {
             }
         val json = buildString {
             appendLine("{")
-            appendLine("  \"contractVersion\": 1,")
+            appendLine("  \"contractVersion\": 2,")
             appendLine("  \"sourceHead\": \"${source.head}\",")
             appendLine("  \"sourceTree\": \"${source.tree}\",")
             appendLine("  \"apiLevel\": 37,")
@@ -616,6 +863,30 @@ class Todo16SettingsVisualApi37Test {
             appVersion = "v0.1.0",
         )
 
+    private fun identificationState() =
+        IdentificationUiState.Candidates(
+            candidates =
+                listOf(
+                    IdentificationCandidate(
+                        publicContentId = PlantContentId("species-monstera"),
+                        koreanName = "몬스테라",
+                        commonName = "Swiss cheese plant",
+                        scientificName = "Monstera deliciosa",
+                        confidence = 0.93,
+                        thumbnailUrl = null,
+                    ),
+                    IdentificationCandidate(
+                        publicContentId = PlantContentId("species-pothos"),
+                        koreanName = "스킨답서스",
+                        commonName = "Golden pothos",
+                        scientificName = "Epipremnum aureum",
+                        confidence = 0.87,
+                        thumbnailUrl = null,
+                    ),
+                ),
+            selectedId = PlantContentId("species-monstera"),
+        )
+
     private fun deletionState(status: DeletionStatus? = null) =
         AccountDeletionUiState.Ready(
             scope = scope,
@@ -680,19 +951,61 @@ class Todo16SettingsVisualApi37Test {
     private sealed interface VisualSurface {
         data class Settings(val state: SettingsUiState) : VisualSurface
 
+        data class Identification(val state: IdentificationUiState.Candidates) : VisualSurface
+
         data class Deletion(val state: AccountDeletionUiState) : VisualSurface
     }
 
-    private class RecordingLocationConsentBoundary : CurrentLocationConsentBoundary {
+    private class RecordingLocationConsentBoundary :
+        WeatherRepository, WeatherPermissionCapabilityStore, WeatherLocationGateway {
         var cancelCalls = 0
         var revokeCalls = 0
+        private var capability = WeatherPermissionCapabilityState(true, true, false, 1, true)
 
-        override fun cancelInFlightLocation() {
-            cancelCalls += 1
+        override fun accounts() = flowOf("account-a")
+
+        override suspend fun load(accountId: String) = WeatherLoad.NotConfigured
+
+        override suspend fun recordLocationConsent(
+            accountId: String,
+            granted: Boolean,
+            commandGeneration: Long,
+        ): WeatherConsentMutationResult {
+            revokeCalls += 1
+            return WeatherConsentMutationResult(commandGeneration, granted)
         }
 
-        override suspend fun revokeConsent() {
-            revokeCalls += 1
+        override suspend fun refresh(accountId: String, location: ApproximateLocation?) =
+            WeatherLoad.NotConfigured
+
+        override suspend fun searchRegions(accountId: String, query: String) =
+            emptyList<WeatherRegion>()
+
+        override suspend fun selectManualRegion(
+            accountId: String,
+            region: WeatherRegion,
+            expectedRevision: Long,
+        ) = WeatherLoad.NotConfigured
+
+        override suspend fun saveAlerts(
+            accountId: String,
+            globalEnabled: Boolean,
+            plants: Map<String, Boolean>,
+            expectedRevision: Long,
+        ) = WeatherLoad.NotConfigured
+
+        override fun read(accountId: String): WeatherPermissionCapabilityState = capability
+
+        override fun write(accountId: String, state: WeatherPermissionCapabilityState) {
+            capability = state
+        }
+
+        override fun permission() = LocationPermission.GrantedApproximate
+
+        override suspend fun approximateLocation(): ApproximateLocation? = null
+
+        override fun cancel() {
+            cancelCalls += 1
         }
     }
 
@@ -736,11 +1049,13 @@ class Todo16SettingsVisualApi37Test {
 class Todo16SettingsVisualSourceContractTest {
     @Test
     fun captureNamesStatesAndStableTagsRemainSourceBound() {
-        assertEquals(8, Todo16CaptureContract.entries.size)
+        assertEquals(10, Todo16CaptureContract.entries.size)
         assertEquals(
             listOf(
                 "todo16-api37-settings-root.png",
                 "todo16-api37-settings-root-font-200.png",
+                "todo17-api37-analytics-font-200.png",
+                "todo17-api37-identification-candidates.png",
                 "todo16-api37-deletion-preview-ready.png",
                 "todo16-api37-deletion-received-grace.png",
                 "todo16-api37-deletion-processing.png",
@@ -755,6 +1070,9 @@ class Todo16SettingsVisualSourceContractTest {
                 "settings.screen",
                 "settings.profile",
                 "settings.region",
+                "settings.analytics-disclosure",
+                IdentificationTestTags.SCREEN,
+                IdentificationTestTags.candidate("species-pothos"),
                 "settings.location-consent",
                 "account-deletion.screen",
                 "account-deletion.submit",

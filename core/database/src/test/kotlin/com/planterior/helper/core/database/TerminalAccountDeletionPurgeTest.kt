@@ -32,6 +32,7 @@ class TerminalAccountDeletionPurgeTest {
     @Test
     fun `terminal purge removes every row for one owner in one Room boundary and preserves another owner`() =
         runTest {
+            assertEquals(TABLES.toSet(), ownerScopedTables())
             seedEveryTable("deleted-owner")
             seedEveryTable("retained-owner")
 
@@ -145,6 +146,18 @@ class TerminalAccountDeletionPurgeTest {
                     )
             }
         database.syncDao().upsertLastSync(LastSyncEntity(owner, "PLANTS", 1, "FAILED", "network"))
+        database
+            .analyticsEventQueueDao()
+            .enqueueBounded(
+                AnalyticsEventQueueEntity(
+                    owner,
+                    "11111111-1111-4111-8111-${owner.hashCode().toUInt().toString().padStart(12, '0')}",
+                    "APP_SESSION_STARTED",
+                    1,
+                    1,
+                ),
+                expiredAtOrBeforeEpochMillis = 0,
+            )
     }
 
     private fun count(table: String, owner: String): Int =
@@ -154,6 +167,30 @@ class TerminalAccountDeletionPurgeTest {
                 cursor.moveToFirst()
                 cursor.getInt(0)
             }
+
+    private fun ownerScopedTables(): Set<String> {
+        val sqlite = database.openHelper.readableDatabase
+        val tables =
+            sqlite
+                .query(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'room_master_table'"
+                )
+                .use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) add(cursor.getString(0))
+                    }
+                }
+        return tables.filterTo(linkedSetOf()) { table ->
+            sqlite.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val name = cursor.getColumnIndexOrThrow("name")
+                var ownerScoped = false
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(name) == "accountId") ownerScoped = true
+                }
+                ownerScoped
+            }
+        }
+    }
 
     private fun expectedRows(table: String): Int =
         when (table) {
@@ -176,6 +213,7 @@ class TerminalAccountDeletionPurgeTest {
                 "inventory_snapshot_watermarks",
                 "inventory_acquisition_operations",
                 "last_sync",
+                "analytics_event_queue",
             )
     }
 }

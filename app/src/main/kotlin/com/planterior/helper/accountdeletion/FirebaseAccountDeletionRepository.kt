@@ -219,19 +219,22 @@ private const val ACCOUNT_DELETION_GRACE_MILLIS = 7L * 24 * 60 * 60 * 1_000
 
 internal val SERVER_SCOPES =
     listOf(
-        "PUBLIC_SHARES",
-        "NOTIFICATION_ENDPOINT_OWNERS",
-        "PRIVATE_MEDIA_RESERVATIONS",
-        "IDENTIFICATION_ORIGINALS",
-        "PLANT_PHOTOS",
-        "SHARE_IMAGES",
-        "USER_DOCUMENTS",
-        "AUTH_ACCOUNT",
-    )
+            "PUBLIC_SHARES",
+            "NOTIFICATION_ENDPOINT_OWNERS",
+            "PRIVATE_MEDIA_RESERVATIONS",
+            "IDENTIFICATION_ORIGINALS",
+            "PLANT_PHOTOS",
+            "SHARE_IMAGES",
+            "OWNER_GLOBAL_SWEEP",
+            "USER_DOCUMENTS",
+            "AUTH_ACCOUNT",
+        )
+        .also { scopes -> require(scopes.distinct().size == scopes.size) }
 
-private val CATEGORY_SERVER_SCOPES =
+internal val CATEGORY_SERVER_SCOPES =
     linkedMapOf(
-            AccountDeletionCategory.FIRESTORE_ACCOUNT_DATA to setOf("USER_DOCUMENTS"),
+            AccountDeletionCategory.FIRESTORE_ACCOUNT_DATA to
+                setOf("OWNER_GLOBAL_SWEEP", "USER_DOCUMENTS"),
             AccountDeletionCategory.NOTIFICATION_LINKS to setOf("NOTIFICATION_ENDPOINT_OWNERS"),
             AccountDeletionCategory.PUBLIC_SHARES to setOf("PUBLIC_SHARES"),
             AccountDeletionCategory.IDENTIFICATION_MEDIA to setOf("IDENTIFICATION_ORIGINALS"),
@@ -241,7 +244,11 @@ private val CATEGORY_SERVER_SCOPES =
             AccountDeletionCategory.AUTH_ACCOUNT to setOf("AUTH_ACCOUNT"),
         )
         .also { mappings ->
-            require(mappings.values.flatten().toSet() == SERVER_SCOPES.toSet())
+            val mappedScopes = mappings.values.flatten()
+            require(mappings.keys == AccountDeletionCategory.entries.toSet())
+            require(mappings.values.none(Set<String>::isEmpty))
+            require(mappedScopes.size == SERVER_SCOPES.size)
+            require(mappedScopes.toSet() == SERVER_SCOPES.toSet())
         }
 
 private val ACCOUNT_SCOPE =

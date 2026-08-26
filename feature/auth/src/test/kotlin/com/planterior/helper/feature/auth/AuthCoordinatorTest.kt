@@ -1,5 +1,7 @@
 package com.planterior.helper.feature.auth
 
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -185,6 +187,166 @@ class AuthCoordinatorTest {
         assertTrue(state.sync.isPartial)
         assertEquals(setOf(SyncDomain.PLANTS), state.sync.completed)
         assertEquals("offline", state.sync.failures[SyncDomain.MINI_HOME])
+    }
+
+    @Test
+    fun `full sync convergence records completed once after the terminal attempt`() = runTest {
+        val summary = SyncSummary(SyncDomain.entries.toSet(), emptyMap())
+        val events = mutableListOf<ClientProductEvent>()
+        val synchronizer =
+            object : AccountSynchronizer {
+                override suspend fun sync(accountUid: String) = summary
+
+                override suspend fun lastKnown(accountUid: String) = summary
+            }
+        val coordinator =
+            coordinator(
+                identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE)),
+                synchronizer = synchronizer,
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        coordinator.restore()
+
+        assertEquals(listOf(ClientProductEvent.SYNC_COMPLETED), events)
+    }
+
+    @Test
+    fun `terminal failed and partial sync attempts each record failed once`() = runTest {
+        listOf(
+                SyncSummary(emptySet(), mapOf(SyncDomain.PLANTS to "failed")),
+                SyncSummary(
+                    setOf(SyncDomain.PLANTS),
+                    mapOf(SyncDomain.MINI_HOME to "partial"),
+                ),
+            )
+            .forEach { summary ->
+                val events = mutableListOf<ClientProductEvent>()
+                val coordinator =
+                    coordinator(
+                        identity =
+                            FakeIdentity(
+                                emptyMap(),
+                                account("account-a", AuthProvider.GOOGLE),
+                            ),
+                        synchronizer = FakeSynchronizer(summary),
+                        productEventRecorder = ProductEventRecorder(events::add),
+                    )
+
+                coordinator.restore()
+
+                assertEquals(listOf(ClientProductEvent.SYNC_FAILED), events)
+            }
+    }
+
+    @Test
+    fun `thrown terminal sync attempt publishes last known and records failed once`() = runTest {
+        val lastKnown =
+            SyncSummary(setOf(SyncDomain.PLANTS), mapOf(SyncDomain.MINI_HOME to "offline"))
+        val events = mutableListOf<ClientProductEvent>()
+        val coordinator =
+            coordinator(
+                identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE)),
+                synchronizer = FailingSynchronizer(lastKnown),
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        coordinator.restore()
+
+        assertEquals(lastKnown, (coordinator.state.value as AuthUiState.Authenticated).sync)
+        assertEquals(listOf(ClientProductEvent.SYNC_FAILED), events)
+    }
+
+    @Test
+    fun `retrying thrown terminal sync records once per attempt without publish duplicates`() =
+        runTest {
+            val lastKnown =
+                SyncSummary(setOf(SyncDomain.PLANTS), mapOf(SyncDomain.MINI_HOME to "offline"))
+            val events = mutableListOf<ClientProductEvent>()
+            val coordinator =
+                coordinator(
+                    identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE)),
+                    synchronizer = FailingSynchronizer(lastKnown),
+                    productEventRecorder = ProductEventRecorder(events::add),
+                )
+
+            coordinator.restore()
+            coordinator.restore()
+
+            assertEquals(
+                listOf(ClientProductEvent.SYNC_FAILED, ClientProductEvent.SYNC_FAILED),
+                events,
+            )
+        }
+
+    @Test
+    fun `superseded owner switch receives no event from a late thrown sync attempt`() = runTest {
+        val google = FakeProvider(AuthProvider.GOOGLE, ProviderOutcome.Proof("token-b"))
+        val identity =
+            FakeIdentity(
+                mapOf("token-b" to account("account-b", AuthProvider.GOOGLE)),
+                account("account-a", AuthProvider.GOOGLE),
+            )
+        val synchronizer =
+            DeferredFailingSynchronizer(
+                failingOwner = "account-a",
+                lastKnown =
+                    SyncSummary(
+                        setOf(SyncDomain.PLANTS),
+                        mapOf(SyncDomain.MINI_HOME to "offline"),
+                    ),
+            )
+        val events = mutableListOf<ClientProductEvent>()
+        val coordinator =
+            coordinator(
+                google = google,
+                identity = identity,
+                synchronizer = synchronizer,
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+        val restoring = async { coordinator.restore() }
+        synchronizer.started.await()
+
+        coordinator.signIn(AuthProvider.GOOGLE, null)
+        synchronizer.fail.complete(Unit)
+        restoring.await()
+
+        assertEquals(
+            "account-b",
+            (coordinator.state.value as AuthUiState.Authenticated).account.uid,
+        )
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun `telemetry failure cannot mask a thrown sync result or authenticated state`() = runTest {
+        val lastKnown =
+            SyncSummary(setOf(SyncDomain.PLANTS), mapOf(SyncDomain.MINI_HOME to "offline"))
+        val coordinator =
+            coordinator(
+                identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE)),
+                synchronizer = FailingSynchronizer(lastKnown),
+                productEventRecorder = ProductEventRecorder { error("telemetry unavailable") },
+            )
+
+        coordinator.restore()
+
+        assertEquals(lastKnown, (coordinator.state.value as AuthUiState.Authenticated).sync)
+    }
+
+    @Test
+    fun `offline failure before a sync attempt records no terminal event`() = runTest {
+        val events = mutableListOf<ClientProductEvent>()
+        val coordinator =
+            coordinator(
+                identity = FakeIdentity(emptyMap(), account("account-a", AuthProvider.GOOGLE)),
+                synchronizer = OfflineNoAttemptSynchronizer(SyncSummary.EMPTY),
+                productEventRecorder = ProductEventRecorder(events::add),
+            )
+
+        coordinator.restore()
+
+        assertTrue(events.isEmpty())
     }
 
     @Test
@@ -786,6 +948,7 @@ class AuthCoordinatorTest {
         synchronizer: AccountSynchronizer = FakeSynchronizer(SyncSummary.EMPTY),
         beforeSignOut: suspend (String) -> Unit = {},
         beforeAuthRemoval: suspend (String) -> Unit = {},
+        productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
     ) =
         AuthCoordinator(
             mapOf(AuthProvider.GOOGLE to google, AuthProvider.APPLE to apple),
@@ -795,6 +958,7 @@ class AuthCoordinatorTest {
             synchronizer,
             beforeSignOut,
             beforeAuthRemoval,
+            productEventRecorder = productEventRecorder,
         )
 
     private fun account(uid: String, provider: AuthProvider) =
@@ -971,6 +1135,32 @@ class AuthCoordinatorTest {
         override suspend fun sync(accountUid: String): SyncSummary = error("sync unavailable")
 
         override suspend fun lastKnown(accountUid: String): SyncSummary = lastKnown
+    }
+
+    private class OfflineNoAttemptSynchronizer(private val lastKnown: SyncSummary) :
+        AccountSynchronizer {
+        override suspend fun sync(accountUid: String): SyncSummary =
+            throw SyncNotAttemptedException()
+
+        override suspend fun lastKnown(accountUid: String): SyncSummary = lastKnown
+    }
+
+    private class DeferredFailingSynchronizer(
+        private val failingOwner: String,
+        private val lastKnown: SyncSummary,
+    ) : AccountSynchronizer {
+        val started = CompletableDeferred<Unit>()
+        val fail = CompletableDeferred<Unit>()
+
+        override suspend fun sync(accountUid: String): SyncSummary {
+            if (accountUid != failingOwner) return SyncSummary.EMPTY
+            started.complete(Unit)
+            fail.await()
+            error("sync unavailable")
+        }
+
+        override suspend fun lastKnown(accountUid: String): SyncSummary =
+            if (accountUid == failingOwner) lastKnown else SyncSummary.EMPTY
     }
 
     /** 응답하지 않는 서버 프로필 쓰기를 흑낸다. */

@@ -397,6 +397,164 @@ class AccountSynchronizerPersistenceTest {
     }
 
     @Test
+    fun `full sync consumes the exact confirmed deletion tombstone`() = runTest {
+        val summary =
+            FirestoreAccountSynchronizer(
+                    FakeRemote(miniHome = null, miniHomeGeneration = 2),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+        assertEquals(SyncDomain.entries.toSet(), summary.completed)
+        val converged = requireNotNull(database.cacheDao().currentMiniHomeCache(account))
+        assertEquals(MiniHomeCacheWatermarkKind.CONVERGED_ABSENCE, converged.watermark.kind)
+        assertNull(converged.watermark.tombstoneId)
+    }
+
+    @Test
+    fun `partial sync retains a confirmed deletion tombstone`() = runTest {
+        val summary =
+            FirestoreAccountSynchronizer(
+                    FakeRemote(
+                        miniHome = null,
+                        miniHomeGeneration = 2,
+                        failures = setOf(SyncDomain.NOTIFICATIONS),
+                    ),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+        assertTrue(summary.isPartial)
+        assertEquals(
+            MiniHomeCacheWatermarkKind.DELETED,
+            database.cacheDao().currentMiniHomeCache(account)?.watermark?.kind,
+        )
+    }
+
+    @Test
+    fun `failed mini home sync cannot consume an earlier deletion tombstone`() = runTest {
+        persistDeletion(generation = 2, tombstoneId = "delete-before-failure")
+
+        FirestoreAccountSynchronizer(
+                FakeRemote(
+                    miniHome = null,
+                    miniHomeGeneration = 2,
+                    failures = setOf(SyncDomain.MINI_HOME),
+                ),
+                database,
+                now = { now },
+            )
+            .sync(account)
+
+        assertEquals(
+            "delete-before-failure",
+            database.cacheDao().currentMiniHomeCache(account)?.watermark?.tombstoneId,
+        )
+    }
+
+    @Test
+    fun `offline sync retains an earlier deletion tombstone`() = runTest {
+        persistDeletion(generation = 2, tombstoneId = "delete-before-offline")
+
+        val summary =
+            FirestoreAccountSynchronizer(
+                    FakeRemote(
+                        miniHome = null,
+                        miniHomeGeneration = 2,
+                        failures = SyncDomain.entries.toSet(),
+                    ),
+                    database,
+                    now = { now },
+                )
+                .sync(account)
+
+        assertTrue(summary.completed.isEmpty())
+        assertEquals(SyncDomain.entries.toSet(), summary.failures.keys)
+        assertEquals(
+            "delete-before-offline",
+            database.cacheDao().currentMiniHomeCache(account)?.watermark?.tombstoneId,
+        )
+    }
+
+    @Test
+    fun `delete retry waits for the outstanding mutation then next full sync consumes tombstone`() =
+        runTest {
+            database
+                .syncDao()
+                .enqueue(
+                    OperationOutboxEntity(
+                        "delete-operation",
+                        account,
+                        "miniHomeLayouts",
+                        "home-a",
+                        "DELETE",
+                        1,
+                        "delete-payload",
+                        now.toEpochMilli(),
+                        state = "MAY_HAVE_COMMITTED",
+                    )
+                )
+            val synchronizer =
+                FirestoreAccountSynchronizer(
+                    FakeRemote(miniHome = null, miniHomeGeneration = 2),
+                    database,
+                    now = { now },
+                )
+
+            synchronizer.sync(account)
+            assertEquals(
+                MiniHomeCacheWatermarkKind.DELETED,
+                database.cacheDao().currentMiniHomeCache(account)?.watermark?.kind,
+            )
+
+            database.syncDao().remove(account, "delete-operation")
+            synchronizer.sync(account)
+
+            val converged = requireNotNull(database.cacheDao().currentMiniHomeCache(account))
+            assertEquals(MiniHomeCacheWatermarkKind.CONVERGED_ABSENCE, converged.watermark.kind)
+            assertNull(converged.watermark.tombstoneId)
+        }
+
+    @Test
+    fun `stale account sync after owner switch retains only that owners tombstone`() = runTest {
+        var currentOwner = account
+        val synchronizer =
+            FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = null, miniHomeGeneration = 3),
+                database,
+                now = { now },
+                isCurrentOwner = { it == currentOwner },
+            )
+        currentOwner = "account-b"
+
+        synchronizer.sync(account)
+
+        assertEquals(
+            "deletion-3",
+            database.cacheDao().currentMiniHomeCache(account)?.watermark?.tombstoneId,
+        )
+        assertNull(database.cacheDao().currentMiniHomeCache("account-b"))
+    }
+
+    @Test
+    fun `restart after remote delete ack before local purge converges on full sync`() = runTest {
+        persistDeletion(generation = 4, tombstoneId = "deletion-4")
+
+        FirestoreAccountSynchronizer(
+                FakeRemote(miniHome = null, miniHomeGeneration = 4),
+                database,
+                now = { now },
+            )
+            .sync(account)
+
+        val converged = requireNotNull(database.cacheDao().currentMiniHomeCache(account))
+        assertEquals(MiniHomeCacheWatermarkKind.CONVERGED_ABSENCE, converged.watermark.kind)
+        assertNull(converged.watermark.tombstoneId)
+    }
+
+    @Test
     fun `account sync bootstraps lower server missing epoch over migrated unverified cache`() =
         runTest {
             database
@@ -560,6 +718,19 @@ class AccountSynchronizerPersistenceTest {
     }
 
     private fun plant(id: String) = CachedPlantEntity(account, id, id, null, 1, now.toEpochMilli())
+
+    private suspend fun persistDeletion(generation: Long, tombstoneId: String) {
+        database
+            .cacheDao()
+            .applyAuthoritativeMiniHome(
+                com.planterior.helper.core.database.AuthoritativeMiniHomeCacheWrite.Deletion(
+                    account,
+                    generation,
+                    tombstoneId,
+                    now.toEpochMilli(),
+                )
+            )
+    }
 
     private class FakeRemote(
         private val plants: List<RemotePlant> = emptyList(),

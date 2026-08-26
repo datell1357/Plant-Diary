@@ -50,6 +50,7 @@ class InventoryMigrationTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -169,6 +170,7 @@ class InventoryMigrationTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -248,7 +250,13 @@ class InventoryMigrationTest {
 
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DATABASE)
-                .addMigrations(MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                .addMigrations(
+                    MIGRATION_16_17,
+                    MIGRATION_17_18,
+                    MIGRATION_18_19,
+                    MIGRATION_19_20,
+                    MIGRATION_20_21,
+                )
                 .allowMainThreadQueries()
                 .build()
         try {
@@ -304,7 +312,7 @@ class InventoryMigrationTest {
 
         val migrated =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DATABASE)
-                .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                .addMigrations(MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                 .allowMainThreadQueries()
                 .build()
         try {

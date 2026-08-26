@@ -39,10 +39,47 @@ class PrivateMediaBrokerSourceContractTest {
                 .readText()
         assertTrue(identification.contains("FirebasePrivateMediaGateway"))
         assertTrue(identification.contains("PrivateMediaKind.IDENTIFICATION_ORIGINAL"))
-        assertTrue(
-            identification.contains("\"mediaReference\" to request.mediaReference.wireValue()")
-        )
+        assertTrue(identification.contains("idempotencyKey = original.requestId"))
+        assertTrue(identification.contains("getHttpsCallable(\"createIdentificationRequest\")"))
+        assertTrue(identification.contains("\"requestId\" to requestId"))
+        assertTrue(identification.contains("\"mediaReference\" to mediaReference.wireValue()"))
+        assertTrue(identification.contains("\"disclosureVersion\" to disclosureVersion"))
+        assertFalse(identification.contains("FirebaseFirestore"))
+        assertFalse(identification.contains(".runTransaction"))
+        assertFalse(identification.contains("identificationRequests"))
         assertFalse(identification.contains("StorageContract.identificationOriginal"))
+
+        val handoff =
+            root
+                .resolve(
+                    "app/src/main/kotlin/com/planterior/helper/identify/ApprovedPhotoIdentificationHandoff.kt"
+                )
+                .readText()
+        assertTrue(handoff.contains("upload(submission.original(owner, requestId, bytes))"))
+        assertTrue(handoff.contains("authorize(owner, requestId, mediaReference)"))
+        assertTrue(handoff.contains("backend.authorizeRequest("))
+        assertTrue(handoff.contains("requestId.value"))
+        assertTrue(
+            handoff.indexOf("upload(submission.original(owner, requestId, bytes))") <
+                handoff.indexOf("authorize(owner, requestId, mediaReference)")
+        )
+
+        val broker =
+            listOf("PrivateMediaGateway.kt", "PrivateMediaHttpTransport.kt").joinToString("\n") {
+                root
+                    .resolve("core/data/src/main/kotlin/com/planterior/helper/core/data/$it")
+                    .readText()
+            }
+        assertTrue(broker.contains("\"reservePrivateMediaUpload\""))
+        assertTrue(broker.contains("\"content-length\" to request.bytes.size.toString()"))
+        assertTrue(broker.contains("\"x-goog-if-generation-match\" to \"0\""))
+        assertTrue(broker.contains("requestMethod = \"PUT\""))
+        assertTrue(broker.contains("setFixedLengthStreamingMode(bytes.size)"))
+        assertTrue(broker.contains("\"commitPrivateMediaReservation\""))
+        assertTrue(
+            broker.indexOf("val reserved = reserve(request)") < broker.indexOf("putTransport.put")
+        )
+        assertTrue(broker.indexOf("putTransport.put") < broker.indexOf("return commit(request"))
 
         val registration =
             root

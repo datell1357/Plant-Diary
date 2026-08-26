@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.os.Build
+import android.provider.Settings
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -76,6 +77,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -98,6 +100,7 @@ class InventoryScreenApi37Test {
     fun acquisitionCommittedBackgroundAndEvidenceAreDeterministicOnApi37() {
         evidenceDrift.clear()
         assertEquals(37, Build.VERSION.SDK_INT)
+        assertCaptureEnvironment()
         val account = AccountId("api37-owner")
         val item =
             InventoryItem(
@@ -591,8 +594,14 @@ class InventoryScreenApi37Test {
         val visualFiles =
             visualEvidence.getValue("files").jsonObject.mapValues { (_, value) ->
                 val entry = value.jsonObject
-                Api37VisualEvidence(entry.string("file"), entry.string("sha256"))
+                Api37VisualEvidence(
+                    entry.string("file"),
+                    entry.string("sha256"),
+                    entry.string("referenceSha256"),
+                )
             }
+        val animationScales = visualEvidence.getValue("animationScales").jsonObject
+        val sourceProvenance = visualEvidence.getValue("sourceProvenance").jsonObject
         return Api37CatalogFixtureContract(
             contractVersion = manifest.getValue("contractVersion").jsonPrimitive.int,
             itemId = manifest.string("itemId"),
@@ -613,6 +622,16 @@ class InventoryScreenApi37Test {
             visualHeight = visualEvidence.getValue("height").jsonPrimitive.int,
             requiredIndependentWipedRuns =
                 visualEvidence.getValue("requiredIndependentWipedRuns").jsonPrimitive.int,
+            systemImageRevision = visualEvidence.getValue("systemImageRevision").jsonPrimitive.int,
+            systemImageBuildFingerprint = visualEvidence.string("systemImageBuildFingerprint"),
+            physicalDensityDpi = visualEvidence.getValue("physicalDensityDpi").jsonPrimitive.int,
+            fontScale = visualEvidence.getValue("fontScale").jsonPrimitive.double,
+            locale = visualEvidence.string("locale"),
+            windowAnimationScale = animationScales.getValue("window").jsonPrimitive.double,
+            transitionAnimationScale = animationScales.getValue("transition").jsonPrimitive.double,
+            animatorDurationScale = animationScales.getValue("animator").jsonPrimitive.double,
+            referenceCommit = sourceProvenance.string("referenceCommit"),
+            captureHarnessCommit = sourceProvenance.string("captureHarnessCommit"),
             visualMetadataFile = visualEvidence.string("metadataFile"),
             visualFiles = visualFiles,
         )
@@ -665,9 +684,9 @@ class InventoryScreenApi37Test {
             InstrumentationRegistry.getInstrumentation().context.assets.open(expected.file).use {
                 it.readBytes()
             }
-        assertEquals(expected.sha256, sha256(expectedBytes))
+        assertEquals(expected.referenceSha256, sha256(expectedBytes))
         val actualHash = sha256(bytes)
-        if (!bytes.contentEquals(expectedBytes)) {
+        if (actualHash != expected.sha256) {
             evidenceDrift += "$name expected=${expected.sha256} actual=$actualHash"
         }
         val evidence = File(evidenceDirectory(), name)
@@ -686,13 +705,29 @@ class InventoryScreenApi37Test {
     ) {
         val metadata = buildString {
             appendLine("{")
-            appendLine("  \"contractVersion\": 6,")
+            appendLine("  \"contractVersion\": 7,")
             appendLine("  \"apiLevel\": 37,")
             appendLine("  \"deviceProfile\": \"${fixtureContract.visualDeviceProfile}\",")
             appendLine("  \"renderer\": \"${fixtureContract.visualRenderer}\",")
             appendLine(
                 "  \"independentlyWipedAvdRuns\": ${fixtureContract.requiredIndependentWipedRuns},"
             )
+            appendLine("  \"systemImageRevision\": ${fixtureContract.systemImageRevision},")
+            appendLine(
+                "  \"systemImageBuildFingerprint\": \"${fixtureContract.systemImageBuildFingerprint}\","
+            )
+            appendLine("  \"physicalDensityDpi\": ${fixtureContract.physicalDensityDpi},")
+            appendLine("  \"fontScale\": ${fixtureContract.fontScale},")
+            appendLine("  \"locale\": \"${fixtureContract.locale}\",")
+            appendLine("  \"animationScales\": {")
+            appendLine("    \"window\": ${fixtureContract.windowAnimationScale},")
+            appendLine("    \"transition\": ${fixtureContract.transitionAnimationScale},")
+            appendLine("    \"animator\": ${fixtureContract.animatorDurationScale}")
+            appendLine("  },")
+            appendLine("  \"sourceProvenance\": {")
+            appendLine("    \"referenceCommit\": \"${fixtureContract.referenceCommit}\",")
+            appendLine("    \"captureHarnessCommit\": \"${fixtureContract.captureHarnessCommit}\"")
+            appendLine("  },")
             appendLine(
                 "  \"evidenceDimensions\": \"${fixtureContract.visualWidth}x${fixtureContract.visualHeight}\","
             )
@@ -957,7 +992,50 @@ class InventoryScreenApi37Test {
             }
     }
 
-    private data class Api37VisualEvidence(val file: String, val sha256: String)
+    private fun assertCaptureEnvironment() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val configuration = context.resources.configuration
+        assertEquals(fixtureContract.systemImageBuildFingerprint, Build.FINGERPRINT)
+        assertEquals(
+            fixtureContract.physicalDensityDpi,
+            context.resources.displayMetrics.densityDpi,
+        )
+        assertEquals(fixtureContract.fontScale, configuration.fontScale.toDouble(), 0.0)
+        assertEquals(fixtureContract.locale, configuration.locales[0].toLanguageTag())
+        assertEquals(
+            fixtureContract.windowAnimationScale,
+            Settings.Global.getFloat(
+                    context.contentResolver,
+                    Settings.Global.WINDOW_ANIMATION_SCALE,
+                )
+                .toDouble(),
+            0.0,
+        )
+        assertEquals(
+            fixtureContract.transitionAnimationScale,
+            Settings.Global.getFloat(
+                    context.contentResolver,
+                    Settings.Global.TRANSITION_ANIMATION_SCALE,
+                )
+                .toDouble(),
+            0.0,
+        )
+        assertEquals(
+            fixtureContract.animatorDurationScale,
+            Settings.Global.getFloat(
+                    context.contentResolver,
+                    Settings.Global.ANIMATOR_DURATION_SCALE,
+                )
+                .toDouble(),
+            0.0,
+        )
+    }
+
+    private data class Api37VisualEvidence(
+        val file: String,
+        val sha256: String,
+        val referenceSha256: String,
+    )
 
     private data class Api37CatalogFixtureContract(
         val contractVersion: Int,
@@ -978,6 +1056,16 @@ class InventoryScreenApi37Test {
         val visualWidth: Int,
         val visualHeight: Int,
         val requiredIndependentWipedRuns: Int,
+        val systemImageRevision: Int,
+        val systemImageBuildFingerprint: String,
+        val physicalDensityDpi: Int,
+        val fontScale: Double,
+        val locale: String,
+        val windowAnimationScale: Double,
+        val transitionAnimationScale: Double,
+        val animatorDurationScale: Double,
+        val referenceCommit: String,
+        val captureHarnessCommit: String,
         val visualMetadataFile: String,
         val visualFiles: Map<String, Api37VisualEvidence>,
     )

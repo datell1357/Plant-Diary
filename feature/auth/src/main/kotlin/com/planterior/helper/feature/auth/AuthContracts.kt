@@ -121,6 +121,9 @@ fun interface AccountSynchronizer {
     suspend fun lastKnown(accountUid: String): SyncSummary = SyncSummary.EMPTY
 }
 
+class SyncNotAttemptedException(cause: Throwable? = null) :
+    Exception("Synchronization was not attempted", cause)
+
 enum class AuthReauthenticationResult {
     SUCCEEDED,
     CANCELLED,

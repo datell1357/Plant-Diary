@@ -3,14 +3,10 @@ package com.planterior.helper.core.data
 import com.google.android.gms.tasks.Task
 import com.google.firebase.functions.FirebaseFunctions
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 private const val MAX_PRIVATE_MEDIA_BYTES = 20 * 1024 * 1024
@@ -180,6 +176,7 @@ class FirebasePrivateMediaGateway(
             val headers = upload["requiredHeaders"].stringMap()
             val expected =
                 mapOf(
+                    "content-length" to request.bytes.size.toString(),
                     "content-type" to request.contentType,
                     "x-goog-if-generation-match" to "0",
                     "x-goog-meta-owner-uid" to request.expectedOwnerUid,
@@ -247,43 +244,6 @@ class FirebasePrivateMediaCallable(private val functions: FirebaseFunctions) :
     PrivateMediaCallable {
     override suspend fun call(name: String, payload: Map<String, Any>): Any? =
         functions.getHttpsCallable(name).call(payload).await().data
-}
-
-class HttpSignedPutTransport : SignedPutTransport {
-    override suspend fun put(
-        url: String,
-        headers: Map<String, String>,
-        bytes: ByteArray,
-    ): SignedPutResult =
-        try {
-            runInterruptible(Dispatchers.IO) {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                try {
-                    connection.requestMethod = "PUT"
-                    connection.instanceFollowRedirects = false
-                    connection.doOutput = true
-                    connection.setFixedLengthStreamingMode(bytes.size)
-                    headers.forEach(connection::setRequestProperty)
-                    connection.outputStream.use { it.write(bytes) }
-                    when (connection.responseCode) {
-                        in 200..299 -> SignedPutResult.Uploaded
-                        HttpURLConnection.HTTP_PRECON_FAILED -> SignedPutResult.PreconditionFailed
-                        else ->
-                            throw PrivateMediaGatewayException(
-                                PrivateMediaGatewayError.UPLOAD_REJECTED
-                            )
-                    }
-                } finally {
-                    connection.disconnect()
-                }
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: PrivateMediaGatewayException) {
-            throw error
-        } catch (error: IOException) {
-            SignedPutResult.Indeterminate(error)
-        }
 }
 
 private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->

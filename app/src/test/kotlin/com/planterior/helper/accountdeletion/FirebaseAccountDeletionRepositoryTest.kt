@@ -13,6 +13,8 @@ import com.planterior.helper.feature.settings.AccountDeletionScope
 import com.planterior.helper.feature.settings.AccountDeletionTerminalCallback
 import com.planterior.helper.feature.settings.AccountDeletionUiState
 import com.planterior.helper.feature.settings.ConfirmedAccountDeletionRetry
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -26,7 +28,7 @@ import org.junit.Test
 class FirebaseAccountDeletionRepositoryTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `real eight scope preview reaches ready`() = runTest {
+    fun `real nine scope preview reaches ready`() = runTest {
         val callable =
             RecordingAccountDeletionCallable().apply {
                 results += previewResponse()
@@ -53,6 +55,26 @@ class FirebaseAccountDeletionRepositoryTest {
             AccountDeletionCategory.entries,
             (controller.state.value as AccountDeletionUiState.Ready).scope.categories,
         )
+    }
+
+    @Test
+    fun `Android wire scopes exactly match the authoritative backend contract`() {
+        val backendScopes = backendServerScopes()
+
+        assertEquals(9, backendScopes.size)
+        assertEquals(backendScopes, SERVER_SCOPES)
+        assertEquals(SERVER_SCOPES.size, SERVER_SCOPES.distinct().size)
+    }
+
+    @Test
+    fun `every wire scope maps exactly once into the seven user categories`() {
+        val mappedScopes = CATEGORY_SERVER_SCOPES.values.flatten()
+
+        assertEquals(7, AccountDeletionCategory.entries.size)
+        assertEquals(AccountDeletionCategory.entries.toSet(), CATEGORY_SERVER_SCOPES.keys)
+        assertTrue(CATEGORY_SERVER_SCOPES.values.none(Set<String>::isEmpty))
+        assertEquals(SERVER_SCOPES.toSet(), mappedScopes.toSet())
+        assertEquals(SERVER_SCOPES.size, mappedScopes.size)
     }
 
     @Test
@@ -167,6 +189,47 @@ class FirebaseAccountDeletionRepositoryTest {
     }
 
     @Test
+    fun `partial responses group owner sweep and user documents into Firestore account data`() =
+        runTest {
+            val beforeUserDocuments = SERVER_SCOPES.takeWhile { it != "USER_DOCUMENTS" }
+            val throughUserDocuments = SERVER_SCOPES.takeWhile { it != "AUTH_ACCOUNT" }
+            val callable =
+                RecordingAccountDeletionCallable().apply {
+                    results +=
+                        workflowResponse(
+                            completedScopes = beforeUserDocuments,
+                            failedScopes = SERVER_SCOPES - beforeUserDocuments.toSet(),
+                        )
+                    results +=
+                        workflowResponse(
+                            completedScopes = throughUserDocuments,
+                            failedScopes = SERVER_SCOPES - throughUserDocuments.toSet(),
+                        )
+                }
+            val repository = FirebaseAccountDeletionRepository(AccountId("owner-one"), callable)
+
+            val sweepOnly = requireNotNull(repository.status())
+            val groupedComplete = requireNotNull(repository.status())
+
+            assertTrue(
+                AccountDeletionCategory.FIRESTORE_ACCOUNT_DATA !in sweepOnly.completedCategories
+            )
+            assertTrue(
+                AccountDeletionCategory.FIRESTORE_ACCOUNT_DATA in sweepOnly.remainingCategories
+            )
+            assertTrue(
+                AccountDeletionCategory.FIRESTORE_ACCOUNT_DATA in
+                    groupedComplete.completedCategories
+            )
+            assertTrue(
+                AccountDeletionCategory.FIRESTORE_ACCOUNT_DATA !in
+                    groupedComplete.remainingCategories
+            )
+            assertEquals(DeletionStatus.PARTIALLY_FAILED, sweepOnly.status)
+            assertEquals(DeletionStatus.PARTIALLY_FAILED, groupedComplete.status)
+        }
+
+    @Test
     fun `private media reservation partitions parse for partial and completed status`() = runTest {
         val callable =
             RecordingAccountDeletionCallable().apply {
@@ -197,7 +260,7 @@ class FirebaseAccountDeletionRepositoryTest {
     }
 
     @Test
-    fun `completed status requires all eight scopes and unknown scope stays fail closed`() =
+    fun `completed status requires all nine scopes and unknown scope stays fail closed`() =
         runTest {
             val malformed =
                 listOf(
@@ -281,6 +344,32 @@ class FirebaseAccountDeletionRepositoryTest {
         val repository = FirebaseAccountDeletionRepository(AccountId("owner-one"), callable)
 
         assertNull(repository.status())
+    }
+
+    private fun backendServerScopes(): List<String> {
+        val source =
+            repositoryRoot()
+                .resolve("functions/src/account-deletion-contract.ts")
+                .toFile()
+                .readText()
+        val array =
+            requireNotNull(
+                    Regex(
+                            """ACCOUNT_DELETION_SCOPES\s*=\s*\[(.*?)]\s*as const""",
+                            RegexOption.DOT_MATCHES_ALL,
+                        )
+                        .find(source)
+                )
+                .groupValues[1]
+        return Regex(""""([A-Z_]+)"""").findAll(array).map { it.groupValues[1] }.toList()
+    }
+
+    private fun repositoryRoot(): Path {
+        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
+        while (!Files.exists(current.resolve("settings.gradle.kts"))) {
+            current = current.parent ?: error("Repository root unavailable")
+        }
+        return current
     }
 
     private fun previewResponse() =

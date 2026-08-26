@@ -4,8 +4,10 @@ import androidx.activity.ComponentActivity
 import com.planterior.helper.BuildConfig
 import com.planterior.helper.PlanteriorApplication
 import com.planterior.helper.accountdeletion.AppAccountDeletionRuntime
+import com.planterior.helper.analytics.AnalyticsRuntime
 import com.planterior.helper.feature.auth.AccountProfileStore
 import com.planterior.helper.feature.auth.AccountSessionCache
+import com.planterior.helper.feature.auth.AccountSyncWriteGate
 import com.planterior.helper.feature.auth.AccountSynchronizer
 import com.planterior.helper.feature.auth.ActivityWebAuthorizationLauncher
 import com.planterior.helper.feature.auth.AppleWebAuthProvider
@@ -83,6 +85,7 @@ private constructor(
     val weatherPermissionCapabilities: WeatherPermissionCapabilityStore?,
     val collectionThumbnailLoader: PlantThumbnailLoader,
     val catalogMediaLoader: CatalogMediaLoader,
+    val analyticsRuntime: AnalyticsRuntime?,
     val accountDeletionRuntime: AppAccountDeletionRuntime?,
 ) {
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -108,6 +111,7 @@ private constructor(
                     ActivityWebAuthorizationLauncher(activity),
                 )
             val identity = FirebaseIdentityAdapter(shared.auth)
+            val accountSyncWriteGate = AccountSyncWriteGate()
             val coordinator =
                 AuthCoordinator(
                     mapOf(
@@ -131,6 +135,8 @@ private constructor(
                         ),
                         shared.database,
                         outbox = shared.syncRepository,
+                        isCurrentOwner = { shared.auth.currentUser?.uid == it },
+                        writeGate = accountSyncWriteGate,
                     ),
                     beforeSignOut =
                         notificationEndpointRevocationAction(
@@ -144,6 +150,7 @@ private constructor(
                                 )
                                 .cancelTokenRegistration()
                         },
+                    beforeAuthRemoval = shared.analyticsRuntime::clearLocalOwner,
                     authTransition = { ownerUid, action ->
                         NotificationAccountTransitionGate.transition(
                             cancelFormerOwnerNotifications = {
@@ -155,6 +162,8 @@ private constructor(
                             action = action,
                         )
                     },
+                    productEventRecorder = shared.analyticsRuntime.recorder,
+                    accountSyncWriteGate = accountSyncWriteGate,
                 )
             val forcedSessions = debugHomeSessions(activity)
             return AuthRuntime(
@@ -206,11 +215,13 @@ private constructor(
                 shared.weatherPermissionCapabilities,
                 shared.collectionThumbnailLoader,
                 shared.catalogMediaLoader,
+                shared.analyticsRuntime,
                 AppAccountDeletionRuntime(
                     activity.applicationContext,
                     shared.functions,
                     shared.database,
                     coordinator,
+                    shared.analyticsRuntime,
                 ),
             )
         }
@@ -287,6 +298,7 @@ private constructor(
                 null,
                 PlaceholderPlantThumbnailLoader,
                 PlaceholderCatalogMediaLoader,
+                null,
                 null,
             )
         }

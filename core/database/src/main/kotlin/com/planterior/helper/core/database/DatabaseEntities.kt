@@ -128,6 +128,8 @@ data class MiniHomeCacheWatermarkEntity(
 enum class MiniHomeCacheWatermarkKind {
     PRESENT,
     DELETED,
+    /** Minimal generation floor retained after the owner-linked deletion identity is consumed. */
+    CONVERGED_ABSENCE,
 }
 
 data class MiniHomeCacheWatermark(
@@ -318,6 +320,19 @@ data class InventoryAcquisitionOperationEntity(
     val feedbackClaimGeneration: Long? = null,
     val feedbackClaimLeaseExpiresAtEpochMillis: Long? = null,
     val feedbackRowVersion: Long = 0,
+)
+
+@Entity(
+    tableName = "analytics_event_queue",
+    primaryKeys = ["accountId", "eventId"],
+    indices = [Index(value = ["accountId", "consentRevision", "enqueuedAtEpochMillis", "eventId"])],
+)
+data class AnalyticsEventQueueEntity(
+    val accountId: String,
+    val eventId: String,
+    val eventName: String,
+    val consentRevision: Int,
+    val enqueuedAtEpochMillis: Long,
 )
 
 @Entity(tableName = "last_sync", primaryKeys = ["accountId", "domain"])

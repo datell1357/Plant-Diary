@@ -5,6 +5,7 @@ import androidx.work.Configuration
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.messaging.FirebaseMessaging
+import com.planterior.helper.analytics.PlanteriorWorkerFactory
 import com.planterior.helper.auth.AuthRepositoryRuntime
 import com.planterior.helper.notification.FirebaseNotificationEndpointGateway
 import com.planterior.helper.notification.NotificationTokenStore
@@ -38,13 +39,17 @@ class PlanteriorApplication : Application(), Configuration.Provider {
                 .apply {
                     firebaseApp?.let { app ->
                         setWorkerFactory(
-                            NotificationWorkerFactory(
-                                tokenStore,
-                                FirebaseNotificationEndpointGateway(
-                                    FirebaseFunctions.getInstance(app)
-                                ),
+                            PlanteriorWorkerFactory(
+                                NotificationWorkerFactory(
+                                    tokenStore,
+                                    FirebaseNotificationEndpointGateway(
+                                        FirebaseFunctions.getInstance(app)
+                                    ),
+                                ) {
+                                    FirebaseAuth.getInstance(app).currentUser?.uid
+                                }
                             ) {
-                                FirebaseAuth.getInstance(app).currentUser?.uid
+                                repositoryRuntimeOrNull()?.analyticsRuntime
                             }
                         )
                     }

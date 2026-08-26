@@ -650,6 +650,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -727,7 +728,7 @@ class PlanteriorDatabaseTest {
         migrated.close()
 
         // 4. 모든 마이그레이션이 실행되어 현재 스키마 버전까지 올라가야 한다.
-        assertEquals("마이그레이션 후 user_version은 20이어야 한다", 20, readUserVersion(file))
+        assertEquals("마이그레이션 후 user_version은 21이어야 한다", 21, readUserVersion(file))
         assertMatchesVersion14Schema(file)
 
         // 5. 닫았다 다시 열어도 내용이 유지되어야 한다.
@@ -753,6 +754,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -761,7 +763,7 @@ class PlanteriorDatabaseTest {
             assertEquals(2, reopened.cacheDao().plants("account-a").size)
         }
         reopened.close()
-        assertEquals(20, readUserVersion(file))
+        assertEquals(21, readUserVersion(file))
 
         assertTrue(file.delete())
         restoreInMemoryDatabase(context)
@@ -795,6 +797,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -849,6 +852,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -885,6 +889,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -905,8 +910,8 @@ class PlanteriorDatabaseTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = createVersion3Database(context, DOWNGRADE_DB)
         // 앞서 배포된 더 높은 버전에서 되돌아온 상황을 흑낸다.
-        openRaw(file).use { it.execSQL("PRAGMA user_version = 21") }
-        assertEquals(21, readUserVersion(file))
+        openRaw(file).use { it.execSQL("PRAGMA user_version = 22") }
+        assertEquals(22, readUserVersion(file))
 
         val downgraded =
             Room.databaseBuilder(context, PlanteriorDatabase::class.java, DOWNGRADE_DB)
@@ -930,6 +935,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -1003,6 +1009,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -1085,6 +1092,7 @@ class PlanteriorDatabaseTest {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .allowMainThreadQueries()
                 .build()
@@ -1164,7 +1172,7 @@ class PlanteriorDatabaseTest {
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(name)
                 .callback(
-                    object : SupportSQLiteOpenHelper.Callback(VERSION_20) {
+                    object : SupportSQLiteOpenHelper.Callback(VERSION_21) {
                         override fun onCreate(db: SupportSQLiteDatabase) = Unit
 
                         override fun onUpgrade(
@@ -1338,7 +1346,7 @@ class PlanteriorDatabaseTest {
         const val VERSION_12 = 12
         const val VERSION_13 = 13
         const val VERSION_14 = 14
-        const val VERSION_20 = 20
+        const val VERSION_21 = 21
         const val MIGRATION_3_4_DB = "migration-3-4.db"
         const val INDEX_DB = "migration-3-4-index.db"
         const val DUPLICATE_DB = "migration-3-4-duplicate.db"

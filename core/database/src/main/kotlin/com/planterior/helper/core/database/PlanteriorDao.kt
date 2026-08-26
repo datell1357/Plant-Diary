@@ -77,6 +77,54 @@ interface CacheDao {
     @Query("DELETE FROM mini_home_cache_watermarks WHERE accountId = :accountId")
     suspend fun clearMiniHomeCacheWatermark(accountId: String)
 
+    @Query(
+        "SELECT COUNT(*) FROM operation_outbox WHERE accountId = :accountId AND aggregateType = 'miniHomeLayouts'"
+    )
+    suspend fun miniHomeMutationCount(accountId: String): Int
+
+    @Query(
+        "UPDATE mini_home_cache_watermarks SET kind = 'CONVERGED_ABSENCE', layoutRevision = NULL, miniHomeId = NULL, operationId = NULL, payloadHash = NULL, tombstoneId = NULL WHERE accountId = :accountId AND generation = :expectedGeneration AND kind = 'DELETED' AND tombstoneId = :expectedTombstoneId"
+    )
+    suspend fun minimizeConvergedMiniHomeDeletion(
+        accountId: String,
+        expectedGeneration: Long,
+        expectedTombstoneId: String,
+    ): Int
+
+    /**
+     * Consumes only the exact deletion observed by a completed full sync. A concurrent recreation,
+     * replacement tombstone, or still-durable mutation makes the transaction a no-op.
+     */
+    @Transaction
+    suspend fun purgeConvergedMiniHomeDeletionTombstone(
+        accountId: String,
+        expectedGeneration: Long,
+        expectedTombstoneId: String,
+    ): Boolean {
+        val current = currentMiniHomeCache(accountId) ?: return false
+        if (
+            !current.watermark.verified ||
+                current.watermark.generation != expectedGeneration ||
+                current.home != null ||
+                current.placements.isNotEmpty() ||
+                miniHomeMutationCount(accountId) != 0
+        ) {
+            return false
+        }
+        if (current.watermark.kind == MiniHomeCacheWatermarkKind.CONVERGED_ABSENCE) return true
+        if (
+            current.watermark.kind != MiniHomeCacheWatermarkKind.DELETED ||
+                current.watermark.tombstoneId != expectedTombstoneId
+        ) {
+            return false
+        }
+        return minimizeConvergedMiniHomeDeletion(
+            accountId,
+            expectedGeneration,
+            expectedTombstoneId,
+        ) == 1
+    }
+
     @Transaction
     suspend fun currentMiniHomeCache(accountId: String): CachedMiniHomeLayoutState? {
         val home = miniHome(accountId)
@@ -116,6 +164,12 @@ interface CacheDao {
                 return MiniHomeCacheApplyResult.Ignored(before)
             }
             if (write.generation == before.watermark.generation) {
+                if (
+                    before.watermark.kind == MiniHomeCacheWatermarkKind.CONVERGED_ABSENCE &&
+                        write is AuthoritativeMiniHomeCacheWrite.Deletion
+                ) {
+                    return MiniHomeCacheApplyResult.Ignored(before)
+                }
                 val candidate = write.watermark()
                 if (!before.watermark.sameDomainIdentity(candidate) || !before.sameContent(write)) {
                     return MiniHomeCacheApplyResult.Conflict(before)
@@ -396,6 +450,77 @@ interface CacheDao {
 }
 
 @Dao
+abstract class AnalyticsEventQueueDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    protected abstract suspend fun insert(entity: AnalyticsEventQueueEntity): Long
+
+    @Query(
+        "DELETE FROM analytics_event_queue WHERE accountId = :accountId AND enqueuedAtEpochMillis <= :expiredAtOrBeforeEpochMillis"
+    )
+    abstract suspend fun purgeExpired(
+        accountId: String,
+        expiredAtOrBeforeEpochMillis: Long,
+    ): Int
+
+    @Query(
+        "DELETE FROM analytics_event_queue WHERE accountId = :accountId AND eventId IN (SELECT eventId FROM analytics_event_queue WHERE accountId = :accountId ORDER BY enqueuedAtEpochMillis DESC, eventId DESC LIMIT -1 OFFSET :maximumRows)"
+    )
+    protected abstract suspend fun enforceCap(accountId: String, maximumRows: Int): Int
+
+    @Transaction
+    open suspend fun enqueueBounded(
+        entity: AnalyticsEventQueueEntity,
+        expiredAtOrBeforeEpochMillis: Long,
+        maximumRows: Int = 1_000,
+    ): Boolean {
+        require(entity.accountId.isNotBlank())
+        require(entity.eventId.isNotBlank())
+        require(entity.eventName.isNotBlank())
+        require(entity.consentRevision > 0)
+        require(maximumRows > 0)
+        purgeExpired(entity.accountId, expiredAtOrBeforeEpochMillis)
+        val inserted = insert(entity) != -1L
+        enforceCap(entity.accountId, maximumRows)
+        return inserted
+    }
+
+    @Query(
+        "SELECT * FROM analytics_event_queue WHERE accountId = :accountId AND consentRevision = :consentRevision AND enqueuedAtEpochMillis > :expiredAtOrBeforeEpochMillis ORDER BY enqueuedAtEpochMillis ASC, eventId ASC LIMIT :limit"
+    )
+    abstract suspend fun oldestBatch(
+        accountId: String,
+        consentRevision: Int,
+        expiredAtOrBeforeEpochMillis: Long,
+        limit: Int = 50,
+    ): List<AnalyticsEventQueueEntity>
+
+    @Query(
+        "DELETE FROM analytics_event_queue WHERE accountId = :accountId AND consentRevision = :consentRevision AND eventId = :eventId"
+    )
+    abstract suspend fun delete(
+        accountId: String,
+        consentRevision: Int,
+        eventId: String,
+    ): Int
+
+    @Query("DELETE FROM analytics_event_queue WHERE accountId = :accountId")
+    abstract suspend fun purgeOwner(accountId: String): Int
+
+    @Query("DELETE FROM analytics_event_queue WHERE accountId != :accountId")
+    abstract suspend fun purgeOtherOwners(accountId: String): Int
+
+    @Query("DELETE FROM analytics_event_queue") abstract suspend fun purgeAll(): Int
+
+    @Query(
+        "DELETE FROM analytics_event_queue WHERE accountId = :accountId AND consentRevision != :consentRevision"
+    )
+    abstract suspend fun purgeOtherRevisions(accountId: String, consentRevision: Int): Int
+
+    @Query("SELECT COUNT(*) FROM analytics_event_queue WHERE accountId = :accountId")
+    abstract suspend fun count(accountId: String): Int
+}
+
+@Dao
 interface TerminalAccountDeletionDao {
     @Query("DELETE FROM cached_plants WHERE accountId = :accountId")
     suspend fun purgePlants(accountId: String)
@@ -430,6 +555,9 @@ interface TerminalAccountDeletionDao {
     @Query("DELETE FROM last_sync WHERE accountId = :accountId")
     suspend fun purgeLastSync(accountId: String)
 
+    @Query("DELETE FROM analytics_event_queue WHERE accountId = :accountId")
+    suspend fun purgeAnalyticsEvents(accountId: String)
+
     @Transaction
     suspend fun purgeOwner(accountId: String) {
         purgePlants(accountId)
@@ -443,6 +571,7 @@ interface TerminalAccountDeletionDao {
         purgeInventoryWatermarks(accountId)
         purgeInventoryOperations(accountId)
         purgeLastSync(accountId)
+        purgeAnalyticsEvents(accountId)
     }
 }
 

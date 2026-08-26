@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -89,6 +90,65 @@ class TerminalAccountDeletionCleanupRuntimeTest {
         }
 
     @Test
+    fun `purge waits for durable sign out and retry preserves prerequisite order`() = runTest {
+        val journal = InMemoryTerminalCleanupJournal()
+        val command = command("request-sign-out-crash")
+        val firstCalls = mutableListOf<TerminalCleanupPhase>()
+        TerminalAccountDeletionCleanupRuntime(
+                journal,
+                TerminalAccountDeletionCleanupActions { phase, _ ->
+                    firstCalls += phase
+                    if (phase == TerminalCleanupPhase.SIGN_OUT_LOCAL) error("process stopped")
+                },
+            )
+            .execute(command)
+
+        assertFalse(TerminalCleanupPhase.PURGE_ROOM in firstCalls)
+        assertFalse(TerminalCleanupPhase.SIGN_OUT_LOCAL in journal.completedPhases(command))
+        assertFalse(TerminalCleanupPhase.PURGE_ROOM in journal.completedPhases(command))
+
+        val retryCalls = mutableListOf<TerminalCleanupPhase>()
+        TerminalAccountDeletionCleanupRuntime(
+                journal,
+                TerminalAccountDeletionCleanupActions { phase, _ -> retryCalls += phase },
+            )
+            .retryIncompleteAfterSignedOutStartup()
+
+        assertEquals(
+            listOf(TerminalCleanupPhase.SIGN_OUT_LOCAL, TerminalCleanupPhase.PURGE_ROOM),
+            retryCalls,
+        )
+        assertEquals(TerminalCleanupPhase.entries.toSet(), journal.completedPhases(command))
+    }
+
+    @Test
+    fun `completed cleanup removes raw owner operation and phase recovery data`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences =
+            context.getSharedPreferences(
+                "terminal-account-deletion-cleanup",
+                Context.MODE_PRIVATE,
+            )
+        preferences.edit().clear().commit()
+        val command = command("request-must-not-remain")
+        val journal = SharedPreferencesTerminalAccountDeletionCleanupJournal(context)
+
+        TerminalAccountDeletionCleanupRuntime(journal) { _, _ -> }.execute(command)
+
+        assertTrue(journal.commands().isEmpty())
+        assertEquals(TerminalCleanupPhase.entries.toSet(), journal.completedPhases(command))
+        preferences.all.forEach { (key, value) ->
+            val serialized = "$key=$value"
+            if (
+                serialized.contains(command.owner.value) ||
+                    serialized.contains(command.operationId.value)
+            ) {
+                fail("raw deletion command remained in preferences: $key")
+            }
+        }
+    }
+
+    @Test
     fun `phase journal survives runtime recreation keyed by owner and operation`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context
@@ -136,5 +196,7 @@ class TerminalAccountDeletionCleanupRuntimeTest {
         ) {
             phases.getOrPut(command) { linkedSetOf() } += phase
         }
+
+        override fun finish(command: TerminalAccountDeletionCleanupCommand) = Unit
     }
 }

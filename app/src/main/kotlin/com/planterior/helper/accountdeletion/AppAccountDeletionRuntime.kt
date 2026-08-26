@@ -3,6 +3,7 @@ package com.planterior.helper.accountdeletion
 import android.content.Context
 import androidx.work.WorkManager
 import com.google.firebase.functions.FirebaseFunctions
+import com.planterior.helper.analytics.AnalyticsRuntime
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.auth.AuthCoordinator
@@ -11,6 +12,7 @@ import com.planterior.helper.feature.settings.AccountDeletionDependencies
 import com.planterior.helper.feature.settings.AccountDeletionReauthenticationResult
 import com.planterior.helper.feature.settings.AccountDeletionReauthenticator
 import com.planterior.helper.feature.settings.AccountDeletionTerminalCallback
+import com.planterior.helper.feature.settings.AnalyticsDeletionGuard
 import com.planterior.helper.feature.share.MiniHomeShareImageStore
 import com.planterior.helper.feature.weather.WeatherLocationGateway
 import com.planterior.helper.notification.LocalNotificationOwnerStateCleaner
@@ -25,6 +27,7 @@ class AppAccountDeletionRuntime(
     functions: FirebaseFunctions,
     database: PlanteriorDatabase,
     private val coordinator: AuthCoordinator,
+    private val analyticsRuntime: AnalyticsRuntime,
 ) {
     private val applicationContext = context.applicationContext
     private val exitChannel = Channel<TerminalAccountDeletionCleanupCommand>(Channel.BUFFERED)
@@ -40,6 +43,8 @@ class AppAccountDeletionRuntime(
                             .cancelTokenRegistration()
                     TerminalCleanupPhase.PURGE_ROOM ->
                         database.terminalAccountDeletionDao().purgeOwner(command.owner.value)
+                    TerminalCleanupPhase.CLEAR_ANALYTICS ->
+                        analyticsRuntime.clearLocalOwner(command.owner.value)
                     TerminalCleanupPhase.CLEAR_NOTIFICATIONS ->
                         LocalNotificationOwnerStateCleaner(applicationContext).clear()
                     TerminalCleanupPhase.CLEAR_WEATHER ->
@@ -82,6 +87,8 @@ class AppAccountDeletionRuntime(
                         TerminalAccountDeletionCleanupCommand(owner, completion.requestId)
                     )
                 },
+            analyticsDeletionGuard =
+                AnalyticsDeletionGuard { analyticsRuntime.deletionReceived(owner.value) },
         )
     }
 

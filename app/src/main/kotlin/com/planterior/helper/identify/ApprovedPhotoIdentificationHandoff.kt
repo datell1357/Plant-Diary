@@ -1,7 +1,5 @@
 package com.planterior.helper.identify
 
-import com.planterior.helper.core.data.FirestoreTimestampAdapter
-import com.planterior.helper.core.data.IdentificationRequestDto
 import com.planterior.helper.core.data.PrivateMediaReference
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.IdentificationRequestId
@@ -10,6 +8,8 @@ import com.planterior.helper.feature.camera.PhotoSubmission
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+const val IDENTIFICATION_DISCLOSURE_VERSION = 1
 
 fun interface PhotoIdentificationHandoff {
     suspend fun prepare(submission: PhotoSubmission)
@@ -26,18 +26,25 @@ data class TemporaryIdentificationOriginal(
     val bytes: ByteArray,
 )
 
+data class IdentificationRequestAcknowledgement(
+    val requestId: String,
+    val disclosureVersion: Int,
+    val acknowledgedAtMillis: Long,
+    val createdAtMillis: Long,
+    val hardExpiresAtMillis: Long,
+)
+
 interface IdentificationHandoffBackend {
     fun currentOwner(): AccountId?
 
-    suspend fun findRequest(owner: AccountId, requestId: String): IdentificationRequestDto?
-
     suspend fun upload(original: TemporaryIdentificationOriginal): PrivateMediaReference
 
-    suspend fun createRequest(
+    suspend fun authorizeRequest(
         owner: AccountId,
         requestId: String,
-        request: IdentificationRequestDto,
-    )
+        mediaReference: PrivateMediaReference,
+        disclosureVersion: Int,
+    ): IdentificationRequestAcknowledgement
 }
 
 enum class IdentificationHandoffFailure {
@@ -51,6 +58,11 @@ enum class IdentificationHandoffFailure {
 class IdentificationHandoffException(val reason: IdentificationHandoffFailure) :
     Exception(reason.name)
 
+/**
+ * The app owns only reserve/upload/commit of the private original. Authorization of that original
+ * into an identification request is callable-only; repeating the same request id after response
+ * loss is safe because both media reservation and authorization are idempotent server operations.
+ */
 class ApprovedPhotoIdentificationHandoff(
     private val backend: IdentificationHandoffBackend,
     private val photoBytes: PrivatePhotoBytes,
@@ -68,32 +80,21 @@ class ApprovedPhotoIdentificationHandoff(
         val key = RequestKey(owner, requestId)
         mutex.withLock {
             if (key in completed) return
-            val existing = requestLookup(owner, requestId)
-            if (existing != null) {
-                existing.requireSameOwner(owner, requestId)
-                completed += key
-                return
-            }
             val bytes = readPhoto(submission)
             val mediaReference = upload(submission.original(owner, requestId, bytes))
-            createRequest(owner, requestId, submission.request(owner, requestId, mediaReference))
+            val acknowledgement = authorize(owner, requestId, mediaReference)
+            if (
+                acknowledgement.requestId != requestId.value ||
+                    acknowledgement.disclosureVersion != IDENTIFICATION_DISCLOSURE_VERSION ||
+                    acknowledgement.hardExpiresAtMillis - acknowledgement.createdAtMillis !=
+                        86_400_000L ||
+                    acknowledgement.acknowledgedAtMillis < acknowledgement.createdAtMillis
+            ) {
+                throw IdentificationHandoffException(IdentificationHandoffFailure.RequestFailed)
+            }
             completed += key
         }
     }
-
-    private suspend fun requestLookup(
-        owner: AccountId,
-        requestId: IdentificationRequestId,
-    ): IdentificationRequestDto? =
-        try {
-            backend.findRequest(owner, requestId.value)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: IdentificationHandoffException) {
-            throw error
-        } catch (_: Exception) {
-            throw IdentificationHandoffException(IdentificationHandoffFailure.RequestFailed)
-        }
 
     private suspend fun readPhoto(submission: PhotoSubmission): ByteArray =
         try {
@@ -112,23 +113,27 @@ class ApprovedPhotoIdentificationHandoff(
             throw IdentificationHandoffException(IdentificationHandoffFailure.PhotoUnavailable)
         }
 
-    private suspend fun upload(original: TemporaryIdentificationOriginal): PrivateMediaReference {
+    private suspend fun upload(original: TemporaryIdentificationOriginal): PrivateMediaReference =
         try {
-            return backend.upload(original)
+            backend.upload(original)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             throw IdentificationHandoffException(IdentificationHandoffFailure.UploadFailed)
         }
-    }
 
-    private suspend fun createRequest(
+    private suspend fun authorize(
         owner: AccountId,
         requestId: IdentificationRequestId,
-        request: IdentificationRequestDto,
-    ) {
+        mediaReference: PrivateMediaReference,
+    ): IdentificationRequestAcknowledgement =
         try {
-            backend.createRequest(owner, requestId.value, request)
+            backend.authorizeRequest(
+                owner,
+                requestId.value,
+                mediaReference,
+                IDENTIFICATION_DISCLOSURE_VERSION,
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: IdentificationHandoffException) {
@@ -136,29 +141,10 @@ class ApprovedPhotoIdentificationHandoff(
         } catch (_: Exception) {
             throw IdentificationHandoffException(IdentificationHandoffFailure.RequestFailed)
         }
-    }
 
     private data class RequestKey(
         val owner: AccountId,
         val requestId: IdentificationRequestId,
-    )
-}
-
-private fun PhotoSubmission.request(
-    owner: AccountId,
-    requestId: IdentificationRequestId,
-    mediaReference: PrivateMediaReference,
-): IdentificationRequestDto {
-    val expiresAt = approvedAt.plusSeconds(disclosure.originalRetentionHours * 60L * 60L)
-    return IdentificationRequestDto(
-        ownerUid = owner.value,
-        mediaReference = mediaReference,
-        createdAt = FirestoreTimestampAdapter.fromInstant(approvedAt),
-        expiresAt = FirestoreTimestampAdapter.fromInstant(expiresAt),
-        revision = 1,
-        expectedRevision = 0,
-        idempotencyKey = requestId.value,
-        updatedAt = approvedAt.toString(),
     )
 }
 
@@ -173,15 +159,6 @@ private fun PhotoSubmission.original(
         contentType = photo.mime.contentType(),
         bytes = bytes,
     )
-
-private fun IdentificationRequestDto.requireSameOwner(
-    owner: AccountId,
-    requestId: IdentificationRequestId,
-) {
-    if (ownerUid != owner.value || idempotencyKey != requestId.value) {
-        throw IdentificationHandoffException(IdentificationHandoffFailure.PermissionDenied)
-    }
-}
 
 private fun PhotoMime.contentType(): String =
     when (this) {

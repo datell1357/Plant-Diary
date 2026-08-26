@@ -9,6 +9,8 @@ import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.planterior.helper.BuildConfig
 import com.planterior.helper.FirebaseRuntime
+import com.planterior.helper.analytics.AnalyticsRuntime
+import com.planterior.helper.analytics.FirebaseAnalyticsRemoteGateway
 import com.planterior.helper.core.data.FirebasePrivateMediaGateway
 import com.planterior.helper.core.data.FirebaseRemoteMutationGateway
 import com.planterior.helper.core.data.OfflineFirstSyncRepository
@@ -23,6 +25,7 @@ import com.planterior.helper.core.database.MIGRATION_17_18
 import com.planterior.helper.core.database.MIGRATION_18_19
 import com.planterior.helper.core.database.MIGRATION_19_20
 import com.planterior.helper.core.database.MIGRATION_1_2
+import com.planterior.helper.core.database.MIGRATION_20_21
 import com.planterior.helper.core.database.MIGRATION_2_3
 import com.planterior.helper.core.database.MIGRATION_3_4
 import com.planterior.helper.core.database.MIGRATION_4_5
@@ -74,6 +77,7 @@ private constructor(
     val weatherPermissionCapabilities: SharedPreferencesWeatherPermissionCapabilityStore,
     val collectionThumbnailLoader: FirebasePlantThumbnailLoader,
     val catalogMediaLoader: FirebaseCatalogMediaLoader,
+    val analyticsRuntime: AnalyticsRuntime,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
 
@@ -82,6 +86,7 @@ private constructor(
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            analyticsRuntime.close()
             catalogMediaLoader.close()
             database.close()
         }
@@ -129,6 +134,7 @@ private constructor(
                         MIGRATION_17_18,
                         MIGRATION_18_19,
                         MIGRATION_19_20,
+                        MIGRATION_20_21,
                     )
                     .build()
             return try {
@@ -199,6 +205,13 @@ private constructor(
                     SharedPreferencesWeatherPermissionCapabilityStore(applicationContext),
                     FirebasePlantThumbnailLoader(storage),
                     FirebaseCatalogMediaLoader(storage),
+                    AnalyticsRuntime(
+                        applicationContext,
+                        database,
+                        FirebaseAnalyticsRemoteGateway(functions),
+                    ) {
+                        auth.currentUser?.uid
+                    },
                 )
             } catch (error: Throwable) {
                 database.close()

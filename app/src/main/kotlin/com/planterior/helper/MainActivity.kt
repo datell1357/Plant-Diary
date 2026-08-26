@@ -24,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.planterior.helper.auth.AuthRuntime
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
@@ -141,11 +142,14 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             authRuntime.coordinator.state.collectLatest { state ->
                 if (state is AuthUiState.Authenticated) {
+                    launch { authRuntime.analyticsRuntime?.consent?.load(state.account.uid) }
                     confirmPendingNotificationOpens(state.account.uid)
                     NotificationWorkScheduler(
                             androidx.work.WorkManager.getInstance(this@MainActivity)
                         )
                         .enqueueTokenRegistration()
+                } else if (state is AuthUiState.SignedOut) {
+                    launch { authRuntime.analyticsRuntime?.clearLocalOwner(null) }
                 }
             }
         }
@@ -217,6 +221,18 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         if (::homeViewModel.isInitialized) homeViewModel.close()
         if (::authRuntime.isInitialized) authRuntime.close()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (::authRuntime.isInitialized)
+            authRuntime.analyticsRuntime?.sessionTracker?.onForeground()
+    }
+
+    override fun onStop() {
+        if (::authRuntime.isInitialized)
+            authRuntime.analyticsRuntime?.sessionTracker?.onBackground()
+        super.onStop()
     }
 
     override fun onResume() {
@@ -416,6 +432,7 @@ internal fun PlanteriorApp(
             navController = navController,
             startRoute = backStack.first(),
             authCoordinator = authRuntime?.coordinator,
+            analyticsConsentCoordinator = authRuntime?.analyticsRuntime?.consent,
             authRouteGuardEnabled = useAuthRouteGuard,
             signedOutReturnRoute = (target as? PlanteriorRoute.Login)?.returnRoute,
             homeViewModel = resolvedHomeViewModel,
@@ -450,6 +467,8 @@ internal fun PlanteriorApp(
             catalogMediaLoader =
                 authRuntime?.catalogMediaLoader
                     ?: com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader,
+            productEventRecorder =
+                authRuntime?.analyticsRuntime?.recorder ?: ProductEventRecorder {},
         )
     }
 }

@@ -22,12 +22,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
 import com.planterior.helper.R
+import com.planterior.helper.analytics.AnalyticsConsentCoordinator
 import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.AnalyticsConsentState
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.PersonalPlantId
+import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.feature.auth.AuthCoordinator
 import com.planterior.helper.feature.auth.AuthScreen
 import com.planterior.helper.feature.auth.AuthUiState
@@ -56,6 +59,9 @@ import com.planterior.helper.feature.settings.AccountDeletionDependencies
 import com.planterior.helper.feature.settings.AccountDeletionRoute
 import com.planterior.helper.feature.settings.DevicePermissionState
 import com.planterior.helper.feature.settings.SettingsActions
+import com.planterior.helper.feature.settings.SettingsLocationConsentState
+import com.planterior.helper.feature.settings.SettingsLocationController
+import com.planterior.helper.feature.settings.SettingsRegion
 import com.planterior.helper.feature.settings.SettingsScreen
 import com.planterior.helper.feature.settings.SettingsUiState
 import com.planterior.helper.feature.share.MiniHomeShareRepository
@@ -108,6 +114,7 @@ fun PlanteriorNavHost(
     startRoute: PlanteriorRoute,
     modifier: Modifier = Modifier,
     authCoordinator: AuthCoordinator? = null,
+    analyticsConsentCoordinator: AnalyticsConsentCoordinator? = null,
     authRouteGuardEnabled: Boolean = true,
     signedOutReturnRoute: String? = null,
     homeViewModel: HomeViewModel? = null,
@@ -132,6 +139,7 @@ fun PlanteriorNavHost(
     collectionThumbnailLoader: PlantThumbnailLoader = PlaceholderPlantThumbnailLoader,
     catalogMediaLoader: CatalogMediaLoader = PlaceholderCatalogMediaLoader,
     clock: Clock = Clock.systemDefaultZone(),
+    productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
@@ -353,6 +361,7 @@ fun PlanteriorNavHost(
                     onOpenMiniHome = { navController.navigate(PlanteriorRoute.MiniHome) },
                     bottomBar = bottomBar,
                     mediaLoader = catalogMediaLoader,
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }
@@ -366,16 +375,51 @@ fun PlanteriorNavHost(
                 )
             } else {
                 val state by authCoordinator.state.collectAsState()
+                val analyticsConsentState by
+                    analyticsConsentCoordinator?.state?.collectAsState()
+                        ?: remember {
+                            mutableStateOf<AnalyticsConsentState>(AnalyticsConsentState.Loading)
+                        }
                 var wateringEnabled by rememberSaveable { mutableStateOf(true) }
                 var weatherEnabled by rememberSaveable { mutableStateOf(true) }
                 val authenticated = state as? AuthUiState.Authenticated
                 val locationPermission = weatherLocationGateway?.permission()
-                val capability =
-                    authenticated?.account?.uid?.let { weatherPermissionCapabilities?.read(it) }
-                var locationConsentGranted by
-                    rememberSaveable(authenticated?.account?.uid) {
-                        mutableStateOf(capability?.desiredGranted == true)
+                val locationController =
+                    remember(
+                        authenticated?.account?.uid,
+                        weatherRepository,
+                        weatherPermissionCapabilities,
+                        weatherLocationGateway,
+                    ) {
+                        val accountId = authenticated?.account?.uid
+                        if (
+                            accountId == null ||
+                                weatherRepository == null ||
+                                weatherPermissionCapabilities == null ||
+                                weatherLocationGateway == null
+                        ) {
+                            null
+                        } else {
+                            SettingsLocationController(
+                                initialRegion = SettingsRegion.Manual("지역 관리에서 확인"),
+                                accountId = accountId,
+                                repository = weatherRepository,
+                                permissionCapabilities = weatherPermissionCapabilities,
+                                locationGateway = weatherLocationGateway,
+                                scope = scope,
+                            )
+                        }
                     }
+                val locationState by
+                    locationController?.state?.collectAsState()
+                        ?: remember {
+                            mutableStateOf(
+                                com.planterior.helper.feature.settings.SettingsLocationState(
+                                    SettingsRegion.Manual("지역 관리에서 확인"),
+                                    SettingsLocationConsentState.Loading,
+                                )
+                            )
+                        }
                 Box(Modifier.fillMaxSize().testTag("account-screen")) {
                     SettingsScreen(
                         state =
@@ -384,7 +428,11 @@ fun PlanteriorNavHost(
                                 wateringNotificationsEnabled = wateringEnabled,
                                 weatherNotificationsEnabled = weatherEnabled,
                                 quietHoursSummary = "없음",
-                                regionName = "지역 관리에서 확인",
+                                regionName =
+                                    when (val region = locationState.region) {
+                                        is SettingsRegion.Current -> region.name
+                                        is SettingsRegion.Manual -> region.name
+                                    },
                                 osLocationPermission =
                                     if (
                                         locationPermission
@@ -395,7 +443,8 @@ fun PlanteriorNavHost(
                                     } else {
                                         DevicePermissionState.DENIED
                                     },
-                                appLocationConsentGranted = locationConsentGranted,
+                                appLocationConsentGranted =
+                                    locationState.consent is SettingsLocationConsentState.Enabled,
                                 lastSyncAt =
                                     authenticated?.sync?.records?.values?.maxOfOrNull {
                                         it.attemptedAt
@@ -404,6 +453,8 @@ fun PlanteriorNavHost(
                                     if (notificationPermissionGranted) DevicePermissionState.ALLOWED
                                     else DevicePermissionState.DENIED,
                                 appVersion = "v${com.planterior.helper.BuildConfig.VERSION_NAME}",
+                                analyticsConsentState = analyticsConsentState,
+                                locationConsentState = locationState.consent,
                             ),
                         actions =
                             SettingsActions(
@@ -419,9 +470,11 @@ fun PlanteriorNavHost(
                                     navController.navigate(PlanteriorRoute.Notifications)
                                 },
                                 onOpenRegion = { navController.navigate(PlanteriorRoute.Weather) },
-                                onRevokeLocationConsent = {
-                                    weatherLocationGateway?.cancel()
-                                    locationConsentGranted = false
+                                onLocationConsentChanged = { enabled ->
+                                    locationController?.setLocationConsent(enabled)
+                                },
+                                onRetryLocationConsent = {
+                                    locationController?.retryLocationConsent()
                                 },
                                 onOpenPrivacy = {},
                                 onLogout = {
@@ -436,6 +489,24 @@ fun PlanteriorNavHost(
                                 onOpenNotificationSettings = onOpenNotificationSettings,
                                 onOpenAccountDeletion = {
                                     navController.navigate(PlanteriorRoute.AccountDeletion)
+                                },
+                                onAnalyticsConsentChanged = { enabled ->
+                                    scope.launch {
+                                        val coordinator = analyticsConsentCoordinator
+                                        if (coordinator != null) {
+                                            if (
+                                                analyticsConsentState
+                                                    is AnalyticsConsentState.FailedOff
+                                            ) {
+                                                coordinator.retry()
+                                            } else {
+                                                coordinator.setEnabled(enabled)
+                                            }
+                                        }
+                                    }
+                                },
+                                onRetryAnalyticsConsent = {
+                                    scope.launch { analyticsConsentCoordinator?.retry() }
                                 },
                             ),
                         bottomBar = bottomBar,
@@ -479,6 +550,7 @@ fun PlanteriorNavHost(
                     registrationHandoff.clear()
                     navController.navigate(PlanteriorRoute.Identification(submission.requestId))
                 },
+                productEventRecorder = productEventRecorder,
             )
         }
         composable<PlanteriorRoute.Identification> { entry ->
@@ -513,6 +585,7 @@ fun PlanteriorNavHost(
                     registrationHandoff.accept(confirmed)
                     navController.navigate(PlanteriorRoute.Registration)
                 },
+                productEventRecorder = productEventRecorder,
             )
         }
         composable<PlanteriorRoute.Registration> {
@@ -566,6 +639,7 @@ fun PlanteriorNavHost(
                         navController.popBackStack()
                     },
                     authOwnership = registrationAuthOwnership,
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }
@@ -605,6 +679,7 @@ fun PlanteriorNavHost(
                     photoLoader =
                         miniHomePhotoLoader(collectionThumbnailLoader, catalogMediaLoader),
                     authOwnership = miniHomeAuthOwnership,
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }
@@ -647,6 +722,7 @@ fun PlanteriorNavHost(
                     onOpenLocationSettings = onOpenLocationSettings,
                     onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
                     clock = clock,
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }
@@ -674,6 +750,7 @@ fun PlanteriorNavHost(
                     onOpenCollection = { navController.navigateToTab(PlanteriorRoute.Collection) },
                     focusedPlantId = route.plantId,
                     clock = clock,
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }
@@ -709,6 +786,7 @@ fun PlanteriorNavHost(
                     onWateringRefreshConsumed = {
                         entry.savedStateHandle[WATERING_REFRESH_KEY] = null
                     },
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }
@@ -731,6 +809,7 @@ fun PlanteriorNavHost(
                             ?.savedStateHandle
                             ?.set(WATERING_REFRESH_KEY, receipt.operationId.value)
                     },
+                    productEventRecorder = productEventRecorder,
                 )
             }
         }

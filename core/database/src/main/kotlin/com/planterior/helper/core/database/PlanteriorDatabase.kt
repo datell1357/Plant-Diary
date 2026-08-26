@@ -21,8 +21,9 @@ import java.time.Instant
             InventoryAcquisitionOperationEntity::class,
             OperationOutboxEntity::class,
             LastSyncEntity::class,
+            AnalyticsEventQueueEntity::class,
         ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract class PlanteriorDatabase : RoomDatabase() {
@@ -33,7 +34,22 @@ abstract class PlanteriorDatabase : RoomDatabase() {
     abstract fun inventoryDao(): InventoryDao
 
     abstract fun terminalAccountDeletionDao(): TerminalAccountDeletionDao
+
+    abstract fun analyticsEventQueueDao(): AnalyticsEventQueueDao
 }
+
+/** Adds the owner- and acknowledged-consent-revision-scoped analytics delivery queue. */
+val MIGRATION_20_21 =
+    object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS analytics_event_queue (`accountId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `eventName` TEXT NOT NULL, `consentRevision` INTEGER NOT NULL, `enqueuedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`accountId`, `eventId`))"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_analytics_event_queue_accountId_consentRevision_enqueuedAtEpochMillis_eventId ON analytics_event_queue (`accountId`, `consentRevision`, `enqueuedAtEpochMillis`, `eventId`)"
+            )
+        }
+    }
 
 val MIGRATION_1_2 =
     object : Migration(1, 2) {

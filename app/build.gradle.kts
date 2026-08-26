@@ -300,6 +300,12 @@ android {
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("test-fixtures"))
 }
 
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variantBuilder ->
+        (variantBuilder as com.android.build.api.variant.HasUnitTestBuilder).enableUnitTest = true
+    }
+}
+
 val validateReleaseAuthConfiguration =
     tasks.register<ValidateReleaseAuthConfigurationTask>("validateReleaseAuthConfiguration") {
         group = "verification"
@@ -326,7 +332,7 @@ val validateReleaseConfiguration =
     }
 
 tasks
-    .matching { it.name == "preReleaseBuild" }
+    .matching { it.name == "packageRelease" || it.name == "signReleaseBundle" }
     .configureEach {
         dependsOn(validateReleaseConfiguration)
     }
@@ -335,6 +341,15 @@ tasks
     .matching { it.name == "preDebugAndroidTestBuild" }
     .configureEach {
         dependsOn(":feature:shop:testDebugUnitTest")
+    }
+
+tasks
+    .matching { it.name == "compileReleaseUnitTestKotlin" }
+    .configureEach {
+        val sharedDebugUnitTestRoot = layout.projectDirectory.dir("src/test").asFile.toPath()
+        (this as org.gradle.api.tasks.util.PatternFilterable).exclude { element ->
+            element.file.toPath().startsWith(sharedDebugUnitTestRoot)
+        }
     }
 
 dependencies {

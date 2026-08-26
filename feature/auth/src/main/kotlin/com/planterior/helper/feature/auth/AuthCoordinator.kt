@@ -1,5 +1,7 @@
 package com.planterior.helper.feature.auth
 
+import com.planterior.helper.core.model.ClientProductEvent
+import com.planterior.helper.core.model.ProductEventRecorder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,6 +23,8 @@ class AuthCoordinator(
     private val authTransition: suspend (String?, suspend () -> Unit) -> Unit = { _, action ->
         action()
     },
+    private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
+    private val accountSyncWriteGate: AccountSyncWriteGate = AccountSyncWriteGate(),
 ) {
     private val mutableState = MutableStateFlow<AuthUiState>(AuthUiState.Restoring)
     val state: StateFlow<AuthUiState> = mutableState.asStateFlow()
@@ -265,14 +269,16 @@ class AuthCoordinator(
         activeRequest?.let { it.second.cancel(it.first) }
         activeRequest = null
         return authTransitionMutex.withLock {
-            val currentUid = identity.current()?.uid
-            if (currentUid != null && currentUid != accountUid) return@withLock false
-            try {
-                if (currentUid != null) identity.signOut()
-                true
-            } finally {
-                cache.activate(null)
-                mutableState.value = AuthUiState.SignedOut()
+            accountSyncWriteGate.removeOwner(accountUid) removeOwner@{
+                val currentUid = identity.current()?.uid
+                if (currentUid != null && currentUid != accountUid) return@removeOwner false
+                try {
+                    if (currentUid != null) identity.signOut()
+                    true
+                } finally {
+                    cache.activate(null)
+                    mutableState.value = AuthUiState.SignedOut()
+                }
             }
         }
     }
@@ -318,13 +324,32 @@ class AuthCoordinator(
         // 프로필 쓰기와 동기화는 서버 왕복이라 따로 실패할 수 있다. 실패해도 이미 공개한 세션을 되돌리지 않고
         // 마지막으로 알고 있는 동기화 상태를 그대로 유지한다.
         ignoringServerFailure { profiles.upsert(account) }
-        val sync = ignoringServerFailure { synchronizer.sync(account.uid) }
-        publishSync(
-            account,
-            returnRoute,
-            generationAtStart,
-            sync ?: lastKnownOrEmpty(account.uid),
-        )
+        var terminalAttemptFailed = false
+        val sync =
+            try {
+                synchronizer.sync(account.uid)
+            } catch (cancellation: kotlinx.coroutines.CancellationException) {
+                throw cancellation
+            } catch (_: SyncNotAttemptedException) {
+                null
+            } catch (_: Exception) {
+                terminalAttemptFailed = true
+                null
+            }
+        if (sync == null) {
+            val published =
+                publishSync(
+                    account,
+                    returnRoute,
+                    generationAtStart,
+                    lastKnownOrEmpty(account.uid),
+                )
+            if (published && terminalAttemptFailed) {
+                recordSyncEvent(ClientProductEvent.SYNC_FAILED)
+            }
+        } else if (publishSync(account, returnRoute, generationAtStart, sync)) {
+            recordTerminalSyncAttempt(sync)
+        }
     }
 
     /**
@@ -337,11 +362,31 @@ class AuthCoordinator(
         returnRoute: String?,
         generationAtStart: Long,
         sync: SyncSummary,
-    ) {
-        if (generation != generationAtStart) return
+    ): Boolean {
+        if (generation != generationAtStart) return false
         val current = mutableState.value
-        if (current !is AuthUiState.Authenticated || current.account.uid != account.uid) return
+        if (current !is AuthUiState.Authenticated || current.account.uid != account.uid)
+            return false
         mutableState.value = AuthUiState.Authenticated(account, sync, returnRoute)
+        return true
+    }
+
+    private fun recordTerminalSyncAttempt(sync: SyncSummary) {
+        val event =
+            when {
+                sync.failures.isNotEmpty() -> ClientProductEvent.SYNC_FAILED
+                sync.completed == SyncDomain.entries.toSet() -> ClientProductEvent.SYNC_COMPLETED
+                else -> return
+            }
+        recordSyncEvent(event)
+    }
+
+    private fun recordSyncEvent(event: ClientProductEvent) {
+        try {
+            productEventRecorder.record(event)
+        } catch (_: Exception) {
+            // Telemetry cannot alter the established session or synchronization result.
+        }
     }
 
     /** 마지막으로 알고 있는 동기화 요약을 읽는다. 이것까지 실패하면 빈 요약으로 두고 세션은 지킨다. */
