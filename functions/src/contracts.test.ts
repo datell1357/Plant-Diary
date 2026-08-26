@@ -310,9 +310,9 @@ test("server-only delivery weather and item writes exclude authoritative deletio
   const store = new FakeStore();
   const commands = [
     { collection: "notificationDeliveries", documentId: "delivery-a", payload: { plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: "2026-08-12T00:00:00Z", deliveredAt: "2026-08-12T00:01:00Z", deduplicationKey: "user-a:plant-a:2026-08-12:0" } },
-    { collection: "weatherRisks", documentId: "risk-a", payload: { plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", detectedAt: "2026-08-12T00:00:00Z", observedAt: "2026-08-12T00:00:00Z", active: true, transition: 1, deliveredTransition: null } },
+    { collection: "weatherRisks", documentId: "risk-a", payload: { plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", detectedAt: "2026-08-12T00:00:00Z", observedAt: "2026-08-12T00:00:00Z", active: true, transition: 1, deliveredTransition: null, source: "DEVICE", locationConsentGeneration: 4 } },
     { collection: "ownedItems", documentId: "owned-a", payload: { itemId: "item-a", acquiredAt: "2026-08-12T00:00:00Z", applied: false } },
-    { collection: "weatherSnapshots", documentId: "snapshot-a", payload: { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: "2026-08-12T00:00:00Z", expiresAt: "2026-08-12T03:00:00Z", zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"] } },
+    { collection: "weatherSnapshots", documentId: "snapshot-a", payload: { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: "2026-08-12T00:00:00Z", expiresAt: "2026-08-12T03:00:00Z", zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"], source: "MANUAL", locationConsentGeneration: null } },
     { collection: "shareLinks", documentId: "share-a", payload: { miniHomeId: "home-a", sourceRevision: 2, snapshotPath: "share-images/user-a/share-a/share.png", createdAt: "2026-08-12T00:00:00Z", expiresAt: "2026-09-12T00:00:00Z", revokedAt: null } },
   ] as const;
   for (const command of commands) await executeServerStateWrite({ trusted: true }, "user-a", command, store);
@@ -341,6 +341,20 @@ test("server-only delivery weather and item writes exclude authoritative deletio
     () => executeServerStateWrite({ trusted: true }, "user-a", { ...commands[4], payload: { ...commands[4].payload, expiresAt: "2026-08-01T00:00:00Z" } }, store),
     ContractError,
   );
+  for (const payload of [
+    { ...commands[1].payload, source: "DEVICE", locationConsentGeneration: null },
+    { ...commands[1].payload, source: "MANUAL", locationConsentGeneration: 4 },
+  ]) {
+    await assert.rejects(
+      () => executeServerStateWrite(
+        { trusted: true },
+        "user-a",
+        { ...commands[1], payload },
+        store,
+      ),
+      ContractError,
+    );
+  }
   await assert.rejects(
     () => executeServerStateWrite(
       { trusted: true },

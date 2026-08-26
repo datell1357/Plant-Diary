@@ -36,11 +36,19 @@ export type PrivateMediaReservation = Readonly<{
   contentType: string;
   byteSize: number;
   objectPath: string;
+  identificationRequestId: string | null;
   idempotencyKeyHash: string;
   requestHash: string;
   state: PrivateMediaState;
   objectGeneration: string | null;
   sealedGeneration: string | null;
+  /** Durable cleanup fence for a committed identification original before its bytes are deleted. */
+  cleanupClaimGeneration?: string | null;
+  cleanupClaimReason?:
+    | "EXPIRED_RESERVED_UPLOAD"
+    | "COMMITTED_ORPHANED_IDENTIFICATION_ORIGINAL"
+    | "IDENTIFICATION_REQUEST_RETENTION"
+    | null;
   createdAtMillis: number;
   expiresAtMillis: number;
   committedAtMillis: number | null;
@@ -87,9 +95,12 @@ export type ResolvePrivateMediaCommand = Readonly<{
   reference: PrivateMediaReference;
   mediaKind: PrivateMediaKind;
 }>;
+export type ClaimExpiredReservedUploadCommand = Readonly<{
+  reservation: PrivateMediaReservation;
+  nowMillis: number;
+}>;
 export type MarkPrivateMediaSealedCommand = Readonly<{
-  ownerUid: string;
-  reservationId: string;
+  expectedReservation: PrivateMediaReservation;
   sealedGeneration: string;
   sealedAtMillis: number;
 }>;
@@ -97,6 +108,9 @@ export interface PrivateMediaReservationRepository {
   load(reservationId: string): Promise<PrivateMediaReservation | null>;
   reserve(reservation: PrivateMediaReservation): Promise<PrivateMediaReservation>;
   commit(command: CommitPrivateMediaCommand): Promise<PrivateMediaReservation>;
+  claimExpiredReservedUpload(
+    command: ClaimExpiredReservedUploadCommand,
+  ): Promise<PrivateMediaReservation | null>;
   resolve(command: ResolvePrivateMediaCommand): Promise<ResolvedPrivateMedia | null>;
   listOwner(ownerUid: string): Promise<readonly PrivateMediaReservation[]>;
   markSealed(command: MarkPrivateMediaSealedCommand): Promise<void>;
@@ -164,4 +178,40 @@ export function isPrivateMediaSeal(object: PrivateMediaObject): boolean {
     object.contentType === PRIVATE_MEDIA_SEAL_CONTENT_TYPE &&
     Object.keys(object.customMetadata).length === 1 &&
     object.customMetadata.privateMediaSeal === "true";
+}
+
+export function matchesPrivateMediaReservationObject(
+  object: PrivateMediaObject,
+  reservation: PrivateMediaReservation,
+): boolean {
+  if (object.path !== reservation.objectPath || validObjectGeneration(object.generation) === null) {
+    return false;
+  }
+  switch (reservation.state) {
+    case "RESERVED":
+      return matchesReservedUpload(object, reservation);
+    case "COMMITTED":
+      return object.generation === reservation.objectGeneration &&
+        matchesReservedUpload(object, reservation);
+    case "SEALED":
+      return object.generation === reservation.sealedGeneration && isPrivateMediaSeal(object);
+    default: {
+      const unsupported: never = reservation.state;
+      throw new TypeError(`Unsupported private media state: ${String(unsupported)}`);
+    }
+  }
+}
+
+function matchesReservedUpload(
+  object: PrivateMediaObject,
+  reservation: PrivateMediaReservation,
+): boolean {
+  const metadataKeys = Object.keys(object.customMetadata).sort();
+  return object.byteSize === reservation.byteSize &&
+    object.contentType === reservation.contentType &&
+    metadataKeys.length === 2 &&
+    metadataKeys[0] === "ownerUid" &&
+    metadataKeys[1] === "reservationId" &&
+    object.customMetadata.ownerUid === reservation.ownerUid &&
+    object.customMetadata.reservationId === reservation.reservationId;
 }

@@ -8,12 +8,13 @@ import {
 import { z } from "zod";
 import {
   assertAccountMutationAllowed,
-  isAccountMutationLocked,
+  isAccountDeletionIrreversible,
 } from "./account-mutation-lock.js";
 import {
   PRIVATE_MEDIA_KINDS,
   PRIVATE_MEDIA_STATES,
   PrivateMediaError,
+  type ClaimExpiredReservedUploadCommand,
   type CommitPrivateMediaCommand,
   type MarkPrivateMediaSealedCommand,
   type PrivateMediaReservation,
@@ -32,11 +33,18 @@ const storedReservationSchema = z.object({
   contentType: z.string().regex(/^image\/(jpeg|png|webp|heif|heic)$/),
   byteSize: z.number().int().min(1).max(20 * 1024 * 1024),
   objectPath: z.string().regex(/^private-media-v2\/[A-Za-z0-9_-]{8,128}$/),
+  identificationRequestId: z.string().regex(/^[A-Za-z0-9_-]{8,128}$/).nullable().optional(),
   idempotencyKeyHash: z.string().regex(/^[a-f0-9]{64}$/),
   requestHash: z.string().regex(/^[a-f0-9]{64}$/),
   state: z.enum(PRIVATE_MEDIA_STATES),
   objectGeneration: z.string().regex(/^[1-9][0-9]*$/).nullable(),
   sealedGeneration: z.string().regex(/^[1-9][0-9]*$/).nullable(),
+  cleanupClaimGeneration: z.string().regex(/^[1-9][0-9]*$/).nullable().optional(),
+  cleanupClaimReason: z.enum([
+    "EXPIRED_RESERVED_UPLOAD",
+    "COMMITTED_ORPHANED_IDENTIFICATION_ORIGINAL",
+    "IDENTIFICATION_REQUEST_RETENTION",
+  ]).nullable().optional(),
   createdAt: timestampSchema,
   expiresAt: timestampSchema,
   committedAt: timestampSchema.nullable(),
@@ -53,7 +61,13 @@ const receiptSchema = z.object({
 
 export class FirestorePrivateMediaReservationRepository
 implements PrivateMediaReservationRepository {
-  constructor(private readonly firestore: Firestore) {}
+  constructor(
+    private readonly firestore: Firestore,
+    private readonly hooks: Readonly<{
+      beforeExpiredReservedClaim?: () => void | Promise<void>;
+      afterExpiredReservedClaim?: () => void | Promise<void>;
+    }> = {},
+  ) {}
 
   async load(reservationId: string): Promise<PrivateMediaReservation | null> {
     const snapshot = await this.reference(reservationId).get();
@@ -112,6 +126,9 @@ implements PrivateMediaReservationRepository {
       if (current.ownerUid !== command.ownerUid) {
         throw new PrivateMediaError("permission-denied", "Reservation is not owned by this account");
       }
+      if (current.cleanupClaimReason !== null) {
+        throw new PrivateMediaError("failed-precondition", "Reservation cleanup was already claimed");
+      }
       if (current.state === "COMMITTED" && current.objectGeneration === command.generation) {
         return current;
       }
@@ -127,6 +144,47 @@ implements PrivateMediaReservationRepository {
       transaction.set(reference, storedReservation(committed), { merge: false });
       return committed;
     });
+  }
+
+  async claimExpiredReservedUpload(
+    command: ClaimExpiredReservedUploadCommand,
+  ): Promise<PrivateMediaReservation | null> {
+    await this.hooks.beforeExpiredReservedClaim?.();
+    const claimed = await this.firestore.runTransaction(async (transaction) => {
+      const reference = this.reference(command.reservation.reservationId);
+      const snapshot = await transaction.get(reference);
+      if (!snapshot.exists) return null;
+      const current = parseStoredPrivateMediaReservation(snapshot.data());
+      if (!sameReservationIdentity(current, command.reservation)) {
+        throw new PrivateMediaError(
+          "failed-precondition",
+          "Expired upload cleanup reservation identity changed",
+        );
+      }
+      if (
+        (current.state === "RESERVED" || current.state === "SEALED") &&
+        current.cleanupClaimReason === "EXPIRED_RESERVED_UPLOAD" &&
+        current.cleanupClaimGeneration === null
+      ) return current;
+      if (
+        current.state !== "RESERVED" ||
+        current.expiresAtMillis > command.nowMillis ||
+        current.identificationRequestId !== null ||
+        current.cleanupClaimReason !== null
+      ) return null;
+      const next: PrivateMediaReservation = {
+        ...current,
+        cleanupClaimGeneration: null,
+        cleanupClaimReason: "EXPIRED_RESERVED_UPLOAD",
+      };
+      transaction.update(reference, {
+        cleanupClaimGeneration: null,
+        cleanupClaimReason: next.cleanupClaimReason,
+      });
+      return next;
+    });
+    if (claimed !== null) await this.hooks.afterExpiredReservedClaim?.();
+    return claimed;
   }
 
   async resolve(command: ResolvePrivateMediaCommand): Promise<ResolvedPrivateMedia | null> {
@@ -167,14 +225,59 @@ implements PrivateMediaReservationRepository {
     }
   }
 
+  async purgeOwnerMetadata(ownerUid: string): Promise<void> {
+    const reservations = this.firestore.collection("privateMediaReservations")
+      .where("ownerUid", "==", ownerUid);
+    let reservationPage = await reservations.limit(PAGE_SIZE).get();
+    while (!reservationPage.empty) {
+      for (const document of reservationPage.docs) {
+        const reservation = parseStoredPrivateMediaReservation(document.data());
+        if (reservation.ownerUid !== ownerUid || reservation.state !== "SEALED") {
+          throw new PrivateMediaError(
+            "failed-precondition",
+            "Owner private media metadata cannot be purged before seal convergence",
+          );
+        }
+      }
+      const batch = this.firestore.batch();
+      for (const document of reservationPage.docs) batch.delete(document.ref);
+      await batch.commit();
+      reservationPage = await reservations.limit(PAGE_SIZE).get();
+    }
+
+    const receipts = this.firestore.collection("privateMediaReservationReceipts")
+      .where("ownerUid", "==", ownerUid);
+    let receiptPage = await receipts.limit(PAGE_SIZE).get();
+    while (!receiptPage.empty) {
+      const batch = this.firestore.batch();
+      for (const document of receiptPage.docs) batch.delete(document.ref);
+      await batch.commit();
+      receiptPage = await receipts.limit(PAGE_SIZE).get();
+    }
+
+    const [remainingReservations, remainingReceipts] = await Promise.all([
+      reservations.limit(1).get(),
+      receipts.limit(1).get(),
+    ]);
+    if (!remainingReservations.empty || !remainingReceipts.empty) {
+      throw new PrivateMediaError(
+        "failed-precondition",
+        "Owner private media metadata purge did not converge",
+      );
+    }
+  }
+
   async markSealed(command: MarkPrivateMediaSealedCommand): Promise<void> {
     await this.firestore.runTransaction(async (transaction) => {
-      const reference = this.reference(command.reservationId);
+      const reference = this.reference(command.expectedReservation.reservationId);
       const snapshot = await transaction.get(reference);
       if (!snapshot.exists) throw new PrivateMediaError("not-found", "Reservation was not found");
       const current = parseStoredPrivateMediaReservation(snapshot.data());
-      if (current.ownerUid !== command.ownerUid) {
-        throw new PrivateMediaError("permission-denied", "Reservation is not owned by this account");
+      if (!sameSealExpectation(current, command.expectedReservation)) {
+        throw new PrivateMediaError(
+          "failed-precondition",
+          "Reservation changed before seal metadata was persisted",
+        );
       }
       transaction.set(reference, storedReservation({
         ...current,
@@ -195,7 +298,7 @@ implements PrivateMediaReservationRepository {
     const parsed = parseStoredPrivateMediaReservation(reservation.data());
     return parsed.ownerUid === ownerUid && (
       parsed.state === "SEALED" ||
-      (deletion.exists && isAccountMutationLocked(
+      (deletion.exists && isAccountDeletionIrreversible(
         deletion.get("status"),
         deletion.get("completedScopes"),
       ))
@@ -207,8 +310,9 @@ implements PrivateMediaReservationRepository {
   }
 
   private receipt(ownerUid: string, idempotencyKeyHash: string) {
-    const receiptId = createHash("sha256").update(ownerUid).update("\0").update(idempotencyKeyHash).digest("hex");
-    return this.firestore.doc(`privateMediaReservationReceipts/${receiptId}`);
+    return this.firestore.doc(
+      `privateMediaReservationReceipts/${privateMediaReceiptId(ownerUid, idempotencyKeyHash)}`,
+    );
   }
 }
 
@@ -225,11 +329,14 @@ export function parseStoredPrivateMediaReservation(value: unknown): PrivateMedia
     contentType: data.contentType,
     byteSize: data.byteSize,
     objectPath: data.objectPath,
+    identificationRequestId: data.identificationRequestId ?? null,
     idempotencyKeyHash: data.idempotencyKeyHash,
     requestHash: data.requestHash,
     state: data.state,
     objectGeneration: data.objectGeneration,
     sealedGeneration: data.sealedGeneration,
+    cleanupClaimGeneration: data.cleanupClaimGeneration ?? null,
+    cleanupClaimReason: data.cleanupClaimReason ?? null,
     createdAtMillis: data.createdAt.toMillis(),
     expiresAtMillis: data.expiresAt.toMillis(),
     committedAtMillis: data.committedAt?.toMillis() ?? null,
@@ -237,7 +344,7 @@ export function parseStoredPrivateMediaReservation(value: unknown): PrivateMedia
   };
 }
 
-function storedReservation(reservation: PrivateMediaReservation) {
+export function storedReservation(reservation: PrivateMediaReservation) {
   return storedReservationSchema.parse({
     schemaVersion: 1,
     reservationId: reservation.reservationId,
@@ -246,16 +353,56 @@ function storedReservation(reservation: PrivateMediaReservation) {
     contentType: reservation.contentType,
     byteSize: reservation.byteSize,
     objectPath: reservation.objectPath,
+    identificationRequestId: reservation.identificationRequestId,
     idempotencyKeyHash: reservation.idempotencyKeyHash,
     requestHash: reservation.requestHash,
     state: reservation.state,
     objectGeneration: reservation.objectGeneration,
     sealedGeneration: reservation.sealedGeneration,
+    cleanupClaimGeneration: reservation.cleanupClaimGeneration ?? null,
+    cleanupClaimReason: reservation.cleanupClaimReason ?? null,
     createdAt: Timestamp.fromMillis(reservation.createdAtMillis),
     expiresAt: Timestamp.fromMillis(reservation.expiresAtMillis),
     committedAt: reservation.committedAtMillis === null ? null : Timestamp.fromMillis(reservation.committedAtMillis),
     sealedAt: reservation.sealedAtMillis === null ? null : Timestamp.fromMillis(reservation.sealedAtMillis),
   });
+}
+
+export function privateMediaReceiptId(ownerUid: string, idempotencyKeyHash: string): string {
+  return createHash("sha256")
+    .update(ownerUid)
+    .update("\0")
+    .update(idempotencyKeyHash)
+    .digest("hex");
+}
+
+function sameReservationIdentity(
+  current: PrivateMediaReservation,
+  expected: PrivateMediaReservation,
+): boolean {
+  return current.reservationId === expected.reservationId &&
+    current.ownerUid === expected.ownerUid &&
+    current.mediaKind === expected.mediaKind &&
+    current.contentType === expected.contentType &&
+    current.byteSize === expected.byteSize &&
+    current.objectPath === expected.objectPath &&
+    current.idempotencyKeyHash === expected.idempotencyKeyHash &&
+    current.requestHash === expected.requestHash &&
+    current.createdAtMillis === expected.createdAtMillis &&
+    current.expiresAtMillis === expected.expiresAtMillis;
+}
+
+function sameSealExpectation(
+  current: PrivateMediaReservation,
+  expected: PrivateMediaReservation,
+): boolean {
+  return sameReservationIdentity(current, expected) &&
+    current.state === expected.state &&
+    current.objectGeneration === expected.objectGeneration &&
+    current.sealedGeneration === expected.sealedGeneration &&
+    current.identificationRequestId === expected.identificationRequestId &&
+    current.cleanupClaimGeneration === (expected.cleanupClaimGeneration ?? null) &&
+    current.cleanupClaimReason === (expected.cleanupClaimReason ?? null);
 }
 
 function malformed(cause?: unknown): never {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AuthContext } from "./contracts.js";
+import type { ServerAnalyticsRecorder } from "./server-analytics.js";
 
 export type MiniHomeErrorCode =
   | "unauthenticated"
@@ -317,6 +318,7 @@ export async function executeSaveMiniHomeLayout(
   auth: AuthContext | null,
   input: unknown,
   store: MiniHomeLayoutStore,
+  analytics?: ServerAnalyticsRecorder,
 ): Promise<MiniHomeSaveResult> {
   if (auth === null) {
     throw new MiniHomeError("unauthenticated", "Authentication is required", "PERMISSION_DENIED", { field: "auth" });
@@ -375,7 +377,7 @@ export async function executeSaveMiniHomeLayout(
     invalid("zIndex does not match room depth", "placements");
   }
   const hashInput = { miniHomeId, expectedRevision, name, placements };
-  return store.save({
+  const result = await store.save({
     ownerUid: auth.uid,
     miniHomeId,
     expectedRevision,
@@ -384,4 +386,12 @@ export async function executeSaveMiniHomeLayout(
     name,
     placements,
   });
+  if (result.kind !== "conflict" && analytics !== undefined) {
+    await analytics({
+      ownerUid: auth.uid,
+      eventName: "MINI_HOME_LAYOUT_SAVED",
+      operationIdentifier: idempotencyKey,
+    });
+  }
+  return result;
 }

@@ -6,6 +6,7 @@ import {
   getFirestore,
   type DocumentSnapshot,
 } from "firebase-admin/firestore";
+import { subscribeToExactSnapshot } from "./exact-snapshot-test-harness.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeSnapshotStore } from "./firestore-mini-home-snapshot-store.js";
 import { executeLoadMiniHomeSnapshot } from "./mini-home-snapshot.js";
@@ -247,58 +248,17 @@ function exactCatalog(
   close: () => void;
 }> {
   const reference = firestore.doc(pointerPath);
-  let readyResolve!: () => void;
-  let valueResolve!: (snapshot: DocumentSnapshot) => void;
-  let valueReject!: (error: unknown) => void;
-  let readyObserved = false;
-  let settled = false;
-  const ready = new Promise<void>((resolve) => { readyResolve = resolve; });
-  const value = new Promise<DocumentSnapshot>((resolve, reject) => {
-    valueResolve = resolve;
-    valueReject = reject;
+  return subscribeToExactSnapshot({
+    label: reference.path,
+    subscribe: (onSnapshot, onError) => reference.onSnapshot(onSnapshot, onError),
+    matches: (snapshot) => pointerHasCatalog(
+      firestore,
+      snapshot,
+      expected,
+      rejectedCount,
+      partial,
+    ),
   });
-  const timer = setTimeout(() => {
-    if (!settled) valueReject(new Error(`Timed out waiting for exact ${reference.path}`));
-  }, 10_000);
-  const unsubscribe = reference.onSnapshot(
-    (snapshot) => {
-      if (!readyObserved) {
-        readyObserved = true;
-        readyResolve();
-      }
-      if (settled) return;
-      void pointerHasCatalog(firestore, snapshot, expected, rejectedCount, partial)
-        .then((matches) => {
-          if (!settled && matches) {
-            settled = true;
-            clearTimeout(timer);
-            valueResolve(snapshot);
-          }
-        })
-        .catch((error: unknown) => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timer);
-            valueReject(error);
-          }
-        });
-    },
-    (error) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        valueReject(error);
-      }
-    },
-  );
-  return {
-    ready,
-    value,
-    close: () => {
-      clearTimeout(timer);
-      unsubscribe();
-    },
-  };
 }
 
 async function pointerHasCatalog(

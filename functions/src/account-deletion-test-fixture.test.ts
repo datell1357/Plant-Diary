@@ -5,6 +5,7 @@ import type {
   CancelDeletionCommand,
   ClaimDeletionCommand,
   FinishDeletionCommand,
+  RecordDeletionRequestAnalyticsCommand,
   RequestDeletionCommand,
   RetryDeletionCommand,
 } from "./account-deletion-contract.js";
@@ -13,6 +14,8 @@ import type {
 export class MemoryAccountDeletionStore implements AccountDeletionStore {
   private readonly records = new Map<string, AccountDeletionRecord>();
   private readonly receipts = new Map<string, AccountDeletionRecord>();
+  private readonly terminalCommands = new Map<string, AccountDeletionRecord>();
+  analyticsConsentGranted = false;
 
   get size(): number {
     return this.records.size;
@@ -28,6 +31,12 @@ export class MemoryAccountDeletionStore implements AccountDeletionStore {
       "REQUEST",
       command.record.idempotencyKeyHash,
     );
+    if (this.terminalCommands.has(receiptKey)) {
+      throw new AccountDeletionError(
+        "failed-precondition",
+        "This account deletion command already reached a terminal state",
+      );
+    }
     const receipt = this.receipts.get(receiptKey);
     if (receipt !== undefined) return receipt;
     const current = this.records.get(command.record.ownerUid);
@@ -40,13 +49,43 @@ export class MemoryAccountDeletionStore implements AccountDeletionStore {
       }
       return current;
     }
-    this.records.set(command.record.ownerUid, command.record);
-    this.receipts.set(receiptKey, command.record);
-    return command.record;
+    const created: AccountDeletionRecord = {
+      ...command.record,
+      analyticsResultEligible: this.analyticsConsentGranted,
+      analyticsRequestOutcome: this.analyticsConsentGranted ? "PENDING" : "CONSENT_OFF",
+    };
+    this.records.set(created.ownerUid, created);
+    this.receipts.set(receiptKey, created);
+    return created;
+  }
+
+  async recordRequestAnalyticsOutcome(
+    command: RecordDeletionRequestAnalyticsCommand,
+  ): Promise<AccountDeletionRecord> {
+    const current = this.records.get(command.ownerUid);
+    if (current === undefined || current.requestId !== command.requestId) {
+      throw new Error("Missing deletion request fixture");
+    }
+    if (!current.analyticsResultEligible || current.analyticsRequestOutcome !== "PENDING") {
+      return current;
+    }
+    const recorded: AccountDeletionRecord = {
+      ...current,
+      analyticsRequestOutcome: command.outcome,
+      updatedAtMillis: Math.max(current.updatedAtMillis, command.nowMillis),
+    };
+    this.records.set(command.ownerUid, recorded);
+    this.receipts.set(
+      this.receiptKey(command.ownerUid, "REQUEST", current.idempotencyKeyHash),
+      recorded,
+    );
+    return recorded;
   }
 
   async cancel(command: CancelDeletionCommand): Promise<AccountDeletionRecord | null> {
     const receiptKey = this.receiptKey(command.ownerUid, "CANCEL", command.requestId);
+    const terminal = this.terminalCommands.get(receiptKey);
+    if (terminal !== undefined) return terminal;
     const receipt = this.receipts.get(receiptKey);
     if (receipt !== undefined) return receipt;
     const current = this.records.get(command.ownerUid);
@@ -64,8 +103,13 @@ export class MemoryAccountDeletionStore implements AccountDeletionStore {
       leaseExpiresAtMillis: null,
       updatedAtMillis: command.nowMillis,
     };
-    this.records.set(command.ownerUid, cancelled);
-    this.receipts.set(receiptKey, cancelled);
+    this.records.delete(command.ownerUid);
+    for (const [key, value] of this.receipts) {
+      if (value.ownerUid !== command.ownerUid) continue;
+      this.receipts.delete(key);
+      this.terminalCommands.set(key, cancelled);
+    }
+    this.terminalCommands.set(receiptKey, cancelled);
     return cancelled;
   }
 
@@ -94,7 +138,10 @@ export class MemoryAccountDeletionStore implements AccountDeletionStore {
         completedAtMillis: null,
         completedScopes: [],
         failedScopes: [],
-        claimGeneration: 0,
+        claimGeneration: current.claimGeneration,
+        analyticsResultEligible: current.analyticsResultEligible,
+        analyticsRequestOutcome: current.analyticsRequestOutcome,
+        analyticsRecordedResultKeys: current.analyticsRecordedResultKeys,
         updatedAtMillis: command.nowMillis,
       };
     } else if (current.status === "PARTIALLY_FAILED") {
@@ -174,7 +221,14 @@ export class MemoryAccountDeletionStore implements AccountDeletionStore {
       completedAtMillis: status === "COMPLETED" ? command.nowMillis : null,
       updatedAtMillis: command.nowMillis,
     };
-    this.records.set(command.ownerUid, finished);
+    if (status === "COMPLETED") {
+      this.records.delete(command.ownerUid);
+      for (const [key, value] of this.receipts) {
+        if (value.ownerUid === command.ownerUid) this.receipts.delete(key);
+      }
+    } else {
+      this.records.set(command.ownerUid, finished);
+    }
     return finished;
   }
 

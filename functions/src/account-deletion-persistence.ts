@@ -1,6 +1,7 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { z } from "zod";
 import {
+  ACCOUNT_DELETION_ANALYTICS_REQUEST_OUTCOMES,
   ACCOUNT_DELETION_SCOPES,
   ACCOUNT_DELETION_STATUSES,
   type AccountDeletionRecord,
@@ -23,6 +24,11 @@ export const storedAccountDeletionSchema = z
     completedScopes: z.array(z.enum(ACCOUNT_DELETION_SCOPES)),
     failedScopes: z.array(z.enum(ACCOUNT_DELETION_SCOPES)),
     claimGeneration: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    analyticsResultEligible: z.boolean(),
+    analyticsRequestOutcome: z.enum(ACCOUNT_DELETION_ANALYTICS_REQUEST_OUTCOMES),
+    analyticsRecordedResultKeys: z.array(
+      z.string().regex(/^(ACCOUNT_DELETION_FAILED:[0-9]+|ACCOUNT_DELETION_COMPLETED)$/),
+    ),
     updatedAt: timestampSchema,
   })
   .strict();
@@ -63,6 +69,9 @@ export function parseStoredAccountDeletion(value: unknown): AccountDeletionRecor
     completedScopes: stored.completedScopes,
     failedScopes: stored.failedScopes,
     claimGeneration: stored.claimGeneration,
+    analyticsResultEligible: stored.analyticsResultEligible,
+    analyticsRequestOutcome: stored.analyticsRequestOutcome,
+    analyticsRecordedResultKeys: stored.analyticsRecordedResultKeys,
     updatedAtMillis: stored.updatedAt.toMillis(),
   };
   assertRecordState(record);
@@ -129,6 +138,9 @@ export function toStoredAccountDeletion(
     completedScopes: record.completedScopes,
     failedScopes: record.failedScopes,
     claimGeneration: record.claimGeneration,
+    analyticsResultEligible: record.analyticsResultEligible,
+    analyticsRequestOutcome: record.analyticsRequestOutcome,
+    analyticsRecordedResultKeys: record.analyticsRecordedResultKeys,
     updatedAt: Timestamp.fromMillis(record.updatedAtMillis),
   });
 }
@@ -143,6 +155,10 @@ function assertRecordState(record: AccountDeletionRecord): void {
     record.requestedAtMillis > record.scheduledForMillis ||
     record.updatedAtMillis < record.requestedAtMillis ||
     !canonical(record.completedScopes) ||
+    new Set(record.analyticsRecordedResultKeys).size !== record.analyticsRecordedResultKeys.length ||
+    (!record.analyticsResultEligible &&
+      (record.analyticsRequestOutcome !== "CONSENT_OFF" ||
+        record.analyticsRecordedResultKeys.length > 0)) ||
     !canonical(record.failedScopes) ||
     record.completedScopes.some((scope) => failed.has(scope))
   ) malformed();
@@ -155,7 +171,6 @@ function assertRecordState(record: AccountDeletionRecord): void {
         !noCompletion ||
         completed.size > 0 ||
         failed.size > 0 ||
-        record.claimGeneration !== 0 ||
         record.nextAttemptAtMillis !== record.scheduledForMillis
       ) malformed();
       return;

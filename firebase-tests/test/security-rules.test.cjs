@@ -19,8 +19,8 @@ const collectionFixture = (collectionName) => {
   if (collectionName === "notificationPlantSettings") return { plantId: "plant-a", enabled: true, timeOverride: "09:00" };
   if (collectionName === "weatherSettings") return { globalAlertsEnabled: true };
   if (collectionName === "weatherPlantSettings") return { plantId: "plant-a", enabled: true };
-  if (collectionName === "weatherSnapshots") return { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-12T03:00:00Z"), zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"] };
-  if (collectionName === "weatherRisks") return { plantId: "plant-a", plantName: "몬스테라", snapshotId: "current", type: "DRY", reason: "건조해요", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null };
+  if (collectionName === "weatherSnapshots") return { regionCode: "11B10101", regionName: "서울", temperatureCelsius: 27, humidityPercent: 55, precipitationMillimeters: 0, observedAt: ts("2026-08-12T00:00:00Z"), expiresAt: ts("2026-08-12T03:00:00Z"), zoneId: "Asia/Seoul", stale: false, unavailablePlantIds: ["plant-a"], source: "MANUAL", locationConsentGeneration: null };
+  if (collectionName === "weatherRisks") return { plantId: "plant-a", plantName: "몬스테라", snapshotId: "current", type: "DRY", reason: "건조해요", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null, source: "DEVICE", locationConsentGeneration: 2 };
   if (collectionName === "miniHomes") {
     return {
       name: "우리 집",
@@ -103,6 +103,17 @@ describe("Planterior Firebase ownership contract", () => {
     });
     for (const collectionName of collections) {
       const path = `users/user-a/${collectionName}/fixture`;
+      if (collectionName === "identificationRequests") {
+        await env.withSecurityRulesDisabled(async (admin) =>
+          setDoc(doc(admin.firestore(), path), { ownerUid: "user-a", ...collectionFixture(collectionName) })
+        );
+        await assertSucceeds(getDoc(doc(owner, path)));
+        await assertFails(setDoc(doc(owner, path), { ownerUid: "user-a", ...collectionFixture(collectionName) }));
+        await assertFails(updateDoc(doc(owner, path), { status: "CANCELLED" }));
+        await assertFails(getDoc(doc(foreign, path)));
+        await assertFails(getDoc(doc(anonymous, path)));
+        continue;
+      }
       const writer = serverCollections.has(collectionName) ? server : owner;
       if (collectionName === "personalPlants") {
         await assertFails(setDoc(doc(writer, path), { ...write("user-a"), ...collectionFixture(collectionName) }));
@@ -146,47 +157,59 @@ describe("Planterior Firebase ownership contract", () => {
     }
   });
 
-  it("permanently freezes private and public writes after deletion progress", async () => {
+  it("locks RECEIVED empty-scope account mutations while preserving valid recovery states", async () => {
     const owner = env.authenticatedContext("user-a").firestore();
     const server = env.authenticatedContext("service", { server: true }).firestore();
-    const other = env.authenticatedContext("user-b").firestore();
-    const consent = (idempotencyKey) => ({
-      ...write("user-a", 1, 0, idempotencyKey),
+    const consent = (idempotencyKey, revision = 1, expectedRevision = 0) => ({
+      ...write("user-a", revision, expectedRevision, idempotencyKey),
       type: "ANALYTICS",
       granted: false,
       recordedAt: ts("2026-08-12T00:00:00Z"),
     });
-    const lockedStates = [
-      { status: "PROCESSING", completedScopes: [] },
-      { status: "PARTIALLY_FAILED", completedScopes: ["PUBLIC_SHARES"] },
-      { status: "COMPLETED", completedScopes: ["PUBLIC_SHARES"] },
-      { status: "RECEIVED", completedScopes: ["PUBLIC_SHARES"] },
+    const states = [
+      { status: "RECEIVED", completedScopes: [], locked: true },
+      { status: "PROCESSING", completedScopes: [], locked: true },
+      { status: "PARTIALLY_FAILED", completedScopes: [], locked: true },
+      { status: "COMPLETED", completedScopes: [], locked: true },
+      { status: "FAILED", completedScopes: [], locked: false },
+      { status: "CANCELLED", completedScopes: [], locked: false },
+      { status: "FAILED", completedScopes: ["PUBLIC_SHARES"], locked: true },
+      { status: "CANCELLED", completedScopes: ["PUBLIC_SHARES"], locked: true },
     ];
 
-    for (const [index, state] of lockedStates.entries()) {
+    for (const [index, state] of states.entries()) {
+      const consentPath = `users/user-a/consents/lock-matrix-${index}`;
+      const weatherPath = `users/user-a/weatherSettings/lock-matrix-${index}`;
       await env.withSecurityRulesDisabled(async (admin) => {
         await setDoc(doc(admin.firestore(), "accountDeletionRequests/user-a"), {
           ownerUid: "user-a",
-          ...state,
+          status: state.status,
+          completedScopes: state.completedScopes,
+        });
+        await setDoc(doc(admin.firestore(), consentPath), consent(`seed-consent-${index}`));
+        await setDoc(doc(admin.firestore(), weatherPath), {
+          ...write("user-a"),
+          globalAlertsEnabled: true,
         });
       });
-      await assertFails(setDoc(
-        doc(owner, `users/user-a/consents/locked-${index}`),
-        consent(`consent-locked-${index}`),
-      ));
-      await assertFails(setDoc(
-        doc(server, `users/user-a/weatherSettings/locked-${index}`),
-        { ...write("user-a", 1, 0, `weather-locked-${index}`), globalAlertsEnabled: true },
-      ));
-      await assertFails(setDoc(doc(server, `publicShares/locked-${index}`), {
-        ownerUid: "user-a",
-      }));
-    }
 
-    await assertSucceeds(setDoc(
-      doc(other, "users/user-b/consents/unaffected"),
-      { ...write("user-b", 1, 0, "other-owner-unaffected"), type: "ANALYTICS", granted: false, recordedAt: ts("2026-08-12T00:00:00Z") },
-    ));
+      const mutations = [
+        () => setDoc(doc(owner, `users/user-a/consents/create-${index}`), consent(`create-consent-${index}`)),
+        () => updateDoc(doc(owner, consentPath), consent(`update-consent-${index}`, 2, 1)),
+        () => setDoc(doc(server, `users/user-a/weatherSettings/create-${index}`), {
+          ...write("user-a", 1, 0, `create-weather-${index}`),
+          globalAlertsEnabled: true,
+        }),
+        () => updateDoc(doc(server, weatherPath), {
+          ...write("user-a", 2, 1, `update-weather-${index}`),
+          globalAlertsEnabled: false,
+        }),
+      ];
+      for (const mutation of mutations) {
+        const operation = mutation();
+        if (state.locked) await assertFails(operation); else await assertSucceeds(operation);
+      }
+    }
   });
 
   it("denies every direct client write to legacy and private-media-v2 paths", async () => {
@@ -737,6 +760,7 @@ describe("Planterior Firebase ownership contract", () => {
         schemaVersion: 1,
         reservationId: activeId,
         ownerUid: "user-a",
+        mediaKind: "PLANT_PHOTO",
         state: "COMMITTED",
         objectGeneration: activeGeneration === "1" ? "2" : "1",
         byteSize: 3,
@@ -746,6 +770,7 @@ describe("Planterior Firebase ownership contract", () => {
         schemaVersion: 1,
         reservationId: sealedId,
         ownerUid: "user-a",
+        mediaKind: "PLANT_PHOTO",
         state: "SEALED",
         byteSize: 0,
         contentType: "application/x.planterior-private-media-seal",
@@ -764,6 +789,28 @@ describe("Planterior Firebase ownership contract", () => {
       );
     });
     await assertSucceeds(getBytes(ref(owner, activePath)));
+    const deletionStates = [
+      { status: "RECEIVED", completedScopes: [], readable: false },
+      { status: "FAILED", completedScopes: [], readable: true },
+      { status: "CANCELLED", completedScopes: [], readable: true },
+      { status: "FAILED", completedScopes: ["PUBLIC_SHARES"], readable: false },
+      { status: "CANCELLED", completedScopes: ["PUBLIC_SHARES"], readable: false },
+    ];
+    for (const [index, state] of deletionStates.entries()) {
+      await env.withSecurityRulesDisabled(async (admin) => {
+        await setDoc(doc(admin.firestore(), "accountDeletionRequests/user-a"), {
+          ownerUid: "user-a",
+          status: state.status,
+          completedScopes: state.completedScopes,
+        });
+      });
+      const read = getBytes(ref(owner, activePath));
+      if (state.readable) await assertSucceeds(read); else await assertFails(read);
+      await assertFails(uploadBytes(ref(owner, `${activePath}-deletion-${index}`), bytes, {
+        contentType: "image/webp",
+        customMetadata: { ownerUid: "user-a", reservationId: activeId },
+      }));
+    }
     await assertFails(getBytes(ref(foreign, activePath)));
     await assertFails(getBytes(ref(anonymous, activePath)));
     await assertFails(getBytes(ref(owner, sealedPath)));
@@ -793,5 +840,105 @@ describe("Planterior Firebase ownership contract", () => {
       );
     });
     await assertFails(getBytes(ref(owner, activePath)));
+  });
+
+  it("enforces identification original hard and terminal retention boundaries without changing PLANT_PHOTO", async () => {
+    const owner = env.authenticatedContext("user-a").storage();
+    const bytes = new Uint8Array([1, 2, 3]);
+    const now = Date.now();
+    const hour = 60 * 60 * 1000;
+    const cases = [
+      {
+        id: "identification_nonterminal_readable",
+        requestId: "request_nonterminal_readable",
+        status: "APPROVED",
+        createdAt: now - 24 * hour + 60 * 1000,
+        terminalAt: null,
+        readable: true,
+      },
+      {
+        id: "identification_nonterminal_expired",
+        requestId: "request_nonterminal_expired",
+        status: "PENDING",
+        createdAt: now - 24 * hour,
+        terminalAt: null,
+        readable: false,
+      },
+      {
+        id: "identification_terminal_readable",
+        requestId: "request_terminal_readable",
+        status: "CANDIDATES",
+        createdAt: now - 25 * hour,
+        terminalAt: now - 24 * hour + 60 * 1000,
+        readable: true,
+      },
+      {
+        id: "identification_terminal_expired",
+        requestId: "request_terminal_expired",
+        status: "FAILED",
+        createdAt: now - 25 * hour,
+        terminalAt: now - 24 * hour,
+        readable: false,
+      },
+    ];
+
+    await env.withSecurityRulesDisabled(async (admin) => {
+      for (const current of cases) {
+        const objectPath = `private-media-v2/${current.id}`;
+        const uploaded = await uploadBytes(ref(admin.storage(), objectPath), bytes, {
+          contentType: "image/webp",
+          customMetadata: { ownerUid: "user-a", reservationId: current.id },
+        });
+        await setDoc(doc(admin.firestore(), `privateMediaReservations/${current.id}`), {
+          schemaVersion: 1,
+          reservationId: current.id,
+          ownerUid: "user-a",
+          mediaKind: "IDENTIFICATION_ORIGINAL",
+          state: "COMMITTED",
+          objectGeneration: uploaded.metadata.generation,
+          byteSize: bytes.length,
+          contentType: "image/webp",
+          identificationRequestId: current.requestId,
+        });
+        const hardExpiresAt = current.createdAt + 24 * hour;
+        await setDoc(
+          doc(admin.firestore(), `users/user-a/identificationRequests/${current.requestId}`),
+          {
+            schemaVersion: 1,
+            requestId: current.requestId,
+            ownerUid: "user-a",
+            mediaReference: {
+              reservationId: current.id,
+              generation: uploaded.metadata.generation,
+            },
+            status: current.status,
+            createdAt: Timestamp.fromMillis(current.createdAt),
+            hardExpiresAt: Timestamp.fromMillis(hardExpiresAt),
+            terminalAt: current.terminalAt === null
+              ? null
+              : Timestamp.fromMillis(current.terminalAt),
+            retentionExpiresAt: current.terminalAt === null
+              ? null
+              : Timestamp.fromMillis(current.terminalAt + 24 * hour),
+          },
+        );
+      }
+    });
+
+    for (const current of cases) {
+      const read = getBytes(ref(owner, `private-media-v2/${current.id}`));
+      if (current.readable) await assertSucceeds(read); else await assertFails(read);
+    }
+  });
+
+  it("denies legacy original reads after migration", async () => {
+    const owner = env.authenticatedContext("user-a").storage();
+    const legacyPath = "identification-originals/user-a/request-legacy/original.webp";
+    await env.withSecurityRulesDisabled(async (admin) => {
+      await uploadBytes(ref(admin.storage(), legacyPath), new Uint8Array([1]), {
+        contentType: "image/webp",
+      });
+    });
+    await assertFails(getBytes(ref(owner, legacyPath)));
   });
 });

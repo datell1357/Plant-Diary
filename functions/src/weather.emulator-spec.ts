@@ -4,6 +4,11 @@ import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import type { Messaging } from "firebase-admin/messaging";
 import { AccountMutationLockedError } from "./account-mutation-lock.js";
+import { FirestoreAnalyticsStore } from "./firestore-analytics-store.js";
+import {
+  createFirestoreServerAnalyticsRecorder,
+  type ServerAnalyticsOperation,
+} from "./server-analytics.js";
 import {
   executeRefreshWeather,
   executeSetLocationConsent,
@@ -14,6 +19,7 @@ import {
   executeScheduledWeatherRefresh,
   runConfiguredWeatherRefreshScan,
 } from "./weather-runtime.js";
+import { WEATHER_RETENTION_MILLIS } from "./weather-retention.js";
 import { WeatherError, type WeatherSnapshot } from "./weather.js";
 import type { WeatherProvider } from "./weather-service.js";
 
@@ -424,6 +430,11 @@ test("fresh pre-send clock retires alert that expires after claim without FCM", 
     assert.equal(sends, 0);
     assert.equal(alert.get("status"), "CANCELLED");
     assert.equal(alert.get("failureKind"), "PRE_SEND_EXPIRED");
+    assert.equal(alert.get("terminalAt").toMillis(), boundaryAt.valueOf());
+    assert.equal(
+      alert.get("expiresAt").toMillis() - alert.get("terminalAt").toMillis(),
+      WEATHER_RETENTION_MILLIS,
+    );
     assert.equal((await firestore.collection("users/user-a/notificationHistory").get()).size, 0);
     const risk = await firestore.doc(`users/user-a/weatherRisks/${alert.get("riskId") as string}`).get();
     assert.equal(risk.get("deliveredTransition"), null);
@@ -451,7 +462,182 @@ test("unchanged weather pre-send authorization sends exactly once", async () => 
     await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now);
     await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now);
     assert.equal(sends, 1);
-    assert.equal((await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!.get("status"), "SENT");
+    const sentAlert = (await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!;
+    assert.equal(sentAlert.get("status"), "SENT");
+    assert.equal(sentAlert.get("terminalAt").toMillis(), now.valueOf());
+    assert.equal(
+      sentAlert.get("expiresAt").toMillis() - sentAlert.get("terminalAt").toMillis(),
+      WEATHER_RETENTION_MILLIS,
+    );
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("weather analytics records redacted created and sent events exactly once after durable seams", async () => {
+  const app = initializeApp({ projectId }, "weather-analytics-exactly-once");
+  const firestore = getFirestore(app);
+  const analyticsStore = new FirestoreAnalyticsStore(firestore);
+  const analytics = createFirestoreServerAnalyticsRecorder(firestore);
+  const store = new FirestoreWeatherStore(firestore, analytics);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await analyticsStore.setConsent({
+      ownerUid: "user-a",
+      granted: true,
+      commandGeneration: 1,
+      operationId: "weather-analytics-consent-grant",
+    });
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    const alert = (await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!;
+    const messaging = {
+      async sendEachForMulticast() {
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, { analytics });
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, { analytics });
+
+    const events = await firestore.collection("users/user-a/analyticsEvents").get();
+    assert.deepEqual(
+      events.docs.map((event) => event.get("eventName")).sort(),
+      ["WEATHER_RISK_ALERT_CREATED", "WEATHER_RISK_NOTIFICATION_SENT"],
+    );
+    const forbidden = [
+      "plant-a",
+      "device-a",
+      alert.id,
+      alert.get("riskId") as string,
+    ];
+    for (const event of events.docs) {
+      assert.match(
+        event.id,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      assert.deepEqual(
+        Object.keys(event.data()).sort(),
+        ["consentRevision", "eventName", "expiresAt", "occurredAt", "schemaVersion"],
+      );
+      for (const identifier of forbidden) {
+        assert.equal(JSON.stringify(event.data()).includes(identifier), false);
+      }
+    }
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("weather analytics consent off never changes alert creation or successful send", async () => {
+  const app = initializeApp({ projectId }, "weather-analytics-consent-off");
+  const firestore = getFirestore(app);
+  const analytics = createFirestoreServerAnalyticsRecorder(firestore);
+  const store = new FirestoreWeatherStore(firestore, analytics);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    const messaging = {
+      async sendEachForMulticast() {
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, { analytics });
+
+    assert.equal(
+      (await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!.get("status"),
+      "SENT",
+    );
+    assert.equal((await firestore.collection("users/user-a/analyticsEvents").get()).size, 0);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("weather analytics recorder failure is best effort at both durable seams", async () => {
+  const app = initializeApp({ projectId }, "weather-analytics-failure");
+  const firestore = getFirestore(app);
+  const operations: ServerAnalyticsOperation[] = [];
+  const analytics = async (operation: ServerAnalyticsOperation) => {
+    operations.push(operation);
+    throw new Error("deterministic analytics outage");
+  };
+  const store = new FirestoreWeatherStore(firestore, analytics);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    const messaging = {
+      async sendEachForMulticast() {
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, { analytics });
+
+    assert.equal(
+      (await firestore.collection("users/user-a/weatherAlerts").get()).docs[0]!.get("status"),
+      "SENT",
+    );
+    assert.deepEqual(
+      operations.map((operation) => operation.eventName),
+      ["WEATHER_RISK_ALERT_CREATED", "WEATHER_RISK_NOTIFICATION_SENT"],
+    );
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("weather analytics never records sent for ambiguous or rejected transport", async () => {
+  const app = initializeApp({ projectId }, "weather-analytics-unsent");
+  const firestore = getFirestore(app);
+  const operations: ServerAnalyticsOperation[] = [];
+  const analytics = async (operation: ServerAnalyticsOperation) => {
+    operations.push(operation);
+    return { kind: "consent-off" as const };
+  };
+  const store = new FirestoreWeatherStore(firestore, analytics);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, provider, now,
+    );
+    let attempts = 0;
+    const messaging = {
+      async sendEachForMulticast() {
+        attempts += 1;
+        if (attempts === 1) throw new Error("ambiguous transport");
+        return { successCount: 0, failureCount: 1, responses: [{ success: false }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, { analytics });
+
+    const alerts = await firestore.collection("users/user-a/weatherAlerts").get();
+    assert.deepEqual(
+      alerts.docs.map((alert) => alert.get("status")).sort(),
+      ["FAILED", "SENT_AMBIGUOUS"],
+    );
+    assert.equal(
+      operations.filter((operation) => operation.eventName === "WEATHER_RISK_NOTIFICATION_SENT").length,
+      0,
+    );
+    assert.equal(
+      operations.filter((operation) => operation.eventName === "WEATHER_RISK_ALERT_CREATED").length,
+      2,
+    );
   } finally {
     await clear(firestore);
     await deleteApp(app);
@@ -1227,6 +1413,265 @@ test("legacy exhausted denied consent recovery permits only canonical exact-next
   }
 });
 
+test("device provenance is generation bound and revoke converges before delivery", async () => {
+  const app = initializeApp({ projectId }, "weather-location-revoke-provenance");
+  const firestore = getFirestore(app);
+  const store = new FirestoreWeatherStore(firestore);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    const [snapshot, risks, alerts] = await Promise.all([
+      firestore.doc("users/user-a/weatherSnapshots/current").get(),
+      firestore.collection("users/user-a/weatherRisks").get(),
+      firestore.collection("users/user-a/weatherAlerts").get(),
+    ]);
+    assert.equal(snapshot.get("source"), "DEVICE");
+    assert.equal(snapshot.get("locationConsentGeneration"), 1);
+    assert.ok(risks.docs.every((risk) =>
+      risk.get("source") === "DEVICE" && risk.get("locationConsentGeneration") === 1
+    ));
+    assert.ok(alerts.docs.every((alert) =>
+      alert.get("source") === "DEVICE" && alert.get("locationConsentGeneration") === 1
+    ));
+    await firestore.doc("users/user-a/weatherSettings/current").update({
+      manualRegion: {
+        regionCode: "kr-busan", regionName: "부산", latitude: 35.18,
+        longitude: 129.08, source: "MANUAL",
+      },
+    });
+
+    await store.setLocationConsent("user-a", false, 2);
+
+    const [settingsAfter, snapshotAfter, risksAfter, alertsAfter] = await Promise.all([
+      firestore.doc("users/user-a/weatherSettings/current").get(),
+      firestore.doc("users/user-a/weatherSnapshots/current").get(),
+      firestore.collection("users/user-a/weatherRisks").get(),
+      firestore.collection("users/user-a/weatherAlerts").get(),
+    ]);
+    assert.equal(settingsAfter.get("deviceRegion"), undefined);
+    assert.equal(settingsAfter.get("manualRegion.regionName"), "부산");
+    assert.equal(snapshotAfter.exists, false);
+    assert.equal(risksAfter.size, 0);
+    assert.equal(alertsAfter.size, 0);
+
+    let sends = 0;
+    const messaging = {
+      async sendEachForMulticast() {
+        sends += 1;
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now);
+    assert.equal(sends, 0);
+    assert.equal((await firestore.collection("users/user-a/notificationHistory").get()).size, 0);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("claim after revoke rejects restored stale device generation", async () => {
+  const app = initializeApp({ projectId }, "weather-location-revoke-stale-claim");
+  const firestore = getFirestore(app);
+  const store = new FirestoreWeatherStore(firestore);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    const snapshot = await firestore.doc("users/user-a/weatherSnapshots/current").get();
+    const risks = await firestore.collection("users/user-a/weatherRisks").get();
+    const alerts = await firestore.collection("users/user-a/weatherAlerts").get();
+    await store.setLocationConsent("user-a", false, 2);
+    await firestore.doc("users/user-a/weatherSnapshots/current").set(snapshot.data()!);
+    await Promise.all(risks.docs.map((risk) => risk.ref.set(risk.data())));
+    await Promise.all(alerts.docs.map((alert) => alert.ref.set({ ...alert.data(), status: "PENDING" })));
+
+    let sends = 0;
+    const messaging = {
+      async sendEachForMulticast() {
+        sends += 1;
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now);
+
+    assert.equal(sends, 0);
+    assert.equal((await firestore.collection("users/user-a/notificationHistory").get()).size, 0);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+for (const stage of ["afterClaim", "beforeSendBoundary"] as const) {
+  test(`device alert paused at ${stage} cannot cross acknowledged revoke`, async () => {
+    const app = initializeApp({ projectId }, `weather-location-revoke-${stage}`);
+    const firestore = getFirestore(app);
+    const store = new FirestoreWeatherStore(firestore);
+    try {
+      await clear(firestore);
+      await seedWeather(firestore);
+      await executeRefreshWeather(
+        { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+      );
+      let sends = 0;
+      const messaging = {
+        async sendEachForMulticast() {
+          sends += 1;
+          return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+        },
+      } as unknown as Messaging;
+      let revoked = false;
+      const revoke = async () => {
+        if (revoked) return;
+        revoked = true;
+        await store.setLocationConsent("user-a", false, 2);
+      };
+
+      await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, {
+        ...(stage === "afterClaim" ? { afterClaim: revoke } : {}),
+        ...(stage === "beforeSendBoundary" ? { beforeSendBoundary: revoke } : {}),
+      });
+
+      assert.equal(sends, 0);
+      assert.equal((await firestore.collection("users/user-a/notificationHistory").get()).size, 0);
+    } finally {
+      await clear(firestore);
+      await deleteApp(app);
+    }
+  });
+}
+
+test("claim admission paused across revoke cannot send stale device data", async () => {
+  const app = initializeApp({ projectId }, "weather-location-revoke-before-claim");
+  const firestore = getFirestore(app);
+  const store = new FirestoreWeatherStore(firestore);
+  let markEntered!: () => void;
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  let releaseClaim!: () => void;
+  const released = new Promise<void>((resolve) => { releaseClaim = resolve; });
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    let sends = 0;
+    const messaging = {
+      async sendEachForMulticast() {
+        sends += 1;
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    const delivery = deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now, {
+      beforeClaim: async () => {
+        markEntered();
+        await released;
+      },
+    });
+    await entered;
+    await store.setLocationConsent("user-a", false, 2);
+    releaseClaim();
+    await delivery;
+
+    assert.equal(sends, 0);
+    assert.equal((await firestore.collection("users/user-a/notificationHistory").get()).size, 0);
+  } finally {
+    releaseClaim?.();
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("bounded revoke reports incomplete and exact replay converges", async () => {
+  const app = initializeApp({ projectId }, "weather-location-revoke-bounded-replay");
+  const firestore = getFirestore(app);
+  const store = new FirestoreWeatherStore(firestore);
+  try {
+    await clear(firestore);
+    await seedWeather(firestore);
+    for (let offset = 0; offset < 1601; offset += 400) {
+      const batch = firestore.batch();
+      for (let index = offset; index < Math.min(offset + 400, 1601); index += 1) {
+        batch.set(firestore.doc(`users/user-a/weatherAlerts/device-${index}`), {
+          ownerUid: "user-a",
+          source: "DEVICE",
+          locationConsentGeneration: 1,
+          status: "PENDING",
+          createdAt: now,
+        });
+      }
+      await batch.commit();
+    }
+
+    await assert.rejects(
+      store.setLocationConsent("user-a", false, 2),
+      (error) =>
+        error instanceof WeatherError &&
+        error.code === "unavailable" &&
+        error.message ===
+          "Location consent cleanup is incomplete; retry the exact revoke command",
+    );
+    const consent = await firestore.doc("users/user-a/consents/location").get();
+    assert.equal(consent.get("commandGeneration"), 2);
+    assert.equal(consent.get("granted"), false);
+    assert.equal((await firestore.collection("users/user-a/weatherAlerts").get()).size, 1);
+
+    assert.deepEqual(await store.setLocationConsent("user-a", false, 2), {
+      commandGeneration: 2,
+      granted: false,
+    });
+    assert.equal((await firestore.collection("users/user-a/weatherAlerts").get()).size, 0);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("manual provenance survives location revoke and remains deliverable", async () => {
+  const app = initializeApp({ projectId }, "weather-location-revoke-manual-survival");
+  const firestore = getFirestore(app);
+  const store = new FirestoreWeatherStore(firestore);
+  try {
+    await clear(firestore);
+    await seedManualWeather(firestore);
+    await executeRefreshWeather(
+      { uid: "user-a" }, { expectedOwnerUid: "user-a" }, store, singleRiskProvider, now,
+    );
+    await store.setLocationConsent("user-a", false, 2);
+
+    const [snapshot, risks, alerts] = await Promise.all([
+      firestore.doc("users/user-a/weatherSnapshots/current").get(),
+      firestore.collection("users/user-a/weatherRisks").get(),
+      firestore.collection("users/user-a/weatherAlerts").get(),
+    ]);
+    assert.equal(snapshot.get("source"), "MANUAL");
+    assert.equal(snapshot.get("locationConsentGeneration"), null);
+    assert.ok(risks.docs.every((risk) => risk.get("source") === "MANUAL"));
+    assert.ok(alerts.docs.every((alert) => alert.get("source") === "MANUAL"));
+
+    let sends = 0;
+    const messaging = {
+      async sendEachForMulticast() {
+        sends += 1;
+        return { successCount: 1, failureCount: 0, responses: [{ success: true }] };
+      },
+    } as unknown as Messaging;
+    await deliverPendingWeatherAlerts(firestore, messaging, "user-a", 100, now);
+
+    assert.equal(sends, 1);
+    assert.equal((await alerts.docs[0]!.ref.get()).get("status"), "SENT");
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
 test("weather consent revocation clears device region but preserves manual region", async () => {
   const app = initializeApp({ projectId }, "weather-consent-emulator");
   const firestore = getFirestore(app);
@@ -1447,10 +1892,18 @@ async function clear(firestore: FirebaseFirestore.Firestore) {
     "users/user-a",
     "plantContents/species-a",
   ];
-  const [risks, alerts] = await Promise.all([
+  const [risks, alerts, analyticsEvents, analyticsOperations] = await Promise.all([
     firestore.collection("users/user-a/weatherRisks").get(),
     firestore.collection("users/user-a/weatherAlerts").get(),
+    firestore.collection("users/user-a/analyticsEvents").get(),
+    firestore.collection("users/user-a/analyticsConsentOperations").get(),
   ]);
-  await Promise.all([...risks.docs, ...alerts.docs].map((document) => document.ref.delete()));
-  await Promise.all(paths.map((path) => firestore.doc(path).delete()));
+  await Promise.all(
+    [...risks.docs, ...alerts.docs, ...analyticsEvents.docs, ...analyticsOperations.docs]
+      .map((document) => document.ref.delete()),
+  );
+  await Promise.all([
+    ...paths.map((path) => firestore.doc(path).delete()),
+    firestore.doc("users/user-a/consents/analytics").delete(),
+  ]);
 }

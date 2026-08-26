@@ -1,257 +1,198 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Timestamp } from "firebase-admin/firestore";
 import { TimeoutError } from "ky";
 import {
-  FirestoreIdentificationRequestStore,
+  ClaimFencedIdentificationRequestStore,
   IdentificationRuntimeError,
   PlantIdHttpClient,
 } from "./plant-identification-runtime.js";
 import type { PlantIdTransport } from "./plant-identification-runtime.js";
 import { PlantIdentificationError } from "./plant-identification.js";
+import {
+  IDENTIFICATION_CLAIM_LEASE_MILLIS,
+  IDENTIFICATION_DISCLOSURE_VERSION,
+  IDENTIFICATION_ORIGINAL_RETENTION_MILLIS,
+} from "./identification-authorization.js";
+import { MemoryIdentificationAuthorizationRepository } from "./identification-authorization-test-fixture.test.js";
+import type {
+  PrivateMediaReservation,
+  PrivateMediaReservationRepository,
+  ResolvePrivateMediaCommand,
+  ResolvedPrivateMedia,
+} from "./private-media-contract.js";
+
+const OWNER = "user-a";
+const REQUEST = "request_12345678";
+const MEDIA = { reservationId: "reservation_12345678", generation: "7" };
+
+class MemoryMedia implements PrivateMediaReservationRepository {
+  async resolve(command: ResolvePrivateMediaCommand): Promise<ResolvedPrivateMedia | null> {
+    if (command.ownerUid !== OWNER || command.reference.reservationId !== MEDIA.reservationId) return null;
+    return {
+      reference: MEDIA, ownerUid: OWNER, mediaKind: "IDENTIFICATION_ORIGINAL",
+      objectPath: "private-media-v2/reservation_12345678", contentType: "image/webp", byteSize: 3,
+    };
+  }
+  async load(): Promise<PrivateMediaReservation | null> { return null; }
+  async reserve(value: PrivateMediaReservation): Promise<PrivateMediaReservation> { return value; }
+  async commit(): Promise<PrivateMediaReservation> { throw new Error("not used"); }
+  async claimExpiredReservedUpload(): Promise<PrivateMediaReservation | null> { return null; }
+  async listOwner(): Promise<readonly PrivateMediaReservation[]> { return []; }
+  async markSealed(): Promise<void> { throw new Error("not used"); }
+  async shouldDeleteFinalized(): Promise<boolean> { return false; }
+}
+
+async function request(repository: MemoryIdentificationAuthorizationRepository, now = 1_000) {
+  return repository.create({
+    ownerUid: OWNER, requestId: REQUEST, mediaReference: MEDIA,
+    disclosureVersion: IDENTIFICATION_DISCLOSURE_VERSION, nowMillis: now,
+  });
+}
 
 function client(status: number): PlantIdHttpClient {
-  const transport: PlantIdTransport = {
-    async post() {
-      return { status, body: { secret_provider_diagnostic: "do not expose" } };
-    },
-  };
+  const transport: PlantIdTransport = { async post() { return { status, body: { providerDiagnostic: "hidden" } }; } };
   return new PlantIdHttpClient("fixture-key", transport);
 }
 
-for (const [status, reason] of [
-  [429, "rate_limited"],
-  [503, "provider_unavailable"],
-] as const) {
-  test(`Plant.id HTTP ${status} maps to ${reason} without exposing the provider body`, async () => {
-    // Given
-    const fixture = client(status);
-
-    // When / Then
+for (const [status, reason] of [[429, "rate_limited"], [503, "provider_unavailable"]] as const) {
+  test(`Plant.id HTTP ${status} maps to ${reason} without exposing provider data`, async () => {
     await assert.rejects(
-      fixture.identify(Buffer.from("photo"), "image/webp"),
-      (error: unknown) => error instanceof PlantIdentificationError
-        && error.reason === reason
-        && !error.message.includes("diagnostic"),
+      client(status).identify(Buffer.from("photo"), "image/webp"),
+      (error: unknown) => error instanceof PlantIdentificationError && error.reason === reason && !error.message.includes("Diagnostic"),
     );
   });
 }
 
-test("Plant.id HTTP timeout maps to an actionable timeout failure", async () => {
-  // Given
-  const transport: PlantIdTransport = {
-    async post() {
-      throw new TimeoutError(new Request("https://fixture.invalid"));
-    },
-  };
-  const fixture = new PlantIdHttpClient("fixture-key", transport);
-
-  // When / Then
+test("Plant.id timeout maps to actionable failure", async () => {
+  const transport: PlantIdTransport = { async post() { throw new TimeoutError(new Request("https://fixture.invalid")); } };
   await assert.rejects(
-    fixture.identify(Buffer.from("photo"), "image/webp"),
+    new PlantIdHttpClient("fixture-key", transport).identify(Buffer.from("photo"), "image/webp"),
     (error: unknown) => error instanceof PlantIdentificationError && error.reason === "timeout",
   );
 });
 
-type FakeRequestData = Record<string, unknown>;
-
-class FakeReference {
-  readonly updates: FakeRequestData[] = [];
-
-  constructor(readonly path: string, readonly data: FakeRequestData) {}
-
-  async update(value: FakeRequestData) {
-    this.updates.push(value);
-    Object.assign(this.data, value);
-  }
-}
-
-class FakeFirestore {
-  readonly reference: FakeReference;
-  readonly lockReference = new FakeReference("accountDeletionRequests/user-a", {});
-  readonly reservationReference: FakeReference;
-  readonly requestedPaths: string[] = [];
-  readonly writtenPaths: string[] = [];
-  /** Transaction queue is mutable because serial execution is the fake's behavior. */
-  private transactionTail: Promise<void> = Promise.resolve();
-
-  constructor(
-    data: FakeRequestData,
-    private readonly exists = true,
-    reservation: FakeRequestData = reservationData(),
-  ) {
-    this.reference = new FakeReference("users/user-a/identificationRequests/request_12345678", data);
-    this.reservationReference = new FakeReference(
-      "privateMediaReservations/reservation_12345678",
-      reservation,
-    );
-  }
-
-  doc(path: string) {
-    this.requestedPaths.push(path);
-    if (path === this.lockReference.path) return this.lockReference;
-    if (path === this.reservationReference.path) return this.reservationReference;
-    assert.equal(path, this.reference.path);
-    return this.reference;
-  }
-
-  async runTransaction<T>(operation: (transaction: {
-    get(reference: FakeReference): Promise<{
-      exists: boolean;
-      data(): FakeRequestData;
-      get(field: string): unknown;
-    }>;
-    update(reference: FakeReference, value: FakeRequestData): void;
-  }) => Promise<T>): Promise<T> {
-    const previous = this.transactionTail;
-    let release: () => void = () => undefined;
-    this.transactionTail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      return await operation({
-        get: async (reference) => ({
-          exists: reference === this.lockReference
-            ? false
-            : reference === this.reservationReference
-              ? true
-              : this.exists,
-          data: () => reference.data,
-          get: (field) => reference.data[field],
-        }),
-        update: (reference, value) => {
-          this.writtenPaths.push(reference.path);
-          reference.updates.push(value);
-          Object.assign(reference.data, value);
-        },
-      });
-    } finally {
-      release();
-    }
-  }
-}
-
-function requestData() {
-  return {
-    ownerUid: "user-a",
-    mediaReference: { reservationId: "reservation_12345678", generation: "7" },
-  };
-}
-
-function reservationData(ownerUid = "user-a"): FakeRequestData {
-  return {
-    schemaVersion: 1,
-    reservationId: "reservation_12345678",
-    ownerUid,
-    mediaKind: "IDENTIFICATION_ORIGINAL",
-    contentType: "image/webp",
-    byteSize: 3,
-    objectPath: "private-media-v2/reservation_12345678",
-    idempotencyKeyHash: "a".repeat(64),
-    requestHash: "b".repeat(64),
-    state: "COMMITTED",
-    objectGeneration: "7",
-    sealedGeneration: null,
-    createdAt: Timestamp.fromMillis(1),
-    expiresAt: Timestamp.fromMillis(2),
-    committedAt: Timestamp.fromMillis(2),
-    sealedAt: null,
-  };
-}
-
-test("production store returns not_found without calling the provider when the request is missing", async () => {
-  // Given
-  const firestore = new FakeFirestore({}, false);
-  const store = new FirestoreIdentificationRequestStore(firestore as never);
-  let providerCalls = 0;
-
-  // When / Then
-  await assert.rejects(
-    store.runOnce("user-a", "request_12345678", "operation_12345678", async () => {
-      providerCalls += 1;
-      return { kind: "no_candidates" };
-    }),
-    (error: unknown) => error instanceof IdentificationRuntimeError
-      && error.reason === "not_found",
-  );
-  assert.equal(providerCalls, 0);
-});
-
-test("production store rejects raw and unowned media references before download", async () => {
-  for (const firestore of [
-    new FakeFirestore({
-      ownerUid: "user-a",
-      temporaryOriginalPath: "private-media-v2/reservation_12345678",
-    }),
-    new FakeFirestore(requestData(), true, reservationData("user-b")),
-  ]) {
-    const store = new FirestoreIdentificationRequestStore(firestore as never);
-    let downloadCount = 0;
-
+test("expired, unapproved, and cancelled requests make zero provider calls", async () => {
+  for (const status of ["expired", "unapproved", "cancelled"] as const) {
+    const repository = new MemoryIdentificationAuthorizationRepository();
+    const created = await request(repository);
+    if (status === "unapproved") repository.records.set(REQUEST, { ...created, status: "PENDING", claimOperationKey: "other_operation_12345678", claimExpiresAtMillis: 9_999 });
+    if (status === "cancelled") await repository.cancel({ ownerUid: OWNER, requestId: REQUEST, nowMillis: 1_001 });
+    const now = status === "expired" ? created.hardExpiresAtMillis : 1_001;
+    const store = new ClaimFencedIdentificationRequestStore(repository, new MemoryMedia(), () => now);
+    let calls = 0;
     await assert.rejects(
-      store.runOnce("user-a", "request_12345678", "operation_12345678", async () => {
-        downloadCount += 1;
-        return { kind: "no_candidates" };
-      }),
+      store.runOnce(OWNER, REQUEST, "operation_12345678", async () => { calls += 1; return { kind: "no_candidates" }; }),
       IdentificationRuntimeError,
     );
-    assert.equal(downloadCount, 0);
+    assert.equal(calls, 0, status);
   }
 });
 
-test("production store serializes concurrent claims and leaves personal plant storage unchanged", async () => {
-  const firestore = new FakeFirestore(requestData());
-  const store = new FirestoreIdentificationRequestStore(firestore as never);
-  let operationCount = 0;
-
-  const first = store.runOnce("user-a", "request_12345678", "operation_12345678", async () => {
-    operationCount += 1;
-    return { kind: "no_candidates" };
+test("lease expiry lets B start while stale A cannot cross the send boundary or finalize", async () => {
+  const repository = new MemoryIdentificationAuthorizationRepository();
+  await request(repository);
+  const claimA = await repository.claim({ ownerUid: OWNER, requestId: REQUEST, operationKey: "operation_A_12345678", nowMillis: 1_000 });
+  assert.equal(claimA.kind, "start");
+  if (claimA.kind !== "start") return;
+  const claimB = await repository.claim({
+    ownerUid: OWNER, requestId: REQUEST, operationKey: "operation_B_12345678",
+    nowMillis: 1_000 + IDENTIFICATION_CLAIM_LEASE_MILLIS,
   });
-  const second = store.runOnce("user-a", "request_12345678", "operation_12345678", async () => {
-    operationCount += 1;
-    return { kind: "no_candidates" };
-  });
-
-  assert.deepEqual(await Promise.all([first, second]), [
-    { kind: "no_candidates" },
-    { kind: "pending" },
-  ]);
-  assert.equal(operationCount, 1);
-  assert.equal(
-    [...firestore.requestedPaths, ...firestore.writtenPaths]
-      .some((path) => path.includes("/personalPlants/")),
-    false,
+  assert.equal(claimB.kind, "start");
+  await assert.rejects(
+    repository.markSending({ ownerUid: OWNER, requestId: REQUEST, operationKey: "operation_A_12345678", claimGeneration: claimA.request.claimGeneration, nowMillis: 1_000 + IDENTIFICATION_CLAIM_LEASE_MILLIS }),
+    /stale/,
+  );
+  await assert.rejects(
+    repository.finalize({
+      ownerUid: OWNER, requestId: REQUEST, operationKey: "operation_A_12345678",
+      claimGeneration: claimA.request.claimGeneration, status: "NO_CANDIDATES", result: { kind: "no_candidates" }, nowMillis: 2_000,
+    }),
+    /stale/,
   );
 });
 
-test("production store reclaims a stuck pending claim with a fresh retry key", async () => {
-  const firestore = new FakeFirestore({
-    ...requestData(),
-    identificationOperationKey: "operation_12345678",
-    identificationOperationStartedAt: new Date("2026-08-14T00:00:00Z"),
-  });
-  const store = new FirestoreIdentificationRequestStore(
-    firestore as never,
-    () => new Date("2026-08-14T00:03:00Z"),
-  );
-  let operationCount = 0;
+test("final provider-send transition fences exact claim and hard expiry without invoking the provider", async () => {
+  for (const boundary of ["claim", "hard"] as const) {
+    const repository = new MemoryIdentificationAuthorizationRepository();
+    const created = await request(repository);
+    const boundaryNow = boundary === "claim"
+      ? 1_000 + IDENTIFICATION_CLAIM_LEASE_MILLIS
+      : created.hardExpiresAtMillis;
+    let clockReads = 0;
+    const store = new ClaimFencedIdentificationRequestStore(
+      repository,
+      new MemoryMedia(),
+      () => clockReads++ === 0 ? 1_000 : boundaryNow,
+    );
+    let calls = 0;
+    await assert.rejects(
+      store.runOnce(OWNER, REQUEST, "operation_12345678", async () => { calls += 1; return { kind: "no_candidates" }; }),
+      IdentificationRuntimeError,
+    );
+    assert.equal(calls, 0, boundary);
+    assert.equal((await repository.load(OWNER, REQUEST))?.sendState, "NOT_SENT", boundary);
+  }
+});
 
-  const result = await store.runOnce(
-    "user-a",
-    "request_12345678",
-    "operation_retry_12345678",
-    async () => {
-      operationCount += 1;
-      return { kind: "no_candidates" };
-    },
+test("final provider-send transition accepts expiry minus one from the injected runtime clock", async () => {
+  const repository = new MemoryIdentificationAuthorizationRepository();
+  await request(repository);
+  let clockReads = 0;
+  const store = new ClaimFencedIdentificationRequestStore(
+    repository,
+    new MemoryMedia(),
+    () => clockReads++ === 0 ? 1_000 : 1_000 + IDENTIFICATION_CLAIM_LEASE_MILLIS - 1,
   );
+  let calls = 0;
+  assert.deepEqual(
+    await store.runOnce(OWNER, REQUEST, "operation_12345678", async () => { calls += 1; return { kind: "no_candidates" }; }),
+    { kind: "no_candidates" },
+  );
+  assert.equal(calls, 1);
+});
 
-  assert.deepEqual(result, { kind: "no_candidates" });
-  assert.equal(operationCount, 1);
-  assert.equal(
-    firestore.reference.data.identificationOperationKey,
-    "operation_retry_12345678",
+test("ambiguous post-send retry never transmits twice while pre-send lease retry remains safe", async () => {
+  const repository = new MemoryIdentificationAuthorizationRepository();
+  await request(repository);
+  let now = 1_000;
+  const store = new ClaimFencedIdentificationRequestStore(repository, new MemoryMedia(), () => now);
+  let sends = 0;
+  await assert.rejects(
+    store.runOnce(OWNER, REQUEST, "operation_A_12345678", async () => {
+      sends += 1;
+      throw new Error("provider response ambiguous");
+    }),
+    /ambiguous/,
   );
+  now += IDENTIFICATION_CLAIM_LEASE_MILLIS;
+  await assert.rejects(
+    store.runOnce(OWNER, REQUEST, "operation_B_12345678", async () => { sends += 1; return { kind: "no_candidates" }; }),
+    IdentificationRuntimeError,
+  );
+  assert.equal(sends, 1);
+
+  const retryable = new MemoryIdentificationAuthorizationRepository();
+  await request(retryable);
+  await retryable.claim({ ownerUid: OWNER, requestId: REQUEST, operationKey: "operation_A_12345678", nowMillis: 1_000 });
+  const preSend = new ClaimFencedIdentificationRequestStore(
+    retryable, new MemoryMedia(), () => 1_000 + IDENTIFICATION_CLAIM_LEASE_MILLIS,
+  );
+  let safeSends = 0;
+  assert.deepEqual(
+    await preSend.runOnce(OWNER, REQUEST, "operation_B_12345678", async () => { safeSends += 1; return { kind: "no_candidates" }; }),
+    { kind: "no_candidates" },
+  );
+  assert.equal(safeSends, 1);
+});
+
+test("terminal result writes exact terminal and 24-hour retention timestamps", async () => {
+  const repository = new MemoryIdentificationAuthorizationRepository();
+  await request(repository);
+  const terminalAt = 9_876;
+  const store = new ClaimFencedIdentificationRequestStore(repository, new MemoryMedia(), () => terminalAt);
+  await store.runOnce(OWNER, REQUEST, "operation_12345678", async () => ({ kind: "no_candidates" }));
+  const stored = await repository.load(OWNER, REQUEST);
+  assert.equal(stored?.terminalAtMillis, terminalAt);
+  assert.equal(stored?.retentionExpiresAtMillis, terminalAt + IDENTIFICATION_ORIGINAL_RETENTION_MILLIS);
 });

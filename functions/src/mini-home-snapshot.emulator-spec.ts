@@ -8,6 +8,7 @@ import {
 } from "firebase-admin/firestore";
 import { FirestoreInventoryStore } from "./firestore-inventory-store.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
+import { subscribeToExactSnapshot } from "./exact-snapshot-test-harness.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeSnapshotStore } from "./firestore-mini-home-snapshot-store.js";
 import { executeAcquireInventoryItem } from "./inventory.js";
@@ -470,59 +471,11 @@ function exactCatalog(
   close: () => void;
 }> {
   const reference = firestore.doc("catalogProjectionPointers/current");
-  let readyResolve!: () => void;
-  let valueResolve!: (snapshot: DocumentSnapshot) => void;
-  let valueReject!: (error: unknown) => void;
-  let readyObserved = false;
-  let settled = false;
-  const ready = new Promise<void>((resolve) => { readyResolve = resolve; });
-  const value = new Promise<DocumentSnapshot>((resolve, reject) => {
-    valueResolve = resolve;
-    valueReject = reject;
+  return subscribeToExactSnapshot({
+    label: reference.path,
+    subscribe: (onSnapshot, onError) => reference.onSnapshot(onSnapshot, onError),
+    matches: (snapshot) => isExactCatalog(firestore, snapshot, expected),
   });
-  const timeout = setTimeout(() => {
-    if (!settled) valueReject(new Error("Timed out waiting for exact catalog projection"));
-  }, 10_000);
-  timeout.unref();
-  const unsubscribe = reference.onSnapshot(
-    (snapshot) => {
-      if (!readyObserved) {
-        readyObserved = true;
-        readyResolve();
-      }
-      if (settled) return;
-      void isExactCatalog(firestore, snapshot, expected)
-        .then((matches) => {
-          if (!settled && matches) {
-            settled = true;
-            clearTimeout(timeout);
-            valueResolve(snapshot);
-          }
-        })
-        .catch((error: unknown) => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            valueReject(error);
-          }
-        });
-    },
-    (error) => {
-      if (!settled) {
-        settled = true;
-        clearTimeout(timeout);
-        valueReject(error);
-      }
-    },
-  );
-  return {
-    ready,
-    value,
-    close: () => {
-      clearTimeout(timeout);
-      unsubscribe();
-    },
-  };
 }
 
 async function isExactCatalog(

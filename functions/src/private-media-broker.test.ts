@@ -91,6 +91,7 @@ test("reserve binds owner and idempotency while signing one conditional immutabl
   assert.equal(first.upload.method, "PUT");
   assert.equal(first.upload.expiresAtMillis, NOW_MILLIS + 10 * 60 * 1_000);
   assert.deepEqual(first.upload.requiredHeaders, {
+    "content-length": "3",
     "content-type": "image/webp",
     "x-goog-if-generation-match": "0",
     "x-goog-meta-owner-uid": "user-a",
@@ -210,6 +211,7 @@ test("commit rejects foreign ownership, account lock, and every object contract 
       }, fixture.commit),
       (error: unknown) => error instanceof PrivateMediaError && error.code === "failed-precondition",
     );
+    assert.equal(await fixture.objects.inspect(fixture.reservation.objectPath), null);
   }
 
   const foreign = await reservedFixture();
@@ -227,5 +229,36 @@ test("commit rejects foreign ownership, account lock, and every object contract 
       reservationId: foreign.reservation.reservationId,
     }, foreign.commit),
     (error: unknown) => error instanceof PrivateMediaError && error.code === "failed-precondition",
+  );
+});
+
+test("commit mismatch deletes only the inspected generation when a replacement wins the race", async () => {
+  // Given
+  const fixture = await reservedFixture();
+  assert.equal(fixture.objects.admitUpload(ownerObject(
+    fixture.reservation.objectPath,
+    fixture.reservation.reservationId,
+    { byteSize: 4 },
+  ))(), "created");
+  fixture.objects.beforeNextDelete = () => {
+    fixture.objects.objects.set(fixture.reservation.objectPath, {
+      ...ownerObject(fixture.reservation.objectPath, fixture.reservation.reservationId),
+      generation: "2",
+    });
+  };
+
+  // When
+  await assert.rejects(
+    commitPrivateMediaReservation(OWNER, {
+      expectedOwnerUid: "user-a",
+      reservationId: fixture.reservation.reservationId,
+    }, fixture.commit),
+    (error: unknown) => error instanceof PrivateMediaError && error.code === "failed-precondition",
+  );
+
+  // Then
+  assert.equal(
+    (await fixture.objects.inspect(fixture.reservation.objectPath))?.generation,
+    "2",
   );
 });

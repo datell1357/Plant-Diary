@@ -5,7 +5,7 @@ service firebase.storage {
     function accountMutable(uid) {
       let deletion = /databases/(default)/documents/accountDeletionRequests/$(uid);
       return !firestore.exists(deletion) || (
-        firestore.get(deletion).data.status in ['RECEIVED', 'FAILED', 'CANCELLED']
+        firestore.get(deletion).data.status in ['FAILED', 'CANCELLED']
         && (!firestore.get(deletion).data.keys().hasAny(['completedScopes'])
           || (firestore.get(deletion).data.completedScopes is list
             && firestore.get(deletion).data.completedScopes.size() == 0))
@@ -13,6 +13,32 @@ service firebase.storage {
     }
     function safeSegment(value) { return value.matches('^[A-Za-z0-9_-]{1,128}$'); }
     function safeFileName(value) { return value.matches('^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$') && !value.matches('.*[.][.].*'); }
+    function readableIdentificationOriginal(reservationId, reservationData) {
+      let requestId = reservationData.keys().hasAll(['identificationRequestId'])
+        && reservationData.identificationRequestId is string
+        ? reservationData.identificationRequestId
+        : '';
+      let identification = /databases/(default)/documents/users/$(request.auth.uid)/identificationRequests/$(requestId);
+      return safeSegment(requestId)
+        && firestore.exists(identification)
+        && firestore.get(identification).data.ownerUid == request.auth.uid
+        && firestore.get(identification).data.requestId == requestId
+        && firestore.get(identification).data.mediaReference.reservationId == reservationId
+        && firestore.get(identification).data.mediaReference.generation == reservationData.objectGeneration
+        && firestore.get(identification).data.createdAt is timestamp
+        && firestore.get(identification).data.hardExpiresAt is timestamp
+        && firestore.get(identification).data.hardExpiresAt
+          == firestore.get(identification).data.createdAt + duration.value(24, 'h')
+        && ((firestore.get(identification).data.retentionExpiresAt == null
+            && firestore.get(identification).data.status in ['APPROVED', 'PENDING']
+            && request.time < firestore.get(identification).data.hardExpiresAt)
+          || (firestore.get(identification).data.retentionExpiresAt is timestamp
+            && firestore.get(identification).data.status in ['CANDIDATES', 'NO_CANDIDATES', 'FAILED', 'CANCELLED']
+            && firestore.get(identification).data.terminalAt is timestamp
+            && firestore.get(identification).data.retentionExpiresAt
+              == firestore.get(identification).data.terminalAt + duration.value(24, 'h')
+            && request.time < firestore.get(identification).data.retentionExpiresAt));
+    }
     function readablePrivateMedia(reservationId) {
       let reservation = /databases/(default)/documents/privateMediaReservations/$(reservationId);
       return request.auth != null
@@ -27,7 +53,10 @@ service firebase.storage {
         && resource.metadata.keys().hasAll(['ownerUid', 'reservationId'])
         && resource.metadata.keys().hasOnly(['ownerUid', 'reservationId'])
         && resource.metadata.ownerUid == request.auth.uid
-        && resource.metadata.reservationId == reservationId;
+        && resource.metadata.reservationId == reservationId
+        && (firestore.get(reservation).data.mediaKind == 'PLANT_PHOTO'
+          || (firestore.get(reservation).data.mediaKind == 'IDENTIFICATION_ORIGINAL'
+            && readableIdentificationOriginal(reservationId, firestore.get(reservation).data)));
     }
     function validCatalogAsset(itemId, fileName) {
       return safeSegment(itemId)
@@ -88,8 +117,7 @@ service firebase.storage {
       allow write: if false;
     }
     match /identification-originals/{uid}/{requestId}/{fileName} {
-      allow read: if owns(uid);
-      allow write: if false;
+      allow read, write: if false;
     }
     match /plant-photos/{uid}/{plantId}/{fileName} {
       allow read: if owns(uid);

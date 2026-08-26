@@ -6,6 +6,8 @@ import { Timestamp, getFirestore } from "firebase-admin/firestore";
 import { FirestoreNotificationSettingsStore } from "./notification-settings.js";
 import {
   FirestoreWateringDeliveryStore,
+  NOTIFICATION_RETENTION_MILLIS,
+  cleanupExpiredNotificationRecords,
   executeConfirmNotificationOpened,
   runWateringDeliveryScan,
   selectWateringAttempt,
@@ -15,6 +17,7 @@ import {
   type WateringEndpointTarget,
   type WateringPushSender,
 } from "./watering-notifications.js";
+import type { ServerAnalyticsOperation } from "./server-analytics.js";
 
 const projectId = "demo-planterior";
 
@@ -32,6 +35,22 @@ test("emulator expiring claim retries and immutable SENT receipt finalizes dedup
   const firestore = getFirestore(app);
   const store = new FirestoreWateringDeliveryStore(firestore);
   const sender = new RecordingSender();
+  const analyticsEvents: ServerAnalyticsOperation[] = [];
+  const analytics = async (event: ServerAnalyticsOperation) => {
+    if (event.eventName === "WATERING_NOTIFICATION_SENT") {
+      const history = await firestore
+        .collection(`users/${event.ownerUid}/notificationHistory`)
+        .get();
+      assert.equal(history.docs[0]?.get("status"), "SENT");
+    } else {
+      const history = await firestore
+        .doc(`users/${event.ownerUid}/notificationHistory/${event.operationIdentifier}`)
+        .get();
+      assert.equal(history.get("destinationOpened"), true);
+    }
+    analyticsEvents.push(event);
+    return { kind: "recorded" as const, eventId: "event", replayed: false };
+  };
 
   try {
     await clear(firestore);
@@ -44,8 +63,14 @@ test("emulator expiring claim retries and immutable SENT receipt finalizes dedup
     });
 
     const now = new Date("2026-08-12T00:00:00Z");
-    await runWateringDeliveryScan(store, sender, now);
-    await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:01:00Z"));
+    await runWateringDeliveryScan(store, sender, now, 100, analytics);
+    await runWateringDeliveryScan(
+      store,
+      sender,
+      new Date("2026-08-12T00:01:00Z"),
+      100,
+      analytics,
+    );
 
     assert.equal(sender.attempts.length, 1);
     const receipts = await firestore.collection("users/user-a/notificationDeliveries").get();
@@ -59,19 +84,39 @@ test("emulator expiring claim retries and immutable SENT receipt finalizes dedup
     assert.equal(history.docs[0]?.get("status"), "SENT");
     assert.equal(history.docs[0]?.get("destinationOpened"), false);
     assert.equal(history.docs[0]?.get("endpointResults"), undefined);
+    for (const document of [receipts.docs[0]!, diagnostics.docs[0]!, history.docs[0]!]) {
+      assert.equal(
+        document.get("expiresAt").toMillis() - document.get("terminalAt").toMillis(),
+        NOTIFICATION_RETENTION_MILLIS,
+      );
+    }
     await executeConfirmNotificationOpened(
       firestore,
       { uid: "user-a" },
       { expectedOwnerUid: "user-a", deliveryId: history.docs[0]!.id },
+      new Date("2026-08-12T00:02:00Z"),
+      analytics,
     );
     await executeConfirmNotificationOpened(
       firestore,
       { uid: "user-a" },
       { expectedOwnerUid: "user-a", deliveryId: history.docs[0]!.id },
+      new Date("2026-08-12T00:03:00Z"),
+      analytics,
     );
     const opened = await history.docs[0]!.ref.get();
     assert.equal(opened.get("destinationOpened"), true);
     assert.ok(opened.get("openedAt") instanceof Timestamp);
+    assert.deepEqual(
+      analyticsEvents.map((event) => event.eventName),
+      [
+        "WATERING_NOTIFICATION_SENT",
+        "WATERING_NOTIFICATION_OPENED",
+        "WATERING_NOTIFICATION_OPENED",
+      ],
+    );
+    assert.equal(analyticsEvents[1]?.operationIdentifier, history.docs[0]!.id);
+    assert.equal(analyticsEvents[2]?.operationIdentifier, history.docs[0]!.id);
   } finally {
     await clear(firestore);
     await deleteApp(app);
@@ -822,6 +867,63 @@ test("deleted owner retires expired orphan without creating owner history", asyn
     assert.equal((await firestore.collection("notificationDeliveryClaims").get()).size, 0);
     assert.equal((await firestore.collection("users/user-a/notificationHistory").get()).size, 0);
     assert.equal(sender.attempts.length, 0);
+  } finally {
+    await clear(firestore);
+    await deleteApp(app);
+  }
+});
+
+test("notification retention cleanup is bounded idempotent and ignores expired live leases", async () => {
+  const app = initializeApp({ projectId }, "watering-retention-cleanup-emulator");
+  const firestore = getFirestore(app);
+  const now = Timestamp.fromDate(new Date("2026-09-16T00:00:00Z"));
+  const future = Timestamp.fromMillis(now.toMillis() + 1);
+  const terminalAt = Timestamp.fromDate(new Date("2026-08-12T00:00:00Z"));
+
+  try {
+    await clear(firestore);
+    const writes = firestore.batch();
+    writes.set(firestore.doc("users/user-a"), { ownerUid: "user-a" });
+    writes.set(firestore.doc("users/user-a/notificationHistory/expired"), {
+      ownerUid: "user-a", terminalAt, expiresAt: now,
+    });
+    writes.set(firestore.doc("users/user-a/notificationHistory/future"), {
+      ownerUid: "user-a", terminalAt, expiresAt: future,
+    });
+    writes.set(firestore.doc("users/user-a/notificationDeliveries/expired"), {
+      ownerUid: "user-a", terminalAt, expiresAt: now,
+    });
+    writes.set(firestore.doc("notificationDeliveryDiagnostics/expired"), {
+      ownerUid: "user-a", terminalAt, expiresAt: now,
+    });
+    writes.set(firestore.doc("notificationDeliveryClaims/failed-expired"), {
+      ownerUid: "user-a", state: "FAILED", terminalAt, expiresAt: now,
+    });
+    writes.set(firestore.doc("notificationDeliveryClaims/live-expired-lease"), {
+      ownerUid: "user-a", state: "AUTHORIZED_PRE_SEND", expiresAt: now,
+    });
+    writes.set(firestore.doc("notificationDeliveryClaims/failed-future"), {
+      ownerUid: "user-a", state: "FAILED", terminalAt, expiresAt: future,
+    });
+    await writes.commit();
+
+    const first = await cleanupExpiredNotificationRecords(firestore, now, 1);
+    const replay = await cleanupExpiredNotificationRecords(firestore, now, 1);
+
+    assert.deepEqual(first, { scanned: 4, deleted: 4, failures: [] });
+    assert.deepEqual(replay, { scanned: 0, deleted: 0, failures: [] });
+    assert.equal(
+      (await firestore.doc("notificationDeliveryClaims/live-expired-lease").get()).exists,
+      true,
+    );
+    assert.equal(
+      (await firestore.doc("notificationDeliveryClaims/failed-future").get()).exists,
+      true,
+    );
+    assert.equal(
+      (await firestore.doc("users/user-a/notificationHistory/future").get()).exists,
+      true,
+    );
   } finally {
     await clear(firestore);
     await deleteApp(app);

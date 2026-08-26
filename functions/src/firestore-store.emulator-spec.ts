@@ -86,12 +86,16 @@ test("real Firestore emulator preserves revision idempotency ownership and serve
           active: true,
           transition: 1,
           deliveredTransition: null,
+          source: "MANUAL",
+          locationConsentGeneration: null,
         },
       },
       store,
     );
     const risk = await firestore.doc(riskPath).get();
     assert.equal(risk.get("ownerUid"), "user-a");
+    assert.equal(risk.get("source"), "MANUAL");
+    assert.equal(risk.get("locationConsentGeneration"), null);
     assert.ok(risk.get("detectedAt") instanceof Timestamp);
     assert.ok(risk.get("updatedAt") instanceof Timestamp);
   } finally {

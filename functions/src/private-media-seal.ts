@@ -1,5 +1,6 @@
 import {
   isPrivateMediaSeal,
+  matchesPrivateMediaReservationObject,
   PRIVATE_MEDIA_PREFIX,
   PrivateMediaError,
   validObjectGeneration,
@@ -11,13 +12,14 @@ import {
 
 const DEFAULT_MAXIMUM_ATTEMPTS = 8;
 
-type SealOwnerCommand = Readonly<{
-  ownerUid: string;
+type SealCommand = Readonly<{
   repository: PrivateMediaReservationRepository;
   objects: PrivateMediaObjectStore;
   nowMillis: () => number;
   maximumAttempts?: number;
 }>;
+
+type SealOwnerCommand = SealCommand & Readonly<{ ownerUid: string }>;
 
 type FinalizedCommand = Readonly<{
   object: PrivateMediaObject;
@@ -27,7 +29,9 @@ type FinalizedCommand = Readonly<{
 
 export async function sealOwnerPrivateMedia(command: SealOwnerCommand): Promise<void> {
   const reservations = await command.repository.listOwner(command.ownerUid);
-  for (const reservation of reservations) await convergeSeal(reservation, command);
+  for (const reservation of reservations) {
+    await sealPrivateMediaReservation(reservation, command);
+  }
 
   const verified = await command.repository.listOwner(command.ownerUid);
   for (const reservation of verified) {
@@ -46,35 +50,79 @@ export async function sealOwnerPrivateMedia(command: SealOwnerCommand): Promise<
   }
 }
 
+export async function sealPrivateMediaReservation(
+  reservation: PrivateMediaReservation,
+  command: SealCommand,
+): Promise<Readonly<{ sealedGeneration: string }>> {
+  await convergeSeal(reservation, command);
+  const sealed = await command.objects.inspect(reservation.objectPath);
+  if (sealed === null || !isPrivateMediaSeal(sealed)) {
+    throw new PrivateMediaError(
+      "failed-precondition",
+      "Private media reservation did not converge to a verified seal",
+    );
+  }
+  const persisted = await command.repository.load(reservation.reservationId);
+  if (
+    persisted === null ||
+    persisted.ownerUid !== reservation.ownerUid ||
+    persisted.state !== "SEALED" ||
+    persisted.sealedGeneration !== sealed.generation
+  ) {
+    throw new PrivateMediaError(
+      "failed-precondition",
+      "Private media reservation seal metadata was not verified",
+    );
+  }
+  return { sealedGeneration: sealed.generation };
+}
+
 async function convergeSeal(
   reservation: PrivateMediaReservation,
-  command: SealOwnerCommand,
+  command: SealCommand,
 ): Promise<void> {
   const maximumAttempts = command.maximumAttempts ?? DEFAULT_MAXIMUM_ATTEMPTS;
   if (!Number.isSafeInteger(maximumAttempts) || maximumAttempts < 1) {
     throw new PrivateMediaError("invalid-argument", "Seal attempt bound is invalid");
   }
+  let cleanupGeneration: string | null = null;
   for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
     const current = await command.objects.inspect(reservation.objectPath);
     if (current !== null && isPrivateMediaSeal(current)) {
       await command.repository.markSealed({
-        ownerUid: command.ownerUid,
-        reservationId: reservation.reservationId,
+        expectedReservation: reservation,
         sealedGeneration: current.generation,
         sealedAtMillis: command.nowMillis(),
       });
       return;
     }
     if (current !== null) {
-      await command.objects.deleteGeneration(current.path, current.generation);
+      if (reservation.cleanupClaimReason === "EXPIRED_RESERVED_UPLOAD") {
+        if (cleanupGeneration !== null && cleanupGeneration !== current.generation) {
+          throw new PrivateMediaError(
+            "failed-precondition",
+            "Private media generation changed while sealing",
+          );
+        }
+        cleanupGeneration = current.generation;
+      }
+      const deleted = await command.objects.deleteGeneration(
+        current.path,
+        current.generation,
+      );
+      if (deleted === "generation_changed") {
+        throw new PrivateMediaError(
+          "failed-precondition",
+          "Private media generation changed while sealing",
+        );
+      }
       continue;
     }
     const created = await command.objects.createSeal(reservation.objectPath);
     switch (created.kind) {
       case "created":
         await command.repository.markSealed({
-          ownerUid: command.ownerUid,
-          reservationId: reservation.reservationId,
+          expectedReservation: reservation,
           sealedGeneration: created.generation,
           sealedAtMillis: command.nowMillis(),
         });
@@ -95,21 +143,37 @@ async function convergeSeal(
 
 export async function handlePrivateMediaFinalized(command: FinalizedCommand): Promise<void> {
   const segments = command.object.path.split("/");
+  if (segments[0] !== PRIVATE_MEDIA_PREFIX) return;
+  const generation = validObjectGeneration(command.object.generation);
+  if (generation === null) return;
+  const reservationId = segments[1];
   if (
     segments.length !== 2 ||
-    segments[0] !== PRIVATE_MEDIA_PREFIX ||
-    segments[1] === undefined ||
-    segments[1].length < 8 ||
-    validObjectGeneration(command.object.generation) === null
-  ) return;
-  const ownerUid = command.object.customMetadata.ownerUid;
-  const reservationId = command.object.customMetadata.reservationId;
+    reservationId === undefined ||
+    !/^[A-Za-z0-9_-]{8,128}$/.test(reservationId)
+  ) {
+    await command.objects.deleteGeneration(command.object.path, generation);
+    return;
+  }
+
+  const reservation = await command.repository.load(reservationId);
+  if (reservation === null) {
+    if (!isPrivateMediaSeal(command.object)) {
+      await command.objects.deleteGeneration(command.object.path, generation);
+    }
+    return;
+  }
+  if (isPrivateMediaSeal(command.object) && reservation.state !== "SEALED") {
+    return;
+  }
+  if (!matchesPrivateMediaReservationObject(command.object, reservation)) {
+    await command.objects.deleteGeneration(command.object.path, generation);
+    return;
+  }
   if (
-    ownerUid === undefined ||
-    reservationId !== segments[1] ||
-    Object.keys(command.object.customMetadata).length !== 2
-  ) return;
-  if (await command.repository.shouldDeleteFinalized(reservationId, ownerUid)) {
-    await command.objects.deleteGeneration(command.object.path, command.object.generation);
+    reservation.state !== "SEALED" &&
+    await command.repository.shouldDeleteFinalized(reservation.reservationId, reservation.ownerUid)
+  ) {
+    await command.objects.deleteGeneration(command.object.path, generation);
   }
 }

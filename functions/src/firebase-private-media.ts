@@ -17,7 +17,7 @@ export class FirebasePrivateMediaSigner implements PrivateMediaSigner {
   async signPut(command: PrivateMediaSignCommand): Promise<Readonly<{ url: string }>> {
     try {
       const extensionHeaders = Object.fromEntries(
-        Object.entries(command.requiredHeaders).filter(([name]) => name.startsWith("x-goog-")),
+        Object.entries(command.requiredHeaders).filter(([name]) => name !== "content-type"),
       );
       const [url] = await this.storage.bucket().file(command.objectPath).getSignedUrl({
         version: "v4",

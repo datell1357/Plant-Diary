@@ -158,6 +158,20 @@ function integerField(value: Readonly<Record<string, unknown>>, field: string): 
   return candidate;
 }
 
+function weatherProvenance(value: Readonly<Record<string, unknown>>): void {
+  const source = stringField(value, "source");
+  const generation = value.locationConsentGeneration;
+  if (source === "MANUAL" && generation === null) return;
+  if (
+    source === "DEVICE" &&
+    typeof generation === "number" &&
+    Number.isSafeInteger(generation) &&
+    generation >= 1 &&
+    generation <= Number.MAX_SAFE_INTEGER
+  ) return;
+  throw new ContractError("invalid-argument", "Weather provenance is invalid");
+}
+
 function opaqueField(value: Readonly<Record<string, unknown>>, field: string): string {
   const candidate = stringField(value, field);
   if (!opaqueId.test(candidate)) throw new ContractError("invalid-argument", `${field} must be path-safe`);
@@ -367,7 +381,6 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       exactFields(
         payload,
         ["plantId", "dueDate", "attempt", "status", "scheduledFor", "deliveredAt", "deduplicationKey"],
-        ["endpointResults"],
       );
       opaqueField(payload, "plantId");
       localDate(payload, "dueDate");
@@ -382,7 +395,7 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       return;
     }
     case "weatherSnapshots": {
-      exactFields(payload, ["regionCode", "regionName", "temperatureCelsius", "humidityPercent", "precipitationMillimeters", "observedAt", "expiresAt", "zoneId", "stale", "unavailablePlantIds"]);
+      exactFields(payload, ["regionCode", "regionName", "temperatureCelsius", "humidityPercent", "precipitationMillimeters", "observedAt", "expiresAt", "zoneId", "stale", "unavailablePlantIds", "source", "locationConsentGeneration"]);
       stringField(payload, "regionCode");
       stringField(payload, "regionName");
       numberField(payload, "temperatureCelsius");
@@ -395,10 +408,11 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       zoneId(payload, "zoneId");
       booleanField(payload, "stale");
       opaqueArrayField(payload, "unavailablePlantIds", 200);
+      weatherProvenance(payload);
       return;
     }
     case "weatherRisks":
-      exactFields(payload, ["plantId", "plantName", "snapshotId", "type", "reason", "detectedAt", "observedAt", "active", "transition", "deliveredTransition"], ["action"]);
+      exactFields(payload, ["plantId", "plantName", "snapshotId", "type", "reason", "detectedAt", "observedAt", "active", "transition", "deliveredTransition", "source", "locationConsentGeneration"], ["action"]);
       opaqueField(payload, "plantId");
       stringField(payload, "plantName");
       opaqueField(payload, "snapshotId");
@@ -410,6 +424,7 @@ function validateServerPayload(collection: ServerCollection, payload: Readonly<R
       booleanField(payload, "active");
       if (integerField(payload, "transition") < 0) throw new ContractError("invalid-argument", "transition must not be negative");
       if (payload.deliveredTransition !== null && integerField(payload, "deliveredTransition") < 0) throw new ContractError("invalid-argument", "deliveredTransition must not be negative");
+      weatherProvenance(payload);
       return;
     case "ownedItems":
       exactFields(payload, ["itemId", "acquiredAt", "applied"]);

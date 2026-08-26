@@ -35,11 +35,36 @@ import {
 } from "./account-mutation-lock.js";
 import { AppleAuthError, executeAppleCallback, executeBeginAppleSignIn, executeCompleteAppleSignIn } from "./apple-auth.js";
 import { FirestoreAppleSessionStore, VerifiedAppleTokenExchange } from "./apple-auth-runtime.js";
+import {
+  AnalyticsError,
+  executeGetAnalyticsConsent,
+  executeRecordClientAnalyticsEvents,
+  executeSetAnalyticsConsent,
+} from "./analytics.js";
 import { ContractError, executeOwnerMutation } from "./contracts.js";
 import { FirebaseAccountDeletionCleaner } from "./firebase-account-deletion-cleaner.js";
+import { FirebaseLegacyIdentificationOriginalStore } from "./firebase-identification-cleanup.js";
 import { FirebasePrivateMediaObjectStore, FirebasePrivateMediaSigner } from "./firebase-private-media.js";
-import { FirestoreAccountDeletionStore } from "./firestore-account-deletion-store.js";
+import {
+  cleanupExpiredAccountDeletionTombstones,
+  FirestoreAccountDeletionStore,
+} from "./firestore-account-deletion-store.js";
+import { FirestoreIdentificationCleanupPersistence } from "./firestore-identification-cleanup.js";
+import {
+  cleanupExpiredAnalyticsRetention,
+  FirestoreAnalyticsStore,
+} from "./firestore-analytics-store.js";
+import { createFirestoreServerAnalyticsRecorder } from "./server-analytics.js";
 import { FirestorePrivateMediaReservationRepository } from "./firestore-private-media.js";
+import { FirestoreIdentificationAuthorizationRepository } from "./firestore-identification-authorization.js";
+import {
+  createIdentificationRequest as createAuthorizedIdentificationRequest,
+  IdentificationAuthorizationError,
+} from "./identification-authorization.js";
+import {
+  runIdentificationCleanup,
+  throwIfIdentificationCleanupFailed,
+} from "./identification-cleanup.js";
 import { FirestoreMutationStore } from "./firestore-store.js";
 import { FirestoreCatalogProjectionStore } from "./firestore-mini-home-projection.js";
 import { FirestoreMiniHomeLayoutStore } from "./firestore-mini-home-store.js";
@@ -101,9 +126,16 @@ import {
 } from "./weather-runtime.js";
 import { WeatherConsentConflictError, WeatherError } from "./weather.js";
 import {
+  WEATHER_RETENTION_CLEANUP_LIMIT,
+  cleanupExpiredWeatherData,
+  type WeatherRetentionCleanupFailure,
+  type WeatherRetentionCleanupResult,
+} from "./weather-retention.js";
+import {
   FirebaseWateringPushSender,
   FirestoreWateringDeliveryStore,
   NotificationOpenError,
+  cleanupExpiredNotificationRecords,
   executeConfirmNotificationOpened,
   runWateringDeliveryScan,
 } from "./watering-notifications.js";
@@ -120,6 +152,8 @@ const accountDeletionCleaner = new FirebaseAccountDeletionCleaner(
 const privateMediaRepository = new FirestorePrivateMediaReservationRepository(firestore);
 const privateMediaObjects = new FirebasePrivateMediaObjectStore(storage);
 const privateMediaSigner = new FirebasePrivateMediaSigner(storage);
+const identificationCleanupPersistence = new FirestoreIdentificationCleanupPersistence(firestore);
+const legacyIdentificationOriginals = new FirebaseLegacyIdentificationOriginalStore(storage);
 const accountMutationLock = new FirestoreAccountMutationLock(firestore);
 const store = new FirestoreMutationStore(firestore);
 const wateringStore = new FirestoreWateringCompletionStore(firestore);
@@ -131,22 +165,49 @@ const inventoryStore = new FirestoreInventoryStore(firestore);
 const notificationSettingsStore = new FirestoreNotificationSettingsStore(firestore);
 const wateringDeliveryStore = new FirestoreWateringDeliveryStore(firestore);
 const appleStore = new FirestoreAppleSessionStore(firestore);
+const analyticsStore = new FirestoreAnalyticsStore(firestore);
+const serverAnalyticsRecorder = createFirestoreServerAnalyticsRecorder(firestore);
 const applePrivateKey = defineSecret("APPLE_PRIVATE_KEY");
 const appleAbuseHashKey = defineSecret("APPLE_ABUSE_HASH_KEY");
 const plantIdApiKey = defineSecret("PLANT_ID_API_KEY");
 const openWeatherApiKey = defineSecret("OPENWEATHER_API_KEY");
 const miniHomeShareTokenKey = defineSecret("MINI_HOME_SHARE_TOKEN_KEY");
 const storageBucket = defineString("STORAGE_BUCKET");
-const weatherStore = new FirestoreWeatherStore(firestore);
+const weatherStore = new FirestoreWeatherStore(firestore, serverAnalyticsRecorder);
 
 type MutationHandler = (request: CallableRequest<unknown>) => Promise<unknown>;
+
+const emulatorAppCheckDebugTokenEnvironment = "FUNCTIONS_EMULATOR_APP_CHECK_DEBUG_TOKEN";
+
+function requireEmulatorAppCheckToken(request: CallableRequest<unknown>): void {
+  if (process.env.FUNCTIONS_EMULATOR !== "true") return;
+  const expected = process.env[emulatorAppCheckDebugTokenEnvironment];
+  const actual = request.rawRequest.header("x-firebase-appcheck");
+  if (expected === undefined || actual !== expected) {
+    throw new HttpsError("unauthenticated", "Unauthenticated");
+  }
+}
+
+/**
+ * Keeps emulator App Check behavior fail-closed without weakening Firebase's production verification.
+ * Every onCall export must be composed through this function or onMutationCall below.
+ */
+function onAppCheckedCall(
+  options: CallableOptions<unknown>,
+  handler: MutationHandler,
+) {
+  return onCall(options, async (request) => {
+    requireEmulatorAppCheckToken(request);
+    return handler(request);
+  });
+}
 
 function onMutationCall(
   options: CallableOptions<unknown>,
   handler: MutationHandler,
 ) {
   const guarded = withAccountMutationLock(accountMutationLock, handler);
-  return onCall(options, async (request) => {
+  return onAppCheckedCall(options, async (request) => {
     try {
       return await guarded(request);
     } catch (error: unknown) {
@@ -169,6 +230,11 @@ function deletionAuth(request: CallableRequest<unknown>): AccountDeletionAuth | 
 
 function deletionHttpsError(error: unknown): never {
   if (!(error instanceof AccountDeletionError)) throw error;
+  throw new HttpsError(error.code, error.message);
+}
+
+function analyticsHttpsError(error: unknown): never {
+  if (!(error instanceof AnalyticsError)) throw error;
   throw new HttpsError(error.code, error.message);
 }
 
@@ -205,7 +271,7 @@ function appleHttpsError(error: unknown): never {
 
 const deletionCallableOptions = { enforceAppCheck: true, region: "us-central1" } as const;
 
-export const previewAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+export const previewAccountDeletion = onAppCheckedCall(deletionCallableOptions, async (request) => {
   try {
     return await previewDeletion(deletionAuth(request), request.data, accountDeletionStore);
   } catch (error: unknown) {
@@ -213,19 +279,21 @@ export const previewAccountDeletion = onCall(deletionCallableOptions, async (req
   }
 });
 
-export const requestAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+export const requestAccountDeletion = onAppCheckedCall(deletionCallableOptions, async (request) => {
   try {
     return await requestDeletion(deletionAuth(request), request.data, {
       store: accountDeletionStore,
       nowMillis: Date.now,
       requestId: randomUUID,
+      analytics: serverAnalyticsRecorder,
+      analyticsDeletion: analyticsStore,
     });
   } catch (error: unknown) {
     return deletionHttpsError(error);
   }
 });
 
-export const getAccountDeletionStatus = onCall(deletionCallableOptions, async (request) => {
+export const getAccountDeletionStatus = onAppCheckedCall(deletionCallableOptions, async (request) => {
   try {
     return await getDeletionStatus(deletionAuth(request), request.data, accountDeletionStore);
   } catch (error: unknown) {
@@ -233,7 +301,7 @@ export const getAccountDeletionStatus = onCall(deletionCallableOptions, async (r
   }
 });
 
-export const cancelAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+export const cancelAccountDeletion = onAppCheckedCall(deletionCallableOptions, async (request) => {
   try {
     return await cancelDeletion(deletionAuth(request), request.data, {
       store: accountDeletionStore,
@@ -244,7 +312,7 @@ export const cancelAccountDeletion = onCall(deletionCallableOptions, async (requ
   }
 });
 
-export const retryAccountDeletion = onCall(deletionCallableOptions, async (request) => {
+export const retryAccountDeletion = onAppCheckedCall(deletionCallableOptions, async (request) => {
   try {
     return await retryDeletion(deletionAuth(request), request.data, {
       store: accountDeletionStore,
@@ -266,6 +334,104 @@ export const executeDueAccountDeletions = onSchedule(
     });
   },
 );
+
+export const cleanupExpiredAccountDeletionRecords = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "UTC", timeoutSeconds: 120 },
+  async () => {
+    const result = await cleanupExpiredAccountDeletionTombstones(firestore);
+    if (result.failures.length > 0) {
+      throw new AggregateError(
+        result.failures.map((failure) => failure.error),
+        "Account deletion tombstone cleanup had per-item failures",
+      );
+    }
+  },
+);
+
+export const cleanupExpiredNotificationRetention = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "UTC", timeoutSeconds: 120 },
+  async () => {
+    const result = await cleanupExpiredNotificationRecords(firestore);
+    if (result.failures.length > 0) {
+      throw new AggregateError(
+        result.failures.map((failure) => failure.error),
+        "Notification retention cleanup had per-item failures",
+      );
+    }
+  },
+);
+
+export const cleanupExpiredWeatherRetention = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "UTC", timeoutSeconds: 120 },
+  async () => {
+    const result: WeatherRetentionCleanupResult = await cleanupExpiredWeatherData(
+      firestore,
+      undefined,
+      WEATHER_RETENTION_CLEANUP_LIMIT,
+    );
+    const failures: readonly WeatherRetentionCleanupFailure[] = result.failures;
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures.map((failure) => failure.error),
+        "Weather retention cleanup had per-item failures",
+      );
+    }
+  },
+);
+
+export const getAnalyticsConsent = onAppCheckedCall(
+  { enforceAppCheck: true, region: "us-central1" },
+  async (request) => {
+    try {
+      return await executeGetAnalyticsConsent(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        analyticsStore,
+      );
+    } catch (error: unknown) {
+      return analyticsHttpsError(error);
+    }
+  },
+);
+
+export const setAnalyticsConsent = onMutationCall(
+  { enforceAppCheck: true, region: "us-central1" },
+  async (request) => {
+    try {
+      return await executeSetAnalyticsConsent(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        analyticsStore,
+      );
+    } catch (error: unknown) {
+      return analyticsHttpsError(error);
+    }
+  },
+);
+
+export const recordAnalyticsEvent = onMutationCall(
+  { enforceAppCheck: true, region: "us-central1" },
+  async (request) => {
+    try {
+      return await executeRecordClientAnalyticsEvents(
+        request.auth === undefined ? null : { uid: request.auth.uid },
+        request.data,
+        analyticsStore,
+      );
+    } catch (error: unknown) {
+      return analyticsHttpsError(error);
+    }
+  },
+);
+
+export const cleanupExpiredAnalytics = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "UTC", timeoutSeconds: 120 },
+  async () => {
+    await cleanupExpiredAnalyticsRetention(firestore);
+  },
+);
+
+export { recordServerAnalyticsEvent } from "./firestore-analytics-store.js";
 
 export const reservePrivateMediaUpload = onMutationCall(
   { enforceAppCheck: true, region: "us-central1" },
@@ -319,6 +485,20 @@ export const deleteFinalizedPrivateMediaDuringDeletion = onObjectFinalized(
   },
 );
 
+export const cleanupExpiredIdentificationOriginals = onSchedule(
+  { schedule: "every 60 minutes", timeZone: "UTC", timeoutSeconds: 540 },
+  async () => {
+    const result = await runIdentificationCleanup({
+      persistence: identificationCleanupPersistence,
+      reservations: privateMediaRepository,
+      objects: privateMediaObjects,
+      legacyObjects: legacyIdentificationOriginals,
+      nowMillis: Date.now,
+    });
+    throwIfIdentificationCleanupFailed(result);
+  },
+);
+
 export function createCatalogProjectionWriteHandler(
   rebuilder: Pick<FirestoreCatalogProjectionStore, "rebuild">,
 ): () => Promise<void> {
@@ -346,7 +526,7 @@ export const applyRevisionedOwnerWrite = onMutationCall({ enforceAppCheck: true 
 
 export { executeOwnerMutation, executeServerStateWrite } from "./contracts.js";
 
-export const loadMiniHomeLayout = onCall({ enforceAppCheck: true }, async (request) => {
+export const loadMiniHomeLayout = onAppCheckedCall({ enforceAppCheck: true }, async (request) => {
   try {
     return await executeLoadMiniHomeLayout(
       request.auth === undefined ? null : { uid: request.auth.uid },
@@ -368,7 +548,7 @@ export const loadMiniHomeLayout = onCall({ enforceAppCheck: true }, async (reque
 });
 
 export function createLoadMiniHomeSnapshotCallable(store: MiniHomeSnapshotStore) {
-  return onCall({ enforceAppCheck: true }, async (request) => {
+  return onAppCheckedCall({ enforceAppCheck: true }, async (request) => {
     try {
       return await executeLoadMiniHomeSnapshot(
         request.auth === undefined ? null : { uid: request.auth.uid },
@@ -418,6 +598,7 @@ export const createMiniHomeShareLink = onMutationCall(
         miniHomeShareTokenKey.value(),
         new Date(),
         miniHomeSharePublicEndpoint(request.rawRequest.headers.host),
+        serverAnalyticsRecorder,
       );
     } catch (error: unknown) {
       return miniHomeShareHttpsError(error);
@@ -473,6 +654,7 @@ export const saveMiniHomeLayout = onMutationCall({ enforceAppCheck: true }, asyn
       request.auth === undefined ? null : { uid: request.auth.uid },
       request.data,
       miniHomeStore,
+      serverAnalyticsRecorder,
     );
   } catch (error: unknown) {
     if (error instanceof MiniHomeError) {
@@ -497,7 +679,7 @@ function inventoryHttpsError(error: unknown): never {
 }
 
 export function createLoadInventoryCallable(store: InventoryStore) {
-  return onCall({ enforceAppCheck: true }, async (request) => {
+  return onAppCheckedCall({ enforceAppCheck: true }, async (request) => {
     try {
       return await executeLoadInventory(
         request.auth === undefined ? null : { uid: request.auth.uid },
@@ -640,6 +822,8 @@ export const confirmNotificationOpened = onMutationCall(
         firestore,
         request.auth === undefined ? null : { uid: request.auth.uid },
         request.data,
+        new Date(),
+        serverAnalyticsRecorder,
       );
     } catch (error: unknown) {
       if (error instanceof NotificationOpenError) throw new HttpsError(error.code, error.message);
@@ -654,6 +838,9 @@ export const deliverDueWateringNotifications = onSchedule(
     await runWateringDeliveryScan(
       wateringDeliveryStore,
       new FirebaseWateringPushSender(getMessaging()),
+      new Date(),
+      100,
+      serverAnalyticsRecorder,
     );
   },
 );
@@ -673,7 +860,7 @@ function weatherHttpsError(error: unknown): never {
   );
 }
 
-export const searchWeatherRegions = onCall(
+export const searchWeatherRegions = onAppCheckedCall(
   { enforceAppCheck: true, secrets: [openWeatherApiKey] },
   async (request) => {
     try {
@@ -753,7 +940,14 @@ export const refreshWeather = onMutationCall(
 export const deliverWeatherAlertOutbox = onSchedule(
   { schedule: "every 5 minutes", timeZone: "UTC", timeoutSeconds: 240 },
   async () => {
-    await deliverPendingWeatherAlerts(firestore, getMessaging());
+    await deliverPendingWeatherAlerts(
+      firestore,
+      getMessaging(),
+      undefined,
+      100,
+      undefined,
+      { analytics: serverAnalyticsRecorder },
+    );
   },
 );
 
@@ -772,7 +966,7 @@ export const refreshConfiguredWeather = onSchedule(
   },
 );
 
-export const beginAppleSignIn = onCall(
+export const beginAppleSignIn = onAppCheckedCall(
   { enforceAppCheck: true, secrets: [appleAbuseHashKey] },
   async (request) => {
     try {
@@ -817,7 +1011,7 @@ export const appleOAuthCallback = onRequest(async (request, response) => {
   }
 });
 
-export const completeAppleSignIn = onCall({ enforceAppCheck: true, secrets: [applePrivateKey] }, async (request) => {
+export const completeAppleSignIn = onAppCheckedCall({ enforceAppCheck: true, secrets: [applePrivateKey] }, async (request) => {
   try {
     const exchange = new VerifiedAppleTokenExchange({
       ...appleConfig(),
@@ -838,6 +1032,24 @@ export const cleanupExpiredAppleAuthSessions = onSchedule(
   },
 );
 
+export const createIdentificationRequest = onMutationCall({ enforceAppCheck: true }, async (request) => {
+  try {
+    return await createAuthorizedIdentificationRequest(
+      request.auth === undefined ? null : { uid: request.auth.uid },
+      request.data,
+      {
+        admissions: new FirestoreIdentificationAuthorizationRepository(firestore),
+        nowMillis: () => Date.now(),
+      },
+    );
+  } catch (error: unknown) {
+    if (error instanceof IdentificationAuthorizationError) {
+      throw new HttpsError(error.code, error.message);
+    }
+    throw error;
+  }
+});
+
 export const identifyPlant = onMutationCall({ enforceAppCheck: true, secrets: [plantIdApiKey] }, async (request) => {
   try {
     return await executePlantIdentification(
@@ -857,6 +1069,7 @@ export const identifyPlant = onMutationCall({ enforceAppCheck: true, secrets: [p
         case "not_found": throw new HttpsError("not-found", "Identification request was not found");
         case "permission_denied": throw new HttpsError("permission-denied", "Request is not owned by this user");
         case "malformed_state": throw new HttpsError("failed-precondition", "Identification request is unavailable");
+        case "failed_precondition": throw new HttpsError("failed-precondition", "Identification request cannot be processed");
       }
     }
     throw error;

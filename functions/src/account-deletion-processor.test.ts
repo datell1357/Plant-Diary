@@ -109,12 +109,13 @@ test("processor attempts every non-auth scope before Firebase Auth last", async 
     "IDENTIFICATION_ORIGINALS",
     "PLANT_PHOTOS",
     "SHARE_IMAGES",
+    "OWNER_GLOBAL_SWEEP",
     "USER_DOCUMENTS",
     "AUTH_ACCOUNT",
   ]);
   assert.equal(cleaner.calls.at(-1), "AUTH_ACCOUNT");
   assert.deepEqual(result, { claimed: 1, completed: 1, failed: 0, partiallyFailed: 0 });
-  assert.equal((await store.load(OWNER_UID))?.status, "COMPLETED");
+  assert.equal(await store.load(OWNER_UID), null);
 });
 
 test("irreversible success plus remaining failure is partial and never deletes Auth", async () => {
@@ -280,7 +281,7 @@ test("expired worker cannot finish after a reclaimed worker deletes Auth", async
   assert.equal(secondCleaner.calls.at(-1), "AUTH_ACCOUNT");
   assert.deepEqual(secondResult, { claimed: 1, completed: 1, failed: 0, partiallyFailed: 0 });
   await assert.rejects(firstRun);
-  assert.equal((await store.load(OWNER_UID))?.status, "COMPLETED");
+  assert.equal(await store.load(OWNER_UID), null);
 });
 
 test("fresh reauthenticated partial retry runs only remaining scopes and converges immediately", async () => {
@@ -317,5 +318,5 @@ test("fresh reauthenticated partial retry runs only remaining scopes and converg
   // Then
   assert.deepEqual(cleaner.calls, ["PLANT_PHOTOS", "AUTH_ACCOUNT"]);
   assert.deepEqual(result, { claimed: 1, completed: 1, failed: 0, partiallyFailed: 0 });
-  assert.equal((await store.load(OWNER_UID))?.status, "COMPLETED");
+  assert.equal(await store.load(OWNER_UID), null);
 });

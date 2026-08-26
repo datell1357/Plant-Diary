@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { Server } from "node:http";
-import test from "node:test";
+import { resolve } from "node:path";
+import test, { after, before } from "node:test";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import express from "express";
@@ -10,6 +12,10 @@ import {
   applyRevisionedOwnerWrite,
   beginAppleSignIn,
   cancelAccountDeletion,
+  cleanupExpiredAccountDeletionRecords,
+  cleanupExpiredIdentificationOriginals,
+  cleanupExpiredNotificationRetention,
+  cleanupExpiredWeatherRetention,
   commitPrivateMediaReservation,
   completeAppleSignIn,
   completeWatering,
@@ -18,9 +24,11 @@ import {
   deleteMiniHomeLayout,
   executeDueAccountDeletions,
   createCatalogProjectionWriteHandler,
+  createIdentificationRequest,
   createMiniHomeShareLink,
   createLoadInventoryCallable,
   getAccountDeletionStatus,
+  getAnalyticsConsent,
   ensureWateringNotificationSettings,
   identifyPlant,
   loadInventory,
@@ -58,21 +66,47 @@ type CallableHandler = (
   response: Parameters<typeof identifyPlant>[1],
 ) => void | Promise<void>;
 
+const callableHandlers = new Map<string, CallableHandler>();
+let callableServer: Server | undefined;
+let callableServerOrigin: string | undefined;
+let callableInvocationId = 0;
+
+before(async () => {
+  const app = express();
+  app.use(express.json());
+  app.post("/:invocationId", (request, response) => {
+    const handler = callableHandlers.get(request.params.invocationId);
+    if (handler === undefined) throw new Error("Callable test handler was not registered");
+    return handler(request, response);
+  });
+  const server = app.listen(0);
+  callableServer = server;
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Callable test server did not bind a TCP port");
+  callableServerOrigin = `http://127.0.0.1:${address.port}`;
+});
+
+after(async () => {
+  if (callableServer !== undefined) await closeServer(callableServer);
+  callableHandlers.clear();
+  callableServer = undefined;
+  callableServerOrigin = undefined;
+});
+
 async function invokeCallable(
   handler: CallableHandler,
   appCheckToken?: string,
   data: unknown = {},
   authToken?: string,
 ): Promise<Response> {
-  const app = express();
-  app.use(express.json());
-  app.post("/", (request, response) => handler(request, response));
-  const server = app.listen(0);
-  await new Promise<void>((resolve) => server.once("listening", resolve));
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("Callable test server did not bind a TCP port");
+  const origin = callableServerOrigin;
+  if (origin === undefined) throw new Error("Callable test server is not listening");
+  const invocationId = String(callableInvocationId);
+  callableInvocationId += 1;
+  callableHandlers.set(invocationId, handler);
   try {
-    const response = await fetch(`http://127.0.0.1:${address.port}`, {
+    const response = await fetch(`${origin}/${invocationId}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -84,7 +118,7 @@ async function invokeCallable(
     await response.clone().arrayBuffer();
     return response;
   } finally {
-    await closeServer(server);
+    callableHandlers.delete(invocationId);
   }
 }
 
@@ -107,34 +141,115 @@ test("catalog projection trigger surfaces failure so the exact event retry can c
   assert.equal(attempts, 2);
 });
 
+test("every callable export is composed through the centralized App Check boundary", () => {
+  const source = readFileSync(resolve(__dirname, "../src/index.ts"), "utf8");
+  assert.equal((source.match(/\bonCall\(/g) ?? []).length, 1);
+  assert.deepEqual(
+    [...source.matchAll(/export const (\w+) = onAppCheckedCall\(/g)].map((match) => match[1]).sort(),
+    [
+      "beginAppleSignIn", "cancelAccountDeletion", "completeAppleSignIn", "getAccountDeletionStatus",
+      "getAnalyticsConsent", "loadMiniHomeLayout", "previewAccountDeletion", "requestAccountDeletion",
+      "retryAccountDeletion", "searchWeatherRegions",
+    ].sort(),
+  );
+  assert.deepEqual(
+    [...source.matchAll(/export const (\w+) = onMutationCall\(/g)].map((match) => match[1]).sort(),
+    [
+      "acquireInventoryItem", "applyRevisionedOwnerWrite", "commitPrivateMediaReservation",
+      "completeWatering", "confirmNotificationOpened", "createIdentificationRequest",
+      "createMiniHomeShareLink", "deleteMiniHomeLayout", "ensureWateringNotificationSettings",
+      "identifyPlant", "reconcileWateringNotificationTimezone", "refreshWeather",
+      "registerNotificationEndpoint", "reservePrivateMediaUpload", "revokeMiniHomeShareLink",
+      "saveMiniHomeLayout", "setAnalyticsConsent", "setManualWeatherRegion",
+      "setWeatherLocationConsent", "unregisterNotificationEndpoint", "updateAccountProfile",
+      "updateWateringNotificationSettings", "updateWeatherAlerts", "recordAnalyticsEvent",
+    ].sort(),
+  );
+  assert.match(source, /export const loadMiniHomeSnapshot = createLoadMiniHomeSnapshotCallable\(/);
+  assert.match(source, /export const loadInventory = createLoadInventoryCallable\(/);
+  assert.equal((source.match(/return onAppCheckedCall\(/g) ?? []).length, 3);
+});
+
+test("emulator guard rejects malformed App Check before application validation", async () => {
+  const appCheck = getAppCheck();
+  const auth = getAuth();
+  const verifyAppCheckToken = appCheck.verifyToken;
+  const verifyAuthToken = auth.verifyIdToken;
+  const previousEmulator = process.env.FUNCTIONS_EMULATOR;
+  const previousDebugToken = process.env.FUNCTIONS_EMULATOR_APP_CHECK_DEBUG_TOKEN;
+  process.env.FUNCTIONS_EMULATOR = "true";
+  process.env.FUNCTIONS_EMULATOR_APP_CHECK_DEBUG_TOKEN = "planterior-emulator-app-check-v1";
+  appCheck.verifyToken = async () => ({ appId: "emulator-app", token: {} }) as never;
+  auth.verifyIdToken = async () => ({ uid: "user-a" }) as never;
+  try {
+    for (const token of [undefined, "not-a-valid-app-check-token", "wrong-debug-token"]) {
+      const response = await invokeCallable(
+        (request, reply) => getAnalyticsConsent(request, reply),
+        token,
+        { deliberately: "invalid" },
+        "debug.auth.token",
+      );
+      assert.equal(response.status, 401);
+      assert.deepEqual(await response.json(), {
+        error: { message: "Unauthenticated", status: "UNAUTHENTICATED" },
+      });
+    }
+    const accepted = await invokeCallable(
+      (request, reply) => getAnalyticsConsent(request, reply),
+      "planterior-emulator-app-check-v1",
+      { deliberately: "invalid" },
+      "debug.auth.token",
+    );
+    assert.equal(accepted.status, 400);
+    assert.equal((await accepted.json() as { error: { status: string } }).error.status, "INVALID_ARGUMENT");
+  } finally {
+    appCheck.verifyToken = verifyAppCheckToken;
+    auth.verifyIdToken = verifyAuthToken;
+    if (previousEmulator === undefined) delete process.env.FUNCTIONS_EMULATOR;
+    else process.env.FUNCTIONS_EMULATOR = previousEmulator;
+    if (previousDebugToken === undefined) delete process.env.FUNCTIONS_EMULATOR_APP_CHECK_DEBUG_TOKEN;
+    else process.env.FUNCTIONS_EMULATOR_APP_CHECK_DEBUG_TOKEN = previousDebugToken;
+  }
+});
+
 test("all owner watering mini-home and Apple callable boundaries reject missing App Check first", async () => {
-  const endpoints: CallableHandler[] = [
-    (request, response) => applyRevisionedOwnerWrite(request, response),
-    (request, response) => previewAccountDeletion(request, response),
-    (request, response) => requestAccountDeletion(request, response),
-    (request, response) => getAccountDeletionStatus(request, response),
-    (request, response) => cancelAccountDeletion(request, response),
-    (request, response) => retryAccountDeletion(request, response),
-    (request, response) => reservePrivateMediaUpload(request, response),
-    (request, response) => commitPrivateMediaReservation(request, response),
-    (request, response) => completeWatering(request, response),
-    (request, response) => loadMiniHomeLayout(request, response),
-    (request, response) => loadMiniHomeSnapshot(request, response),
-    (request, response) => createMiniHomeShareLink(request, response),
-    (request, response) => revokeMiniHomeShareLink(request, response),
-    (request, response) => deleteMiniHomeLayout(request, response),
-    (request, response) => saveMiniHomeLayout(request, response),
-    (request, response) => loadInventory(request, response),
-    (request, response) => acquireInventoryItem(request, response),
-    (request, response) => beginAppleSignIn(request, response),
-    (request, response) => completeAppleSignIn(request, response),
+  const endpoints: readonly Readonly<{ name: string; handler: CallableHandler }>[] = [
+    { name: "applyRevisionedOwnerWrite", handler: applyRevisionedOwnerWrite },
+    { name: "previewAccountDeletion", handler: previewAccountDeletion },
+    { name: "requestAccountDeletion", handler: requestAccountDeletion },
+    { name: "getAccountDeletionStatus", handler: getAccountDeletionStatus },
+    { name: "cancelAccountDeletion", handler: cancelAccountDeletion },
+    { name: "retryAccountDeletion", handler: retryAccountDeletion },
+    { name: "reservePrivateMediaUpload", handler: reservePrivateMediaUpload },
+    { name: "commitPrivateMediaReservation", handler: commitPrivateMediaReservation },
+    { name: "createIdentificationRequest", handler: createIdentificationRequest },
+    { name: "completeWatering", handler: completeWatering },
+    { name: "loadMiniHomeLayout", handler: loadMiniHomeLayout },
+    { name: "loadMiniHomeSnapshot", handler: loadMiniHomeSnapshot },
+    { name: "createMiniHomeShareLink", handler: createMiniHomeShareLink },
+    { name: "revokeMiniHomeShareLink", handler: revokeMiniHomeShareLink },
+    { name: "deleteMiniHomeLayout", handler: deleteMiniHomeLayout },
+    { name: "saveMiniHomeLayout", handler: saveMiniHomeLayout },
+    { name: "loadInventory", handler: loadInventory },
+    { name: "acquireInventoryItem", handler: acquireInventoryItem },
+    { name: "beginAppleSignIn", handler: beginAppleSignIn },
+    { name: "completeAppleSignIn", handler: completeAppleSignIn },
   ];
   for (const endpoint of endpoints) {
-    const response = await invokeCallable(endpoint, undefined, { deliberately: "invalid" });
-    assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), {
+    const response = await invokeCallable(endpoint.handler, undefined, { deliberately: "invalid" });
+    const rawResponse = {
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      body: await response.text(),
+    };
+    const diagnostic = `${endpoint.name}: ${JSON.stringify(rawResponse)}`;
+    assert.equal(rawResponse.status, 401, diagnostic);
+    assert.equal(rawResponse.contentType, "application/json; charset=utf-8", diagnostic);
+    let parsedBody: unknown;
+    assert.doesNotThrow(() => { parsedBody = JSON.parse(rawResponse.body); }, diagnostic);
+    assert.deepEqual(parsedBody, {
       error: { message: "Unauthenticated", status: "UNAUTHENTICATED" },
-    });
+    }, diagnostic);
   }
 });
 
@@ -289,6 +404,22 @@ test("account deletion trigger metadata is App Check protected and scans every f
   }
   assert.equal(executeDueAccountDeletions.__endpoint.scheduleTrigger?.schedule, "every 5 minutes");
   assert.equal(executeDueAccountDeletions.__endpoint.scheduleTrigger?.timeZone, "UTC");
+  for (const cleanup of [
+    cleanupExpiredAccountDeletionRecords,
+    cleanupExpiredNotificationRetention,
+    cleanupExpiredWeatherRetention,
+  ]) {
+    assert.equal(cleanup.__endpoint.scheduleTrigger?.schedule, "every 60 minutes");
+    assert.equal(cleanup.__endpoint.scheduleTrigger?.timeZone, "UTC");
+  }
+  assert.equal(
+    cleanupExpiredIdentificationOriginals.__endpoint.scheduleTrigger?.schedule,
+    "every 60 minutes",
+  );
+  assert.equal(
+    cleanupExpiredIdentificationOriginals.__endpoint.scheduleTrigger?.timeZone,
+    "UTC",
+  );
   assert.equal(
     deleteFinalizedPrivateMediaDuringDeletion.__endpoint.eventTrigger?.eventType,
     "google.cloud.storage.object.v1.finalized",

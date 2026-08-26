@@ -49,6 +49,7 @@ export class FirebaseAccountDeletionCleaner implements AccountDeletionCleaner {
             objects: this.privateMediaObjects,
             nowMillis: this.nowMillis,
           });
+          await this.privateMediaRepository.purgeOwnerMetadata(ownerUid);
           return;
         case "IDENTIFICATION_ORIGINALS":
           await this.deleteStoragePrefix("identification-originals", ownerUid);
@@ -58,6 +59,9 @@ export class FirebaseAccountDeletionCleaner implements AccountDeletionCleaner {
           return;
         case "SHARE_IMAGES":
           await this.deleteStoragePrefix("share-images", ownerUid);
+          return;
+        case "OWNER_GLOBAL_SWEEP":
+          await this.verifyOwnerGlobalSweep(ownerUid);
           return;
         case "USER_DOCUMENTS":
           await this.firestore.recursiveDelete(this.firestore.doc(`users/${ownerUid}`));
@@ -105,17 +109,43 @@ export class FirebaseAccountDeletionCleaner implements AccountDeletionCleaner {
   }
 
   private async deleteNotificationEndpointOwners(ownerUid: string): Promise<void> {
-    const query = this.firestore
+    const claims = this.firestore
+      .collection("notificationDeliveryClaims")
+      .where("ownerUid", "==", ownerUid);
+    let claimPage = await claims.limit(PAGE_SIZE).get();
+    while (!claimPage.empty) {
+      const nowMillis = this.nowMillis();
+      for (const claim of claimPage.docs) {
+        const state = claim.get("state");
+        const leaseExpiresAt = claim.get("expiresAt");
+        if (
+          isInFlightNotificationClaim(state) &&
+          (!(leaseExpiresAt instanceof Timestamp) || leaseExpiresAt.toMillis() > nowMillis)
+        ) {
+          throw new Error("Notification send is still in flight");
+        }
+      }
+      const batch = this.firestore.batch();
+      for (const claim of claimPage.docs) batch.delete(claim.ref);
+      await batch.commit();
+      claimPage = await claims.limit(PAGE_SIZE).get();
+    }
+
+    await this.deleteQuery(
+      this.firestore.collection("notificationDeliveryDiagnostics").where("ownerUid", "==", ownerUid),
+    );
+
+    const endpoints = this.firestore
       .collection("notificationEndpointOwners")
       .where("ownerUid", "==", ownerUid);
-    let page = await query.limit(PAGE_SIZE).get();
+    let page = await endpoints.limit(PAGE_SIZE).get();
     while (!page.empty) {
       await Promise.all(page.docs.map((document) =>
         this.firestore.runTransaction(async (transaction) => {
           const current = await transaction.get(document.ref);
           if (!current.exists) return;
           if (current.get("ownerUid") !== ownerUid) {
-            throw new TypeError("Stored endpoint owner does not match deletion owner");
+            throw new TypeError("Stored endpoint owner does not match account deletion owner");
           }
           if (hasActiveSendLease(current.get("activeSendLeases"), this.nowMillis())) {
             throw new Error("Notification send is still in flight");
@@ -123,7 +153,34 @@ export class FirebaseAccountDeletionCleaner implements AccountDeletionCleaner {
           transaction.delete(document.ref);
         })
       ));
-      page = await query.limit(PAGE_SIZE).get();
+      page = await endpoints.limit(PAGE_SIZE).get();
+    }
+
+    const [remainingClaims, remainingDiagnostics, remainingEndpoints] = await Promise.all([
+      claims.limit(1).get(),
+      this.firestore.collection("notificationDeliveryDiagnostics").where("ownerUid", "==", ownerUid).limit(1).get(),
+      endpoints.limit(1).get(),
+    ]);
+    if (!remainingClaims.empty || !remainingDiagnostics.empty || !remainingEndpoints.empty) {
+      throw new Error("Notification owner-global cleanup did not converge");
+    }
+  }
+
+  private async verifyOwnerGlobalSweep(ownerUid: string): Promise<void> {
+    const collections = [
+      "notificationEndpointOwners",
+      "notificationDeliveryClaims",
+      "notificationDeliveryDiagnostics",
+      "privateMediaReservations",
+      "privateMediaReservationReceipts",
+    ] as const;
+    const remaining = await Promise.all(
+      collections.map((collection) =>
+        this.firestore.collection(collection).where("ownerUid", "==", ownerUid).limit(1).get()
+      ),
+    );
+    if (remaining.some((snapshot) => !snapshot.empty)) {
+      throw new Error("Owner-global account deletion sweep is incomplete");
     }
   }
 
@@ -157,6 +214,13 @@ export class FirebaseAccountDeletionCleaner implements AccountDeletionCleaner {
       throw error;
     }
   }
+}
+
+function isInFlightNotificationClaim(state: unknown): boolean {
+  return state === "CLAIMED" ||
+    state === "AUTHORIZED_PRE_SEND" ||
+    state === "SEND_MAY_HAVE_OCCURRED" ||
+    state === "SENDING";
 }
 
 function hasActiveSendLease(value: unknown, nowMillis: number): boolean {

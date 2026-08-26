@@ -11,6 +11,7 @@ import {
 import type { Messaging } from "firebase-admin/messaging";
 import { runAccountMutationTransaction } from "./account-mutation-lock.js";
 import { localDateTimeToInstant } from "./notification-settings.js";
+import type { ServerAnalyticsRecorder } from "./server-analytics.js";
 
 export type WateringDeliveryCandidate = Readonly<{
   ownerUid: string;
@@ -117,6 +118,7 @@ export async function executeConfirmNotificationOpened(
   auth: NotificationOpenAuth | null,
   input: unknown,
   now = new Date(),
+  analytics?: ServerAnalyticsRecorder,
 ): Promise<Readonly<{ opened: true }>> {
   const uid = auth?.uid;
   if (uid === undefined) throw new NotificationOpenError("unauthenticated", "Authentication is required");
@@ -136,6 +138,7 @@ export async function executeConfirmNotificationOpened(
     throw new NotificationOpenError("invalid-argument", "Confirmation time is invalid");
   }
   const deliveryId = fields.deliveryId;
+  const retention = notificationTerminalRetention(now);
   const historyRef = firestore.doc(`users/${uid}/notificationHistory/${deliveryId}`);
   const claimQuery = firestore
     .collection(WATERING_DELIVERY_CLAIMS_COLLECTION)
@@ -260,6 +263,7 @@ export async function executeConfirmNotificationOpened(
         failureKind: "LEASE_EXPIRED_AFTER_SEND_START",
         deliveryConfirmedAt: FieldValue.serverTimestamp(),
         ambiguousAt: FieldValue.serverTimestamp(),
+        ...retention,
         destinationOpened: true,
         openedAt: FieldValue.serverTimestamp(),
         deduplicationKey: identity.deduplicationKey,
@@ -275,6 +279,7 @@ export async function executeConfirmNotificationOpened(
           failureKind: "LEASE_EXPIRED_AFTER_SEND_START",
           scheduleFinalized: true,
           recoveredAt: FieldValue.serverTimestamp(),
+          ...retention,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -292,7 +297,15 @@ export async function executeConfirmNotificationOpened(
     },
   );
   switch (outcome) {
-    case "OPENED": return { opened: true };
+    case "OPENED":
+      if (analytics !== undefined) {
+        await analytics({
+          ownerUid: uid,
+          eventName: "WATERING_NOTIFICATION_OPENED",
+          operationIdentifier: deliveryId,
+        });
+      }
+      return { opened: true };
     case "NOT_FOUND":
       throw new NotificationOpenError("not-found", "Notification history is unavailable");
     case "RETRYABLE":
@@ -336,14 +349,76 @@ export function selectWateringAttempt(
 }
 
 export const WATERING_DELIVERY_LEASE_MILLIS = 10 * 60 * 1000;
+export const NOTIFICATION_RETENTION_MILLIS = 35 * 24 * 60 * 60 * 1_000;
+export const NOTIFICATION_RETENTION_CLEANUP_LIMIT = 100;
 export const WATERING_DELIVERY_CLAIMS_COLLECTION = "notificationDeliveryClaims";
 export const WATERING_CLAIM_RECOVERY_CURSOR = "notificationRuntime/wateringClaimRecovery";
+
+export type NotificationRetentionCleanupFailure = Readonly<{
+  path: string;
+  error: unknown;
+}>;
+
+export type NotificationRetentionCleanupResult = Readonly<{
+  scanned: number;
+  deleted: number;
+  failures: readonly NotificationRetentionCleanupFailure[];
+}>;
+
+export async function cleanupExpiredNotificationRecords(
+  firestore: Firestore,
+  now: Timestamp = Timestamp.now(),
+  limit = NOTIFICATION_RETENTION_CLEANUP_LIMIT,
+): Promise<NotificationRetentionCleanupResult> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+    throw new TypeError("Notification retention cleanup limit is invalid");
+  }
+  const queries = [
+    firestore.collectionGroup("notificationHistory")
+      .where("expiresAt", "<=", now)
+      .orderBy("expiresAt", "asc")
+      .orderBy(FieldPath.documentId(), "asc")
+      .limit(limit),
+    firestore.collectionGroup("notificationDeliveries")
+      .where("expiresAt", "<=", now)
+      .orderBy("expiresAt", "asc")
+      .orderBy(FieldPath.documentId(), "asc")
+      .limit(limit),
+    firestore.collection("notificationDeliveryDiagnostics")
+      .where("expiresAt", "<=", now)
+      .orderBy("expiresAt", "asc")
+      .orderBy(FieldPath.documentId(), "asc")
+      .limit(limit),
+    firestore.collection(WATERING_DELIVERY_CLAIMS_COLLECTION)
+      .where("state", "in", ["FAILED", "SEND_UNKNOWN"])
+      .where("expiresAt", "<=", now)
+      .orderBy("expiresAt", "asc")
+      .orderBy(FieldPath.documentId(), "asc")
+      .limit(limit),
+  ] as const;
+  const snapshots = await Promise.all(queries.map((query) => query.get()));
+  const documents = snapshots.flatMap((snapshot) => snapshot.docs);
+  const outcomes = await Promise.allSettled(
+    documents.map((document) => document.ref.delete()),
+  );
+  const failures: NotificationRetentionCleanupFailure[] = [];
+  let deleted = 0;
+  outcomes.forEach((outcome, index) => {
+    if (outcome.status === "fulfilled") {
+      deleted += 1;
+    } else {
+      failures.push({ path: documents[index]!.ref.path, error: outcome.reason });
+    }
+  });
+  return { scanned: documents.length, deleted, failures };
+}
 
 export async function runWateringDeliveryScan(
   store: WateringDeliveryStore,
   sender: WateringPushSender,
   now: Date = new Date(),
   batchSize = 100,
+  analytics?: ServerAnalyticsRecorder,
 ): Promise<Readonly<{ sent: number; failed: number; skipped: number }>> {
   if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 500) {
     throw new Error("Watering notification batch size is invalid");
@@ -411,6 +486,13 @@ export async function runWateringDeliveryScan(
     }
     try {
       await store.finalizeSent(attempt, claimId, results);
+      if (analytics !== undefined) {
+        await analytics({
+          ownerUid: attempt.ownerUid,
+          eventName: "WATERING_NOTIFICATION_SENT",
+          operationIdentifier: claimId,
+        });
+      }
       sent += 1;
     } catch {
       await store.markFinalizationAmbiguous(attempt, claimId);
@@ -469,6 +551,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     claimRef: DocumentReference,
     now: Date,
   ): Promise<void> {
+    const retention = notificationTerminalRetention(now);
     const ownerUid = (await claimRef.get()).get("ownerUid");
     const runTransaction =
       typeof ownerUid === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(ownerUid)
@@ -544,6 +627,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
           failureKind: "LEASE_EXPIRED_AFTER_SEND_START",
           deliveryConfirmedAt: FieldValue.serverTimestamp(),
           ambiguousAt: FieldValue.serverTimestamp(),
+          ...retention,
           destinationOpened: false,
           deduplicationKey: identity.deduplicationKey,
           revision: 1,
@@ -559,6 +643,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
           failureKind: "LEASE_EXPIRED_AFTER_SEND_START",
           scheduleFinalized: true,
           recoveredAt: FieldValue.serverTimestamp(),
+          ...retention,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -652,6 +737,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
   }
 
   async claim(attempt: DueWateringAttempt, expiresAt: Date): Promise<string | null> {
+    const retention = notificationTerminalRetention(attempt.evaluatedAt);
     return runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
@@ -716,6 +802,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
             failureKind: "LEASE_EXPIRED_AFTER_SEND_START",
             deliveryConfirmedAt: FieldValue.serverTimestamp(),
             ambiguousAt: FieldValue.serverTimestamp(),
+            ...retention,
             destinationOpened: false,
             deduplicationKey: attempt.deduplicationKey,
             revision: 1,
@@ -731,6 +818,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
             failureKind: "LEASE_EXPIRED_AFTER_SEND_START",
             scheduleFinalized: true,
             recoveredAt: FieldValue.serverTimestamp(),
+            ...retention,
             updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -1093,6 +1181,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
   }
 
   async markSendAmbiguous(attempt: DueWateringAttempt, claimId: string): Promise<void> {
+    const retention = notificationTerminalRetention(attempt.evaluatedAt);
     await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
@@ -1127,6 +1216,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
         {
           state: "SEND_UNKNOWN",
           scheduleFinalized: true,
+          ...retention,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -1141,6 +1231,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
           failureKind: "TRANSPORT_UNKNOWN",
           deliveryConfirmedAt: FieldValue.serverTimestamp(),
           ambiguousAt: FieldValue.serverTimestamp(),
+          ...retention,
           destinationOpened: false,
           deduplicationKey: attempt.deduplicationKey,
           revision: 1,
@@ -1198,6 +1289,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     attempt: DueWateringAttempt,
     claimId: string,
   ): Promise<void> {
+    const retention = notificationTerminalRetention(attempt.evaluatedAt);
     await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
@@ -1234,6 +1326,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
           state: "SEND_UNKNOWN",
           failureKind: "FINALIZATION_UNKNOWN",
           scheduleFinalized: true,
+          ...retention,
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
@@ -1246,6 +1339,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
         status: "DELIVERED_AMBIGUOUS",
         deliveryConfirmedAt: FieldValue.serverTimestamp(),
         ambiguousAt: FieldValue.serverTimestamp(),
+        ...retention,
         destinationOpened: false,
         deduplicationKey: attempt.deduplicationKey,
         revision: 1,
@@ -1270,6 +1364,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     claimId: string,
     results: readonly EndpointDeliveryResult[],
   ): Promise<void> {
+    const retention = notificationTerminalRetention(attempt.evaluatedAt);
     await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
@@ -1307,6 +1402,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
         status: "SENT",
         scheduledFor: Timestamp.fromDate(attempt.evaluatedAt),
         deliveredAt: FieldValue.serverTimestamp(),
+        ...retention,
         deduplicationKey: attempt.deduplicationKey,
         revision: 1,
         expectedRevision: 0,
@@ -1326,6 +1422,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
             errorCode: result.errorCode ?? null,
           })),
           createdAt: FieldValue.serverTimestamp(),
+          ...retention,
         },
       );
       transaction.create(
@@ -1339,6 +1436,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
           attempt: attempt.attempt,
           status: "SENT",
           deliveryConfirmedAt: FieldValue.serverTimestamp(),
+          ...retention,
           destinationOpened: false,
           deduplicationKey: attempt.deduplicationKey,
           revision: 1,
@@ -1365,6 +1463,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
     claimId: string,
     results?: readonly EndpointDeliveryResult[],
   ): Promise<void> {
+    const retention = notificationTerminalRetention(attempt.evaluatedAt);
     await runAccountMutationTransaction(this.firestore, attempt.ownerUid, async (transaction) => {
       const claimRef = this.firestore.doc(
         `notificationDeliveryClaims/${deliveryDocumentId(attempt.deduplicationKey)}`,
@@ -1405,6 +1504,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
               permanent: result.permanent,
               errorCode: result.errorCode ?? null,
             })),
+            ...retention,
             updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -1419,6 +1519,7 @@ export class FirestoreWateringDeliveryStore implements WateringDeliveryStore {
             status: "FAILED",
             failureKind: "FCM_REJECTED",
             failedAt: FieldValue.serverTimestamp(),
+            ...retention,
             destinationOpened: false,
             deduplicationKey: attempt.deduplicationKey,
             revision: 1,
@@ -1768,6 +1869,18 @@ function activeSendLeases(value: unknown): Record<string, Timestamp> {
 
 function deliveryDocumentId(key: string): string {
   return createHash("sha256").update(key, "utf8").digest("hex");
+}
+
+function notificationTerminalRetention(
+  terminalAt: Date,
+): Readonly<{ terminalAt: Timestamp; expiresAt: Timestamp }> {
+  if (Number.isNaN(terminalAt.valueOf())) {
+    throw new TypeError("Notification terminal timestamp is invalid");
+  }
+  return {
+    terminalAt: Timestamp.fromDate(terminalAt),
+    expiresAt: Timestamp.fromMillis(terminalAt.valueOf() + NOTIFICATION_RETENTION_MILLIS),
+  };
 }
 
 function localDateTime(now: Date, zoneId: string): Readonly<{ date: string; time: string }> {

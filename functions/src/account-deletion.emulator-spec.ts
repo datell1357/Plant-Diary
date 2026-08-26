@@ -4,11 +4,18 @@ import { deleteApp, initializeApp } from "firebase-admin/app";
 import { FirebaseAuthError, getAuth } from "firebase-admin/auth";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { FirestoreAnalyticsStore } from "./firestore-analytics-store.js";
+import {
+  createFirestoreServerAnalyticsRecorder,
+  createSafeServerAnalyticsRecorder,
+} from "./server-analytics.js";
 import {
   ACCOUNT_DELETION_GRACE_MILLIS,
   ACCOUNT_DELETION_SCOPES,
+  ACCOUNT_DELETION_TERMINAL_RETENTION_MILLIS,
   type AccountDeletionAuth,
   AccountDeletionCleanupError,
+  AccountDeletionError,
 } from "./account-deletion-contract.js";
 import { runAccountDeletionScan } from "./account-deletion-processor.js";
 import {
@@ -20,6 +27,7 @@ import { FirebaseAccountDeletionCleaner } from "./firebase-account-deletion-clea
 import {
   AccountDeletionPersistenceError,
   FirestoreAccountDeletionStore,
+  cleanupExpiredAccountDeletionTombstones,
 } from "./firestore-account-deletion-store.js";
 
 const PROJECT_ID = "demo-planterior";
@@ -67,7 +75,271 @@ test("Firestore transaction persists one request for concurrent double submit", 
   }
 });
 
-test("request and cancel receipts replay after the owner record is replaced", async () => {
+test("accepted RECEIVED freezes request analytics before deletion-owned revoke", async () => {
+  const app = initializeApp({ projectId: PROJECT_ID }, "todo17-deletion-analytics-ordering");
+  const firestore = getFirestore(app);
+  const ownerUid = "todo17-analytics-order-owner";
+  const analyticsStore = new FirestoreAnalyticsStore(
+    firestore,
+    () => Timestamp.fromMillis(NOW_MILLIS),
+  );
+  const store = new FirestoreAccountDeletionStore(firestore);
+  try {
+    await firestore.doc(`users/${ownerUid}`).set({ ownerUid });
+    await analyticsStore.setConsent({
+      ownerUid,
+      granted: true,
+      commandGeneration: 1,
+      operationId: "deletion-analytics-grant-0001",
+    });
+
+    const response = await requestAccountDeletion(
+      auth(ownerUid),
+      {
+        expectedOwnerUid: ownerUid,
+        confirmed: true,
+        idempotencyKey: "deletion-analytics-request-0001",
+      },
+      {
+        store,
+        nowMillis: () => NOW_MILLIS,
+        requestId: () => "deletion-analytics-request-id",
+        analytics: createFirestoreServerAnalyticsRecorder(firestore),
+        analyticsDeletion: analyticsStore,
+      },
+    );
+
+    assert.equal(response.status, "RECEIVED");
+    assert.equal(
+      (await firestore.collection(`users/${ownerUid}/analyticsEvents`).get()).size,
+      0,
+    );
+    const stored = await store.load(ownerUid);
+    assert.equal(stored?.analyticsResultEligible, true);
+    assert.equal(stored?.analyticsRequestOutcome, "LOCKED");
+  } finally {
+    await firestore.recursiveDelete(firestore.doc(`users/${ownerUid}`));
+    await firestore.recursiveDelete(firestore.doc(`accountDeletionReceipts/${ownerUid}`));
+    await firestore.doc(`accountDeletionRequests/${ownerUid}`).delete();
+    await deleteApp(app);
+  }
+});
+
+test("RECEIVED lock wins over a transient raw write and still revokes", async () => {
+  const app = initializeApp({ projectId: PROJECT_ID }, "todo17-deletion-analytics-transient");
+  const firestore = getFirestore(app);
+  const ownerUid = "todo17-analytics-transient-owner";
+  const analyticsStore = new FirestoreAnalyticsStore(
+    firestore,
+    () => Timestamp.fromMillis(NOW_MILLIS),
+    { afterEventConsentRead: async () => { throw new Error("injected raw write failure"); } },
+  );
+  const store = new FirestoreAccountDeletionStore(firestore);
+  try {
+    await firestore.doc(`users/${ownerUid}`).set({ ownerUid });
+    await analyticsStore.setConsent({
+      ownerUid,
+      granted: true,
+      commandGeneration: 1,
+      operationId: "deletion-transient-grant-0001",
+    });
+    const analytics = createSafeServerAnalyticsRecorder({
+      getConsent: (owner) => analyticsStore.getConsent(owner),
+      record: (command) => analyticsStore.recordServerEvent(command),
+    });
+
+    const response = await requestAccountDeletion(
+      auth(ownerUid),
+      {
+        expectedOwnerUid: ownerUid,
+        confirmed: true,
+        idempotencyKey: "deletion-transient-request-0001",
+      },
+      {
+        store,
+        nowMillis: () => NOW_MILLIS,
+        requestId: () => "deletion-transient-request-id",
+        analytics,
+        analyticsDeletion: analyticsStore,
+      },
+    );
+
+    assert.equal(response.status, "RECEIVED");
+    assert.equal((await store.load(ownerUid))?.analyticsRequestOutcome, "LOCKED");
+    assert.equal((await analyticsStore.getConsent(ownerUid)).granted, false);
+    assert.equal(
+      (await firestore.collection(`users/${ownerUid}/analyticsEvents`).get()).size,
+      0,
+    );
+  } finally {
+    await firestore.recursiveDelete(firestore.doc(`users/${ownerUid}`));
+    await firestore.recursiveDelete(firestore.doc(`accountDeletionReceipts/${ownerUid}`));
+    await firestore.doc(`accountDeletionRequests/${ownerUid}`).delete();
+    await deleteApp(app);
+  }
+});
+
+test("finish transaction increments ownerless daily results exactly once per transition", async () => {
+  const app = initializeApp({ projectId: PROJECT_ID }, "todo17-deletion-ownerless-results");
+  const firestore = getFirestore(app);
+  const ownerUid = "todo17-result-owner";
+  const store = new FirestoreAccountDeletionStore(firestore);
+  const analyticsStore = new FirestoreAnalyticsStore(
+    firestore,
+    () => Timestamp.fromMillis(NOW_MILLIS),
+  );
+  try {
+    await firestore.doc(`users/${ownerUid}`).set({ ownerUid });
+    await analyticsStore.setConsent({
+      ownerUid,
+      granted: true,
+      commandGeneration: 1,
+      operationId: "deletion-result-grant-0001",
+    });
+    await requestAccountDeletion(
+      auth(ownerUid),
+      {
+        expectedOwnerUid: ownerUid,
+        confirmed: true,
+        idempotencyKey: "deletion-result-request-0001",
+      },
+      {
+        store,
+        nowMillis: () => NOW_MILLIS,
+        requestId: () => "deletion-result-request-id",
+        analytics: createFirestoreServerAnalyticsRecorder(firestore),
+        analyticsDeletion: analyticsStore,
+      },
+    );
+    const firstClaim = (await store.claimDue({
+      nowMillis: DUE_MILLIS,
+      leaseExpiresAtMillis: DUE_MILLIS + 60_000,
+      limit: 1,
+    }))[0]!;
+    const firstFailure = {
+      ownerUid,
+      requestId: firstClaim.requestId,
+      claimGeneration: firstClaim.claimGeneration,
+      completedScopes: [] as const,
+      failedScopes: ACCOUNT_DELETION_SCOPES,
+      nowMillis: DUE_MILLIS + 1,
+    };
+    const duplicate = await Promise.allSettled([
+      store.finish(firstFailure),
+      store.finish(firstFailure),
+    ]);
+    assert.equal(duplicate.filter((result) => result.status === "fulfilled").length, 1);
+
+    await store.retry({
+      ownerUid,
+      requestId: "unused-partial-result-retry",
+      idempotencyKeyHash: "c".repeat(64),
+      nowMillis: DUE_MILLIS + 2,
+      scheduledForMillis: DUE_MILLIS + 2,
+    });
+    const secondClaim = (await store.claimDue({
+      nowMillis: DUE_MILLIS + 2,
+      leaseExpiresAtMillis: DUE_MILLIS + 60_002,
+      limit: 1,
+    }))[0]!;
+    await store.finish({
+      ownerUid,
+      requestId: secondClaim.requestId,
+      claimGeneration: secondClaim.claimGeneration,
+      completedScopes: ["PUBLIC_SHARES"],
+      failedScopes: ACCOUNT_DELETION_SCOPES.filter((scope) => scope !== "PUBLIC_SHARES"),
+      nowMillis: DUE_MILLIS + 3,
+    });
+    await store.retry({
+      ownerUid,
+      requestId: "unused-completed-result-retry",
+      idempotencyKeyHash: "d".repeat(64),
+      nowMillis: DUE_MILLIS + 4,
+      scheduledForMillis: DUE_MILLIS + 4,
+    });
+    const completionClaim = (await store.claimDue({
+      nowMillis: DUE_MILLIS + 4,
+      leaseExpiresAtMillis: DUE_MILLIS + 60_004,
+      limit: 1,
+    }))[0]!;
+    await store.finish({
+      ownerUid,
+      requestId: completionClaim.requestId,
+      claimGeneration: completionClaim.claimGeneration,
+      completedScopes: ACCOUNT_DELETION_SCOPES,
+      failedScopes: [],
+      nowMillis: DUE_MILLIS + 5,
+    });
+
+    const consentOffOwner = "todo17-result-consent-off";
+    await firestore.doc(`users/${consentOffOwner}`).set({ ownerUid: consentOffOwner });
+    await requestAccountDeletion(
+      auth(consentOffOwner),
+      {
+        expectedOwnerUid: consentOffOwner,
+        confirmed: true,
+        idempotencyKey: "off-off-off-off",
+      },
+      {
+        store,
+        nowMillis: () => NOW_MILLIS,
+        requestId: () => "deletion-result-consent-off-id",
+        analyticsDeletion: analyticsStore,
+      },
+    );
+    const consentOffClaim = (await store.claimDue({
+      nowMillis: DUE_MILLIS,
+      leaseExpiresAtMillis: DUE_MILLIS + 60_000,
+      limit: 1,
+    }))[0]!;
+    await store.finish({
+      ownerUid: consentOffOwner,
+      requestId: consentOffClaim.requestId,
+      claimGeneration: consentOffClaim.claimGeneration,
+      completedScopes: [],
+      failedScopes: ACCOUNT_DELETION_SCOPES,
+      nowMillis: DUE_MILLIS + 6,
+    });
+
+    const aggregates = await firestore.collection("analyticsDailyAggregates").get();
+    assert.equal(aggregates.size, 1);
+    const aggregate = aggregates.docs[0]!;
+    assert.deepEqual(Object.keys(aggregate.data()).sort(), [
+      "counts",
+      "date",
+      "expiresAt",
+      "schemaVersion",
+      "updatedAt",
+    ]);
+    assert.deepEqual(aggregate.get("counts"), {
+      ACCOUNT_DELETION_COMPLETED: 1,
+      ACCOUNT_DELETION_FAILED: 2,
+    });
+    assert.equal(aggregate.get("date"), "2026-08-19");
+    assert.equal(
+      aggregate.get("expiresAt").toDate().toISOString(),
+      "2026-09-23T00:00:00.000Z",
+    );
+    const serialized = JSON.stringify(aggregate.data());
+    for (const forbidden of [ownerUid, firstClaim.requestId, "PUBLIC_SHARES", "c".repeat(64)]) {
+      assert.equal(serialized.includes(forbidden), false);
+    }
+    assert.equal(await store.load(ownerUid), null);
+  } finally {
+    await firestore.recursiveDelete(firestore.doc(`users/${ownerUid}`));
+    await firestore.recursiveDelete(firestore.doc("users/todo17-result-consent-off"));
+    await firestore.recursiveDelete(firestore.doc(`accountDeletionReceipts/${ownerUid}`));
+    await firestore.recursiveDelete(
+      firestore.doc("accountDeletionReceipts/todo17-result-consent-off"),
+    );
+    await firestore.doc(`accountDeletionRequests/${ownerUid}`).delete();
+    await firestore.doc("accountDeletionRequests/todo17-result-consent-off").delete();
+    await firestore.recursiveDelete(firestore.collection("analyticsDailyAggregates"));
+    await deleteApp(app);
+  }
+});
+
+test("cancel minimizes global records and fences replay with bounded owner tombstones", async () => {
   // Given
   const app = initializeApp({ projectId: PROJECT_ID }, "todo16-durable-receipts");
   const firestore = getFirestore(app);
@@ -101,11 +373,6 @@ test("request and cancel receipts replay after the owner record is replaced", as
     );
 
     // When
-    const requestReplay = await requestAccountDeletion(auth(ownerUid), firstInput, {
-      store,
-      nowMillis: () => NOW_MILLIS + 3,
-      requestId: () => "todo16-receipt-request-c",
-    });
     const cancelReplay = await cancelAccountDeletion(
       auth(ownerUid),
       { expectedOwnerUid: ownerUid, requestId: first.requestId },
@@ -113,18 +380,58 @@ test("request and cancel receipts replay after the owner record is replaced", as
     );
 
     // Then
-    assert.deepEqual(requestReplay, first);
-    assert.deepEqual(cancelReplay, cancelled);
+    await assert.rejects(
+      () => requestAccountDeletion(auth(ownerUid), firstInput, {
+        store,
+        nowMillis: () => NOW_MILLIS + 3,
+        requestId: () => "todo16-receipt-request-c",
+      }),
+      (error: unknown) =>
+        error instanceof AccountDeletionError && error.code === "failed-precondition",
+    );
+    assert.equal(cancelReplay.status, cancelled.status);
+    assert.equal(cancelReplay.requestId, cancelled.requestId);
     assert.equal((await store.load(ownerUid))?.requestId, replacement.requestId);
     const receipts = await firestore
       .collection(`accountDeletionReceipts/${ownerUid}/commands`)
       .get();
-    assert.equal(receipts.size, 3);
-    assert.equal(JSON.stringify(receipts.docs.map((document) => document.data())).includes(
-      firstInput.idempotencyKey,
-    ), false);
+    assert.equal(receipts.size, 1);
+    const tombstones = await firestore
+      .collection(`users/${ownerUid}/accountDeletionTombstones`)
+      .get();
+    assert.equal(tombstones.size, 2);
+    for (const tombstone of tombstones.docs) {
+      assert.deepEqual(Object.keys(tombstone.data()).sort(), [
+        "commandKeyHash",
+        "commandKind",
+        "expiresAt",
+        "schemaVersion",
+        "terminalAt",
+        "terminalStatus",
+      ]);
+      assert.equal(tombstone.get("terminalStatus"), "CANCELLED");
+      assert.equal(
+        tombstone.get("expiresAt").toMillis() - tombstone.get("terminalAt").toMillis(),
+        ACCOUNT_DELETION_TERMINAL_RETENTION_MILLIS,
+      );
+    }
+    assert.deepEqual(
+      await cleanupExpiredAccountDeletionTombstones(
+        firestore,
+        Timestamp.fromMillis(NOW_MILLIS + ACCOUNT_DELETION_TERMINAL_RETENTION_MILLIS),
+      ),
+      { scanned: 0, deleted: 0, failures: [] },
+    );
+    assert.deepEqual(
+      await cleanupExpiredAccountDeletionTombstones(
+        firestore,
+        Timestamp.fromMillis(NOW_MILLIS + 1 + ACCOUNT_DELETION_TERMINAL_RETENTION_MILLIS),
+      ),
+      { scanned: 2, deleted: 2, failures: [] },
+    );
   } finally {
     await firestore.recursiveDelete(firestore.doc(`accountDeletionReceipts/${ownerUid}`));
+    await firestore.recursiveDelete(firestore.doc(`users/${ownerUid}`));
     await firestore.doc(`accountDeletionRequests/${ownerUid}`).delete();
     await deleteApp(app);
   }
@@ -267,7 +574,8 @@ test("cancel and due claim race has one transactionally linearized winner", asyn
 
     // Then
     assert.equal((cancelled === null ? 0 : 1) + claimed.length, 1);
-    assert.ok(["CANCELLED", "PROCESSING"].includes((await store.load(ownerUid))?.status ?? ""));
+    const stored = await store.load(ownerUid);
+    assert.equal(cancelled === null ? stored?.status : stored, cancelled === null ? "PROCESSING" : null);
   } finally {
     await getFirestore(app).doc(`accountDeletionRequests/${ownerUid}`).delete();
     await deleteApp(app);
@@ -294,6 +602,9 @@ test("stored deletion records reject status-specific impossible states", async (
     completedScopes: [],
     failedScopes: [],
     claimGeneration: 0,
+    analyticsResultEligible: false,
+    analyticsRequestOutcome: "CONSENT_OFF",
+    analyticsRecordedResultKeys: [],
     updatedAt: new Date(DUE_MILLIS),
   };
   const impossible = [
@@ -337,11 +648,17 @@ test("endpoint cleanup waits for an exact active send lease boundary", async () 
   const firestore = getFirestore(app);
   const ownerUid = "todo16-send-lease-owner";
   const endpoint = firestore.doc("notificationEndpointOwners/todo16-send-lease");
+  const claim = firestore.doc("notificationDeliveryClaims/todo16-send-lease");
   await endpoint.set({
     ownerUid,
     activeSendLeases: {
       "send-lease-0001": Timestamp.fromMillis(NOW_MILLIS + 1),
     },
+  });
+  await claim.set({
+    ownerUid,
+    state: "AUTHORIZED_PRE_SEND",
+    expiresAt: Timestamp.fromMillis(NOW_MILLIS + 1),
   });
   const cleaner = new FirebaseAccountDeletionCleaner(
     firestore,
@@ -357,16 +674,20 @@ test("endpoint cleanup waits for an exact active send lease boundary", async () 
       AccountDeletionCleanupError,
     );
     assert.equal((await endpoint.get()).exists, true);
+    assert.equal((await claim.get()).exists, true);
 
     await endpoint.update({
       activeSendLeases: {
         "send-lease-0001": Timestamp.fromMillis(NOW_MILLIS),
       },
     });
+    await claim.update({ expiresAt: Timestamp.fromMillis(NOW_MILLIS) });
     await cleaner.clean(ownerUid, "NOTIFICATION_ENDPOINT_OWNERS");
     assert.equal((await endpoint.get()).exists, false);
+    assert.equal((await claim.get()).exists, false);
   } finally {
     await endpoint.delete();
+    await claim.delete();
     await deleteApp(app);
   }
 });
@@ -384,6 +705,8 @@ test("emulator cleanup removes the exact owner scope and retains every foreign r
   const foreignUid = "todo16-cleanup-foreign";
   const ownerHash = "a".repeat(64);
   const foreignHash = "b".repeat(64);
+  const ownerReservationId = "todo17_owner_media_0001";
+  const foreignReservationId = "todo17_foreign_media_0001";
   await Promise.all([
     firebaseAuth.createUser({ uid: ownerUid }),
     firebaseAuth.createUser({ uid: foreignUid }),
@@ -392,16 +715,96 @@ test("emulator cleanup removes the exact owner scope and retains every foreign r
     firestore.doc(`users/${ownerUid}/shareLinks/share-a`).set({ ownerUid, tokenHash: ownerHash }),
     firestore.doc(`publicShares/${ownerHash}`).set({ tokenHash: ownerHash }),
     firestore.doc(`notificationEndpointOwners/owner-endpoint`).set({ ownerUid }),
+    firestore.doc("notificationDeliveryClaims/owner-failed-claim").set({
+      ownerUid,
+      state: "FAILED",
+      terminalAt: Timestamp.fromMillis(NOW_MILLIS),
+      expiresAt: Timestamp.fromMillis(NOW_MILLIS + 35 * 24 * 60 * 60 * 1_000),
+    }),
+    firestore.doc("notificationDeliveryDiagnostics/owner-diagnostic").set({
+      ownerUid,
+      endpointResults: [{ endpointIds: ["owner-endpoint"], tokenHash: ownerHash }],
+    }),
     firestore.doc(`users/${foreignUid}`).set({ ownerUid: foreignUid }),
     firestore.doc(`users/${foreignUid}/shareLinks/share-b`).set({ ownerUid: foreignUid, tokenHash: foreignHash }),
     firestore.doc(`publicShares/${foreignHash}`).set({ tokenHash: foreignHash }),
     firestore.doc(`notificationEndpointOwners/foreign-endpoint`).set({ ownerUid: foreignUid }),
+    firestore.doc("notificationDeliveryClaims/foreign-failed-claim").set({
+      ownerUid: foreignUid,
+      state: "FAILED",
+      terminalAt: Timestamp.fromMillis(NOW_MILLIS),
+      expiresAt: Timestamp.fromMillis(NOW_MILLIS + 35 * 24 * 60 * 60 * 1_000),
+    }),
+    firestore.doc("notificationDeliveryDiagnostics/foreign-diagnostic").set({
+      ownerUid: foreignUid,
+    }),
+    storage.bucket().file(`private-media-v2/${ownerReservationId}`).save("owner-private", {
+      metadata: {
+        contentType: "image/jpeg",
+        metadata: { ownerUid, reservationId: ownerReservationId },
+      },
+    }),
+    storage.bucket().file(`private-media-v2/${foreignReservationId}`).save("foreign-private", {
+      metadata: {
+        contentType: "image/jpeg",
+        metadata: { ownerUid: foreignUid, reservationId: foreignReservationId },
+      },
+    }),
     ...["identification-originals", "plant-photos", "share-images"].flatMap((prefix) => [
       storage.bucket().file(`${prefix}/${ownerUid}/fixture.bin`).save("owner"),
       storage.bucket().file(`${prefix}/${foreignUid}/fixture.bin`).save("foreign"),
     ]),
   ]);
+  const [ownerObjectMetadata] = await storage.bucket()
+    .file(`private-media-v2/${ownerReservationId}`).getMetadata();
+  const [foreignObjectMetadata] = await storage.bucket()
+    .file(`private-media-v2/${foreignReservationId}`).getMetadata();
+  const reservation = (reservationId: string, reservationOwner: string, generation: string) => ({
+    schemaVersion: 1,
+    reservationId,
+    ownerUid: reservationOwner,
+    mediaKind: "PLANT_PHOTO",
+    contentType: "image/jpeg",
+    byteSize: reservationOwner === ownerUid ? 13 : 15,
+    objectPath: `private-media-v2/${reservationId}`,
+    identificationRequestId: null,
+    idempotencyKeyHash: reservationOwner === ownerUid ? ownerHash : foreignHash,
+    requestHash: reservationOwner === ownerUid ? foreignHash : ownerHash,
+    state: "COMMITTED",
+    objectGeneration: generation,
+    sealedGeneration: null,
+    createdAt: Timestamp.fromMillis(NOW_MILLIS),
+    expiresAt: Timestamp.fromMillis(NOW_MILLIS + 10 * 60_000),
+    committedAt: Timestamp.fromMillis(NOW_MILLIS + 1),
+    sealedAt: null,
+  });
+  await Promise.all([
+    firestore.doc(`privateMediaReservations/${ownerReservationId}`).set(
+      reservation(ownerReservationId, ownerUid, String(ownerObjectMetadata.generation)),
+    ),
+    firestore.doc(`privateMediaReservations/${foreignReservationId}`).set(
+      reservation(foreignReservationId, foreignUid, String(foreignObjectMetadata.generation)),
+    ),
+    firestore.doc("privateMediaReservationReceipts/owner-receipt").set({
+      ownerUid,
+      reservationId: ownerReservationId,
+    }),
+    firestore.doc("privateMediaReservationReceipts/foreign-receipt").set({
+      ownerUid: foreignUid,
+      reservationId: foreignReservationId,
+    }),
+  ]);
   const store = new FirestoreAccountDeletionStore(firestore);
+  const analyticsStore = new FirestoreAnalyticsStore(
+    firestore,
+    () => Timestamp.fromMillis(NOW_MILLIS),
+  );
+  await analyticsStore.setConsent({
+    ownerUid,
+    granted: true,
+    commandGeneration: 1,
+    operationId: "todo17-cleanup-analytics-grant-0001",
+  });
   await requestAccountDeletion(auth(ownerUid), {
     expectedOwnerUid: ownerUid,
     confirmed: true,
@@ -410,7 +813,15 @@ test("emulator cleanup removes the exact owner scope and retains every foreign r
     store,
     nowMillis: () => NOW_MILLIS,
     requestId: () => "todo16-cleanup-request",
+    analytics: createFirestoreServerAnalyticsRecorder(firestore),
+    analyticsDeletion: analyticsStore,
   });
+  await Promise.all([
+    firestore.doc(`users/${ownerUid}/analyticsEvents/stranded-event-a`).set({ ownerUid }),
+    firestore.doc(`users/${ownerUid}/analyticsConsentOperations/stranded-operation-a`).set({
+      ownerUid,
+    }),
+  ]);
 
   try {
     // When
@@ -425,9 +836,36 @@ test("emulator cleanup removes the exact owner scope and retains every foreign r
     assert.equal((await firestore.doc(`users/${ownerUid}`).get()).exists, false);
     assert.equal((await firestore.doc(`publicShares/${ownerHash}`).get()).exists, false);
     assert.equal((await firestore.doc("notificationEndpointOwners/owner-endpoint").get()).exists, false);
+    for (const collection of [
+      "notificationEndpointOwners",
+      "notificationDeliveryClaims",
+      "notificationDeliveryDiagnostics",
+      "privateMediaReservations",
+      "privateMediaReservationReceipts",
+      "accountDeletionRequests",
+    ]) {
+      assert.equal(
+        (await firestore.collection(collection).where("ownerUid", "==", ownerUid).get()).size,
+        0,
+        collection,
+      );
+    }
     assert.equal((await firestore.doc(`users/${foreignUid}`).get()).exists, true);
     assert.equal((await firestore.doc(`publicShares/${foreignHash}`).get()).exists, true);
     assert.equal((await firestore.doc("notificationEndpointOwners/foreign-endpoint").get()).exists, true);
+    assert.equal((await firestore.doc("notificationDeliveryClaims/foreign-failed-claim").get()).exists, true);
+    assert.equal((await firestore.doc("notificationDeliveryDiagnostics/foreign-diagnostic").get()).exists, true);
+    assert.equal((await firestore.doc(`privateMediaReservations/${foreignReservationId}`).get()).exists, true);
+    assert.equal((await firestore.doc("privateMediaReservationReceipts/foreign-receipt").get()).exists, true);
+    const [ownerSealMetadata] = await storage.bucket()
+      .file(`private-media-v2/${ownerReservationId}`).getMetadata();
+    assert.equal(Number(ownerSealMetadata.size), 0);
+    assert.equal(ownerSealMetadata.contentType, "application/x.planterior-private-media-seal");
+    assert.deepEqual(ownerSealMetadata.metadata, { privateMediaSeal: "true" });
+    assert.equal(
+      Number((await storage.bucket().file(`private-media-v2/${foreignReservationId}`).getMetadata())[0].size),
+      15,
+    );
     for (const prefix of ["identification-originals", "plant-photos", "share-images"]) {
       assert.equal((await storage.bucket().getFiles({ prefix: `${prefix}/${ownerUid}/` }))[0].length, 0);
       assert.equal((await storage.bucket().getFiles({ prefix: `${prefix}/${foreignUid}/` }))[0].length, 1);
@@ -438,13 +876,21 @@ test("emulator cleanup removes the exact owner scope and retains every foreign r
         error instanceof FirebaseAuthError && error.code === "auth/user-not-found",
     );
     assert.equal((await firebaseAuth.getUser(foreignUid)).uid, foreignUid);
-    assert.equal((await store.load(ownerUid))?.status, "COMPLETED");
-    assert.deepEqual((await store.load(ownerUid))?.completedScopes, ACCOUNT_DELETION_SCOPES);
+    assert.equal(await store.load(ownerUid), null);
+    assert.equal(
+      (await firestore.collection(`accountDeletionReceipts/${ownerUid}/commands`).get()).size,
+      0,
+    );
+    const aggregate = await firestore.doc("analyticsDailyAggregates/2026-08-19").get();
+    assert.deepEqual(aggregate.get("counts"), { ACCOUNT_DELETION_COMPLETED: 1 });
+    assert.equal(JSON.stringify(aggregate.data()).includes(ownerUid), false);
+    assert.equal((await firestore.doc(`users/${ownerUid}`).get()).exists, false);
     await new FirebaseAccountDeletionCleaner(firestore, storage, firebaseAuth).clean(
       ownerUid,
       "AUTH_ACCOUNT",
     );
   } finally {
+    await firestore.recursiveDelete(firestore.collection("analyticsDailyAggregates"));
     await deleteApp(app);
   }
 });

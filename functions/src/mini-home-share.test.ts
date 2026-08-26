@@ -184,6 +184,62 @@ test("create derives owner server-side and passes a fixed 30-day envelope", asyn
   assert.equal(Date.parse(result.expiresAt) - Date.parse(result.createdAt), 30 * 24 * 60 * 60 * 1000);
 });
 
+test("share analytics runs only after link persistence and a transient analytics failure preserves success", async () => {
+  const store = new RecordingStore();
+  const steps: string[] = [];
+  const create = store.create.bind(store);
+  store.create = async (command) => {
+    const result = await create(command);
+    steps.push("persisted");
+    return result;
+  };
+  const events: unknown[] = [];
+
+  const result = await executeCreateMiniHomeShareLink(
+    { uid: ownerUid },
+    { operationId: "share-operation-0001", expectedRevision: 4 },
+    store,
+    key,
+    createdAt,
+    "https://example.test/publicMiniHomeShare",
+    async (event) => {
+      steps.push("analytics");
+      events.push(event);
+      return { kind: "transient" };
+    },
+  );
+
+  assert.deepEqual(result, store.result);
+  assert.deepEqual(steps, ["persisted", "analytics"]);
+  assert.deepEqual(events, [{
+    ownerUid,
+    eventName: "MINI_HOME_SHARE_LINK_CREATED",
+    operationIdentifier: "share-operation-0001",
+  }]);
+
+  const failedStore = new RecordingStore();
+  failedStore.create = async () => {
+    throw new Error("share persistence failed");
+  };
+  let failedEvents = 0;
+  await assert.rejects(
+    () => executeCreateMiniHomeShareLink(
+      { uid: ownerUid },
+      { operationId: "share-operation-0002", expectedRevision: 4 },
+      failedStore,
+      key,
+      createdAt,
+      "https://example.test/publicMiniHomeShare",
+      async () => {
+        failedEvents += 1;
+        return { kind: "recorded", eventId: "event", replayed: false };
+      },
+    ),
+    /share persistence failed/,
+  );
+  assert.equal(failedEvents, 0);
+});
+
 test("domain-separated HMAC identity is deterministic for replay and unique across operation and projection", () => {
   const first = deriveMiniHomeShareIdentity(key, ownerUid, "share-operation-0001", "projection-identity-a");
   const replay = deriveMiniHomeShareIdentity(key, ownerUid, "share-operation-0001", "projection-identity-a");

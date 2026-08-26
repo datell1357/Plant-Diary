@@ -6,7 +6,7 @@ const { waitForExactSignal } = require("./exact-signal.cjs");
 
 const HUB_SAFETY_MS = 30_000;
 const SUITE_SAFETY_MS = 300_000;
-const EXPECTED_RULE_TESTS = 45;
+const EXPECTED_RULE_TESTS = 50;
 const requiredEmulators = ["firestore", "storage"];
 
 function awaitEmulatorReadiness() {
@@ -48,6 +48,8 @@ function runRulesSuite() {
   const events = new EventEmitter();
   const mocha = new Mocha({ reporter: "spec", timeout: 0 });
   mocha.addFile(path.resolve(__dirname, "../test/security-rules.test.cjs"));
+  mocha.addFile(path.resolve(__dirname, "../test/analytics-rules.test.cjs"));
+  mocha.addFile(path.resolve(__dirname, "../test/todo17-security-rules.test.cjs"));
   mocha.addFile(path.resolve(__dirname, "../test/catalog-projection-rules.test.cjs"));
   mocha.addFile(path.resolve(__dirname, "../test/server-contract.test.cjs"));
 

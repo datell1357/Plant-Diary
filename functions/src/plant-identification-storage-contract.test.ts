@@ -12,6 +12,10 @@ type RequestData = Record<string, unknown>;
 class ReferenceFixture {
   constructor(readonly path: string, readonly data: RequestData) {}
 
+  async get() {
+    return { exists: true, data: () => this.data, get: (field: string) => this.data[field] };
+  }
+
   async update(value: RequestData): Promise<void> {
     Object.assign(this.data, value);
   }
@@ -57,10 +61,24 @@ class FirestoreFixture {
   }
 }
 
-function requestData(): RequestData {
+function requestData(status = "APPROVED"): RequestData {
+  const createdAt = Timestamp.fromMillis(Date.now());
   return {
+    schemaVersion: 1,
+    requestId: "request_12345678",
     ownerUid: "user-a",
     mediaReference: { reservationId: "reservation_12345678", generation: "7" },
+    disclosureVersion: 1,
+    status,
+    claimGeneration: 0,
+    claimOperationKey: null,
+    claimExpiresAt: null,
+    sendState: status === "APPROVED" ? "NOT_SENT" : "SENT",
+    acknowledgedAt: createdAt,
+    createdAt,
+    hardExpiresAt: Timestamp.fromMillis(createdAt.toMillis() + 86_400_000),
+    terminalAt: status === "CANDIDATES" ? createdAt : null,
+    retentionExpiresAt: status === "CANDIDATES" ? Timestamp.fromMillis(createdAt.toMillis() + 86_400_000) : null,
   };
 }
 
@@ -73,6 +91,7 @@ function reservationData(): RequestData {
     contentType: "image/webp",
     byteSize: 3,
     objectPath: "private-media-v2/reservation_12345678",
+    identificationRequestId: "request_12345678",
     idempotencyKeyHash: "a".repeat(64),
     requestHash: "b".repeat(64),
     state: "COMMITTED",
@@ -100,7 +119,7 @@ test("production store replays one to three stored candidates", async () => {
   for (const count of [1, 2, 3]) {
     // Given
     const firestore = new FirestoreFixture({
-      ...requestData(),
+      ...requestData("CANDIDATES"),
       identificationResult: { kind: "candidates", candidates: storedCandidates(count) },
     });
     const store = new FirestoreIdentificationRequestStore(firestore as never);
@@ -122,7 +141,7 @@ test("production store replays one to three stored candidates", async () => {
 test("production store rejects four stored candidates", async () => {
   // Given
   const firestore = new FirestoreFixture({
-    ...requestData(),
+    ...requestData("CANDIDATES"),
     identificationResult: { kind: "candidates", candidates: storedCandidates(4) },
   });
   const store = new FirestoreIdentificationRequestStore(firestore as never);

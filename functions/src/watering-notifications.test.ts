@@ -13,6 +13,7 @@ import {
   type WateringEndpointTarget,
   type WateringPushSender,
 } from "./watering-notifications.js";
+import type { ServerAnalyticsOperation } from "./server-analytics.js";
 
 const candidate = (overrides: Partial<WateringDeliveryCandidate> = {}): WateringDeliveryCandidate => ({
   ownerUid: "user-a",
@@ -221,18 +222,24 @@ test("completion or disable after claim and endpoint lookup cancels before send"
 test("ambiguous receipt finalization never retries an externally observable send", async () => {
   const store = new FakeStore();
   const sender = new FakeSender();
+  const events: ServerAnalyticsOperation[] = [];
+  const analytics = async (event: ServerAnalyticsOperation) => {
+    events.push(event);
+    return { kind: "recorded" as const, eventId: "event", replayed: false };
+  };
   store.candidates = [candidate()];
   store.failFinalizeOnce = true;
 
-  const ambiguous = await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:00:00Z"));
-  const retry = await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:06:00Z"));
-  const deduped = await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:07:00Z"));
+  const ambiguous = await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:00:00Z"), 100, analytics);
+  const retry = await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:06:00Z"), 100, analytics);
+  const deduped = await runWateringDeliveryScan(store, sender, new Date("2026-08-12T00:07:00Z"), 100, analytics);
 
   assert.equal(ambiguous.failed, 1);
   assert.equal(retry.sent, 0);
   assert.equal(deduped.skipped, 1);
   assert.equal(sender.attempts.length, 1);
   assert.deepEqual(store.ambiguousFinalizations, ["claim-1"]);
+  assert.deepEqual(events, []);
 });
 
 test("durable scan cursor reaches later eligible schedules instead of starving on the first page", async () => {
@@ -251,6 +258,32 @@ test("durable scan cursor reaches later eligible schedules instead of starving o
 
   assert.equal(sender.attempts.length, 1);
   assert.equal(sender.attempts[0]?.ownerUid, "user-later");
+});
+
+test("sent analytics means the SENT receipt finalized durably, not merely that FCM may have accepted", async () => {
+  const store = new FakeStore();
+  const sender = new FakeSender();
+  const events: ServerAnalyticsOperation[] = [];
+  store.candidates = [candidate()];
+
+  const result = await runWateringDeliveryScan(
+    store,
+    sender,
+    new Date("2026-08-12T00:00:00Z"),
+    100,
+    async (event) => {
+      assert.equal(store.finalized.length, 1);
+      events.push(event);
+      return { kind: "transient" };
+    },
+  );
+
+  assert.deepEqual(result, { sent: 1, failed: 0, skipped: 0 });
+  assert.deepEqual(events, [{
+    ownerUid: "user-a",
+    eventName: "WATERING_NOTIFICATION_SENT",
+    operationIdentifier: "claim-1",
+  }]);
 });
 
 test("per-endpoint FCM results delete permanent failures and persist successes and transient failures", async () => {

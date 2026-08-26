@@ -208,6 +208,60 @@ test("mini-home save derives owner and accepts a valid snapped layout", async ()
   assert.equal(store.calls, 1);
 });
 
+test("mini-home analytics runs after persistence while transient failure or consent-off never changes save success", async () => {
+  const steps: string[] = [];
+  const events: unknown[] = [];
+  const appliedStore: MiniHomeLayoutStore = {
+    async save() {
+      steps.push("persisted");
+      return { kind: "applied", revision: 1 };
+    },
+  };
+  const analytics = async (event: Parameters<NonNullable<Parameters<typeof executeSaveMiniHomeLayout>[3]>>[0]) => {
+    steps.push("analytics");
+    events.push(event);
+    return events.length === 1
+      ? { kind: "transient" as const }
+      : { kind: "consent-off" as const };
+  };
+
+  const applied = await executeSaveMiniHomeLayout(
+    { uid: "user-a" },
+    request,
+    appliedStore,
+    analytics,
+  );
+  const duplicate = await executeSaveMiniHomeLayout(
+    { uid: "user-a" },
+    request,
+    { async save() { return { kind: "duplicate", revision: 1 }; } },
+    analytics,
+  );
+  const conflict = await executeSaveMiniHomeLayout(
+    { uid: "user-a" },
+    request,
+    { async save() { return { kind: "conflict", actualRevision: 2 }; } },
+    analytics,
+  );
+
+  assert.deepEqual(applied, { kind: "applied", revision: 1 });
+  assert.deepEqual(duplicate, { kind: "duplicate", revision: 1 });
+  assert.deepEqual(conflict, { kind: "conflict", actualRevision: 2 });
+  assert.deepEqual(steps.slice(0, 2), ["persisted", "analytics"]);
+  assert.deepEqual(events, [
+    {
+      ownerUid: "user-a",
+      eventName: "MINI_HOME_LAYOUT_SAVED",
+      operationIdentifier: request.idempotencyKey,
+    },
+    {
+      ownerUid: "user-a",
+      eventName: "MINI_HOME_LAYOUT_SAVED",
+      operationIdentifier: request.idempotencyKey,
+    },
+  ]);
+});
+
 test("mini-home save rejects spoofing overlap invalid layering and unavailable entities", async () => {
   const store = new FakeStore();
   await assert.rejects(

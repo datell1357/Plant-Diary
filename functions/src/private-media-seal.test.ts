@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  handlePrivateMediaFinalized,
-  sealOwnerPrivateMedia,
-} from "./private-media-seal.js";
+import { sealOwnerPrivateMedia } from "./private-media-seal.js";
 import {
   reservePrivateMediaUpload,
   type PrivateMediaObject,
@@ -153,32 +150,4 @@ test("sealing fails closed while any owner reservation cannot be verified sealed
     maximumAttempts: 1,
   }));
   assert.notEqual((await current.repository.load(current.reservation.reservationId))?.state, "SEALED");
-});
-
-test("duplicate and out-of-order finalize events delete only the exact finalized generation", async () => {
-  // Given
-  const current = await fixture();
-  const releaseOld = current.objects.admitUpload(uploadObject(
-    current.reservation.objectPath,
-    current.reservation.reservationId,
-  ));
-  assert.equal(releaseOld(), "created");
-  const old = await current.objects.inspect(current.reservation.objectPath);
-  assert.ok(old !== null);
-  assert.equal(await current.objects.deleteGeneration(old.path, old.generation), "deleted");
-  const releaseCurrent = current.objects.admitUpload(uploadObject(
-    current.reservation.objectPath,
-    current.reservation.reservationId,
-  ));
-  assert.equal(releaseCurrent(), "created");
-  const newest = await current.objects.inspect(current.reservation.objectPath);
-  assert.ok(newest !== null);
-  current.repository.locked = true;
-
-  // When / Then
-  await handlePrivateMediaFinalized({ object: old, repository: current.repository, objects: current.objects });
-  assert.equal((await current.objects.inspect(newest.path))?.generation, newest.generation);
-  await handlePrivateMediaFinalized({ object: newest, repository: current.repository, objects: current.objects });
-  await handlePrivateMediaFinalized({ object: newest, repository: current.repository, objects: current.objects });
-  assert.equal(await current.objects.inspect(newest.path), null);
 });

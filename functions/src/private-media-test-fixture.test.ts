@@ -1,6 +1,7 @@
 import {
   PRIVATE_MEDIA_SEAL_CONTENT_TYPE,
   PrivateMediaError,
+  type ClaimExpiredReservedUploadCommand,
   type CommitPrivateMediaCommand,
   type DeleteGenerationResult,
   type MarkPrivateMediaSealedCommand,
@@ -44,6 +45,9 @@ export class MemoryPrivateMediaRepository implements PrivateMediaReservationRepo
     if (current.ownerUid !== command.ownerUid) {
       throw new PrivateMediaError("permission-denied", "Reservation is not owned by this account");
     }
+    if (current.cleanupClaimReason !== null && current.cleanupClaimReason !== undefined) {
+      throw new PrivateMediaError("failed-precondition", "Reservation cleanup was already claimed");
+    }
     if (current.state === "COMMITTED" && current.objectGeneration === command.generation) {
       return current;
     }
@@ -58,6 +62,30 @@ export class MemoryPrivateMediaRepository implements PrivateMediaReservationRepo
     };
     this.records.set(current.reservationId, committed);
     return committed;
+  }
+
+  async claimExpiredReservedUpload(
+    command: ClaimExpiredReservedUploadCommand,
+  ): Promise<PrivateMediaReservation | null> {
+    const current = this.records.get(command.reservation.reservationId);
+    if (
+      current === undefined ||
+      (current.state !== "RESERVED" &&
+        !(current.state === "SEALED" &&
+          current.cleanupClaimReason === "EXPIRED_RESERVED_UPLOAD")) ||
+      current.expiresAtMillis > command.nowMillis ||
+      current.identificationRequestId !== null ||
+      (current.cleanupClaimReason !== null &&
+        current.cleanupClaimReason !== undefined &&
+        current.cleanupClaimReason !== "EXPIRED_RESERVED_UPLOAD")
+    ) return null;
+    const claimed: PrivateMediaReservation = {
+      ...current,
+      cleanupClaimGeneration: null,
+      cleanupClaimReason: "EXPIRED_RESERVED_UPLOAD",
+    };
+    this.records.set(current.reservationId, claimed);
+    return claimed;
   }
 
   async resolve(command: ResolvePrivateMediaCommand) {
@@ -88,9 +116,14 @@ export class MemoryPrivateMediaRepository implements PrivateMediaReservationRepo
       this.failNextSeal = false;
       throw new PrivateMediaError("unavailable", "Injected seal persistence crash");
     }
-    const current = this.required(command.reservationId);
-    if (current.ownerUid !== command.ownerUid) {
-      throw new PrivateMediaError("permission-denied", "Reservation is not owned by this account");
+    const current = this.required(command.expectedReservation.reservationId);
+    if (
+      current.state !== command.expectedReservation.state ||
+      current.objectGeneration !== command.expectedReservation.objectGeneration ||
+      current.cleanupClaimGeneration !== command.expectedReservation.cleanupClaimGeneration ||
+      current.cleanupClaimReason !== command.expectedReservation.cleanupClaimReason
+    ) {
+      throw new PrivateMediaError("failed-precondition", "Reservation changed before sealing");
     }
     this.records.set(current.reservationId, {
       ...current,
@@ -121,6 +154,7 @@ export class MemoryPrivateMediaRepository implements PrivateMediaReservationRepo
 export class FakePrivateMediaObjectStore implements PrivateMediaObjectStore {
   readonly objects = new Map<string, PrivateMediaObject>();
   private nextGeneration = 1;
+  beforeNextDelete: (() => void) | null = null;
   beforeNextSealCreate: (() => void) | null = null;
 
   admitUpload(object: Omit<PrivateMediaObject, "generation">): () => "created" | "precondition_failed" {
@@ -136,6 +170,9 @@ export class FakePrivateMediaObjectStore implements PrivateMediaObjectStore {
   }
 
   async deleteGeneration(path: string, generation: string): Promise<DeleteGenerationResult> {
+    const beforeDelete = this.beforeNextDelete;
+    this.beforeNextDelete = null;
+    beforeDelete?.();
     const current = this.objects.get(path);
     if (current === undefined) return "absent";
     if (current.generation !== generation) return "generation_changed";

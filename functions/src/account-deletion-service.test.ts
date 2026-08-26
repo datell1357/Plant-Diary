@@ -13,6 +13,7 @@ import {
   retryAccountDeletion,
 } from "./account-deletion-service.js";
 import { MemoryAccountDeletionStore } from "./account-deletion-test-fixture.test.js";
+import type { ServerAnalyticsOperation } from "./server-analytics.js";
 
 const NOW_MILLIS = Date.parse("2026-08-12T00:00:00.000Z");
 const OWNER_UID = "user-a";
@@ -51,6 +52,101 @@ test("request creates one seven-day request when the same command is submitted t
   const stored = await store.load(OWNER_UID);
   assert.equal(stored?.idempotencyKeyHash.length, 64);
   assert.equal(JSON.stringify(stored).includes(CONFIRMED_REQUEST.idempotencyKey), false);
+});
+
+test("request analytics follows the committed transaction and replay uses the persisted request identity", async () => {
+  const store = new MemoryAccountDeletionStore();
+  store.analyticsConsentGranted = true;
+  const steps: string[] = [];
+  const persistedRequest = store.request.bind(store);
+  store.request = async (command) => {
+    const result = await persistedRequest(command);
+    steps.push("persisted");
+    return result;
+  };
+  const events: unknown[] = [];
+  const service = {
+    ...dependencies(store),
+    analytics: async (event: ServerAnalyticsOperation) => {
+      steps.push("analytics");
+      events.push(event);
+      return { kind: "transient" as const };
+    },
+    analyticsDeletion: {
+      async revokeForAccountDeletion() {
+        steps.push("revoke");
+        return { purgedEventCount: 0 };
+      },
+    },
+  };
+
+  const first = await requestAccountDeletion(AUTH, CONFIRMED_REQUEST, service);
+  const replay = await requestAccountDeletion(AUTH, CONFIRMED_REQUEST, {
+    ...service,
+    requestId: () => "unused-replay-request-id",
+  });
+
+  assert.deepEqual(replay, first);
+  assert.deepEqual(steps, ["persisted", "analytics", "revoke", "persisted", "revoke"]);
+  assert.deepEqual(events, [
+    {
+      ownerUid: OWNER_UID,
+      eventName: "ACCOUNT_DELETION_REQUESTED",
+      operationIdentifier: "deletion-request-0001",
+    },
+  ]);
+  assert.equal((await store.load(OWNER_UID))?.analyticsRequestOutcome, "TRANSIENT");
+
+  const failedStore = new MemoryAccountDeletionStore();
+  failedStore.request = async () => {
+    throw new Error("request transaction failed");
+  };
+  let failedEvents = 0;
+  await assert.rejects(
+    () => requestAccountDeletion(AUTH, CONFIRMED_REQUEST, {
+      ...dependencies(failedStore),
+      analytics: async (_event: ServerAnalyticsOperation) => {
+        failedEvents += 1;
+        return { kind: "recorded", eventId: "event", replayed: false };
+      },
+    }),
+    /request transaction failed/,
+  );
+  assert.equal(failedEvents, 0);
+});
+
+test("request replay retries the exact analytics revoke after response loss", async () => {
+  const store = new MemoryAccountDeletionStore();
+  const operations: string[] = [];
+  let loseFirstResponse = true;
+  const service = {
+    ...dependencies(store),
+    analyticsDeletion: {
+      async revokeForAccountDeletion(ownerUid: string, operationId: string) {
+        assert.equal(ownerUid, OWNER_UID);
+        operations.push(operationId);
+        if (loseFirstResponse) {
+          loseFirstResponse = false;
+          throw new Error("injected revoke response loss");
+        }
+        return { purgedEventCount: 0 };
+      },
+    },
+  };
+
+  await assert.rejects(
+    requestAccountDeletion(AUTH, CONFIRMED_REQUEST, service),
+    /injected revoke response loss/,
+  );
+  const replay = await requestAccountDeletion(AUTH, CONFIRMED_REQUEST, {
+    ...service,
+    requestId: () => "unused-replay-request-id",
+  });
+
+  assert.equal(replay.requestId, "deletion-request-0001");
+  assert.equal(store.size, 1);
+  assert.equal(operations.length, 2);
+  assert.equal(operations[0], operations[1]);
 });
 
 test("request denies a foreign expected owner", async () => {
@@ -150,7 +246,7 @@ test("cancel requires the expected request and stale replay cannot cancel its re
   assert.equal((await store.load(OWNER_UID))?.status, "RECEIVED");
 });
 
-test("request replay after cancellation returns its original accepted response", async () => {
+test("request replay after cancellation is fenced by the minimized terminal tombstone", async () => {
   // Given
   const store = new MemoryAccountDeletionStore();
   const first = await requestAccountDeletion(AUTH, CONFIRMED_REQUEST, dependencies(store));
@@ -161,14 +257,19 @@ test("request replay after cancellation returns its original accepted response",
   );
 
   // When
-  const replay = await requestAccountDeletion(AUTH, CONFIRMED_REQUEST, {
+  const replay = requestAccountDeletion(AUTH, CONFIRMED_REQUEST, {
     store,
     nowMillis: () => NOW_MILLIS + 2,
     requestId: () => "deletion-request-0002",
   });
 
   // Then
-  assert.deepEqual(replay, first);
+  await assert.rejects(
+    replay,
+    (error: unknown) =>
+      error instanceof AccountDeletionError && error.code === "failed-precondition",
+  );
+  assert.equal(await store.load(OWNER_UID), null);
 });
 
 test("partial retry replay after processing returns its original accepted response", async () => {

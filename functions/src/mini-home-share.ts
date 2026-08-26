@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import type { AuthContext } from "./contracts.js";
 import type { InventoryCatalogItem } from "./inventory.js";
 import type { MiniHomeSnapshot } from "./mini-home-snapshot.js";
+import type { ServerAnalyticsRecorder } from "./server-analytics.js";
 
 export const MINI_HOME_SHARE_LIFETIME_MILLIS = 30 * 24 * 60 * 60 * 1000;
 export const MINI_HOME_SHARE_CONTRACT_VERSION = 1 as const;
@@ -149,6 +150,7 @@ export async function executeCreateMiniHomeShareLink(
   tokenKey: string,
   now: Date,
   publicEndpoint: string,
+  analytics?: ServerAnalyticsRecorder,
 ): Promise<CreateMiniHomeShareResult> {
   const ownerUid = authenticatedOwner(auth);
   const request = exactRecord(input, ["operationId", "expectedRevision"]);
@@ -165,7 +167,22 @@ export async function executeCreateMiniHomeShareLink(
   requireTokenKey(tokenKey);
   requireNow(now);
   requirePublicEndpoint(publicEndpoint);
-  return store.create({ ownerUid, operationId, expectedRevision, tokenKey, now, publicEndpoint });
+  const result = await store.create({
+    ownerUid,
+    operationId,
+    expectedRevision,
+    tokenKey,
+    now,
+    publicEndpoint,
+  });
+  if (analytics !== undefined) {
+    await analytics({
+      ownerUid,
+      eventName: "MINI_HOME_SHARE_LINK_CREATED",
+      operationIdentifier: operationId,
+    });
+  }
+  return result;
 }
 
 export async function executeRevokeMiniHomeShareLink(

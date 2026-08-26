@@ -9,6 +9,14 @@ import {
 } from "firebase-admin/firestore";
 import type { Messaging } from "firebase-admin/messaging";
 import { runAccountMutationTransaction } from "./account-mutation-lock.js";
+import type {
+  ServerAnalyticsOperation,
+  ServerAnalyticsRecorder,
+} from "./server-analytics.js";
+import {
+  terminalWeatherAlertFields,
+  weatherRetentionTimestamp,
+} from "./weather-retention.js";
 import {
   WeatherConsentConflictError,
   WeatherError,
@@ -138,7 +146,10 @@ export async function executeScheduledWeatherRefresh(
 }
 
 export class FirestoreWeatherStore implements WeatherStore {
-  constructor(private readonly firestore: Firestore) {}
+  constructor(
+    private readonly firestore: Firestore,
+    private readonly analytics?: ServerAnalyticsRecorder,
+  ) {}
 
   async loadContext(ownerUid: string): Promise<WeatherContext> {
     const accountRef = this.firestore.doc(`users/${ownerUid}`);
@@ -243,6 +254,10 @@ export class FirestoreWeatherStore implements WeatherStore {
       if (snapshot.get("stale") !== stale) {
         transaction.update(snapshotRef, {
           stale,
+          ...(observedAt instanceof Timestamp ? {
+            freshUntil: Timestamp.fromMillis(observedAt.toMillis() + WEATHER_FRESHNESS_MS),
+            expiresAt: weatherRetentionTimestamp(observedAt.toDate()),
+          } : {}),
           updatedAt: FieldValue.serverTimestamp(),
         });
       }
@@ -255,8 +270,50 @@ export class FirestoreWeatherStore implements WeatherStore {
     granted: boolean,
     commandGeneration: number,
   ): Promise<Readonly<{ commandGeneration: number; granted: boolean }>> {
+    for (let page = 0; page < WEATHER_CONSENT_CLEANUP_MAX_PAGES; page += 1) {
+      const result = await this.setLocationConsentPage(
+        ownerUid,
+        granted,
+        commandGeneration,
+      );
+      if (granted || result.cleanupComplete) {
+        return { commandGeneration: result.commandGeneration, granted: result.granted };
+      }
+    }
+    throw new WeatherError(
+      "unavailable",
+      "Location consent cleanup is incomplete; retry the exact revoke command",
+    );
+  }
+
+  private async setLocationConsentPage(
+    ownerUid: string,
+    granted: boolean,
+    commandGeneration: number,
+  ): Promise<Readonly<{
+    commandGeneration: number;
+    granted: boolean;
+    cleanupComplete: boolean;
+  }>> {
     const ref = this.firestore.doc(`users/${ownerUid}/consents/location`);
     const settingsRef = this.firestore.doc(`users/${ownerUid}/weatherSettings/current`);
+    const snapshotRef = this.firestore.doc(`users/${ownerUid}/weatherSnapshots/current`);
+    const deviceRisks = this.firestore
+      .collection(`users/${ownerUid}/weatherRisks`)
+      .where("source", "==", "DEVICE")
+      .orderBy(FieldPath.documentId())
+      .limit(WEATHER_CONSENT_CLEANUP_PAGE_SIZE + 1);
+    const revocableDeviceAlerts = this.firestore
+      .collection(`users/${ownerUid}/weatherAlerts`)
+      .where("source", "==", "DEVICE")
+      .where("status", "in", ["PENDING", "CLAIMED"])
+      .orderBy(FieldPath.documentId())
+      .limit(WEATHER_CONSENT_CLEANUP_PAGE_SIZE + 1);
+    const authorizedDeviceAlerts = this.firestore
+      .collection(`users/${ownerUid}/weatherAlerts`)
+      .where("source", "==", "DEVICE")
+      .where("status", "==", "SEND_MAY_HAVE_OCCURRED")
+      .limit(1);
     return runAccountMutationTransaction(this.firestore, ownerUid, async (transaction) => {
       const [existing, settings] = await Promise.all([
         transaction.get(ref),
@@ -276,34 +333,40 @@ export class FirestoreWeatherStore implements WeatherStore {
       }
       const existingGeneration = existing.exists ? generationValue as number : 0;
       const existingGranted = existing.exists && existing.get("granted") === true;
-      if (commandGeneration === existingGeneration) {
-        if (granted !== existingGranted) {
-          throw new WeatherConsentConflictError(
-            existingGeneration,
-            existingGranted,
-            "Consent generation replay payload changed",
-          );
-        }
-        return { commandGeneration: existingGeneration, granted: existingGranted };
+      const replay = commandGeneration === existingGeneration;
+      if (replay && granted !== existingGranted) {
+        throw new WeatherConsentConflictError(
+          existingGeneration,
+          existingGranted,
+          "Consent generation replay payload changed",
+        );
       }
-      if (commandGeneration !== existingGeneration + 1) {
+      if (!replay && commandGeneration !== existingGeneration + 1) {
         throw new WeatherConsentConflictError(existingGeneration, existingGranted);
       }
-      const revision = existing.exists && existing.get("revision") !== undefined
-        ? integer(existing.get("revision"), "Consent revision")
-        : 0;
-      transaction.set(ref, {
-        ownerUid,
-        type: "LOCATION",
-        granted,
-        commandGeneration,
-        recordedAt: FieldValue.serverTimestamp(),
-        revision: revision + 1,
-        expectedRevision: revision,
-        idempotencyKey: `weather-consent-${commandGeneration}`,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      if (!granted && settings.exists && settings.get("deviceRegion") !== undefined) {
+      if (granted) {
+        if (!replay) {
+          const revision = existing.exists && existing.get("revision") !== undefined
+            ? integer(existing.get("revision"), "Consent revision")
+            : 0;
+          transaction.set(ref, consentDocument(ownerUid, granted, commandGeneration, revision));
+        }
+        return { commandGeneration, granted, cleanupComplete: true };
+      }
+
+      const [snapshot, risks, alerts, authorizedAlerts] = await Promise.all([
+        transaction.get(snapshotRef),
+        transaction.get(deviceRisks),
+        transaction.get(revocableDeviceAlerts),
+        transaction.get(authorizedDeviceAlerts),
+      ]);
+      if (!replay) {
+        const revision = existing.exists && existing.get("revision") !== undefined
+          ? integer(existing.get("revision"), "Consent revision")
+          : 0;
+        transaction.set(ref, consentDocument(ownerUid, false, commandGeneration, revision));
+      }
+      if (settings.exists && settings.get("deviceRegion") !== undefined) {
         const settingsRevision = integer(settings.get("revision"), "Weather settings revision");
         transaction.set(
           settingsRef,
@@ -311,7 +374,23 @@ export class FirestoreWeatherStore implements WeatherStore {
           { merge: true },
         );
       }
-      return { commandGeneration, granted };
+      if (snapshot.exists && snapshot.get("ownerUid") === ownerUid && snapshot.get("source") === "DEVICE") {
+        transaction.delete(snapshotRef);
+      }
+      risks.docs.slice(0, WEATHER_CONSENT_CLEANUP_PAGE_SIZE).forEach((risk) => {
+        if (risk.get("ownerUid") === ownerUid) transaction.delete(risk.ref);
+      });
+      alerts.docs.slice(0, WEATHER_CONSENT_CLEANUP_PAGE_SIZE).forEach((alert) => {
+        if (alert.get("ownerUid") === ownerUid) transaction.delete(alert.ref);
+      });
+      return {
+        commandGeneration,
+        granted: false,
+        cleanupComplete:
+          risks.size <= WEATHER_CONSENT_CLEANUP_PAGE_SIZE &&
+          alerts.size <= WEATHER_CONSENT_CLEANUP_PAGE_SIZE &&
+          authorizedAlerts.empty,
+      };
     });
   }
 
@@ -334,7 +413,7 @@ export class FirestoreWeatherStore implements WeatherStore {
         existing.get("granted") === false &&
         existing.get("legacyRecovery") === true;
       if (idempotentRecovery) {
-        return { commandGeneration: 1, granted: false, recovered: true };
+        return { commandGeneration: 1, granted: false, recovered: true as const };
       }
       const exhaustedOrNoncanonical =
         typeof generationValue !== "number" ||
@@ -372,7 +451,10 @@ export class FirestoreWeatherStore implements WeatherStore {
           { merge: true },
         );
       }
-      return { commandGeneration: 1, granted: false, recovered: true };
+      return { commandGeneration: 1, granted: false, recovered: true as const };
+    }).then(async (result) => {
+      await this.setLocationConsent(ownerUid, false, result.commandGeneration);
+      return result;
     });
   }
 
@@ -432,7 +514,7 @@ export class FirestoreWeatherStore implements WeatherStore {
     const refs = new Map<string, FirebaseFirestore.DocumentReference>();
     activeRisks.docs.forEach((risk) => refs.set(risk.id, risk.ref));
     evaluated.forEach((_, id) => refs.set(id, this.firestore.doc(`users/${command.ownerUid}/weatherRisks/${id}`)));
-    return runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
+    const result = await runAccountMutationTransaction(this.firestore, command.ownerUid, async (transaction) => {
       const [settings, consent, existingRisks, authoritativePlants] = await Promise.all([
         transaction.get(settingsRef),
         transaction.get(consentRef),
@@ -497,16 +579,20 @@ export class FirestoreWeatherStore implements WeatherStore {
         humidityPercent: command.snapshot.humidityPercent,
         precipitationMillimeters: command.snapshot.precipitationMillimeters,
         observedAt: Timestamp.fromDate(command.snapshot.observedAt),
-        expiresAt: Timestamp.fromMillis(command.snapshot.observedAt.valueOf() + 3 * 60 * 60 * 1000),
+        freshUntil: Timestamp.fromMillis(command.snapshot.observedAt.valueOf() + WEATHER_FRESHNESS_MS),
+        expiresAt: weatherRetentionTimestamp(command.snapshot.observedAt),
         zoneId: command.snapshot.zoneId ?? "UTC",
         stale: command.stale,
         unavailablePlantIds: currentUnavailablePlantIds,
+        source: command.region.source,
+        locationConsentGeneration: command.expectedLocationConsentGeneration,
         revision,
         expectedRevision: settingsRevision,
         idempotencyKey: `weather-snapshot-${revision}`,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      if (command.stale) return { revision };
+      if (command.stale) return { revision, createdAlertIds: [] };
+      const createdAlertIds: string[] = [];
       for (const existing of existingRisks) {
         const risk = evaluated.get(existing.id);
         const wasActive = existing.exists && existing.get("active") === true;
@@ -525,7 +611,10 @@ export class FirestoreWeatherStore implements WeatherStore {
           action: risk?.action ?? existing.get("action") ?? null,
           detectedAt: risk === undefined ? existing.get("detectedAt") : Timestamp.fromDate(command.evaluatedAt),
           observedAt: Timestamp.fromDate(command.snapshot.observedAt),
+          expiresAt: weatherRetentionTimestamp(command.snapshot.observedAt),
           active: risk !== undefined,
+          source: command.region.source,
+          locationConsentGeneration: command.expectedLocationConsentGeneration,
           transition,
           deliveredTransition,
           revision: previousRevision + 1,
@@ -551,15 +640,27 @@ export class FirestoreWeatherStore implements WeatherStore {
             riskType: risk.type,
             transition,
             action: risk.action,
+            source: command.region.source,
+            locationConsentGeneration: command.expectedLocationConsentGeneration,
             status: "PENDING",
+            freshUntil: Timestamp.fromMillis(command.snapshot.observedAt.valueOf() + WEATHER_FRESHNESS_MS),
             expiresAt: Timestamp.fromMillis(command.snapshot.observedAt.valueOf() + WEATHER_FRESHNESS_MS),
             createdAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
           });
+          createdAlertIds.push(alertId);
         }
       }
-      return { revision };
+      return { revision, createdAlertIds };
     });
+    for (const alertId of result.createdAlertIds) {
+      await recordWeatherAnalytics(this.analytics, {
+        ownerUid: command.ownerUid,
+        eventName: "WEATHER_RISK_ALERT_CREATED",
+        operationIdentifier: alertId,
+      });
+    }
+    return { revision: result.revision };
   }
 
   private async updateSettings(ownerUid: string, expectedRevision: number, patch: Readonly<Record<string, unknown>>): Promise<number> {
@@ -824,9 +925,11 @@ const WEATHER_REFRESH_USER_TIMEOUT_MS = 10 * 1000;
 const WEATHER_REFRESH_LEASE_MS = 10 * 60 * 1000;
 
 export type WeatherDeliveryHooks = Readonly<{
+  beforeClaim?: (alertRef: FirebaseFirestore.DocumentReference) => Promise<void>;
   afterClaim?: (alertRef: FirebaseFirestore.DocumentReference) => Promise<void>;
   beforeSendBoundary?: (alertRef: FirebaseFirestore.DocumentReference) => Promise<void>;
   clock?: () => Date;
+  analytics?: ServerAnalyticsRecorder;
 }>;
 
 export async function deliverPendingWeatherAlerts(
@@ -846,6 +949,7 @@ export async function deliverPendingWeatherAlerts(
   query = query.where("status", "==", "PENDING").orderBy("createdAt", "asc").limit(limit);
   const alerts = await query.get();
   for (const alert of alerts.docs) {
+    await hooks.beforeClaim?.(alert.ref);
     const claimed = await claimWeatherAlert(firestore, alert.ref, invocationTime);
     if (claimed === null) continue;
     await hooks.afterClaim?.(alert.ref);
@@ -860,6 +964,7 @@ export async function deliverPendingWeatherAlerts(
         : [];
     });
     if (endpointVersions.length === 0) {
+      const failedAt = boundaryClock();
       await runAccountMutationTransaction(
         firestore,
         claimed.ownerUid,
@@ -869,6 +974,7 @@ export async function deliverPendingWeatherAlerts(
           transaction.update(alert.ref, {
             status: "FAILED",
             failureKind: "NO_ENDPOINT",
+            ...terminalWeatherAlertFields(failedAt),
             leaseExpiresAt: FieldValue.delete(),
             updatedAt: FieldValue.serverTimestamp(),
           });
@@ -909,8 +1015,9 @@ export async function deliverPendingWeatherAlerts(
     } catch {
       transportAmbiguous = true;
     }
+    const finalizedAt = boundaryClock();
     try {
-      await runAccountMutationTransaction(
+      const finalizedSent = await runAccountMutationTransaction(
         firestore,
         claimed.ownerUid,
         async (transaction) => {
@@ -924,7 +1031,7 @@ export async function deliverPendingWeatherAlerts(
           if (
             !currentAlert.exists ||
             currentAlert.get("status") !== "SEND_MAY_HAVE_OCCURRED"
-          ) return;
+          ) return false;
           transaction.update(alert.ref, {
             status: transportAmbiguous ? "SENT_AMBIGUOUS" : success ? "SENT" : "FAILED",
             sentAt: success ? FieldValue.serverTimestamp() : null,
@@ -933,21 +1040,34 @@ export async function deliverPendingWeatherAlerts(
               : success
                 ? null
                 : "FCM_REJECTED",
+            ...terminalWeatherAlertFields(finalizedAt),
             leaseExpiresAt: FieldValue.delete(),
             updatedAt: FieldValue.serverTimestamp(),
           });
           if (success && risk.exists && risk.get("transition") === claimed.transition) {
             const riskRevision = integer(risk.get("revision"), "Weather risk revision");
+            const riskObservedAt = risk.get("observedAt");
             transaction.update(riskRef, {
               deliveredTransition: claimed.transition,
+              ...(riskObservedAt instanceof Timestamp
+                ? { expiresAt: weatherRetentionTimestamp(riskObservedAt.toDate()) }
+                : {}),
               revision: riskRevision + 1,
               expectedRevision: riskRevision,
               idempotencyKey: `weather-delivered-${alert.id}`,
               updatedAt: FieldValue.serverTimestamp(),
             });
           }
+          return success && !transportAmbiguous;
         },
       );
+      if (finalizedSent) {
+        await recordWeatherAnalytics(hooks.analytics, {
+          ownerUid: claimed.ownerUid,
+          eventName: "WEATHER_RISK_NOTIFICATION_SENT",
+          operationIdentifier: alert.id,
+        });
+      }
     } finally {
       await releaseWeatherEndpointLeases(
         firestore,
@@ -973,6 +1093,8 @@ type ClaimedAlert = Readonly<{
   preferenceRevision: number;
   contentId: string;
   contentRevision: number;
+  source: "MANUAL" | "DEVICE";
+  locationConsentGeneration: number | null;
 }>;
 
 type WeatherEndpointVersion = Readonly<{
@@ -996,14 +1118,20 @@ async function claimWeatherAlert(
     const riskId = alert.get("riskId");
     const transition = alert.get("transition");
     if (storedOwnerUid !== ownerUid || typeof plantId !== "string" || typeof riskId !== "string" || typeof transition !== "number") {
-      transaction.update(alertRef, { status: "CANCELLED", failureKind: "MALFORMED", updatedAt: FieldValue.serverTimestamp() });
+      transaction.update(alertRef, {
+        status: "CANCELLED",
+        failureKind: "MALFORMED",
+        ...terminalWeatherAlertFields(now),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       return null;
     }
-    const [plant, risk, settings, preference] = await Promise.all([
+    const [plant, risk, settings, preference, consent] = await Promise.all([
       transaction.get(firestore.doc(`users/${ownerUid}/personalPlants/${plantId}`)),
       transaction.get(firestore.doc(`users/${ownerUid}/weatherRisks/${riskId}`)),
       transaction.get(firestore.doc(`users/${ownerUid}/weatherSettings/current`)),
       transaction.get(firestore.doc(`users/${ownerUid}/weatherPlantSettings/${plantId}`)),
+      transaction.get(firestore.doc(`users/${ownerUid}/consents/location`)),
     ]);
     if (
       !plant.exists || plant.get("ownerUid") !== ownerUid ||
@@ -1012,24 +1140,37 @@ async function claimWeatherAlert(
       !settings.exists || settings.get("globalAlertsEnabled") === false ||
       (preference.exists && preference.get("enabled") === false)
     ) {
-      transaction.update(alertRef, { status: "CANCELLED", failureKind: "TARGET_CHANGED", updatedAt: FieldValue.serverTimestamp() });
+      transaction.update(alertRef, {
+        status: "CANCELLED",
+        failureKind: "TARGET_CHANGED",
+        ...terminalWeatherAlertFields(now),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       return null;
     }
     const contentId = plant.get("contentId");
     if (typeof contentId !== "string" || !opaqueId.test(contentId)) {
-      transaction.update(alertRef, { status: "CANCELLED", failureKind: "TARGET_CHANGED", updatedAt: FieldValue.serverTimestamp() });
+      transaction.update(alertRef, {
+        status: "CANCELLED",
+        failureKind: "TARGET_CHANGED",
+        ...terminalWeatherAlertFields(now),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       return null;
     }
     const [content, snapshot] = await Promise.all([
       transaction.get(firestore.doc(`plantContents/${contentId}`)),
       transaction.get(firestore.doc(`users/${ownerUid}/weatherSnapshots/current`)),
     ]);
+    const provenance = matchingWeatherProvenance(alert, risk, snapshot);
     const currentType = risk.get("type");
     const alertExpiresAt = alert.get("expiresAt");
     const riskObservedAt = risk.get("observedAt");
     const snapshotObservedAt = snapshot.get("observedAt");
     if (
       !content.exists || content.get("publicationState") !== "PUBLIC" ||
+      provenance === null ||
+      !weatherConsentAuthorizes(consent, ownerUid, provenance) ||
       !weatherSnapshotFresh(snapshot, now) ||
       !(alertExpiresAt instanceof Timestamp) || alertExpiresAt.toDate() <= now ||
       !(riskObservedAt instanceof Timestamp) || !(snapshotObservedAt instanceof Timestamp) ||
@@ -1038,7 +1179,12 @@ async function claimWeatherAlert(
       !riskTypes.includes(currentType as WeatherRiskType) ||
       !riskStillApplies(snapshot, content, plantId, plant.get("displayName"), currentType as WeatherRiskType)
     ) {
-      transaction.update(alertRef, { status: "CANCELLED", failureKind: "TARGET_CHANGED", updatedAt: FieldValue.serverTimestamp() });
+      transaction.update(alertRef, {
+        status: "CANCELLED",
+        failureKind: "TARGET_CHANGED",
+        ...terminalWeatherAlertFields(now),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       return null;
     }
     const plantName = alert.get("plantName");
@@ -1066,6 +1212,8 @@ async function claimWeatherAlert(
         : 0,
       contentId,
       contentRevision: integerOrNull(content.get("revision")) ?? 0,
+      source: provenance.source,
+      locationConsentGeneration: provenance.locationConsentGeneration,
     };
   });
 }
@@ -1084,13 +1232,14 @@ async function authorizeWeatherAlertSend(
     const settingsRef = firestore.doc(`users/${claimed.ownerUid}/weatherSettings/current`);
     const preferenceRef = firestore.doc(`users/${claimed.ownerUid}/weatherPlantSettings/${claimed.plantId}`);
     const contentRef = firestore.doc(`plantContents/${claimed.contentId}`);
+    const consentRef = firestore.doc(`users/${claimed.ownerUid}/consents/location`);
     const endpointRefs = endpoints.map((endpoint) =>
       firestore.doc(`users/${claimed.ownerUid}/notificationEndpoints/${endpoint.endpointId}`)
     );
     const ownerRefs = endpoints.map((endpoint) =>
       firestore.doc(`notificationEndpointOwners/${endpoint.endpointId}`)
     );
-    const [alert, plant, risk, snapshot, settings, preference, content, endpointDocs, ownerDocs] = await Promise.all([
+    const [alert, plant, risk, snapshot, settings, preference, content, consent, endpointDocs, ownerDocs] = await Promise.all([
       transaction.get(alertRef),
       transaction.get(plantRef),
       transaction.get(riskRef),
@@ -1098,6 +1247,7 @@ async function authorizeWeatherAlertSend(
       transaction.get(settingsRef),
       transaction.get(preferenceRef),
       transaction.get(contentRef),
+      transaction.get(consentRef),
       Promise.all(endpointRefs.map((ref) => transaction.get(ref))),
       Promise.all(ownerRefs.map((ref) => transaction.get(ref))),
     ]);
@@ -1109,16 +1259,20 @@ async function authorizeWeatherAlertSend(
       leaseExpiresAt.toDate() > now;
     if (!claimMatches) return null;
 
-    const alertExpiresAt = alert.get("expiresAt");
-    const snapshotExpiresAt = snapshot.get("expiresAt");
+    const alertFreshUntilValue = alert.get("freshUntil");
+    const alertFreshUntil = alertFreshUntilValue instanceof Timestamp
+      ? alertFreshUntilValue
+      : alert.get("expiresAt");
+    const snapshotFreshUntil = weatherFreshUntil(snapshot);
     const temporalValid = weatherSnapshotFresh(snapshot, now) &&
-      alertExpiresAt instanceof Timestamp && alertExpiresAt.toDate() > now &&
-      snapshotExpiresAt instanceof Timestamp &&
-      alertExpiresAt.toMillis() === snapshotExpiresAt.toMillis();
+      alertFreshUntil instanceof Timestamp && alertFreshUntil.toDate() > now &&
+      snapshotFreshUntil !== null &&
+      alertFreshUntil.toMillis() === snapshotFreshUntil.toMillis();
     if (!temporalValid) {
       transaction.update(alertRef, {
         status: "CANCELLED",
         failureKind: "PRE_SEND_EXPIRED",
+        ...terminalWeatherAlertFields(now),
         leaseExpiresAt: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -1127,7 +1281,12 @@ async function authorizeWeatherAlertSend(
 
     const riskObservedAt = risk.get("observedAt");
     const snapshotObservedAt = snapshot.get("observedAt");
-    const targetValid = plant.exists && plant.get("ownerUid") === claimed.ownerUid &&
+    const provenance = matchingWeatherProvenance(alert, risk, snapshot);
+    const targetValid = provenance !== null &&
+      provenance.source === claimed.source &&
+      provenance.locationConsentGeneration === claimed.locationConsentGeneration &&
+      weatherConsentAuthorizes(consent, claimed.ownerUid, provenance) &&
+      plant.exists && plant.get("ownerUid") === claimed.ownerUid &&
       plant.get("contentId") === claimed.contentId && content.exists &&
       content.get("publicationState") === "PUBLIC" &&
       (integerOrNull(content.get("revision")) ?? 0) === claimed.contentRevision &&
@@ -1148,6 +1307,7 @@ async function authorizeWeatherAlertSend(
       transaction.update(alertRef, {
         status: "CANCELLED",
         failureKind: "PRE_SEND_TARGET_CHANGED",
+        ...terminalWeatherAlertFields(now),
         leaseExpiresAt: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -1224,10 +1384,82 @@ function weatherActiveSendLeases(value: unknown, now: Date): Record<string, Time
 function weatherSnapshotFresh(snapshot: DocumentSnapshot, now: Date): boolean {
   if (!snapshot.exists || snapshot.get("stale") === true) return false;
   const observedAt = snapshot.get("observedAt");
-  const expiresAt = snapshot.get("expiresAt");
-  return observedAt instanceof Timestamp && expiresAt instanceof Timestamp &&
-    observedAt.toDate() <= now && expiresAt.toDate() > now &&
-    expiresAt.toMillis() === observedAt.toMillis() + WEATHER_FRESHNESS_MS;
+  const freshUntil = weatherFreshUntil(snapshot);
+  return observedAt instanceof Timestamp && freshUntil !== null &&
+    observedAt.toDate() <= now && freshUntil.toDate() > now &&
+    freshUntil.toMillis() === observedAt.toMillis() + WEATHER_FRESHNESS_MS;
+}
+
+function weatherFreshUntil(snapshot: DocumentSnapshot): Timestamp | null {
+  const freshUntil = snapshot.get("freshUntil");
+  if (freshUntil instanceof Timestamp) return freshUntil;
+  const legacyExpiresAt = snapshot.get("expiresAt");
+  return legacyExpiresAt instanceof Timestamp ? legacyExpiresAt : null;
+}
+
+type WeatherProvenance = Readonly<{
+  source: "MANUAL" | "DEVICE";
+  locationConsentGeneration: number | null;
+}>;
+
+function matchingWeatherProvenance(
+  ...documents: readonly DocumentSnapshot[]
+): WeatherProvenance | null {
+  const provenances = documents.map(weatherProvenance);
+  const first = provenances[0];
+  if (
+    first === undefined ||
+    first === null ||
+    provenances.some((provenance) =>
+      provenance === null ||
+      provenance.source !== first.source ||
+      provenance.locationConsentGeneration !== first.locationConsentGeneration
+    )
+  ) return null;
+  return first;
+}
+
+function weatherProvenance(document: DocumentSnapshot): WeatherProvenance | null {
+  if (!document.exists) return null;
+  const source = document.get("source");
+  const generation = document.get("locationConsentGeneration");
+  if (source === "MANUAL" && generation === null) {
+    return { source, locationConsentGeneration: null };
+  }
+  if (
+    source === "DEVICE" &&
+    typeof generation === "number" &&
+    Number.isSafeInteger(generation) &&
+    generation >= 1
+  ) {
+    return { source, locationConsentGeneration: generation };
+  }
+  return null;
+}
+
+function weatherConsentAuthorizes(
+  consent: DocumentSnapshot,
+  ownerUid: string,
+  provenance: WeatherProvenance,
+): boolean {
+  return provenance.source === "MANUAL" || (
+    consent.exists &&
+    consent.get("ownerUid") === ownerUid &&
+    consent.get("granted") === true &&
+    consent.get("commandGeneration") === provenance.locationConsentGeneration
+  );
+}
+
+async function recordWeatherAnalytics(
+  analytics: ServerAnalyticsRecorder | undefined,
+  operation: ServerAnalyticsOperation,
+): Promise<void> {
+  if (analytics === undefined) return;
+  try {
+    await analytics(operation);
+  } catch {
+    // Analytics is explicitly best-effort and must never change weather outcomes.
+  }
 }
 
 function integerOrNull(value: unknown): number | null {
@@ -1267,6 +1499,7 @@ async function recoverExpiredWeatherAlerts(
         transaction.update(candidate.ref, {
           status: "SENT_AMBIGUOUS",
           failureKind: "PROCESS_DIED_AFTER_SEND_BOUNDARY",
+          ...terminalWeatherAlertFields(now),
           leaseExpiresAt: FieldValue.delete(),
           updatedAt: FieldValue.serverTimestamp(),
         });
@@ -1277,6 +1510,8 @@ async function recoverExpiredWeatherAlerts(
 
 const WEATHER_FRESHNESS_MS = 3 * 60 * 60 * 1000;
 const WEATHER_ALERT_LEASE_MS = 5 * 60 * 1000;
+const WEATHER_CONSENT_CLEANUP_PAGE_SIZE = 200;
+const WEATHER_CONSENT_CLEANUP_MAX_PAGES = 8;
 const WEATHER_ALERT_ENDPOINT_LEASE_MS = 10 * 60 * 1000;
 
 function weatherRiskLabel(type: WeatherRiskType): string {
@@ -1339,6 +1574,25 @@ function assertLocationConsentPrecondition(
   ) {
     throw new WeatherError("aborted", "Weather location consent changed during refresh");
   }
+}
+
+function consentDocument(
+  ownerUid: string,
+  granted: boolean,
+  commandGeneration: number,
+  revision: number,
+): DocumentData {
+  return {
+    ownerUid,
+    type: "LOCATION",
+    granted,
+    commandGeneration,
+    recordedAt: FieldValue.serverTimestamp(),
+    revision: revision + 1,
+    expectedRevision: revision,
+    idempotencyKey: `weather-consent-${commandGeneration}`,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
 }
 
 function settingsDocument(ownerUid: string, revision: number, patch: Readonly<Record<string, unknown>>): DocumentData {

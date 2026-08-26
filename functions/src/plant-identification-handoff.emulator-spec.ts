@@ -3,6 +3,8 @@ import test from "node:test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { Timestamp, getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+import { FirestoreIdentificationAuthorizationRepository } from "./firestore-identification-authorization.js";
+import { IDENTIFICATION_DISCLOSURE_VERSION } from "./identification-authorization.js";
 import {
   FirestoreIdentificationRequestStore,
   IdentificationRuntimeError,
@@ -57,6 +59,7 @@ test("approved photo handoff is retrieved from real local emulators before provi
       },
     });
     const [uploaded] = await file.getMetadata();
+    const generation = String(uploaded.generation);
     await reservation.set({
       schemaVersion: 1,
       reservationId,
@@ -68,27 +71,24 @@ test("approved photo handoff is retrieved from real local emulators before provi
       idempotencyKeyHash: "a".repeat(64),
       requestHash: "b".repeat(64),
       state: "COMMITTED",
-      objectGeneration: uploaded.generation,
+      objectGeneration: generation,
       sealedGeneration: null,
       createdAt,
       expiresAt,
       committedAt: createdAt,
       sealedAt: null,
     });
-    await request.set({
+    await new FirestoreIdentificationAuthorizationRepository(firestore).admit({
       ownerUid,
-      mediaReference: { reservationId, generation: uploaded.generation },
-      createdAt,
-      expiresAt,
-      revision: 1,
-      expectedRevision: 0,
-      idempotencyKey: requestId,
-      updatedAt: createdAt.toDate().toISOString(),
+      requestId,
+      mediaReference: { reservationId, generation },
+      disclosureVersion: IDENTIFICATION_DISCLOSURE_VERSION,
+      nowMillis: createdAt.toMillis(),
     });
     const result = await executePlantIdentification(
       { uid: ownerUid },
       { requestId, idempotencyKey: operationId },
-      new FirestoreIdentificationRequestStore(firestore),
+      new FirestoreIdentificationRequestStore(firestore, () => createdAt.toDate()),
       new PlantIdStorageProvider(client, storage),
     );
 
@@ -98,9 +98,11 @@ test("approved photo handoff is retrieved from real local emulators before provi
     const stored = await request.get();
     assert.deepEqual(stored.get("mediaReference"), {
       reservationId,
-      generation: uploaded.generation,
+      generation,
     });
-    assert.equal(stored.get("expiresAt").toMillis() - stored.get("createdAt").toMillis(), 86_400_000);
+    assert.equal(stored.get("hardExpiresAt").toMillis() - stored.get("createdAt").toMillis(), 86_400_000);
+    assert.ok(stored.get("terminalAt") instanceof Timestamp);
+    assert.equal(stored.get("retentionExpiresAt").toMillis() - stored.get("terminalAt").toMillis(), 86_400_000);
     const [metadata] = await file.getMetadata();
     assert.equal(metadata.metadata?.ownerUid, ownerUid);
     assert.equal(metadata.metadata?.reservationId, reservationId);

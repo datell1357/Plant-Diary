@@ -4,12 +4,17 @@ import {
   ACCOUNT_DELETION_GRACE_MILLIS,
   ACCOUNT_DELETION_RECENT_AUTH_SECONDS,
   ACCOUNT_DELETION_SCOPES,
+  type AccountDeletionAnalyticsRequestOutcome,
   type AccountDeletionAuth,
   AccountDeletionError,
   type AccountDeletionRecord,
   type AccountDeletionStore,
   type AccountDeletionView,
 } from "./account-deletion-contract.js";
+import type {
+  SafeServerAnalyticsResult,
+  ServerAnalyticsRecorder,
+} from "./server-analytics.js";
 
 const ownerUidSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 const ownerInputSchema = z.object({ expectedOwnerUid: ownerUidSchema }).strict();
@@ -31,6 +36,13 @@ type RequestDependencies = Readonly<{
   store: AccountDeletionStore;
   nowMillis: () => number;
   requestId: () => string;
+  analytics?: ServerAnalyticsRecorder;
+  analyticsDeletion?: Readonly<{
+    revokeForAccountDeletion(
+      ownerUid: string,
+      operationId: string,
+    ): Promise<Readonly<{ purgedEventCount: number }>>;
+  }>;
 }>;
 
 type TimedStoreDependencies = Readonly<{
@@ -70,6 +82,17 @@ function requireRecentAuthentication(auth: AccountDeletionAuth, nowMillis: numbe
     nowSeconds - auth.authTimeSeconds > ACCOUNT_DELETION_RECENT_AUTH_SECONDS
   ) {
     throw new AccountDeletionError("failed-precondition", "Recent authentication is required");
+  }
+}
+
+function analyticsRequestOutcome(
+  result: SafeServerAnalyticsResult,
+): Exclude<AccountDeletionAnalyticsRequestOutcome, "PENDING"> {
+  switch (result.kind) {
+    case "recorded": return "RECORDED";
+    case "consent-off": return "CONSENT_OFF";
+    case "locked": return "LOCKED";
+    case "transient": return "TRANSIENT";
   }
 }
 
@@ -148,9 +171,50 @@ export async function requestAccountDeletion(
     completedScopes: [],
     failedScopes: [],
     claimGeneration: 0,
+    analyticsResultEligible: false,
+    analyticsRequestOutcome: "CONSENT_OFF",
+    analyticsRecordedResultKeys: [],
     updatedAtMillis: nowMillis,
   };
-  return view(await dependencies.store.request({ record }));
+  const persisted = await dependencies.store.request({ record });
+  let current = persisted;
+  const revokeOperationId = createHash("sha256")
+    .update("account-deletion-analytics-revoke\0", "utf8")
+    .update(persisted.requestId, "utf8")
+    .digest("hex");
+  try {
+    if (
+      persisted.analyticsResultEligible &&
+      persisted.analyticsRequestOutcome === "PENDING"
+    ) {
+      let analyticsResult: SafeServerAnalyticsResult;
+      try {
+        analyticsResult = dependencies.analytics === undefined
+          ? { kind: "transient" }
+          : await dependencies.analytics({
+              ownerUid: authenticated.uid,
+              eventName: "ACCOUNT_DELETION_REQUESTED",
+              operationIdentifier: persisted.requestId,
+            });
+      } catch {
+        analyticsResult = { kind: "transient" };
+      }
+      current = await dependencies.store.recordRequestAnalyticsOutcome({
+        ownerUid: authenticated.uid,
+        requestId: persisted.requestId,
+        outcome: analyticsRequestOutcome(analyticsResult),
+        nowMillis,
+      });
+    }
+  } finally {
+    if (dependencies.analyticsDeletion !== undefined) {
+      await dependencies.analyticsDeletion.revokeForAccountDeletion(
+        authenticated.uid,
+        revokeOperationId,
+      );
+    }
+  }
+  return view(current);
 }
 
 export async function cancelAccountDeletion(

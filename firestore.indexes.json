@@ -6,6 +6,7 @@
     { "collectionGroup": "weatherRisks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "detectedAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "weatherAlerts", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
     { "collectionGroup": "weatherAlerts", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "leaseExpiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "weatherAlerts", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "source", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
     { "collectionGroup": "placements", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "miniHomeId", "order": "ASCENDING" }, { "fieldPath": "layoutRevision", "order": "ASCENDING" }, { "fieldPath": "zIndex", "order": "ASCENDING" } ] },
     { "collectionGroup": "ownedItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "applied", "order": "ASCENDING" }, { "fieldPath": "acquiredAt", "order": "DESCENDING" } ] },
     { "collectionGroup": "shareLinks", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "revokedAt", "order": "ASCENDING" }, { "fieldPath": "expiresAt", "order": "ASCENDING" } ] },
@@ -14,10 +15,28 @@
     { "collectionGroup": "riskContents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "plantContentId", "order": "ASCENDING" } ] },
     { "collectionGroup": "shopItems", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "publicationState", "order": "ASCENDING" }, { "fieldPath": "category", "order": "ASCENDING" } ] },
     { "collectionGroup": "appleAuthSessions", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
-    { "collectionGroup": "appleAuthRateLimits", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] }
+    { "collectionGroup": "appleAuthRateLimits", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "privateMediaReservations", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "mediaKind", "order": "ASCENDING" }, { "fieldPath": "state", "order": "ASCENDING" }, { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "privateMediaReservations", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "mediaKind", "order": "ASCENDING" }, { "fieldPath": "state", "order": "ASCENDING" }, { "fieldPath": "committedAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "identificationRequests", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "retentionExpiresAt", "order": "ASCENDING" }, { "fieldPath": "hardExpiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "identificationRequests", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "retentionExpiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "analyticsEvents", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "consentRevision", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "analyticsEvents", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "notificationHistory", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "notificationDeliveries", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "notificationDeliveryDiagnostics", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "accountDeletionTombstones", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "weatherSnapshots", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "observedAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "weatherRisks", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "observedAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] },
+    { "collectionGroup": "weatherAlerts", "queryScope": "COLLECTION_GROUP", "fields": [ { "fieldPath": "expiresAt", "order": "ASCENDING" }, { "fieldPath": "__name__", "order": "ASCENDING" } ] }
   ],
   "fieldOverrides": [
     { "collectionGroup": "appleAuthSessions", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
-    { "collectionGroup": "appleAuthRateLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+    { "collectionGroup": "appleAuthRateLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "analyticsEvents", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "notificationHistory", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "notificationDeliveries", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "notificationDeliveryDiagnostics", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "accountDeletionTombstones", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
   ]
 }

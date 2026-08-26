@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AccountMutationLockedError,
   FirestoreAccountMutationLock,
+  isAccountDeletionIrreversible,
   withAccountMutationLock,
   type AccountMutationLock,
 } from "./account-mutation-lock.js";
@@ -32,10 +33,34 @@ test("shared mutation boundary prevents the callable body while deletion is proc
   assert.equal(calls, 0);
 });
 
-test("Firestore lock remains permanent for terminal progress-bearing states", async () => {
+test("account deletion irreversibility requires terminal progress or a completed scope", () => {
   for (const [record, expected] of [
     [{ status: "RECEIVED", completedScopes: [] }, false],
     [{ status: "FAILED", completedScopes: [] }, false],
+    [{ status: "CANCELLED", completedScopes: [] }, false],
+    [{ status: "PROCESSING", completedScopes: [] }, false],
+    [{ status: "PROCESSING", completedScopes: ["PUBLIC_SHARES"] }, true],
+    [{ status: "PARTIALLY_FAILED", completedScopes: [] }, true],
+    [{ status: "COMPLETED", completedScopes: [] }, true],
+    [{ status: "RECEIVED", completedScopes: ["PUBLIC_SHARES"] }, true],
+    [{ status: "FAILED", completedScopes: ["PUBLIC_SHARES"] }, true],
+    [{ status: "CANCELLED", completedScopes: ["PUBLIC_SHARES"] }, true],
+    [{ status: undefined, completedScopes: undefined }, false],
+    [{ status: "PROCESSING", completedScopes: "PUBLIC_SHARES" }, false],
+  ] as const) {
+    assert.equal(
+      isAccountDeletionIrreversible(record.status, record.completedScopes),
+      expected,
+      `${String(record.status)}:${String(record.completedScopes)}`,
+    );
+  }
+});
+
+test("Firestore lock remains permanent for terminal progress-bearing states", async () => {
+  for (const [record, expected] of [
+    [{ status: "RECEIVED", completedScopes: [] }, true],
+    [{ status: "FAILED", completedScopes: [] }, false],
+    [{ status: "CANCELLED", completedScopes: [] }, false],
     [{ status: "PROCESSING", completedScopes: [] }, true],
     [{ status: "PARTIALLY_FAILED", completedScopes: ["PUBLIC_SHARES"] }, true],
     [{ status: "COMPLETED", completedScopes: ["PUBLIC_SHARES"] }, true],

@@ -2,6 +2,8 @@ export const ACCOUNT_DELETION_GRACE_MILLIS = 7 * 24 * 60 * 60 * 1_000;
 export const ACCOUNT_DELETION_RECENT_AUTH_SECONDS = 5 * 60;
 export const ACCOUNT_DELETION_LEASE_MILLIS = 10 * 60 * 1_000;
 export const ACCOUNT_DELETION_SCAN_LIMIT = 50;
+export const ACCOUNT_DELETION_TERMINAL_RETENTION_MILLIS = 35 * 24 * 60 * 60 * 1_000;
+export const ACCOUNT_DELETION_TOMBSTONE_CLEANUP_LIMIT = 200;
 
 export const ACCOUNT_DELETION_SCOPES = [
   "PUBLIC_SHARES",
@@ -10,6 +12,7 @@ export const ACCOUNT_DELETION_SCOPES = [
   "IDENTIFICATION_ORIGINALS",
   "PLANT_PHOTOS",
   "SHARE_IMAGES",
+  "OWNER_GLOBAL_SWEEP",
   "USER_DOCUMENTS",
   "AUTH_ACCOUNT",
 ] as const;
@@ -24,6 +27,16 @@ export const ACCOUNT_DELETION_STATUSES = [
   "CANCELLED",
 ] as const;
 export type AccountDeletionStatus = (typeof ACCOUNT_DELETION_STATUSES)[number];
+
+export const ACCOUNT_DELETION_ANALYTICS_REQUEST_OUTCOMES = [
+  "PENDING",
+  "RECORDED",
+  "CONSENT_OFF",
+  "LOCKED",
+  "TRANSIENT",
+] as const;
+export type AccountDeletionAnalyticsRequestOutcome =
+  (typeof ACCOUNT_DELETION_ANALYTICS_REQUEST_OUTCOMES)[number];
 
 export type AccountDeletionAuth = Readonly<{
   uid: string;
@@ -44,6 +57,9 @@ export type AccountDeletionRecord = Readonly<{
   completedScopes: readonly AccountDeletionScope[];
   failedScopes: readonly AccountDeletionScope[];
   claimGeneration: number;
+  analyticsResultEligible: boolean;
+  analyticsRequestOutcome: AccountDeletionAnalyticsRequestOutcome;
+  analyticsRecordedResultKeys: readonly string[];
   updatedAtMillis: number;
 }>;
 
@@ -59,6 +75,12 @@ export type AccountDeletionView = Readonly<{
 }>;
 
 export type RequestDeletionCommand = Readonly<{ record: AccountDeletionRecord }>;
+export type RecordDeletionRequestAnalyticsCommand = Readonly<{
+  ownerUid: string;
+  requestId: string;
+  outcome: Exclude<AccountDeletionAnalyticsRequestOutcome, "PENDING">;
+  nowMillis: number;
+}>;
 export type CancelDeletionCommand = Readonly<{
   ownerUid: string;
   requestId: string;
@@ -88,6 +110,9 @@ export type FinishDeletionCommand = Readonly<{
 export interface AccountDeletionStore {
   load(ownerUid: string): Promise<AccountDeletionRecord | null>;
   request(command: RequestDeletionCommand): Promise<AccountDeletionRecord>;
+  recordRequestAnalyticsOutcome(
+    command: RecordDeletionRequestAnalyticsCommand,
+  ): Promise<AccountDeletionRecord>;
   cancel(command: CancelDeletionCommand): Promise<AccountDeletionRecord | null>;
   retry(command: RetryDeletionCommand): Promise<AccountDeletionRecord | null>;
   claimDue(command: ClaimDeletionCommand): Promise<readonly AccountDeletionRecord[]>;

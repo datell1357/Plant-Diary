@@ -226,7 +226,7 @@ test("real Firestore and Storage adapters commit, resolve, finalize-delete, and 
     await firestore.doc(`accountDeletionRequests/${ownerUid}`).set({
       ownerUid,
       status: "PROCESSING",
-      completedScopes: [],
+      completedScopes: ["PUBLIC_SHARES"],
       updatedAt: deletionAt,
     });
     await handlePrivateMediaFinalized({ object: finalized, repository, objects });

@@ -287,7 +287,7 @@ describe("strict server-derived Firebase contract", () => {
     const server = env.authenticatedContext("service", { server: true }).firestore();
     const fixtures = {
       notificationDeliveries: { ...write("user-a"), plantId: "plant-a", dueDate: "2026-08-12", attempt: 0, status: "SENT", scheduledFor: ts("2026-08-12T00:00:00Z"), deliveredAt: ts("2026-08-12T00:01:00Z"), deduplicationKey: "user-a:plant-a:2026-08-12:0" },
-      weatherRisks: { ...write("user-a"), plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", action: "mist", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null },
+      weatherRisks: { ...write("user-a"), plantId: "plant-a", plantName: "몬스테라", snapshotId: "snapshot-a", type: "DRY", reason: "건조해요", action: "mist", detectedAt: ts("2026-08-12T00:00:00Z"), observedAt: ts("2026-08-12T00:00:00Z"), active: true, transition: 1, deliveredTransition: null, source: "DEVICE", locationConsentGeneration: 2 },
       ownedItems: { ...write("user-a"), itemId: "item-a", acquiredAt: ts("2026-08-12T00:00:00Z"), applied: true },
     };
     for (const [collection, fixture] of Object.entries(fixtures)) {

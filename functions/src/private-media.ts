@@ -4,10 +4,10 @@ import {
   PRIVATE_MEDIA_PREFIX,
   PRIVATE_MEDIA_UPLOAD_TTL_MILLIS,
   PrivateMediaError,
+  matchesPrivateMediaReservationObject,
   reservePrivateMediaInputSchema,
   validObjectGeneration,
   type PrivateMediaAuth,
-  type PrivateMediaObject,
   type PrivateMediaObjectStore,
   type PrivateMediaReservation,
   type PrivateMediaReservationRepository,
@@ -23,10 +23,12 @@ export {
   PRIVATE_MEDIA_UPLOAD_TTL_MILLIS,
   PrivateMediaError,
   isPrivateMediaSeal,
+  matchesPrivateMediaReservationObject,
   parsePrivateMediaReference,
   validObjectGeneration,
 } from "./private-media-contract.js";
 export type {
+  ClaimExpiredReservedUploadCommand,
   CommitPrivateMediaCommand,
   CreateSealResult,
   DeleteGenerationResult,
@@ -111,6 +113,7 @@ export async function reservePrivateMediaUpload(
     contentType: parsed.data.contentType,
     byteSize: parsed.data.byteSize,
     objectPath: `${PRIVATE_MEDIA_PREFIX}/${reservationId}`,
+    identificationRequestId: null,
     idempotencyKeyHash: createHash("sha256").update(parsed.data.idempotencyKey).digest("hex"),
     requestHash,
     state: "RESERVED",
@@ -125,6 +128,7 @@ export async function reservePrivateMediaUpload(
     throw new PrivateMediaError("failed-precondition", "Private media reservation has expired");
   }
   const requiredHeaders = {
+    "content-length": String(reservation.byteSize),
     "content-type": reservation.contentType,
     "x-goog-if-generation-match": "0",
     "x-goog-meta-owner-uid": reservation.ownerUid,
@@ -168,10 +172,16 @@ export async function commitPrivateMediaReservation(
     throw new PrivateMediaError("failed-precondition", "Reservation is sealed");
   }
   const object = await dependencies.objects.inspect(reservation.objectPath);
-  if (object === null || !matchesReservation(object, reservation)) {
+  if (object === null) {
     throw new PrivateMediaError("failed-precondition", "Uploaded object does not match reservation");
   }
   const generation = validObjectGeneration(object.generation);
+  if (!matchesPrivateMediaReservationObject(object, reservation)) {
+    if (generation !== null) {
+      await dependencies.objects.deleteGeneration(reservation.objectPath, generation);
+    }
+    throw new PrivateMediaError("failed-precondition", "Uploaded object does not match reservation");
+  }
   if (generation === null) {
     throw new PrivateMediaError("failed-precondition", "Uploaded object generation is invalid");
   }
@@ -187,21 +197,6 @@ export async function commitPrivateMediaReservation(
     contentType: committed.contentType,
     byteSize: committed.byteSize,
   };
-}
-
-function matchesReservation(
-  object: PrivateMediaObject,
-  reservation: PrivateMediaReservation,
-): boolean {
-  const metadataKeys = Object.keys(object.customMetadata).sort();
-  return object.path === reservation.objectPath &&
-    object.byteSize === reservation.byteSize &&
-    object.contentType === reservation.contentType &&
-    metadataKeys.length === 2 &&
-    metadataKeys[0] === "ownerUid" &&
-    metadataKeys[1] === "reservationId" &&
-    object.customMetadata.ownerUid === reservation.ownerUid &&
-    object.customMetadata.reservationId === reservation.reservationId;
 }
 
 function invalidInput(cause: unknown): never {

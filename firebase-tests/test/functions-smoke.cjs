@@ -20,16 +20,9 @@ async function main() {
   assert.equal(process.env.GOOGLE_APPLICATION_CREDENTIALS, undefined);
   app = initializeApp({ projectId, apiKey: "demo-key", appId: "demo-app" });
   const auth = getAuth(app);
-  const debugAppCheckToken = [
-    Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url"),
-    Buffer.from(JSON.stringify({
-      aud: [`projects/${projectId}`],
-      iss: `https://firebaseappcheck.googleapis.com/${projectId}`,
-      sub: "demo-app",
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    })).toString("base64url"),
-    "debug-signature",
-  ].join(".");
+  const debugAppCheckToken = process.env.FUNCTIONS_EMULATOR_APP_CHECK_DEBUG_TOKEN;
+  assert.equal(typeof debugAppCheckToken, "string");
+  assert.notEqual(debugAppCheckToken.length, 0);
   initializeAppCheck(app, {
     provider: new CustomProvider({
       getToken: async () => ({
@@ -55,6 +48,20 @@ async function main() {
   assert.deepEqual(await missingAppCheck.json(), {
     error: { message: "Unauthenticated", status: "UNAUTHENTICATED" },
   });
+  const missingAnalyticsAppCheck = await fetch(
+    `http://127.0.0.1:5001/${projectId}/us-central1/recordAnalyticsEvent`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ data: { deliberately: "invalid" } }),
+    },
+  );
+  assert.equal(missingAnalyticsAppCheck.status, 401);
+  const getAnalyticsConsent = httpsCallable(functions, "getAnalyticsConsent");
+  await assert.rejects(
+    () => getAnalyticsConsent({ ownerUid: "anonymous-owner" }),
+    (error) => error.code === "functions/unauthenticated",
+  );
   const applyWrite = httpsCallable(functions, "applyRevisionedOwnerWrite");
   const mutationPayload = {
     collection: "personalPlants",
@@ -72,6 +79,151 @@ async function main() {
   const credential = await signInAnonymously(auth);
   adminApp = initializeAdminApp({ projectId }, "apple-callback-smoke");
   const adminFirestore = getAdminFirestore(adminApp);
+  const appCheckGuardDocumentId = "app-check-guard-plant";
+  const appCheckGuardDocument = adminFirestore.doc(
+    `users/${credential.user.uid}/personalPlants/${appCheckGuardDocumentId}`,
+  );
+  const authenticatedMutation = {
+    collection: "personalPlants",
+    documentId: appCheckGuardDocumentId,
+    mutationType: "CREATE",
+    expectedRevision: 0,
+    idempotencyKey: "app-check-guard-0001",
+    expectedOwnerUid: credential.user.uid,
+    payload: { displayName: "App Check guard", registrationMethod: "MANUAL" },
+  };
+  const authToken = await credential.user.getIdToken();
+  async function invokeAuthenticatedMutation(appCheckToken) {
+    return fetch(callableUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${authToken}`,
+        ...(appCheckToken === undefined ? {} : { "x-firebase-appcheck": appCheckToken }),
+      },
+      body: JSON.stringify({ data: authenticatedMutation }),
+    });
+  }
+  for (const appCheckToken of [undefined, "not-a-valid-app-check-token", "wrong-debug-token"]) {
+    const rejected = await invokeAuthenticatedMutation(appCheckToken);
+    assert.equal(rejected.status, 401);
+    assert.deepEqual(await rejected.json(), {
+      error: { message: "Unauthenticated", status: "UNAUTHENTICATED" },
+    });
+    assert.equal((await appCheckGuardDocument.get()).exists, false);
+  }
+  const accepted = await fetch(
+    `http://127.0.0.1:5001/${projectId}/us-central1/getAnalyticsConsent`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${authToken}`,
+        "x-firebase-appcheck": debugAppCheckToken,
+      },
+      body: JSON.stringify({ data: { ownerUid: credential.user.uid } }),
+    },
+  );
+  assert.equal(accepted.status, 200);
+  assert.equal((await appCheckGuardDocument.get()).exists, false);
+  const analyticsOwner = { ownerUid: credential.user.uid };
+  const setAnalyticsConsent = httpsCallable(functions, "setAnalyticsConsent");
+  const recordAnalyticsEvent = httpsCallable(functions, "recordAnalyticsEvent");
+  assert.deepEqual((await getAnalyticsConsent(analyticsOwner)).data, {
+    schemaVersion: 1,
+    granted: false,
+    commandGeneration: 0,
+    grantedAtEpochMillis: null,
+    revokedAtEpochMillis: null,
+  });
+  await assert.rejects(
+    () => getAnalyticsConsent({ ownerUid: "foreign-owner" }),
+    (error) => error.code === "functions/permission-denied",
+  );
+  const analyticsGrant = await setAnalyticsConsent({
+    ...analyticsOwner,
+    granted: true,
+    commandGeneration: 1,
+    operationId: "analytics-smoke-grant-0001",
+  });
+  assert.equal(analyticsGrant.data.granted, true);
+  assert.equal(analyticsGrant.data.commandGeneration, 1);
+  assert.equal(analyticsGrant.data.replayed, false);
+  const analyticsEvent = {
+    schemaVersion: 1,
+    eventId: "11111111-1111-4111-8111-111111111111",
+    eventName: "APP_SESSION_STARTED",
+    consentRevision: 1,
+  };
+  const secondAnalyticsEvent = {
+    ...analyticsEvent,
+    eventId: "22222222-2222-4222-8222-222222222222",
+    eventName: "CARE_INFORMATION_VIEWED",
+  };
+  const recordedAnalytics = await recordAnalyticsEvent({
+    ...analyticsOwner,
+    events: [analyticsEvent, secondAnalyticsEvent],
+  });
+  const replayedAnalytics = await recordAnalyticsEvent({
+    ...analyticsOwner,
+    events: [secondAnalyticsEvent, analyticsEvent],
+  });
+  assert.deepEqual(recordedAnalytics.data, {
+    results: [
+      { eventId: analyticsEvent.eventId, accepted: true, duplicate: false },
+      { eventId: secondAnalyticsEvent.eventId, accepted: true, duplicate: false },
+    ],
+  });
+  assert.deepEqual(replayedAnalytics.data, {
+    results: [
+      { eventId: secondAnalyticsEvent.eventId, accepted: true, duplicate: true },
+      { eventId: analyticsEvent.eventId, accepted: true, duplicate: true },
+    ],
+  });
+  await assert.rejects(
+    () => recordAnalyticsEvent({
+      ...analyticsOwner,
+      events: [{ ...analyticsEvent, properties: {} }],
+    }),
+    (error) => error.code === "functions/invalid-argument",
+  );
+  await assert.rejects(
+    () => recordAnalyticsEvent({
+      ...analyticsOwner,
+      events: [{
+        ...analyticsEvent,
+        eventId: "33333333-3333-4333-8333-333333333333",
+        eventName: "WATERING_NOTIFICATION_SENT",
+      }],
+    }),
+    (error) => error.code === "functions/permission-denied",
+  );
+  const storedAnalyticsRef = adminFirestore.doc(
+    `users/${credential.user.uid}/analyticsEvents/${analyticsEvent.eventId}`,
+  );
+  const storedAnalytics = await storedAnalyticsRef.get();
+  assert.deepEqual(Object.keys(storedAnalytics.data()).sort(), [
+    "consentRevision", "eventName", "expiresAt", "occurredAt", "schemaVersion",
+  ]);
+  const storedConsent = await adminFirestore
+    .doc(`users/${credential.user.uid}/consents/analytics`)
+    .get();
+  assert.deepEqual(Object.keys(storedConsent.data()).sort(), [
+    "commandGeneration", "granted", "grantedAt", "operationId", "revokedAt",
+    "schemaVersion", "updatedAt",
+  ]);
+  assert.equal(storedConsent.data().revision, undefined);
+  const analyticsRevoke = await setAnalyticsConsent({
+    ...analyticsOwner,
+    granted: false,
+    commandGeneration: 2,
+    operationId: "analytics-smoke-revoke-0002",
+  });
+  assert.equal(analyticsRevoke.data.granted, false);
+  assert.equal(analyticsRevoke.data.commandGeneration, 2);
+  assert.equal(analyticsRevoke.data.purgedEventCount, 2);
+  assert.equal((await storedAnalyticsRef.get()).exists, false);
+
   const mutation = { ...mutationPayload, expectedOwnerUid: credential.user.uid };
   const first = await applyWrite(mutation);
   const duplicate = await applyWrite(mutation);
@@ -99,6 +251,7 @@ async function main() {
     "IDENTIFICATION_ORIGINALS",
     "PLANT_PHOTOS",
     "SHARE_IMAGES",
+    "OWNER_GLOBAL_SWEEP",
     "USER_DOCUMENTS",
     "AUTH_ACCOUNT",
   ]);
@@ -150,6 +303,7 @@ async function main() {
       "IDENTIFICATION_ORIGINALS",
       "PLANT_PHOTOS",
       "SHARE_IMAGES",
+      "OWNER_GLOBAL_SWEEP",
       "USER_DOCUMENTS",
       "AUTH_ACCOUNT",
     ],
@@ -168,6 +322,15 @@ async function main() {
       expectedRevision: 1,
       idempotencyKey: "operation-callable-frozen",
       payload: { note: "blocked" },
+    }),
+    (error) => error.code === "functions/failed-precondition",
+  );
+  await assert.rejects(
+    () => setAnalyticsConsent({
+      ...analyticsOwner,
+      granted: true,
+      commandGeneration: 3,
+      operationId: "analytics-smoke-locked-0003",
     }),
     (error) => error.code === "functions/failed-precondition",
   );
@@ -321,7 +484,7 @@ async function main() {
   await deleteAdminApp(adminApp);
   adminApp = undefined;
 
-  console.log(`FUNCTIONS_QA appCheck=valid missingAppCheck=rejected ownerDerived=true atomicMiniHomeSnapshot=${combined.data.snapshotGeneration} revision=${snapshot.data().revision} duplicate=${duplicate.data.kind} conflict=${conflict.data.kind} deletionCallables=5 mediaCallables=2 mediaForeign=denied mediaMissing=not-found deletionDuplicate=exact deletionForeign=denied deletionRetry=immediate processingFreeze=denied idempotencyRawAtRest=false shareReplay=exact revokeReplay=original-timestamp revokeFields=exact publicJson=200 publicHtml=200 revoked=404 rawTokenAtRest=false appleStandardCallback=accepted appleReplay=rejected appleError=accepted`);
+  console.log(`FUNCTIONS_QA appCheck=valid missingAppCheck=rejected ownerDerived=true atomicMiniHomeSnapshot=${combined.data.snapshotGeneration} revision=${snapshot.data().revision} duplicate=${duplicate.data.kind} conflict=${conflict.data.kind} deletionScopes=9 mediaCallables=2 mediaForeign=denied mediaMissing=not-found deletionDuplicate=exact deletionForeign=denied deletionRetry=immediate processingFreeze=denied idempotencyRawAtRest=false shareReplay=exact revokeReplay=original-timestamp revokeFields=exact publicJson=200 publicHtml=200 revoked=404 rawTokenAtRest=false appleStandardCallback=accepted appleReplay=rejected appleError=accepted`);
   await deleteApp(app);
   app = undefined;
 }

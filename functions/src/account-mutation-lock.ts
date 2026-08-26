@@ -3,7 +3,10 @@ import type {
   Transaction,
 } from "firebase-admin/firestore";
 
-const LOCKED_STATUSES = new Set(["PROCESSING", "PARTIALLY_FAILED", "COMPLETED"]);
+const IRREVERSIBLE_STATUSES = new Set([
+  "PARTIALLY_FAILED",
+  "COMPLETED",
+]);
 
 export interface AccountMutationLock {
   isProcessing(ownerUid: string): Promise<boolean>;
@@ -73,7 +76,15 @@ export class FirestoreAccountMutationLock implements AccountMutationLock {
   }
 }
 
-export function isAccountMutationLocked(status: unknown, completedScopes: unknown): boolean {
-  return LOCKED_STATUSES.has(status as string) ||
+export function isAccountDeletionIrreversible(
+  status: unknown,
+  completedScopes: unknown,
+): boolean {
+  return (typeof status === "string" && IRREVERSIBLE_STATUSES.has(status)) ||
     (Array.isArray(completedScopes) && completedScopes.length > 0);
+}
+
+export function isAccountMutationLocked(status: unknown, completedScopes: unknown): boolean {
+  return status === "RECEIVED" || status === "PROCESSING" ||
+    isAccountDeletionIrreversible(status, completedScopes);
 }
