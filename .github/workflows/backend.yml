@@ -1,0 +1,64 @@
+name: Firebase backend
+
+on:
+  pull_request:
+    paths:
+      - "firebase-backend/**"
+      - "docs/ios/inventory-contract-v3.fixture.json"
+      - "docs/ios/minihome-contract-v1.fixture.json"
+      - ".github/workflows/backend.yml"
+  push:
+    branches:
+      - main
+      - "feat/**"
+    paths:
+      - "firebase-backend/**"
+      - "docs/ios/inventory-contract-v3.fixture.json"
+      - "docs/ios/minihome-contract-v1.fixture.json"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Install pinned toolchain and frozen dependencies
+        working-directory: firebase-backend/functions
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+          npm install --global firebase-tools@15.20.0
+          pnpm install --frozen-lockfile
+      - name: Verify action pins
+        run: |
+          node -e '
+            const source = require("node:fs").readFileSync(".github/workflows/backend.yml", "utf8");
+            const refs = source.split("\n").filter((line) => line.trimStart().startsWith("uses:"));
+            if (refs.length === 0 || refs.some((line) => !/uses:\s+\S+@[0-9a-f]{40}(?:\s|$)/.test(line))) process.exit(1);
+          '
+      - name: Lint, typecheck, build, and unit test
+        working-directory: firebase-backend/functions
+        run: |
+          pnpm run lint
+          pnpm run typecheck
+          pnpm run build
+          pnpm test
+      - name: Run isolated Firebase emulator tests
+        working-directory: firebase-backend
+        env:
+          METADATA_SERVER_DETECTION: none
+        run: |
+          firebase \
+            --config firebase.emulator.json \
+            --project demo-planterior-ios-deletion \
+            emulators:exec --only auth,firestore,functions,pubsub,storage \
+            'pnpm --dir functions test:emulator'

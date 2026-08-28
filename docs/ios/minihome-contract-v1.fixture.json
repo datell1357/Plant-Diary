@@ -1,0 +1,145 @@
+{
+  "contractVersion": 1,
+  "callables": [
+    "loadMiniHome",
+    "saveMiniHome"
+  ],
+  "canonicalSnapshotEncoding": "MINIHOME-SNAPSHOT-V1\n1\nb3duZXItZml4dHVyZQ\ncm9vbS1tYWlu\n64KY7J2YIOuvuOuLiO2ZiA\n7\n1787616123456\nP\tcGxhY2VtZW50LWxhbXA\tI\taXRlbS1sYW1w\t0000000000000000\t3ff0000000000000\t0\nP\tcGxhY2VtZW50LXBsYW50\tP\tcGxhbnQtbW9uc3RlcmE\t3fd0000000000000\t3fe8000000000000\t1",
+  "canonicalRequestEncoding": "MINIHOME-REQUEST-V1\n1\nb3duZXItZml4dHVyZQ\n6\ncm9vbS1tYWlu\n64KY7J2YIOuvuOuLiO2ZiA\nP\tcGxhY2VtZW50LWxhbXA\tI\taXRlbS1sYW1w\t0000000000000000\t3ff0000000000000\t0\nP\tcGxhY2VtZW50LXBsYW50\tP\tcGxhbnQtbW9uc3RlcmE\t3fd0000000000000\t3fe8000000000000\t1",
+  "requestHash": "fe1d175e863aa02e5d9b741da24cb563899db935b10de85fa47ecf1687689a66",
+  "snapshot": {
+    "contractVersion": 1,
+    "ownerUid": "owner-fixture",
+    "roomId": "room-main",
+    "name": "나의 미니홈",
+    "placements": [
+      {
+        "placementId": "placement-plant",
+        "plantId": "plant-monstera",
+        "normalizedX": 0.25,
+        "normalizedY": 0.75,
+        "zIndex": 1
+      },
+      {
+        "placementId": "placement-lamp",
+        "itemId": "item-lamp",
+        "normalizedX": 0,
+        "normalizedY": 1,
+        "zIndex": 0
+      }
+    ],
+    "revision": 7,
+    "updatedAtEpochMillis": 1787616123456,
+    "snapshotHash": "faaab600e855c12fbb97933232ddba4674069a8fe03874d860d728c49de17bb1"
+  },
+  "loadResponse": {
+    "kind": "snapshot",
+    "contractVersion": 1,
+    "ownerUid": "owner-fixture",
+    "roomId": "room-main",
+    "name": "나의 미니홈",
+    "placements": [
+      {
+        "placementId": "placement-plant",
+        "plantId": "plant-monstera",
+        "normalizedX": 0.25,
+        "normalizedY": 0.75,
+        "zIndex": 1
+      },
+      {
+        "placementId": "placement-lamp",
+        "itemId": "item-lamp",
+        "normalizedX": 0,
+        "normalizedY": 1,
+        "zIndex": 0
+      }
+    ],
+    "revision": 7,
+    "updatedAtEpochMillis": 1787616123456,
+    "snapshotHash": "faaab600e855c12fbb97933232ddba4674069a8fe03874d860d728c49de17bb1"
+  },
+  "saveResponse": {
+    "kind": "committed",
+    "snapshot": {
+      "contractVersion": 1,
+      "ownerUid": "owner-fixture",
+      "roomId": "room-main",
+      "name": "나의 미니홈",
+      "placements": [
+        {
+          "placementId": "placement-plant",
+          "plantId": "plant-monstera",
+          "normalizedX": 0.25,
+          "normalizedY": 0.75,
+          "zIndex": 1
+        },
+        {
+          "placementId": "placement-lamp",
+          "itemId": "item-lamp",
+          "normalizedX": 0,
+          "normalizedY": 1,
+          "zIndex": 0
+        }
+      ],
+      "revision": 7,
+      "updatedAtEpochMillis": 1787616123456,
+      "snapshotHash": "faaab600e855c12fbb97933232ddba4674069a8fe03874d860d728c49de17bb1"
+    }
+  },
+  "operation": {
+    "schemaVersion": 1,
+    "ownerUid": "owner-fixture",
+    "expectedRevision": 6,
+    "requestHash": "fe1d175e863aa02e5d9b741da24cb563899db935b10de85fa47ecf1687689a66",
+    "snapshot": {
+      "contractVersion": 1,
+      "ownerUid": "owner-fixture",
+      "roomId": "room-main",
+      "name": "나의 미니홈",
+      "placements": [
+        {
+          "placementId": "placement-plant",
+          "plantId": "plant-monstera",
+          "normalizedX": 0.25,
+          "normalizedY": 0.75,
+          "zIndex": 1
+        },
+        {
+          "placementId": "placement-lamp",
+          "itemId": "item-lamp",
+          "normalizedX": 0,
+          "normalizedY": 1,
+          "zIndex": 0
+        }
+      ],
+      "revision": 7,
+      "updatedAtEpochMillis": 1787616123456,
+      "snapshotHash": "faaab600e855c12fbb97933232ddba4674069a8fe03874d860d728c49de17bb1"
+    }
+  },
+  "document": {
+    "schemaVersion": 1,
+    "ownerUid": "owner-fixture",
+    "roomId": "room-main",
+    "name": "나의 미니홈",
+    "placements": [
+      {
+        "placementId": "placement-plant",
+        "plantId": "plant-monstera",
+        "normalizedX": 0.25,
+        "normalizedY": 0.75,
+        "zIndex": 1
+      },
+      {
+        "placementId": "placement-lamp",
+        "itemId": "item-lamp",
+        "normalizedX": 0,
+        "normalizedY": 1,
+        "zIndex": 0
+      }
+    ],
+    "revision": 7,
+    "updatedAtEpochMillis": 1787616123456,
+    "snapshotHash": "faaab600e855c12fbb97933232ddba4674069a8fe03874d860d728c49de17bb1"
+  }
+}

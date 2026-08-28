@@ -11,6 +11,10 @@ The Node 22, `us-central1` codebase exports:
 - `requestAccountDeletion` (callable, authenticated, App Check enforced, auth age at most 5 minutes)
 - `cancelAccountDeletion` (callable, authenticated, App Check enforced)
 - `recoverAccountDeletion` (callable, opaque request capability, App Check enforced)
+- `loadInventory` (callable, authenticated, App Check enforced)
+- `acquireInventoryItem` (callable, authenticated, App Check enforced)
+- `loadMiniHome` (callable, authenticated, App Check enforced)
+- `saveMiniHome` (callable, authenticated, App Check enforced)
 - `executeDueAccountDeletions` (scheduled every 15 minutes)
 
 Authenticated callables require `ownerID == auth.uid`; recovery instead requires the exact opaque
@@ -18,6 +22,23 @@ owner/request capability. The canonical v1 scope is owner-bound and SHA-256 hash
 machine categories. A request is transactionally idempotent while active, and its immutable schedule
 is exactly 604,800 seconds after receipt. Cancellation is atomic and is allowed only while the request
 is `RECEIVED` and before `scheduledAt`.
+
+Inventory v3 is server-owned: public, available catalog documents live at `inventoryCatalog/{itemId}`;
+server-only ownership, operation, and state documents live below
+`users/{uid}/ownedItems`, `users/{uid}/inventoryOperations`, and `users/{uid}/inventoryState`.
+Both inventory callables derive the owner exclusively from `request.auth.uid`, reject a mismatched
+`expectedOwnerUid`, and atomically record a SHA-256 snapshot generation plus operation receipt.
+`docs/ios/inventory-contract-v3.fixture.json` is consumed by the backend parity test and iOS decoder
+tests, pinning callable names, strict v3 snapshot wire keys, both ownership receipt kinds, and the
+lowercase `InventorySnapshotHasher` digest.
+
+MiniHome v1 is a focused callable-only CAS authority at `users/{uid}/miniHomes/current`, with
+idempotency receipts at `users/{uid}/miniHomeOperations/{operationId}`. Save transactions read the
+operation first, reject changed replays, return the exact current snapshot on revision conflict
+without writing a receipt, validate personal-plant and owned-item references, and commit a
+server-timestamped revision plus lowercase canonical SHA-256. Direct Firestore access remains denied.
+The byte-stable encoder and shared `docs/ios/minihome-contract-v1.fixture.json` pin request and
+snapshot bytes independently of input placement order.
 
 The iOS client retains only the pending owner and opaque request IDs. It checks status while
 foregrounded and can recover an authoritative completion after Auth deletion without an Auth token.

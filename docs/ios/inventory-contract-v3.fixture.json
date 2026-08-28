@@ -1,0 +1,77 @@
+{
+  "contractVersion": 3,
+  "callables": ["loadInventory", "acquireInventoryItem"],
+  "snapshot": {
+    "contractVersion": 3,
+    "ownerUid": "inventory-account-a",
+    "catalog": [
+      {
+        "itemId": "item-lamp",
+        "name": "Lamp",
+        "description": "Server item",
+        "category": "DECORATION",
+        "mediaIdentity": {
+          "path": "catalog-assets/item-lamp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "byteSize": 128,
+          "mimeType": "image/png",
+          "width": 64,
+          "height": 64,
+          "mediaRevision": 2
+        },
+        "acquisitionCondition": null,
+        "revision": 3,
+        "updatedAtEpochMillis": 1787616000000
+      }
+    ],
+    "owned": [
+      {
+        "itemId": "item-lamp",
+        "acquiredAtEpochMillis": 1787616000000,
+        "applied": false,
+        "revision": 5,
+        "availability": "AVAILABLE",
+        "catalogSnapshot": null
+      }
+    ],
+    "registeredPlantCount": 1,
+    "loadedAtEpochMillis": 1787616000000,
+    "partial": false,
+    "inventoryGeneration": 7,
+    "snapshotHash": "60f3b1e9bcf9631105f78c1468ac1e97d88bfaa27213d02cf692ba84058b5bd4"
+  },
+  "receipt": {
+    "kind": "acquired",
+    "ownerUid": "inventory-account-a",
+    "itemId": "item-lamp",
+    "catalogRevision": 3,
+    "ownershipRevision": 5,
+    "acquiredAtEpochMillis": 1787616000000,
+    "mediaIdentity": {
+      "path": "catalog-assets/item-lamp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "byteSize": 128,
+      "mimeType": "image/png",
+      "width": 64,
+      "height": 64,
+      "mediaRevision": 2
+    }
+  },
+  "alreadyOwnedReceipt": {
+    "kind": "already-owned",
+    "ownerUid": "inventory-account-a",
+    "itemId": "item-lamp",
+    "catalogRevision": 3,
+    "ownershipRevision": 5,
+    "acquiredAtEpochMillis": 1787616000000,
+    "mediaIdentity": {
+      "path": "catalog-assets/item-lamp/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "byteSize": 128,
+      "mimeType": "image/png",
+      "width": 64,
+      "height": 64,
+      "mediaRevision": 2
+    }
+  }
+}
