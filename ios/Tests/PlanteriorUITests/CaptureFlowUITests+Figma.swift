@@ -24,13 +24,14 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["capture.review.title"].exists)
         XCTAssertEqual(app.staticTexts["capture.review.title"].label, "사진 확인")
         XCTAssertTrue(app.buttons["capture.review.back"].exists)
-        XCTAssertTrue(app.images["photo.review"].exists, "review renders the chosen photo")
-        let photoContent = app.otherElements["capture.review.content"]
-        XCTAssertTrue(photoContent.exists)
-        XCTAssertEqual(photoContent.frame.minX, 20, accuracy: 2)
-        XCTAssertEqual(photoContent.frame.minY, 196, accuracy: 2)
-        XCTAssertEqual(photoContent.frame.width, 362, accuracy: 2)
-        XCTAssertEqual(photoContent.frame.height, 420, accuracy: 2)
+        let photo = app.images["photo.review"]
+        XCTAssertTrue(photo.exists, "review renders the chosen photo")
+        XCTAssertEqual(photo.label, "촬영한 식물 사진")
+        XCTAssertEqual(photo.frame.minX, 8, accuracy: 2)
+        XCTAssertEqual(photo.frame.minY, 188, accuracy: 2)
+        XCTAssertEqual(photo.frame.width, 386, accuracy: 2)
+        XCTAssertEqual(photo.frame.height, 444, accuracy: 2)
+        XCTAssertFalse(app.otherElements["capture.review.content"].exists)
         XCTAssertTrue(app.staticTexts["capture.review.caption"].exists)
         let identify = app.buttons["photo.acknowledge"]
         let retake = app.buttons["photo.retake"]
@@ -99,7 +100,11 @@ final class CaptureFlowUITests: XCTestCase {
         submitReviewedPhoto(app)
 
         XCTAssertTrue(app.otherElements["capture.identifying"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.otherElements["capture.identifying.progress.static"].exists)
+        XCTAssertEqual(
+            app.otherElements.matching(identifier: "capture.identifying.progress").count,
+            1
+        )
+        XCTAssertFalse(app.otherElements["capture.identifying.progress.static"].exists)
         XCTAssertFalse(app.otherElements["capture.identifying.progress.animated"].exists)
     }
 
@@ -116,7 +121,11 @@ final class CaptureFlowUITests: XCTestCase {
         submitReviewedPhoto(app)
         XCTAssertTrue(app.otherElements["capture.identifying"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["identification.pending"].exists)
-        XCTAssertTrue(app.otherElements["capture.identifying.progress.static"].exists)
+        XCTAssertEqual(
+            app.otherElements.matching(identifier: "capture.identifying.progress").count,
+            1
+        )
+        XCTAssertFalse(app.otherElements["capture.identifying.progress.static"].exists)
         XCTAssertFalse(app.otherElements["capture.identifying.progress.animated"].exists)
     }
 
@@ -186,44 +195,5 @@ final class CaptureFlowUITests: XCTestCase {
             "public-species search must not overwrite the personal display name"
         )
         XCTAssertTrue(app.buttons["registration.submit"].isEnabled)
-    }
-}
-
-extension CaptureFlowUITests {
-    func launchCapture(
-        _ app: XCUIApplication,
-        environment: [String: String] = [:]
-    ) {
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
-        for (key, value) in environment {
-            app.launchEnvironment[key] = value
-        }
-        app.launch()
-    }
-
-    func openCamera(_ app: XCUIApplication) {
-        let fab = app.buttons["tab.camera"]
-        XCTAssertTrue(fab.waitForExistence(timeout: 10))
-        fab.tap()
-    }
-
-    func submitReviewedPhoto(_ app: XCUIApplication) {
-        openCamera(app)
-        XCTAssertTrue(app.images["photo.review"].waitForExistence(timeout: 10))
-        app.buttons["photo.acknowledge"].tap()
-        app.alerts["사진 처리 안내"].buttons["동의하고 계속"].tap()
-    }
-
-    func assertMinimumTargets(_ app: XCUIApplication, identifiers: [String]) {
-        for identifier in identifiers {
-            let control = app.buttons[identifier]
-            XCTAssertTrue(control.exists, "\(identifier) should exist")
-            XCTAssertGreaterThanOrEqual(
-                control.frame.height.rounded(),
-                44,
-                "\(identifier) must keep a 44pt target"
-            )
-        }
     }
 }

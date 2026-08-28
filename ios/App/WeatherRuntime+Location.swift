@@ -3,11 +3,19 @@ import Foundation
 
 extension WeatherRuntime: @preconcurrency CLLocationManagerDelegate {
     func requestLocationIfNeeded() -> Bool {
-        guard locationRequestToken == nil else {
-            return true
+        guard locationRequestContext == nil,
+              let mountedAccountIdentity
+        else {
+            return locationRequestContext != nil
         }
-        let token = UUID()
-        locationRequestToken = token
+        locationRequestGeneration &+= 1
+        let context = LocationRequestContext(
+            accountIdentity: mountedAccountIdentity,
+            token: UUID(),
+            generation: locationRequestGeneration
+        )
+        locationRequestContext = context
+        locationRequestToken = context.token
         #if DEBUG
             if let qaLocationClient {
                 let event = qaLocationClient.request()
@@ -23,10 +31,10 @@ extension WeatherRuntime: @preconcurrency CLLocationManagerDelegate {
             try? await Task.sleep(
                 for: .milliseconds(milliseconds)
             )
-            guard let self, locationRequestToken == token else {
+            guard let self, isCurrentLocationRequest(context) else {
                 return
             }
-            locationRequestToken = nil
+            invalidateLocationRequest()
             locationManager.stopUpdatingLocation()
             homeState = .failed
         }
@@ -41,13 +49,18 @@ extension WeatherRuntime: @preconcurrency CLLocationManagerDelegate {
                 return
             }
         #endif
+        guard isCurrentAuthorizationCallback(manager) ||
+            isCurrentLocationRequest()
+        else {
+            return
+        }
         authorization = Self.authorizationState(
             manager.authorizationStatus,
             accuracy: manager.accuracyAuthorization
         )
+        locationAuthorizationContext = nil
         if authorization == .denied {
-            manager.stopUpdatingLocation()
-            completeLocationRequest()
+            clearUnavailableRegionState()
             locationRegionCode = nil
         }
     }
@@ -56,7 +69,10 @@ extension WeatherRuntime: @preconcurrency CLLocationManagerDelegate {
         _ manager: CLLocationManager,
         didUpdateLocations locations: [CLLocation]
     ) {
-        guard let coordinate = locations.last?.coordinate else {
+        guard manager === locationManager,
+              isCurrentLocationRequest(),
+              let coordinate = locations.last?.coordinate
+        else {
             return
         }
         locationRegionCode = String(
@@ -72,16 +88,59 @@ extension WeatherRuntime: @preconcurrency CLLocationManagerDelegate {
         _ manager: CLLocationManager,
         didFailWithError _: Error
     ) {
+        guard manager === locationManager,
+              isCurrentLocationRequest()
+        else {
+            return
+        }
         completeLocationRequest()
         manager.stopUpdatingLocation()
         homeState = .failed
+    }
+
+    private func isCurrentLocationRequest() -> Bool {
+        guard let context = locationRequestContext else {
+            return false
+        }
+        return isCurrentLocationContext(context)
+    }
+
+    private func isCurrentLocationRequest(
+        _ context: LocationRequestContext
+    ) -> Bool {
+        locationRequestContext == context &&
+            isCurrentLocationContext(context)
+    }
+
+    private func isCurrentAuthorizationCallback(
+        _ manager: CLLocationManager
+    ) -> Bool {
+        guard manager === locationManager,
+              let context = locationAuthorizationContext
+        else {
+            return false
+        }
+        return isCurrentLocationContext(context)
+    }
+
+    private func isCurrentLocationContext(
+        _ context: LocationRequestContext
+    ) -> Bool {
+        context.accountIdentity == mountedAccountIdentity &&
+            context.generation == locationRequestGeneration &&
+            accountScopeID == context.accountIdentity.accountID &&
+            accountCoordinator.matches(context.accountIdentity) &&
+            alertStore.isMounted(accountID: context.accountIdentity.accountID)
     }
 
     #if DEBUG
         private func finishQALocationRequest(
             _: QAWeatherLocationClient.Event
         ) {
-            locationRequestToken = nil
+            guard isCurrentLocationRequest() else {
+                return
+            }
+            completeLocationRequest()
             locationManager.stopUpdatingLocation()
             homeState = .failed
         }

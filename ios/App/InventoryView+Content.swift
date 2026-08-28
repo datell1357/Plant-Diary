@@ -13,7 +13,14 @@ extension InventoryView {
                 .foregroundColor(PlanteriorPalette.accent.color)
                 .bold())
                 .font(PlanteriorTypography.caption)
-                .frame(height: 35, alignment: .center)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(
+                    minHeight: effectiveSizeCategory.isAccessibilityCategory
+                        ? InventoryReferenceMetrics.accessibilityCountMinimumHeight
+                        : InventoryReferenceMetrics.countTrackHeight,
+                    alignment: .center
+                )
                 .padding(.horizontal, PlanteriorSpacing.extraLarge)
                 .accessibilityIdentifier("storage.count")
             if items.isEmpty {
@@ -36,6 +43,12 @@ extension InventoryView {
                             .accessibilityIdentifier("storage.overflow.grid")
                     }
                 }
+                .padding(
+                    .top,
+                    effectiveSizeCategory.isAccessibilityCategory
+                        ? InventoryReferenceMetrics.accessibilityCountToGridSpacing
+                        : PlanteriorSpacing.none
+                )
                 .padding(.horizontal, PlanteriorSpacing.large)
             }
         }
@@ -45,7 +58,7 @@ extension InventoryView {
         LazyVGrid(
             columns: storageColumns,
             alignment: .leading,
-            spacing: 10
+            spacing: InventoryReferenceMetrics.gridSpacing
         ) {
             ForEach(items, id: \.id) { item in
                 warehouseCard(item)

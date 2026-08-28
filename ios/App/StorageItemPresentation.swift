@@ -10,25 +10,41 @@ enum StorageItemPresentation {
         .storageItem08, .storageItem09, .storageItem10, .storageItem11,
         .storageItem12, .storageItem13
     ]
+    private static let catalogAssets: [String: FigmaAsset] = [
+        "item-christmas-tree": .storageItem00,
+        "item-green-wall": .storageItem01,
+        "item-succulent-pot": .storageItem02,
+        "item-lamp": .storageItem03,
+        "item-cozy-rug": .storageItem04,
+        "item-mini-shelf": .storageItem05,
+        "item-vintage-lamp": .storageItem06,
+        "item-small-rug": .storageItem07,
+        "item-cushion": .storageItem08,
+        "item-flower-stand": .storageItem09,
+        "item-autumn-frame": .storageItem10,
+        "item-chair": .storageItem11,
+        "item-window-frame": .storageItem12,
+        "item-wall-art": .storageItem13
+    ]
+
+    static func isSupported(itemID: String) -> Bool {
+        catalogAssets[itemID] != nil
+    }
+
+    static func acceptsBundledMedia(
+        itemID: String,
+        media: InventoryMediaResponse
+    ) -> Bool {
+        guard isSupported(itemID: itemID) else { return false }
+        let suffix = media.mimeType == "image/png"
+            ? "png"
+            : media.mimeType == "image/jpeg" ? "jpg" : "webp"
+        return media.path == "catalog-assets/\(itemID)/\(media.sha256).\(suffix)"
+    }
 
     static func asset(for item: ShopItem) -> FigmaAsset {
-        switch item.id.rawValue {
-        case "item-christmas-tree": .storageItem00
-        case "item-green-wall": .storageItem01
-        case "item-succulent-pot": .storageItem02
-        case "item-lamp": .storageItem03
-        case "item-cozy-rug": .storageItem04
-        case "item-mini-shelf": .storageItem05
-        case "item-vintage-lamp": .storageItem06
-        case "item-small-rug": .storageItem07
-        case "item-cushion": .storageItem08
-        case "item-flower-stand": .storageItem09
-        case "item-autumn-frame": .storageItem10
-        case "item-chair": .storageItem11
-        case "item-window-frame": .storageItem12
-        case "item-wall-art": .storageItem13
-        default: assets[stableIndex(for: item.id.rawValue)]
-        }
+        catalogAssets[item.id.rawValue]
+            ?? assets[stableIndex(for: item.id.rawValue)]
     }
 
     static func heroAsset(for item: ShopItem) -> FigmaAsset {

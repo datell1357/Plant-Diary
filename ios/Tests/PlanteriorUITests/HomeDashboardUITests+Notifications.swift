@@ -25,6 +25,50 @@ extension HomeDashboardUITests {
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
     }
 
+    /// `home.notifications` renders a 40pt avatar-sized bell, but the control
+    /// itself must still expose the 44pt HIG/WCAG target its siblings do.
+    /// Assert the live frame, not the declared modifier: the previously
+    /// shipped nested-frame chain declared 44 and rendered 40.
+    func assertNotificationTargetMeetsMinimum(in app: XCUIApplication) {
+        let minimumTarget: CGFloat = 44
+        let subpixelEpsilon: CGFloat = 0.001
+        let notifications = app.buttons["home.notifications"]
+        XCTAssertTrue(notifications.waitForExistence(timeout: 10))
+        XCTAssertFalse(
+            meetsMinimumTarget(
+                43.9,
+                minimum: minimumTarget,
+                epsilon: subpixelEpsilon
+            ),
+            "the epsilon must not admit a genuinely undersized target"
+        )
+        XCTAssertTrue(
+            meetsMinimumTarget(
+                notifications.frame.width,
+                minimum: minimumTarget,
+                epsilon: subpixelEpsilon
+            ),
+            "home.notifications width was \(notifications.frame)"
+        )
+        XCTAssertTrue(
+            meetsMinimumTarget(
+                notifications.frame.height,
+                minimum: minimumTarget,
+                epsilon: subpixelEpsilon
+            ),
+            "home.notifications height was \(notifications.frame)"
+        )
+        XCTAssertTrue(notifications.isHittable)
+    }
+
+    private func meetsMinimumTarget(
+        _ dimension: CGFloat,
+        minimum: CGFloat,
+        epsilon: CGFloat
+    ) -> Bool {
+        dimension + epsilon >= minimum
+    }
+
     func attachScreenshot(named name: String) {
         attachScreenshot(app: XCUIApplication(), named: name)
     }

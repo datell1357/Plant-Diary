@@ -5,13 +5,22 @@ import SwiftUI
 struct AppShellView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sizeCategory) var sizeCategory
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var auth: AuthRuntime
+    @StateObject var miniHomeStore: MiniHomeStore
     @State var navigation = AppNavigationState()
     @State var showsLogin = false
     @State private var showsOnboarding = OnboardingState.shouldPresent
     @State private var captureDestination: AppRoute?
     @State private var restoresReviewedPhoto = false
     init() {
+        let boundary = MiniHomeAuthoritativeFactory.current()
+        _miniHomeStore = StateObject(
+            wrappedValue: MiniHomeStore(
+                service: boundary.service,
+                cache: boundary.cache
+            )
+        )
         #if DEBUG
             if ProcessInfo.processInfo.environment["QA_INITIAL_TAB"] == "collection" {
                 var state = AppNavigationState()
@@ -23,20 +32,13 @@ struct AppShellView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
+            if !navigation.isCameraPresented, !showsOnboarding {
                 tabContent
+                    .environmentObject(miniHomeStore)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                AppTabBar(
-                    selectedTab: navigation.selectedTab,
-                    selectTab: requestTab,
-                    presentCamera: requestCamera
-                )
-                .padding(.top, PlanteriorSpacing.extraLarge)
-                .background(PlanteriorPalette.canvas.color)
+                    .allowsHitTesting(!showsLogin)
+                    .accessibilityHidden(showsLogin)
             }
-            .allowsHitTesting(!showsLogin)
-            .accessibilityHidden(showsLogin)
 
             if showsLogin {
                 LoginSheet(auth: auth) {
@@ -132,14 +134,15 @@ struct AppShellView: View {
                 showsOnboarding = false
             }
         }
-        .onChange(of: auth.isRestoring) { _, isRestoring in
-            guard !isRestoring else {
-                return
-            }
+        .onChange(of: auth.isRestoring) { _, _ in
             Task { await mountAccountStores() }
         }
         .onChange(of: auth.accountID?.rawValue) {
             Task { await mountAccountStores() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, miniHomeStore.accountID != nil else { return }
+            Task { await miniHomeStore.refresh() }
         }
         .onChange(of: auth.isSignedIn) { _, isSignedIn in
             guard isSignedIn else {
@@ -152,7 +155,7 @@ struct AppShellView: View {
         }
     }
 
-    private func requestTab(_ tab: AppTab) {
+    func requestTab(_ tab: AppTab) {
         guard navigation.requestTab(tab, authentication: authenticationState) == .proceed
         else {
             showsLogin = true
@@ -160,7 +163,7 @@ struct AppShellView: View {
         }
     }
 
-    private func requestCamera() {
+    func requestCamera() {
         guard navigation.requestCamera(authentication: authenticationState) == .proceed
         else {
             showsLogin = true
@@ -183,30 +186,5 @@ struct AppShellView: View {
     private var effectiveReduceMotion: Bool {
         reduceMotion
             || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
-    }
-
-    @ViewBuilder
-    private var tabContent: some View {
-        switch navigation.selectedTab {
-        case .home: tabStack(tab: .home, path: $navigation.homePath)
-        case .collection: tabStack(tab: .collection, path: $navigation.collectionPath)
-        case .storage: tabStack(tab: .storage, path: $navigation.storagePath)
-        case .settings: tabStack(tab: .settings, path: $navigation.settingsPath)
-        }
-    }
-
-    private func tabStack(tab: AppTab, path: Binding<[AppRoute]>) -> some View {
-        NavigationStack(path: path) {
-            AppTabRootView(
-                tab: tab,
-                openDetail: { navigation.push(.tabDetail(tab)) },
-                openCamera: requestCamera,
-                openMiniHome: { navigation.push(.miniHome) },
-                authorizeAccountAction: authorizeAccountAction
-            )
-            .navigationDestination(for: AppRoute.self) { route in
-                AppRouteDestination(route: route)
-            }
-        }
     }
 }

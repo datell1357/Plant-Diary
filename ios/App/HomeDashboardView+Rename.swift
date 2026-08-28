@@ -177,9 +177,9 @@ extension HomeDashboardView {
     private var renameAccessibilityValue: String {
         switch renameQuote {
         case .free:
-            return "1회 무료"
+            "1회 무료"
         case let .paid(_, balance), let .insufficient(_, balance):
-            return "보유 \(balance)"
+            "보유 \(balance)"
         }
     }
 }

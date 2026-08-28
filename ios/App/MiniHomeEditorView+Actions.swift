@@ -142,35 +142,45 @@ extension MiniHomeEditorView {
     }
 
     func save() {
-        isNameFocused = false
-        errorMessage = nil
-        do {
-            try store.save()
-            if case .conflicted = store.state {
-                showsConflictPrompt = true
-            } else if case .failed = store.state {
-                showsRoomSettings = true
-            }
-        } catch {
-            errorMessage = "저장하지 못했어요. 초안은 그대로 남아 있어요."
-            showsRoomSettings = true
-        }
+        Task { await performSave(dismissOnSuccess: false) }
     }
 
     func saveAndDismiss() {
-        save()
-        if store.state == .saved {
-            dismiss()
+        Task { await performSave(dismissOnSuccess: true) }
+    }
+
+    private func performSave(dismissOnSuccess: Bool) async {
+        isNameFocused = false
+        errorMessage = nil
+        await store.save()
+        switch store.state {
+        case .saved:
+            if dismissOnSuccess {
+                dismiss()
+            }
+        case .conflicted:
+            showsConflictPrompt = true
+        case .failed:
+            showsRoomSettings = true
+        case .idle, .mounting, .refreshing, .saving, .loadFailed:
+            break
         }
     }
 
     func resolveConflict(
         _ resolution: MiniHomeConflictResolution
     ) {
-        do {
-            try store.resolveConflict(resolution)
-        } catch {
-            errorMessage = "충돌을 해결하지 못했어요."
+        Task {
+            await store.resolveConflict(resolution)
+            switch store.state {
+            case .saved:
+                dismiss()
+            case .failed:
+                errorMessage = "충돌을 해결하지 못했어요. 초안은 그대로 남아 있어요."
+                showsRoomSettings = true
+            case .idle, .mounting, .refreshing, .saving, .loadFailed, .conflicted:
+                break
+            }
         }
     }
 }

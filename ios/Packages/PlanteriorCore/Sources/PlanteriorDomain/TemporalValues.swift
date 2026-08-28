@@ -33,7 +33,7 @@ public struct CalendarDate: ValidatedStringValue, Hashable, Sendable {
         }
         let parts = value.split(separator: "-").compactMap { Int($0) }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        calendar.timeZone = .gmt
         let components = DateComponents(
             calendar: calendar,
             timeZone: calendar.timeZone,

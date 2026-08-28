@@ -53,6 +53,7 @@ enum ShellAffordanceOutcome: Equatable, Sendable {
 
 struct AppNavigationState {
     private(set) var selectedTab: AppTab = .home
+    private(set) var settingsReturnTab: AppTab = .home
     var homePath: [AppRoute] = []
     var collectionPath: [AppRoute] = []
     var storagePath: [AppRoute] = []
@@ -64,6 +65,15 @@ struct AppNavigationState {
 
     mutating func select(_ tab: AppTab) {
         selectedTab = tab
+        if tab != .settings {
+            settingsReturnTab = tab
+        }
+    }
+
+    /// Settings is a tab root, not a pushed destination. Its Figma back button
+    /// returns to the last non-Settings tab without disturbing any tab stack.
+    mutating func returnFromSettingsRoot() {
+        selectedTab = settingsReturnTab == .settings ? .home : settingsReturnTab
     }
 
     mutating func requestTab(
@@ -88,7 +98,7 @@ struct AppNavigationState {
     }
 
     mutating func push(_ route: AppRoute) {
-        selectedTab = route.destinationTab
+        select(route.destinationTab)
         switch route.destinationTab {
         case .home: homePath.append(route)
         case .collection: collectionPath.append(route)

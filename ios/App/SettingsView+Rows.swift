@@ -20,29 +20,13 @@ extension SettingsView {
         isOn: Binding<Bool>,
         id: String
     ) -> some View {
-        Group {
-            if sizeCategory.isAccessibilityCategory {
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                    HStack(spacing: PlanteriorSpacing.medium) {
-                        SettingsIconWell(icon: icon)
-                        Text(title)
-                    }
-                    .font(PlanteriorTypography.body)
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    SettingsToggle(
-                        title: "알림 사용",
-                        isOn: isOn,
-                        identifier: id
-                    )
-                    .accessibilityLabel(title)
-                }
-            } else {
-                HStack(spacing: PlanteriorSpacing.medium) {
-                    SettingsIconWell(icon: icon)
-                    SettingsToggle(title: title, isOn: isOn, identifier: id)
-                }
-            }
-        }
+        SettingsToggle(
+            title: title,
+            icon: icon,
+            isOn: isOn,
+            identifier: id
+        )
+        .font(PlanteriorTypography.body)
         .padding(.horizontal, PlanteriorSpacing.large)
         .padding(.vertical, PlanteriorSpacing.extraSmall)
         .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)

@@ -29,8 +29,6 @@ packages:
 configFiles:
   Debug: Config/Development.xcconfig
   Release: Config/Release.xcconfig
-fileGroups:
-  - Config
 targets:
   Planterior:
     type: application

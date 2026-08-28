@@ -4,38 +4,21 @@ import PlanteriorDomain
 import SwiftUI
 
 struct MiniHomeView: View {
-    @StateObject private var store: MiniHomeStore
+    @EnvironmentObject private var store: MiniHomeStore
     @StateObject private var inventory: InventoryRepository
     @State private var showsEditor = false
     @State private var sharePresentation: MiniHomeSharePresentation?
     @Environment(\.sizeCategory) private var sizeCategory
-    private let initialDraft: MiniHome?
-    private let accountID: String?
 
-    init(accountID: String?) {
+    init() {
         let now = Self.runtimeInstant()
-        HomeCommittedMiniHomeRepository(accountID: accountID)
-            .seedQAIfNeeded()
-        let conflict = MiniHomeConflictTrigger(
-            enabled: Self.shouldForceConflict()
-        )
-        let repository = LocalMiniHomeRepository(
-            accountID: accountID,
-            now: now,
-            shouldFailSave: { Self.shouldFailSave() },
-            shouldForceConflict: { conflict.consume() }
-        )
-        _store = StateObject(
-            wrappedValue: MiniHomeStore(repository: repository)
-        )
         _inventory = StateObject(
             wrappedValue: InventoryRepository(
                 now: now,
-                allowsLocalAcquisition: InventoryView.allowsLocalAcquisition
+                allowsLocalAcquisition: InventoryView.allowsLocalAcquisition,
+                authoritativeService: InventoryView.authoritativeService
             )
         )
-        self.accountID = accountID
-        initialDraft = Self.defaultDraft(updatedAt: now)
     }
 
     var body: some View {
@@ -47,6 +30,7 @@ struct MiniHomeView: View {
                 if let room = store.committed ?? store.draft {
                     MiniHomeCanvasView(room: room)
                 }
+                storeStatus
                 PlanteriorPrimaryButton("미니홈 꾸미기") {
                     showsEditor = true
                 }
@@ -67,10 +51,15 @@ struct MiniHomeView: View {
         .environment(\.sizeCategory, effectiveSizeCategory)
         .navigationTitle("나의 미니홈")
         .accessibilityIdentifier("minihome.screen")
-        .task {
-            store.mount(defaultDraft: initialDraft)
-            inventory.mount(accountID: accountID)
+        .accessibilityHidden(showsEditor)
+        .task(id: store.accountID) {
+            inventory.mount(accountID: store.accountID)
             inventory.seedQAIfNeeded()
+            _ = await inventory.refreshAuthoritative()
+            inventory.synchronizeAppliedItems(with: store.committed)
+        }
+        .onChange(of: store.committed) { _, room in
+            inventory.synchronizeAppliedItems(with: room)
         }
         .fullScreenCover(isPresented: $showsEditor) {
             MiniHomeEditorView(store: store, inventory: inventory)
@@ -81,6 +70,27 @@ struct MiniHomeView: View {
                 MiniHomeShareView(room: presentation.room)
             }
             .environment(\.sizeCategory, effectiveSizeCategory)
+        }
+    }
+
+    @ViewBuilder
+    private var storeStatus: some View {
+        switch store.state {
+        case .mounting, .refreshing:
+            ProgressView("저장본 불러오는 중")
+                .accessibilityIdentifier("minihome.loading")
+        case .loadFailed:
+            VStack(alignment: .leading, spacing: 8) {
+                Text("저장본을 새로 불러오지 못했어요.")
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .accessibilityIdentifier("minihome.load-error")
+                PlanteriorSecondaryButton("다시 불러오기") {
+                    Task { await store.refresh() }
+                }
+                .accessibilityIdentifier("minihome.refresh")
+            }
+        case .idle, .saving, .saved, .failed, .conflicted:
+            EmptyView()
         }
     }
 
@@ -95,7 +105,7 @@ struct MiniHomeView: View {
         return sizeCategory
     }
 
-    private static func runtimeInstant() -> Instant? {
+    static func runtimeInstant() -> Instant? {
         #if DEBUG
             if let value = ProcessInfo.processInfo.environment[
                 "QA_MINIHOME_NOW"
@@ -107,38 +117,15 @@ struct MiniHomeView: View {
         return try? Instant.parse(formatter.string(from: Date()))
     }
 
-    private static func shouldFailSave() -> Bool {
-        #if DEBUG
-            return ProcessInfo.processInfo.environment[
-                "QA_MINIHOME_SAVE_FAILURE"
-            ] == "1"
-        #else
-            return false
-        #endif
-    }
-
-    private static func shouldForceConflict() -> Bool {
-        #if DEBUG
-            return ProcessInfo.processInfo.environment[
-                "QA_MINIHOME_CONFLICT_ONCE"
-            ] == "1"
-        #else
-            return false
-        #endif
-    }
-
-    private static func defaultDraft(updatedAt: Instant?) -> MiniHome? {
-        guard let updatedAt,
-              let id = try? MiniHomeID.parse("local-mini-home"),
-              let revision = try? Revision.parse(0)
-        else {
-            return nil
-        }
-        return MiniHome(
-            id: id,
+    static func defaultDraft(updatedAt: Instant?) throws -> MiniHome? {
+        guard let updatedAt else { return nil }
+        return try MiniHome(
+            id: MiniHomeID.parse("local-mini-home"),
             name: "나의 초록 방",
-            placements: [],
-            revision: revision,
+            placements: initialPlacements(
+                environment: ProcessInfo.processInfo.environment
+            ),
+            revision: .zero,
             updatedAt: updatedAt
         )
     }
@@ -149,21 +136,5 @@ private struct MiniHomeSharePresentation: Identifiable {
 
     var id: String {
         "\(room.id.rawValue)-\(room.revision.rawValue)"
-    }
-}
-
-private final class MiniHomeConflictTrigger {
-    private var enabled: Bool
-
-    init(enabled: Bool) {
-        self.enabled = enabled
-    }
-
-    func consume() -> Bool {
-        guard enabled else {
-            return false
-        }
-        enabled = false
-        return true
     }
 }

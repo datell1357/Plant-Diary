@@ -11,7 +11,7 @@ struct MiniRoomEditorFooter: View {
     let reset: () -> Void
     @Environment(\.sizeCategory) private var sizeCategory
 
-    private static let referenceHeight: CGFloat = 40
+    private static let referenceHeight = MiniRoomReferenceMetrics.footerHeight
 
     var body: some View {
         content
@@ -40,16 +40,27 @@ struct MiniRoomEditorFooter: View {
             .accessibilityIdentifier("minihome.editor.footer")
     }
 
-    /// Korean action labels stay atomic and scale within the fixed footer
-    /// rather than adding a second row that would collapse the room viewport.
+    /// Korean action labels stay atomic. At the accessibility sizes the two
+    /// painted captions no longer fit one row inside the 402pt frame, so they
+    /// stack in source order — undo above reset — each spanning the full strip
+    /// width. Asking for their intrinsic widths instead stretched the whole
+    /// editor past the window and pushed both actions offscreen.
+    @ViewBuilder
     private var content: some View {
-        HStack(spacing: PlanteriorSpacing.small) {
-            actions
+        if sizeCategory.isAccessibilityCategory {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                undoAction.frame(maxWidth: .infinity, alignment: .leading)
+                resetAction.frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else {
+            HStack(spacing: PlanteriorSpacing.small) {
+                undoAction.frame(maxWidth: .infinity, alignment: .leading)
+                resetAction.frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
+    private var undoAction: some View {
         action(
             title: "되돌리기",
             systemImage: "arrow.uturn.backward",
@@ -57,7 +68,9 @@ struct MiniRoomEditorFooter: View {
             identifier: "minihome.editor.undo",
             action: undo
         )
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var resetAction: some View {
         action(
             title: "초기화",
             systemImage: "arrow.triangle.2.circlepath",
@@ -65,7 +78,6 @@ struct MiniRoomEditorFooter: View {
             identifier: "minihome.editor.reset",
             action: reset
         )
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func action(
@@ -82,7 +94,9 @@ struct MiniRoomEditorFooter: View {
                 Text(title)
                     .font(PlanteriorTypography.supporting)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(
+                        MiniRoomReferenceMetrics.footerTextMinimumScale
+                    )
             }
             .foregroundStyle(PlanteriorPalette.textSecondary.color)
             .frame(minHeight: PlanteriorControl.minimumTarget)
@@ -97,6 +111,10 @@ struct MiniRoomEditorFooter: View {
 private struct MiniRoomFooterButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(
+                configuration.isPressed
+                    ? PlanteriorOpacity.pressed
+                    : MiniRoomReferenceMetrics.fullOpacity
+            )
     }
 }

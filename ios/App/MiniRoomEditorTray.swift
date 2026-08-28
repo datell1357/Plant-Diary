@@ -14,6 +14,20 @@ struct MiniRoomEditorTray: View {
     private static let referenceHeight: CGFloat = 117
     private static let referenceTopInset: CGFloat = 16
 
+    /// The wrapped accessibility grid paints what the 874pt frame can hold
+    /// above the footer actions; the horizontal scroller it replaces was the
+    /// assistive container that pushed the tray behind the plain footer.
+    private var accessibilityRows: [MiniRoomWrappedRow<MiniRoomTraySlot>] {
+        MiniRoomWrappedRow.rows(
+            of: entries
+                .prefix(
+                    MiniRoomReferenceMetrics.accessibilityTrayVisibleCount
+                )
+                .enumerated()
+                .map { MiniRoomTraySlot(index: $0.offset, entry: $0.element) }
+        )
+    }
+
     var body: some View {
         Group {
             if entries.isEmpty {
@@ -24,6 +38,33 @@ struct MiniRoomEditorTray: View {
                     .frame(minHeight: PlanteriorControl.minimumTarget)
                     .padding(.horizontal, PlanteriorSpacing.large)
                     .accessibilityIdentifier("minihome.editor.tray.empty")
+            } else if sizeCategory.isAccessibilityCategory {
+                VStack(
+                    alignment: .leading,
+                    spacing: MiniRoomTrayCard.referenceSpacing
+                ) {
+                    ForEach(accessibilityRows) { row in
+                        HStack(
+                            alignment: .top,
+                            spacing: MiniRoomTrayCard.referenceSpacing
+                        ) {
+                            ForEach(row.elements) { slot in
+                                card(slot.entry, index: slot.index)
+                                    .frame(maxWidth: .infinity)
+                                    .clipped()
+                            }
+                            ForEach(0 ..< row.trailingGaps, id: \.self) { _ in
+                                Color.clear
+                                    .frame(maxWidth: .infinity)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                    }
+                }
+                .padding(
+                    .horizontal,
+                    MiniRoomTrayCard.referenceHorizontalInset
+                )
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(
@@ -34,13 +75,7 @@ struct MiniRoomEditorTray: View {
                             Array(entries.enumerated()),
                             id: \.element.id
                         ) { pair in
-                            MiniRoomTrayCard(
-                                entry: pair.element,
-                                index: pair.offset,
-                                selected: pair.element.id == selectedEntryID
-                                    || (selectedEntryID == nil && pair.offset == 0),
-                                select: select
-                            )
+                            card(pair.element, index: pair.offset)
                         }
                     }
                     .padding(
@@ -75,110 +110,28 @@ struct MiniRoomEditorTray: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("minihome.editor.tray")
     }
+
+    private func card(
+        _ entry: MiniRoomTrayEntry,
+        index: Int
+    ) -> some View {
+        MiniRoomTrayCard(
+            entry: entry,
+            index: index,
+            selected: entry.id == selectedEntryID
+                || (selectedEntryID == nil && index == 0),
+            select: select
+        )
+    }
 }
 
-/// One tray card: asset tile plus caption, with the Figma selected treatment.
-struct MiniRoomTrayCard: View {
-    let entry: MiniRoomTrayEntry
+/// One wrapped-grid slot: the entry plus the stable index its identifier and
+/// selection default are derived from.
+struct MiniRoomTraySlot: Identifiable {
     let index: Int
-    let selected: Bool
-    let select: (MiniRoomTrayEntry) -> Void
-    @Environment(\.sizeCategory) private var sizeCategory
+    let entry: MiniRoomTrayEntry
 
-    static let referenceHorizontalInset: CGFloat = 17
-    static let referenceSpacing: CGFloat = 14
-    private static let tileSide: CGFloat = 70
-    private static let accessibilityTileSide: CGFloat = 56
-    private static let badgeSide: CGFloat = 20
-    private static let badgeOffset = CGSize(width: -3, height: 3)
-    private static let selectedBorder: CGFloat = 2
-
-    var body: some View {
-        Button {
-            select(entry)
-        } label: {
-            VStack(spacing: PlanteriorSpacing.small) {
-                tile
-                caption
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(entry.name)
-        .accessibilityValue(selected ? "선택됨" : "선택 안 됨")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("minihome.editor.tray.\(index)")
-    }
-
-    private var tile: some View {
-        Image(entry.asset)
-            .resizable()
-            .scaledToFit()
-            .frame(width: tileSide, height: tileSide)
-            .clipShape(
-                RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-                    .strokeBorder(
-                        selected
-                            ? PlanteriorPalette.accent.color
-                            : PlanteriorPalette.border.color,
-                        lineWidth: selected
-                            ? Self.selectedBorder
-                            : PlanteriorControl.hairline
-                    )
-            }
-            .overlay(alignment: .topTrailing) {
-                if selected {
-                    checkBadge
-                }
-            }
-            .accessibilityIdentifier("minihome.editor.tray.image.\(index)")
-    }
-
-    private var tileSide: CGFloat {
-        sizeCategory.isAccessibilityCategory
-            ? Self.accessibilityTileSide
-            : Self.tileSide
-    }
-
-    /// Korean captions must never be forced to wrap mid-word, so at the
-    /// accessibility sizes the caption sizes to its own content instead of
-    /// being clamped to the tile column.
-    private var caption: some View {
-        Text(entry.name)
-            .font(PlanteriorTypography.caption.weight(
-                selected ? .semibold : .regular
-            ))
-            .foregroundStyle(
-                selected
-                    ? PlanteriorPalette.accent.color
-                    : PlanteriorPalette.textSecondary.color
-            )
-            .multilineTextAlignment(.center)
-            .fixedSize(
-                horizontal: sizeCategory.isAccessibilityCategory,
-                vertical: true
-            )
-            .frame(
-                width: sizeCategory.isAccessibilityCategory
-                    ? nil
-                    : Self.tileSide
-            )
-    }
-
-    private var checkBadge: some View {
-        Image(systemName: "checkmark")
-            .font(PlanteriorTypography.caption.weight(.bold))
-            .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-            .frame(width: Self.badgeSide, height: Self.badgeSide)
-            .background(PlanteriorPalette.accent.color)
-            .clipShape(Circle())
-            .offset(
-                x: Self.badgeOffset.width,
-                y: Self.badgeOffset.height
-            )
-            .accessibilityHidden(true)
+    var id: String {
+        entry.id
     }
 }

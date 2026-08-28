@@ -72,12 +72,13 @@ extension HomeDashboardView {
             plants: collection.plants,
             today: today,
             weather: weatherState,
-            miniHome: miniHomeRepository.load(),
+            miniHome: miniHomeStore.committed,
             notificationState: notificationState
         )
     }
 
     func remountAccount(_ accountID: String?) {
+        weatherRuntime.mount(accountID: accountID)
         collection.mount(accountID: accountID)
         LocalNotificationPreferenceStore.shared.mount(
             accountID: accountID
@@ -85,9 +86,6 @@ extension HomeDashboardView {
         LocalNotificationScheduleStore.shared.mount(
             accountID: accountID
         )
-        LocalWeatherAlertStore.shared.mount(accountID: accountID)
-        weatherRuntime.mount(accountID: accountID)
-        weatherRuntime.reloadAlertPreferences()
         renameAllowance = allowanceStore.load()
         reload()
     }
@@ -95,12 +93,6 @@ extension HomeDashboardView {
     func refreshWeather() async {
         await weatherRuntime.refresh(plants: collection.weatherPlantIDs)
         reload()
-    }
-
-    var miniHomeRepository: HomeCommittedMiniHomeRepository {
-        HomeCommittedMiniHomeRepository(
-            accountID: accountScopeID
-        )
     }
 
     var effectiveToday: CalendarDate? {

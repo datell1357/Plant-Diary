@@ -12,6 +12,7 @@ final class HomeDashboardStore: ObservableObject {
     @Published private(set) var miniHome: MiniHome?
     @Published private(set) var plannedNotificationCount = 0
     @Published private(set) var globalNotificationTime = "09:00"
+    @Published private(set) var qaFixtureMountReceipt = "pending"
     private var plantIDs: [PersonalPlantID] = []
     private var completedPlantIDs: Set<PersonalPlantID> = []
 
@@ -30,8 +31,7 @@ final class HomeDashboardStore: ObservableObject {
         miniHome: MiniHome?,
         notificationState: NotificationRuntimeState
     ) {
-        let candidates = referenceCareCandidates ?? zip(plantIDs, plants).map {
-            plantID, plant in
+        let candidates = referenceCareCandidates ?? zip(plantIDs, plants).map { plantID, plant in
             HomeCareCandidate(
                 plantID: plantID,
                 displayName: plant.displayName,
@@ -49,6 +49,7 @@ final class HomeDashboardStore: ObservableObject {
             weather: weather
         )
         self.miniHome = miniHome
+        setQAFixtureMountReceipt()
         plannedNotificationCount = plannedNotifications(
             snapshot: snapshot,
             notificationState: notificationState
@@ -57,6 +58,11 @@ final class HomeDashboardStore: ObservableObject {
 
     private var referenceCareCandidates: [HomeCareCandidate]? {
         #if DEBUG
+            if ProcessInfo.processInfo.environment[
+                "QA_HOME_COLLECTION_STATE"
+            ] == "empty" {
+                return []
+            }
             guard ProcessInfo.processInfo.environment["QA_HOME_FIXTURE"] == "1",
                   plantIDs.count >= 2,
                   let firstWatering = try? CalendarDate.parse("2026-08-01"),
@@ -80,6 +86,25 @@ final class HomeDashboardStore: ObservableObject {
             ]
         #else
             return nil
+        #endif
+    }
+
+    private func setQAFixtureMountReceipt() {
+        #if DEBUG
+            guard ProcessInfo.processInfo.environment[
+                "QA_HOME_COLLECTION_STATE"
+            ] == "empty",
+                let token = ProcessInfo.processInfo.environment[
+                    "QA_HOME_FIXTURE_TOKEN"
+                ]
+            else {
+                return
+            }
+            qaFixtureMountReceipt = [
+                "token=\(token)",
+                "collection=empty",
+                "care=\(snapshot.careItems.count)"
+            ].joined(separator: ";")
         #endif
     }
 

@@ -15,14 +15,14 @@ extension IdentificationFlowView {
                     alternatesSection(candidates)
                 }
                 .padding(.horizontal, PlanteriorSpacing.extraLarge)
-                .padding(.top, 38)
+                .padding(.top, CaptureLayoutMetrics.resultTopSpacing)
                 .padding(.bottom, PlanteriorSpacing.large)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 resultActions(candidates)
             }
         }
-        .padding(.top, 48)
+        .padding(.top, CaptureLayoutMetrics.referenceStatusBarHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PlanteriorPalette.canvas.color.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
@@ -38,19 +38,10 @@ extension IdentificationFlowView {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("capture.result.title")
             HStack {
-                Button {
-                    returnToReviewedPhoto()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                        .frame(
-                            width: PlanteriorControl.minimumTarget,
-                            height: PlanteriorControl.minimumTarget
-                        )
-                }
-                .accessibilityLabel("뒤로")
-                .accessibilityIdentifier("capture.result.back")
+                CaptureReferenceBackButton(
+                    identifier: "capture.result.back",
+                    action: returnToReviewedPhoto
+                )
                 Spacer()
             }
         }
@@ -121,8 +112,9 @@ extension IdentificationFlowView {
                     analysisCompleteLabel
                 }
             }
-            Text(candidate.species.koreanName)
+            Text(KoreanTypography.atomic(candidate.species.koreanName))
                 .font(PlanteriorTypography.pageTitle)
+                .accessibilityLabel(candidate.species.koreanName)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .padding(.top, PlanteriorSpacing.small)
                 .accessibilityIdentifier("capture.result.species")
@@ -139,7 +131,7 @@ extension IdentificationFlowView {
         }
         .padding(.horizontal, PlanteriorSpacing.extraLarge)
         .padding(.top, PlanteriorSpacing.extraLarge)
-        .padding(.bottom, 18)
+        .padding(.bottom, CaptureLayoutMetrics.resultSummaryBottomInset)
         .frame(
             maxWidth: .infinity,
             minHeight: sizeCategory.isAccessibilityCategory ? nil : 166,
@@ -166,73 +158,5 @@ extension IdentificationFlowView {
         .accessibilityElement()
         .accessibilityLabel("신뢰도 \(candidate.confidencePercentage)%")
         .accessibilityIdentifier("capture.result.confidence")
-    }
-
-    @ViewBuilder
-    private func alternatesSection(_ candidates: IdentificationCandidates) -> some View {
-        let alternates = Array(candidates.items.enumerated()).dropFirst()
-        if !alternates.isEmpty {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                Text("다른 후보")
-                    .font(PlanteriorTypography.sectionTitle)
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("capture.result.alternates.header")
-                VStack(spacing: 10) {
-                    ForEach(alternates, id: \.offset) { index, candidate in
-                        alternateRow(index: index, candidate: candidate)
-                    }
-                }
-            }
-        }
-    }
-
-    private func alternateRow(index: Int, candidate: IdentificationCandidate) -> some View {
-        Button {
-            selectedCandidate = candidate
-        } label: {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                Image(index == 1 ? .captureCandidateMonstera : .captureCandidateAlternate)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 48, height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                    Text(candidate.species.koreanName)
-                        .font(PlanteriorTypography.cardTitle)
-                        .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                    Text("신뢰도 \(candidate.confidencePercentage)%")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                }
-                Spacer()
-                if selectedCandidate == candidate {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(PlanteriorPalette.accent.color)
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(PlanteriorSpacing.medium)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PlanteriorPalette.surface.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
-            .overlay {
-                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                    .stroke(
-                        selectedCandidate == candidate
-                            ? PlanteriorPalette.accent.color
-                            : PlanteriorPalette.border.color,
-                        lineWidth: PlanteriorControl.hairline
-                    )
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            "\(candidate.species.koreanName), 신뢰도 \(candidate.confidencePercentage)%"
-        )
-        .accessibilityValue(selectedCandidate == candidate ? "선택됨" : "선택 안 됨")
-        .accessibilityAddTraits(selectedCandidate == candidate ? [.isSelected] : [])
-        .accessibilityIdentifier("identification.candidate.\(index)")
     }
 }

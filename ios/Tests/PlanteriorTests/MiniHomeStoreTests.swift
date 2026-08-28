@@ -1,197 +1,149 @@
 import Foundation
 @testable import Planterior
-import PlanteriorData
 import PlanteriorDomain
 import Testing
 
 @MainActor
 struct MiniHomeStoreTests {
     @Test
-    func savesExplicitlyAndRestoresCommittedRoom() throws {
-        let fixture = try fixture()
-        let repository = LocalMiniHomeRepository(
-            accountID: fixture.accountID,
-            defaults: fixture.defaults,
-            now: fixture.now
+    func twoClientsConflictAndExplicitReapplyCommitsRevisionThree() async throws {
+        // Given
+        let fixture = try MiniHomeStoreFixture()
+        let initial = try fixture.snapshot(name: "기준 저장본", revision: 1)
+        let service = MiniHomeStoreServiceFake(snapshots: [fixture.accountA: initial])
+        let first = fixture.store(service: service, operationIDs: ["operation-a"])
+        let second = fixture.store(
+            service: service,
+            operationIDs: ["operation-b", "operation-reapply"]
         )
-        let initialRoom = try room(name: "처음 방", revision: 0)
-        fixture.seed(room: initialRoom)
-        let store = MiniHomeStore(repository: repository)
-        store.mount()
-
-        store.renameDraft("저장한 방")
-        #expect(store.committed?.name == "처음 방")
-        try store.save()
-
-        let relaunched = MiniHomeStore(repository: repository)
-        relaunched.mount()
-        #expect(relaunched.committed?.name == "저장한 방")
-        #expect(relaunched.committed?.revision.rawValue == 1)
-    }
-
-    @Test
-    func failedSavePreservesCommittedRoomAndDraft() throws {
-        let fixture = try fixture()
-        let initialRoom = try room(name: "커밋 방", revision: 0)
-        fixture.seed(room: initialRoom)
-        let repository = LocalMiniHomeRepository(
-            accountID: fixture.accountID,
-            defaults: fixture.defaults,
-            now: fixture.now,
-            shouldFailSave: { true }
-        )
-        let store = MiniHomeStore(repository: repository)
-        store.mount()
-
-        store.renameDraft("실패한 초안")
-        try store.save()
-
-        #expect(store.committed?.name == "커밋 방")
-        #expect(store.draft?.name == "실패한 초안")
-        #expect(store.state == .failed)
-    }
-
-    @Test
-    func conflictCancelThenSaveReappliesDraftAtServerRevision() throws {
-        let fixture = try fixture()
-        let initialRoom = try room(name: "기준 방", revision: 0)
-        fixture.seed(room: initialRoom)
-        let first = MiniHomeStore(repository: fixture.repository())
-        let second = MiniHomeStore(repository: fixture.repository())
-        first.mount()
-        second.mount()
-        first.renameDraft("첫 기기 방")
-        try first.save()
+        await first.mount(accountID: fixture.accountA, defaultDraft: nil)
+        await second.mount(accountID: fixture.accountA, defaultDraft: nil)
+        first.renameDraft("첫 기기 저장본")
         second.renameDraft("둘째 기기 초안")
 
-        try second.save()
-        #expect(second.committed?.name == "첫 기기 방")
+        // When
+        await first.save()
+        await second.save()
+
+        // Then
+        #expect(first.committed?.revision.rawValue == 2)
+        #expect(second.state == .conflicted(latestRevision: 2))
+        #expect(second.committed == initial.home)
         #expect(second.draft?.name == "둘째 기기 초안")
-        #expect(second.state == .conflicted(serverRevision: 1))
-        try second.resolveConflict(.cancel)
-        #expect(second.state == .conflicted(serverRevision: 1))
+        #expect(second.conflictSnapshot?.home.name == "첫 기기 저장본")
 
-        try second.resolveConflict(.save)
+        // When
+        await second.resolveConflict(.save)
+
+        // Then
         #expect(second.committed?.name == "둘째 기기 초안")
-        #expect(second.committed?.revision.rawValue == 2)
+        #expect(second.committed?.revision.rawValue == 3)
         #expect(second.state == .saved)
+        #expect(service.requests.map(\.operationID.rawValue) == [
+            "operation-a", "operation-b", "operation-reapply"
+        ])
     }
 
     @Test
-    func conflictDiscardRestoresCommittedRoom() throws {
-        let fixture = try fixture()
-        let initialRoom = try room(name: "기준 방", revision: 0)
-        fixture.seed(room: initialRoom)
-        let first = MiniHomeStore(repository: fixture.repository())
-        let second = MiniHomeStore(repository: fixture.repository())
-        first.mount()
-        second.mount()
-        first.renameDraft("서버 방")
-        try first.save()
-        second.renameDraft("버릴 초안")
-        try second.save()
+    func discardAppliesExactConflictSnapshotAndPreservesPlacementOrder() async throws {
+        // Given
+        let fixture = try MiniHomeStoreFixture()
+        let initial = try fixture.snapshot(name: "기준 저장본", revision: 1)
+        let returned = try fixture.snapshot(
+            name: "서버 저장본",
+            revision: 2,
+            placements: fixture.placements.reversed()
+        )
+        let service = MiniHomeStoreServiceFake(snapshots: [fixture.accountA: initial])
+        service.nextSaveResult = .conflict(returned)
+        let store = fixture.store(service: service, operationIDs: ["operation-conflict"])
+        await store.mount(accountID: fixture.accountA, defaultDraft: nil)
+        store.renameDraft("보존할 초안")
 
-        try second.resolveConflict(.discard)
+        // When
+        await store.save()
+        await store.resolveConflict(.discard)
 
-        #expect(second.committed?.name == "서버 방")
-        #expect(second.draft == second.committed)
-        #expect(second.state == .idle)
+        // Then
+        #expect(store.committed == returned.home)
+        #expect(store.draft == returned.home)
+        #expect(store.committed?.placements.map(\.id) == returned.home.placements.map(\.id))
+        #expect(fixture.cache.load(accountID: fixture.accountA) == returned)
     }
 
-    /// A brand-new account has no committed room, so Reset must fall back to
-    /// the room the editor was mounted with rather than keeping the edits.
     @Test
-    func resetRestoresMountDefaultWhenNoCommittedRoomExists() throws {
-        let fixture = try fixture()
-        let store = MiniHomeStore(repository: fixture.repository())
-        let mountDefault = try room(name: "새 미니홈", revision: 0)
-        store.mount(defaultDraft: mountDefault)
+    func transportRetryReusesOperationButChangedSaveUsesANewOperation() async throws {
+        // Given
+        let fixture = try MiniHomeStoreFixture()
+        let initial = try fixture.snapshot(name: "기준 저장본", revision: 1)
+        let service = MiniHomeStoreServiceFake(snapshots: [fixture.accountA: initial])
+        service.saveFailures = [.transport]
+        let store = fixture.store(
+            service: service,
+            operationIDs: ["operation-retry", "operation-changed"]
+        )
+        await store.mount(accountID: fixture.accountA, defaultDraft: nil)
+        store.renameDraft("재시도 초안")
+
+        // When
+        await store.save()
+        await store.save()
+        store.renameDraft("변경된 저장")
+        await store.save()
+
+        // Then
+        #expect(service.requests.map(\.operationID.rawValue) == [
+            "operation-retry", "operation-retry", "operation-changed"
+        ])
+        #expect(store.committed?.revision.rawValue == 3)
+        #expect(store.committed?.name == "변경된 저장")
+    }
+
+    @Test
+    func failedSavePreservesDraftCommittedAndVerifiedCache() async throws {
+        // Given
+        let fixture = try MiniHomeStoreFixture()
+        let initial = try fixture.snapshot(name: "검증된 저장본", revision: 1)
+        try fixture.cache.store(initial)
+        let service = MiniHomeStoreServiceFake(snapshots: [fixture.accountA: initial])
+        service.saveFailures = [.transport]
+        let store = fixture.store(service: service, operationIDs: ["operation-failure"])
+        await store.mount(accountID: fixture.accountA, defaultDraft: nil)
+        store.renameDraft("실패한 초안")
+
+        // When
+        await store.save()
+
+        // Then
+        #expect(store.state == .failed)
+        #expect(store.committed == initial.home)
+        #expect(store.draft?.name == "실패한 초안")
+        #expect(fixture.cache.load(accountID: fixture.accountA) == initial)
+    }
+
+    @Test
+    func authenticatedLegacyCandidateIsExplicitOnlyAndEmptyServerDoesNotUpload() async throws {
+        // Given
+        let fixture = try MiniHomeStoreFixture()
+        let local = try fixture.room(name: "명시적 이전 후보", revision: 1)
+        try fixture.defaults.set(
+            JSONEncoder().encode(local),
+            forKey: "home.\(fixture.accountA).committed-mini-home"
+        )
+        let defaultDraft = try fixture.room(name: "새 미니홈", revision: 0)
+        let service = MiniHomeStoreServiceFake()
+        let store = fixture.store(service: service, operationIDs: [])
+
+        // When
+        await store.mount(accountID: fixture.accountA, defaultDraft: defaultDraft)
+
+        // Then
         #expect(store.committed == nil)
-
-        store.renameDraft("편집한 방")
-        try store.addDraftPlacement(placement(zIndex: 0))
-        #expect(store.draft != mountDefault)
-
-        store.resetDraft()
-
-        #expect(store.draft == mountDefault)
-        #expect(store.committed == nil)
-        #expect(store.canUndoDraft == false)
-        #expect(store.state == .idle)
-    }
-
-    /// Once a room is committed, Reset must return to that committed room and
-    /// never to the original mount default.
-    @Test
-    func resetRestoresCommittedRoomAfterSave() throws {
-        let fixture = try fixture()
-        let store = MiniHomeStore(repository: fixture.repository())
-        try store.mount(defaultDraft: room(name: "새 미니홈", revision: 0))
-        store.renameDraft("저장한 방")
-        try store.save()
-
-        store.renameDraft("저장 후 편집")
-        store.resetDraft()
-
-        #expect(store.draft?.name == "저장한 방")
-        #expect(store.draft == store.committed)
-        #expect(store.hasUnsavedChanges == false)
-    }
-
-    private func fixture() throws -> MiniHomeStoreFixture {
-        try MiniHomeStoreFixture()
-    }
-
-    private func placement(zIndex: Int) throws -> MiniHomePlacement {
-        try MiniHomePlacement(
-            id: MiniHomeGeometry.nextPlacementID(existing: []),
-            plantID: PersonalPlantID.parse("test-plant"),
-            itemID: nil,
-            normalizedX: 0.5,
-            normalizedY: 0.55,
-            zIndex: zIndex
-        )
-    }
-
-    private func room(name: String, revision: UInt64) throws -> MiniHome {
-        let id = try MiniHomeID.parse("test-room")
-        let parsedRevision = try Revision.parse(revision)
-        let updatedAt = try Instant.parse("2026-08-11T00:00:00Z")
-        return MiniHome(
-            id: id,
-            name: name,
-            placements: [],
-            revision: parsedRevision,
-            updatedAt: updatedAt
-        )
-    }
-}
-
-@MainActor
-private struct MiniHomeStoreFixture {
-    let accountID = "mini-home-\(UUID())"
-    let defaults: UserDefaults
-    let now: Instant
-
-    init() throws {
-        let suiteName = "MiniHomeStoreTests-\(UUID())"
-        defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        now = try Instant.parse("2026-08-11T01:00:00Z")
-    }
-
-    func repository() -> LocalMiniHomeRepository {
-        LocalMiniHomeRepository(
-            accountID: accountID,
-            defaults: defaults,
-            now: now
-        )
-    }
-
-    func seed(room: MiniHome) {
-        defaults.set(
-            try? JSONEncoder().encode(room),
-            forKey: "home.\(accountID).committed-mini-home"
-        )
+        #expect(store.draft == defaultDraft)
+        #expect(store.localCandidate?.home == local)
+        #expect(service.requests.isEmpty)
+        #expect(fixture.defaults.data(
+            forKey: "home.\(fixture.accountA).committed-mini-home"
+        ) != nil)
     }
 }

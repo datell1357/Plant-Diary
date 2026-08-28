@@ -52,7 +52,7 @@ struct AppTabBar: View {
             selectTab(tab)
         } label: {
             VStack(spacing: AppTabBarMetrics.iconLabelSpacing) {
-                Image(systemName: selectedTab == tab ? tab.systemImage + ".fill" : tab.systemImage)
+                Image(systemName: tab.systemImage)
                     .font(.system(size: min(tabIconSize, 28)))
                 Text(tab.title)
                     .font(.system(size: min(tabLabelSize, 16), weight: .medium))

@@ -4,10 +4,9 @@ import SwiftUI
 struct QuietHoursSettingsView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.sizeCategory) var sizeCategory
-    @State private var enabled: Bool
-    @State private var startDate: Date
-    @State private var endDate: Date
-    let showsCloseButton: Bool
+    @State var enabled: Bool
+    @State var startDate: Date
+    @State var endDate: Date
     let onSaved: () -> Void
 
     init(
@@ -22,131 +21,79 @@ struct QuietHoursSettingsView: View {
         _endDate = State(
             initialValue: QuietHoursPresentation.date(from: preference.end)
         )
-        self.showsCloseButton = showsCloseButton
         self.onSaved = onSaved
     }
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            ScrollView {
-                VStack(
-                    alignment: .leading,
-                    spacing: PlanteriorSpacing.extraLarge
-                ) {
-                    toggleCard
-                    if !sizeCategory.isAccessibilityCategory {
-                        informationCopy
-                    }
-                    VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                        Text("시간 범위 설정")
-                            .font(PlanteriorTypography.caption.weight(.semibold))
-                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                        timeCard
-                    }
-                    if sizeCategory.isAccessibilityCategory {
-                        informationCopy
-                    }
-                    warningCard
-                }
-                .padding(.horizontal, PlanteriorSpacing.extraLarge)
-                .padding(.top, PlanteriorSpacing.large)
-                .padding(.bottom, PlanteriorSpacing.large)
-            }
-            .accessibilityIdentifier("quiet-hours.screen")
-            .settingsReferenceBody()
-            saveBar
+            screenContent
         }
         .settingsReferenceChrome()
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
 
+    @ViewBuilder
+    private var screenContent: some View {
+        if sizeCategory.isAccessibilityCategory {
+            ScrollView {
+                VStack(spacing: PlanteriorSpacing.none) {
+                    formContent
+                    saveBar
+                }
+                .safeAreaPadding(.bottom, PlanteriorSpacing.large)
+            }
+            .accessibilityIdentifier("quiet-hours.screen")
+            .settingsReferenceBody()
+        } else {
+            VStack(spacing: PlanteriorSpacing.none) {
+                ScrollView { formContent }
+                    .accessibilityIdentifier("quiet-hours.screen")
+                    .settingsReferenceBody()
+                saveBar
+            }
+        }
+    }
+
+    private var formContent: some View {
+        VStack(
+            alignment: .leading,
+            spacing: PlanteriorSpacing.extraLarge
+        ) {
+            toggleCard
+            informationCopy
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                Text("시간 범위 설정")
+                    .font(PlanteriorTypography.caption.weight(.semibold))
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .frame(
+                        minHeight: sizeCategory.isAccessibilityCategory
+                            ? nil
+                            : SettingsReferenceMetrics
+                            .quietHoursSectionHeadingMinimumHeight,
+                        alignment: .leading
+                    )
+                timeCard
+            }
+            warningCard
+        }
+        .padding(.horizontal, PlanteriorSpacing.extraLarge)
+        .padding(.top, PlanteriorSpacing.large)
+        .padding(.bottom, PlanteriorSpacing.large)
+    }
+
     private var toggleCard: some View {
         PlanteriorGroupedSurface {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                SettingsIconWell(icon: .system("clock"))
-                SettingsToggle(
-                    title: "알림 금지 시간 사용",
-                    isOn: $enabled,
-                    identifier: "quiet-hours.enabled"
-                )
-                .font(PlanteriorTypography.body.weight(.medium))
-            }
+            SettingsToggle(
+                title: "알림 금지 시간 사용",
+                icon: .system("clock"),
+                isOn: $enabled,
+                identifier: "quiet-hours.enabled"
+            )
+            .font(PlanteriorTypography.body.weight(.medium))
             .padding(.horizontal, PlanteriorSpacing.large)
             .frame(minHeight: PlanteriorControl.rowHeight)
-        }
-    }
-
-    private var timeCard: some View {
-        PlanteriorGroupedSurface {
-            timePicker("시작 시간", selection: $startDate, id: "quiet-hours.start")
-            Divider().padding(.leading, PlanteriorSpacing.large)
-            timePicker("종료 시간", selection: $endDate, id: "quiet-hours.end")
-        }
-        .opacity(enabled ? 1 : 0.55)
-    }
-
-    @ViewBuilder
-    private func timePicker(
-        _ title: String,
-        selection: Binding<Date>,
-        id: String
-    ) -> some View {
-        if sizeCategory.isAccessibilityCategory {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                Text(title)
-                    .font(PlanteriorTypography.body)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("\(id).label")
-                DatePicker(
-                    title,
-                    selection: selection,
-                    displayedComponents: .hourAndMinute
-                )
-                .labelsHidden()
-                .datePickerStyle(.compact)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: PlanteriorControl.minimumTarget,
-                    alignment: .leading
-                )
-                .accessibilityLabel(title)
-                .accessibilityValue(
-                    QuietHoursPresentation.localTime(from: selection.wrappedValue)?
-                        .rawValue ?? ""
-                )
-                .accessibilityIdentifier(id)
-            }
-            .padding(.vertical, PlanteriorSpacing.small)
-            .disabled(!enabled)
-        } else {
-            DatePicker(
-                title,
-                selection: selection,
-                displayedComponents: .hourAndMinute
-            )
-            .datePickerStyle(.compact)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .padding(.horizontal, PlanteriorSpacing.large)
-            .padding(.vertical, PlanteriorSpacing.extraSmall)
-            .disabled(!enabled)
-            .accessibilityValue(
-                QuietHoursPresentation.localTime(
-                    from: selection.wrappedValue
-                )?.rawValue ?? ""
-            )
-            .accessibilityIdentifier(id)
-            .overlay(alignment: .trailing) {
-                Image(systemName: "chevron.right")
-                    .font(PlanteriorTypography.caption)
-                    .foregroundStyle(PlanteriorPalette.textTertiary.color)
-                    .accessibilityHidden(true)
-                    .frame(width: 16, height: 16)
-                    .padding(.trailing, PlanteriorSpacing.large)
-                    .allowsHitTesting(false)
-            }
-            .frame(minHeight: SettingsReferenceMetrics.rootRowHeight)
         }
     }
 
@@ -163,10 +110,7 @@ struct QuietHoursSettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
         .accessibilityIdentifier("quiet-hours.save")
         .padding(.horizontal, PlanteriorSpacing.extraLarge)
-        .padding(
-            .vertical,
-            SettingsReferenceMetrics.saveBarVerticalInset
-        )
+        .padding(.vertical, SettingsReferenceMetrics.saveBarVerticalInset)
         .background(PlanteriorPalette.surface.color)
         .overlay(alignment: .top) {
             Divider()

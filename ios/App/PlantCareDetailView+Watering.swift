@@ -2,29 +2,6 @@ import PlanteriorData
 import PlanteriorDesignSystem
 import SwiftUI
 
-enum WateringFeedback {
-    case recorded
-    case alreadyRecorded
-    case failed
-    case unavailableDate
-
-    var title: String {
-        switch self {
-        case .recorded: "물 주기 완료를 기록했어요."
-        case .alreadyRecorded: "오늘 물 주기는 이미 기록했어요."
-        case .failed: "물 주기 완료를 기록하지 못했어요."
-        case .unavailableDate: "현재 날짜를 확인하지 못했어요."
-        }
-    }
-
-    var isFailure: Bool {
-        switch self {
-        case .recorded, .alreadyRecorded: false
-        case .failed, .unavailableDate: true
-        }
-    }
-}
-
 extension PlantCareDetailView {
     var compactWateringCard: some View {
         HStack(spacing: PlanteriorSpacing.medium) {
@@ -54,12 +31,12 @@ extension PlantCareDetailView {
             .accessibilityValue(wateringFeedback?.title ?? "기록 전")
         }
         .padding(.horizontal, PlanteriorSpacing.medium)
-        .frame(maxWidth: .infinity, minHeight: 64)
+        .frame(maxWidth: .infinity, minHeight: PlantCareReferenceMetrics.wateringCardHeight)
         .background(PlanteriorPalette.surface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .overlay {
             RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                .stroke(
+                .strokeBorder(
                     PlanteriorPalette.border.color,
                     lineWidth: PlanteriorControl.hairline
                 )
@@ -75,8 +52,8 @@ extension PlantCareDetailView {
             .joined(separator: ". ")
         guard let todayCalendarDate,
               let dayDistance = plantCalendar.normalizedDaysBetween(
-                calendarDate,
-                todayCalendarDate
+                  calendarDate,
+                  todayCalendarDate
               )
         else {
             return formatted

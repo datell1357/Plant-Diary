@@ -100,13 +100,15 @@ struct PlantRegistrationView: View {
             Button("취소", role: .cancel) {}
         }
         .navigationDestination(item: $existingRoute) { route in
-            if let index = collection.index(
-                forRouteTarget: route.target.rawValue
-            ) {
-                PlantCareDetailView(index: index)
-            } else {
-                Text("기존 식물을 찾을 수 없어요.")
-                    .accessibilityIdentifier("route.unavailable")
+            Group {
+                if let index = collection.index(
+                    forRouteTarget: route.target.rawValue
+                ) {
+                    PlantCareDetailView(index: index)
+                } else {
+                    Text("기존 식물을 찾을 수 없어요.")
+                        .accessibilityIdentifier("route.unavailable")
+                }
             }
         }
     }

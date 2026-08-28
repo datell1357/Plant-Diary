@@ -27,11 +27,17 @@ enum FigmaAsset: String, CaseIterable, Sendable {
     case collectionPlant05 = "FigmaCollectionPlant05"
 
     case roomHero = "FigmaRoomHero"
+    case roomBase = "FigmaRoomBase"
     case roomPlant01 = "FigmaRoomPlant01"
     case roomPlant02 = "FigmaRoomPlant02"
     case roomPlant03 = "FigmaRoomPlant03"
     case roomPlant04 = "FigmaRoomPlant04"
     case roomPlant05 = "FigmaRoomPlant05"
+    case roomTrayPlant01 = "FigmaRoomTrayPlant01"
+    case roomTrayPlant02 = "FigmaRoomTrayPlant02"
+    case roomTrayPlant03 = "FigmaRoomTrayPlant03"
+    case roomTrayPlant04 = "FigmaRoomTrayPlant04"
+    case roomTrayPlant05 = "FigmaRoomTrayPlant05"
 
     case storageContext = "FigmaStorageContext"
     case storageItem00 = "FigmaStorageItem00"

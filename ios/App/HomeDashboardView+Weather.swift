@@ -6,35 +6,41 @@ extension HomeDashboardView {
     /// 13 Semibold amber copy. Geometry is identical in both auth states; only
     /// the copy differs (§8.3).
     var weatherWarningBanner: some View {
-        HStack(alignment: .center, spacing: 6) {
+        HStack(
+            alignment: .center,
+            spacing: HomeReferenceMetrics.weatherRowSpacing
+        ) {
             Image(systemName: "exclamationmark.shield")
                 .font(PlanteriorTypography.supporting)
-                .foregroundStyle(PlanteriorPalette.warning.color)
-                .frame(width: 20, height: 20)
+                .foregroundStyle(PlanteriorPalette.warningText.color)
+                .frame(
+                    width: HomeReferenceMetrics.weatherGlyphFrame,
+                    height: HomeReferenceMetrics.weatherGlyphFrame
+                )
                 .accessibilityHidden(true)
             Text(weatherWarningText)
                 .font(PlanteriorTypography.caption.weight(.semibold))
-                .foregroundStyle(PlanteriorPalette.warning.color)
+                .foregroundStyle(PlanteriorPalette.warningText.color)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("home.weather.warning")
         }
         .padding(.horizontal, PlanteriorSpacing.large)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 64)
-        .background(Color(red: 254.0 / 255, green: 243.0 / 255, blue: 199.0 / 255))
+        .frame(height: HomeReferenceMetrics.weatherRowHeight)
+        .background(PlanteriorPalette.homeWeatherWarningSurface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .overlay {
             RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                .stroke(Color(red: 252.0 / 255, green: 211.0 / 255, blue: 77.0 / 255))
+                .stroke(PlanteriorPalette.homeWeatherWarningBorder.color)
         }
     }
 
     var weatherSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
             Text("날씨 기반 안내")
                 .font(PlanteriorTypography.sectionTitle)
             PlanteriorCard {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
                     Text("날씨는 식물 위험 안내에만 사용해요.")
                         .accessibilityIdentifier("weather.purpose")
                     if let regionName = weatherRuntime.effectiveRegionName {
@@ -75,7 +81,7 @@ extension HomeDashboardView {
             ProgressView("날씨를 불러오는 중")
                 .accessibilityIdentifier("home.weather.loading")
         case .failed:
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
                 Text("날씨 정보를 불러오지 못했어요.")
                     .accessibilityIdentifier("home.weather.failed")
                 Text("돌봄 일정은 계속 사용할 수 있어요.")

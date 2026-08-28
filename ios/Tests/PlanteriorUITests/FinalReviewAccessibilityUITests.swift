@@ -12,15 +12,33 @@ extension CaptureFlowUITests {
         let caption = app.staticTexts["capture.review.caption"]
         let identify = app.buttons["photo.acknowledge"]
         XCTAssertTrue(photo.waitForExistence(timeout: 10))
-        XCTAssertLessThanOrEqual(
-            photo.frame.maxY,
-            identify.frame.minY,
-            "the review action must not cover the selected photo"
+        XCTAssertEqual(
+            caption.label,
+            "식물의 초점이 맞고 잎이 선명한지 확인해주세요"
         )
+        XCTAssertGreaterThanOrEqual(
+            caption.frame.height,
+            70,
+            "the complete AX5 helper needs its multiline visual frame"
+        )
+        XCTAssertTrue(identify.isHittable)
         XCTAssertLessThanOrEqual(
             caption.frame.maxY,
             identify.frame.minY,
             "the review action must not cover the review caption"
+        )
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifier: "capture.review.content").count,
+            0,
+            "a visual geometry probe must not create an accessibility stop"
+        )
+        XCTAssertEqual(
+            app.images.matching(
+                NSPredicate(format: "label == %@", "촬영한 식물 사진")
+            ).count,
+            1,
+            "only the actual selected image should describe the photo"
         )
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "ax5-photo-review-final"
@@ -83,7 +101,7 @@ extension MiniHomeFigmaUITests {
 
         let canvas = app.otherElements["minihome.editor.canvas"]
         XCTAssertTrue(canvas.waitForExistence(timeout: 10))
-        let viewport = app.scrollViews["minihome.editor"].frame
+        let viewport = app.descendants(matching: .any)["minihome.editor"].frame
         XCTAssertGreaterThanOrEqual(
             canvas.frame.intersection(viewport).height,
             180
@@ -116,11 +134,18 @@ extension InventoryUITests {
 @MainActor
 extension PlantCollectionFigmaUITests {
     func testAX5EmptyIllustrationAndRemedyChromeKeepTheirGeometry() {
-        let empty = collectionApp(empty: true)
+        let emptyIdentity = CollectionQAFixtureIdentity(
+            testID: #function,
+            variant: "empty",
+            mode: .standard,
+            empty: true
+        )
+        let empty = app(identity: emptyIdentity, empty: true)
         empty.launchArguments += accessibilityArguments
         empty.launch()
+        waitForCollectionQAFixture(in: empty, identity: emptyIdentity)
         let illustration = empty.images["collection.empty.illustration"]
-        XCTAssertTrue(illustration.waitForExistence(timeout: 10))
+        XCTAssertTrue(illustration.exists)
         XCTAssertEqual(
             illustration.frame.height,
             96,
@@ -129,11 +154,18 @@ extension PlantCollectionFigmaUITests {
         )
         empty.terminate()
 
-        let remedy = collectionApp(empty: false)
+        let remedyIdentity = CollectionQAFixtureIdentity(
+            testID: #function,
+            variant: "remedy",
+            mode: .standard,
+            empty: false
+        )
+        let remedy = app(identity: remedyIdentity, empty: false)
         remedy.launchArguments += accessibilityArguments
         remedy.launch()
+        waitForCollectionQAFixture(in: remedy, identity: remedyIdentity)
         let row = remedy.buttons["collection.row.0"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.exists)
         row.tap()
         let link = remedy.buttons["plant.detail.remedy"]
         scrollToHittable(link, in: remedy.scrollViews["plant.detail.screen"])
@@ -154,13 +186,9 @@ extension PlantCollectionFigmaUITests {
         }
     }
 
-    private func collectionApp(empty: Bool) -> XCUIApplication {
+    private func app(identity: CollectionQAFixtureIdentity, empty: Bool) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
-        app.launchEnvironment["QA_INITIAL_TAB"] = "collection"
-        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
-        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        configureCollectionQAFixture(app, identity: identity, mode: .standard)
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
         if empty {
             app.launchEnvironment["QA_COLLECTION_EMPTY"] = "1"

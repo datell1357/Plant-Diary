@@ -16,7 +16,7 @@ extension SettingsView {
             rowDivider
             toggleRow(
                 "날씨 알림",
-                icon: .system("sun.max"),
+                icon: .system("cloud.sun"),
                 isOn: Binding(
                     get: { weather.globalAlertsEnabled },
                     set: { weather.setGlobalAlertsEnabled($0) }
@@ -35,6 +35,12 @@ extension SettingsView {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.quiet-hours.open")
+            .padding(
+                .top,
+                sizeCategory.isAccessibilityCategory
+                    ? PlanteriorSpacing.medium
+                    : PlanteriorSpacing.none
+            )
         }
     }
 
@@ -69,7 +75,7 @@ extension SettingsView {
         settingsGroup("계정") {
             actionRow(
                 "개인정보 처리방침",
-                icon: .system("doc.text"),
+                icon: .system("list.clipboard"),
                 id: "settings.privacy"
             ) { showsPrivacy = true }
             rowDivider

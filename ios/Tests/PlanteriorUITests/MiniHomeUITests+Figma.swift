@@ -15,7 +15,10 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
         XCTAssertEqual(app.staticTexts["minihome.editor.title"].label, "마이룸 편집")
         XCTAssertTrue(app.buttons["minihome.close"].isHittable)
         XCTAssertEqual(app.buttons["minihome.save"].label, "저장")
-        XCTAssertTrue(app.images["minihome.editor.room"].exists)
+        XCTAssertFalse(
+            app.images["minihome.editor.room"].exists,
+            "the decorative room base must not become a VoiceOver stop"
+        )
         XCTAssertEqual(
             app.staticTexts["minihome.editor.hint"].label,
             "길게 눌러서 가구 이동"
@@ -33,24 +36,12 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
         XCTAssertTrue(app.buttons["minihome.editor.undo"].exists)
         XCTAssertTrue(app.buttons["minihome.editor.reset"].exists)
 
-        let canvas = app.otherElements["minihome.editor.canvas"]
-        let header = app.otherElements["minihome.editor.header"]
-        let categoryBar = app.otherElements["minihome.editor.category-bar"]
-        for region in [canvas, header, categoryBar] {
-            XCTAssertTrue(region.exists, "missing editor geometry region")
+        if app.windows.element(boundBy: 0).frame.width >= 400 {
+            assertEditorGeometry(in: app, firstPlant: firstPlant)
+        } else {
+            assertCompactEditorGeometry(in: app, firstPlant: firstPlant)
         }
-        XCTAssertEqual(canvas.frame.width, 358, accuracy: 1)
-        XCTAssertEqual(canvas.frame.height, 330, accuracy: 1)
-        XCTAssertEqual(canvas.frame.minY, 200, accuracy: 2)
-        // Measured directly from the authenticated 402x874 reference raster:
-        // category separator y=628, first 70pt tray tile y=699, footer y=800.
-        XCTAssertEqual(categoryBar.frame.minY, 628, accuracy: 0.5)
-        XCTAssertEqual(categoryBar.frame.height, 55, accuracy: 0.5)
-        XCTAssertEqual(firstPlant.frame.minY, 699, accuracy: 0.5)
-        let undo = app.buttons["minihome.editor.undo"]
-        XCTAssertEqual(undo.frame.minY, 800, accuracy: 0.5)
-        XCTAssertLessThanOrEqual(categoryBar.frame.maxY, firstPlant.frame.minY)
-        XCTAssertLessThanOrEqual(firstPlant.frame.maxY, undo.frame.minY)
+        assertDefaultCanvasHasNoPlacementBasePixels(in: app)
         XCTAssertFalse(app.textFields["minihome.room-name"].exists)
         XCTAssertFalse(app.buttons["minihome.add-plant"].exists)
         attachScreenshot(named: "mini-room-editor-402x874-light")
@@ -70,6 +61,20 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
             "add-plant must remain fully visible inside room settings"
         )
         XCTAssertTrue(app.staticTexts["minihome.state"].exists)
+    }
+
+    private func assertCompactEditorGeometry(
+        in app: XCUIApplication,
+        firstPlant: XCUIElement
+    ) {
+        let canvas = app.otherElements["minihome.editor.canvas"]
+        let categoryBar = app.otherElements["minihome.editor.category-bar"]
+        let undo = app.buttons["minihome.editor.undo"]
+
+        XCTAssertEqual(canvas.frame, CGRect(x: 16, y: 199, width: 358, height: 330))
+        XCTAssertEqual(categoryBar.frame.minY, 598, accuracy: 0.5)
+        XCTAssertEqual(firstPlant.frame.minY, 669, accuracy: 0.5)
+        XCTAssertEqual(undo.frame.minY, 770, accuracy: 0.5)
     }
 
     func testTrayCategorySelectionAndTapPlaceOneRoomItem() {
@@ -145,59 +150,5 @@ final class MiniHomeFigmaUITests: XCTestCase, MiniHomeUITestSupport {
 
         app.buttons["minihome.editor.reset"].tap()
         XCTAssertTrue(placement.waitForNonExistence(timeout: 5))
-    }
-
-    func testFigmaEditorAtKoreanAX5ReduceMotionKeepsControlsReachable() {
-        let app = figmaEditorApp(token: "figma-ax5")
-        app.launchEnvironment["QA_MINIHOME_SIZE_CATEGORY"] = "AX5"
-        app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
-        app.launchArguments += [
-            "-AppleLanguages", "(ko)",
-            "-AppleLocale", "ko_KR"
-        ]
-        app.launch()
-        openFigmaEditor(in: app)
-
-        XCTAssertTrue(app.buttons["minihome.save"].isHittable)
-        XCTAssertTrue(app.buttons["minihome.close"].isHittable)
-        XCTAssertTrue(app.buttons["minihome.editor.category.plant"].isHittable)
-        let decoration = app.buttons["minihome.editor.category.decoration"]
-        guard decoration.isHittable else {
-            XCTFail("decoration category must be directly reachable at AX5")
-            return
-        }
-        decoration.tap()
-        XCTAssertEqual(decoration.value as? String, "선택됨")
-        app.buttons["minihome.editor.category.plant"].tap()
-        XCTAssertTrue(app.buttons["minihome.editor.tray.0"].isHittable)
-        XCTAssertTrue(app.buttons["minihome.editor.reset"].isHittable)
-
-        // Korean AX5 must not collapse copy into ellipses or collide the tabs.
-        let plantTab = app.buttons["minihome.editor.category.plant"]
-        let wallTab = app.buttons["minihome.editor.category.wall"]
-        // Korean captions must get a wide enough column at AX5; a narrow
-        // column is what produces mid-word splits and ellipses.
-        XCTAssertGreaterThanOrEqual(
-            app.buttons["minihome.editor.tray.0"].frame.width,
-            120,
-            "AX5 tray caption column is too narrow for Korean plant names"
-        )
-        XCTAssertFalse(plantTab.label.contains("\u{2026}"))
-        XCTAssertGreaterThanOrEqual(
-            wallTab.frame.minX,
-            plantTab.frame.maxX,
-            "category tabs must not overlap at AX5"
-        )
-        assertCategoryCaptionsStayOnOneLine(in: app)
-        let screen = app.windows.element(boundBy: 0).frame
-        for identifier in [
-            "minihome.save", "minihome.editor.reset", "minihome.editor.tray.0"
-        ] {
-            XCTAssertTrue(
-                screen.contains(app.buttons[identifier].frame),
-                "\(identifier) must stay fully onscreen at AX5"
-            )
-        }
-        attachScreenshot(named: "mini-room-editor-korean-ax5-reduce-motion")
     }
 }

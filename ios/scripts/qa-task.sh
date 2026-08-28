@@ -63,7 +63,8 @@ if [ "$task_number" = "2" ]; then
 fi
 
 if [ "$task_number" = "3" ]; then
-  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  swift test --no-parallel \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
   if grep -R -n -E '^import (Firebase|SwiftData|SwiftUI|UIKit)' \
     "$repo_root/ios/Packages/PlanteriorCore/Sources/PlanteriorDomain"; then
     printf 'IOS_DOMAIN_DEPENDENCY_VIOLATION\n' >&2
@@ -210,7 +211,8 @@ PY
       --project demo-planterior \
       "npm --prefix firebase-tests test"
   )
-  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  swift test --no-parallel \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
   python3 - "$contract" "$attempt_dir/task-5-ios-app-implementation.json" <<'PY'
 import json
 import sys
@@ -242,7 +244,7 @@ if [ "$task_number" = "6" ]; then
   if [ -n "$development_plist" ]; then
     export PLAN_FIREBASE_PLIST_PATH="$development_plist"
   fi
-  swift test \
+  swift test --no-parallel \
     --package-path "$repo_root/ios/Packages/PlanteriorCore"
   xcodebuild \
     -project "$repo_root/ios/Planterior.xcodeproj" \
@@ -370,7 +372,6 @@ if [ "$task_number" = "9" ]; then
     -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
     -derivedDataPath "$task_9_derived_data" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test \
     -only-testing:PlanteriorUITests/AppLaunchUITests/testIdentificationRequiresCandidateConfirmationBeforeRegistration \
     -only-testing:PlanteriorUITests/IdentificationFallbackUITests/testIdentificationFallbackReturnsToPhotoSelection \
@@ -415,7 +416,6 @@ if [ "$task_number" = "10" ]; then
     -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" \
     -derivedDataPath "$task_10_derived_data" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   task_10_tests="
 testSearchDetailTimelineAndDeleteConfirmation
@@ -436,8 +436,7 @@ testStaleStateDoesNotLeakPrivateContent
       -derivedDataPath "$task_10_derived_data" \
       -resultBundlePath "$result_path" \
       -parallel-testing-enabled NO \
-      CODE_SIGNING_ALLOWED=NO \
-      test-without-building \
+        test-without-building \
       -only-testing:"PlanteriorUITests/PlantCollectionUITests/$test_name"
     if [ -z "$primary_result" ]; then
       primary_result="$result_path"
@@ -498,7 +497,6 @@ if [ "$task_number" = "11" ]; then
     -destination "$task_11_destination" \
     -derivedDataPath "$task_11_derived_data" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   xcodebuild \
     -quiet \
@@ -508,7 +506,6 @@ if [ "$task_number" = "11" ]; then
     -derivedDataPath "$task_11_derived_data" \
     -resultBundlePath "$task_11_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/PlantCareCalendarTests \
     -only-testing:PlanteriorUITests/PlantCollectionUITests/testWateringDueCompletionUpdatesNextDate \
@@ -584,7 +581,6 @@ if [ "$task_number" = "12" ]; then
     -destination "$task_12_destination" \
     -derivedDataPath "$task_12_derived_data" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   reboot_task_12_simulator() {
     xcrun simctl shutdown \
@@ -612,7 +608,6 @@ if [ "$task_number" = "12" ]; then
     -derivedDataPath "$task_12_derived_data" \
     -resultBundlePath "$task_12_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/AppShellTests \
     -only-testing:PlanteriorTests/LocalNotificationPreferenceStoreTests \
@@ -628,7 +623,6 @@ if [ "$task_number" = "12" ]; then
     -derivedDataPath "$task_12_derived_data" \
     -resultBundlePath "$task_12_collection_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/PlantCollectionUITests/testSearchDetailTimelineAndDeleteConfirmation
   reboot_task_12_simulator
@@ -640,7 +634,6 @@ if [ "$task_number" = "12" ]; then
     -derivedDataPath "$task_12_derived_data" \
     -resultBundlePath "$task_12_integration_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/HomeDashboardUITests/testWateringCompletionCancelsPendingNotifications
   xcrun xcresulttool export attachments \
@@ -726,7 +719,6 @@ if [ "$task_number" = "13" ]; then
     -destination "$task_13_destination" \
     -derivedDataPath "$task_13_derived_data" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   reboot_task_13_simulator() {
     xcrun simctl shutdown \
@@ -754,7 +746,6 @@ if [ "$task_number" = "13" ]; then
     -derivedDataPath "$task_13_derived_data" \
     -resultBundlePath "$task_13_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/LocalPlantCollectionStoreTests \
     -only-testing:PlanteriorTests/LocalWeatherAlertStoreTests \
@@ -769,7 +760,6 @@ if [ "$task_number" = "13" ]; then
     -derivedDataPath "$task_13_derived_data" \
     -resultBundlePath "$task_13_home_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
   xcrun xcresulttool export attachments \
@@ -856,7 +846,6 @@ if [ "$task_number" = "14" ]; then
     -scheme Planterior \
     -destination "$task_14_destination" \
     -derivedDataPath "$task_14_derived_data" \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   reboot_task_14_simulator() {
     simulator_id=$task_14_simulator_id
@@ -879,7 +868,6 @@ if [ "$task_number" = "14" ]; then
     -derivedDataPath "$task_14_derived_data" \
     -resultBundlePath "$task_14_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/MiniHomeStoreTests \
     -only-testing:PlanteriorUITests/MiniHomeAccessibilityUITests \
@@ -894,7 +882,6 @@ if [ "$task_number" = "14" ]; then
     -derivedDataPath "$task_14_derived_data" \
     -resultBundlePath "$task_14_home_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
   xcrun xcresulttool export attachments \
@@ -982,7 +969,6 @@ if [ "$task_number" = "15" ]; then
     -scheme Planterior \
     -destination "$task_15_destination" \
     -derivedDataPath "$task_15_derived_data" \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   reboot_task_15_simulator() {
     simulator_id=$task_15_simulator_id
@@ -1005,7 +991,6 @@ if [ "$task_number" = "15" ]; then
     -derivedDataPath "$task_15_derived_data" \
     -resultBundlePath "$task_15_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/InventoryRepositoryAccountTests \
     -only-testing:PlanteriorTests/InventoryRepositoryProductionTests \
@@ -1024,7 +1009,6 @@ if [ "$task_number" = "15" ]; then
     -derivedDataPath "$task_15_derived_data" \
     -resultBundlePath "$task_15_home_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
   xcrun xcresulttool export attachments \
@@ -1121,7 +1105,7 @@ if [ "$task_number" = "16" ]; then
     xcrun simctl shutdown "$task_16_simulator_id" 2>/dev/null || true
   }
   trap cleanup_task_16 EXIT
-  swift test \
+  swift test --no-parallel \
     --package-path "$repo_root/ios/Packages/PlanteriorCore"
   xcodebuild \
     -quiet \
@@ -1129,7 +1113,6 @@ if [ "$task_number" = "16" ]; then
     -scheme Planterior \
     -destination "$task_16_destination" \
     -derivedDataPath "$task_16_derived_data" \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   reboot_task_16_simulator() {
     cleanup_task_16
@@ -1145,7 +1128,6 @@ if [ "$task_number" = "16" ]; then
     -derivedDataPath "$task_16_derived_data" \
     -resultBundlePath "$task_16_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/ProgressionProductionTests \
     -only-testing:PlanteriorTests/ProgressionProjectionTests \
@@ -1164,7 +1146,6 @@ if [ "$task_number" = "16" ]; then
     -derivedDataPath "$task_16_derived_data" \
     -resultBundlePath "$task_16_home_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather
   xcrun xcresulttool export attachments \
@@ -1262,7 +1243,7 @@ if [ "$task_number" = "17" ]; then
     xcrun simctl shutdown "$task_17_simulator_id" 2>/dev/null || true
   }
   trap cleanup_task_17 EXIT
-  swift test \
+  swift test --no-parallel \
     --package-path "$repo_root/ios/Packages/PlanteriorCore"
   xcodebuild \
     -quiet \
@@ -1270,7 +1251,6 @@ if [ "$task_number" = "17" ]; then
     -scheme Planterior \
     -destination "$task_17_destination" \
     -derivedDataPath "$task_17_derived_data" \
-    CODE_SIGNING_ALLOWED=NO \
     build-for-testing
   reboot_task_17_simulator() {
     cleanup_task_17
@@ -1286,7 +1266,6 @@ if [ "$task_number" = "17" ]; then
     -derivedDataPath "$task_17_derived_data" \
     -resultBundlePath "$task_17_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/MiniHomeShareRendererTests \
     -only-testing:PlanteriorTests/ShareRepositoryTests \
@@ -1300,7 +1279,6 @@ if [ "$task_number" = "17" ]; then
     -derivedDataPath "$task_17_derived_data" \
     -resultBundlePath "$task_17_home_result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/MiniHomeUITests/testEditsSavesAndRestoresCommittedRoom \
     -only-testing:PlanteriorUITests/MiniHomeUITests/testUnsavedDraftNeverAppearsOnHome \
@@ -1383,13 +1361,14 @@ if [ "$task_number" = "18" ]; then
     xcrun simctl shutdown "$sim" 2>/dev/null || true
   }
   trap cleanup_task_18 EXIT
-  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  swift test --no-parallel \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
   xcodebuild -quiet \
     -project "$repo_root/ios/Planterior.xcodeproj" \
     -scheme Planterior \
     -destination "$destination" \
     -derivedDataPath "$derived" \
-    CODE_SIGNING_ALLOWED=NO build-for-testing
+    build-for-testing
   cleanup_task_18
   xcrun simctl boot "$sim"
   xcrun simctl bootstatus "$sim" -b
@@ -1400,7 +1379,6 @@ if [ "$task_number" = "18" ]; then
     -derivedDataPath "$derived" \
     -resultBundlePath "$result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/SettingsDeletionUITests
   cleanup_task_18
@@ -1413,7 +1391,6 @@ if [ "$task_number" = "18" ]; then
     -derivedDataPath "$derived" \
     -resultBundlePath "$regression" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorUITests/HomeDashboardUITests/testAuthenticatedHomeShowsCareMiniHomeAndPartialWeather \
     -only-testing:PlanteriorUITests/WeatherFlowUITests/testRegionSettingsDisclosesPurposeAndSavesManualRegion \
@@ -1499,14 +1476,15 @@ if [ "$task_number" = "19" ]; then
     fi
   }
   trap 'final_cleanup=1; cleanup_task_19' EXIT
-  swift test --package-path "$repo_root/ios/Packages/PlanteriorCore"
+  swift test --no-parallel \
+    --package-path "$repo_root/ios/Packages/PlanteriorCore"
   plutil -lint "$repo_root/ios/Config/PrivacyInfo.xcprivacy"
   xcodebuild -quiet \
     -project "$repo_root/ios/Planterior.xcodeproj" \
     -scheme Planterior \
     -destination "$destination" \
     -derivedDataPath "$derived" \
-    CODE_SIGNING_ALLOWED=NO build-for-testing
+    build-for-testing
   cleanup_task_19
   xcrun simctl boot "$sim"
   xcrun simctl bootstatus "$sim" -b
@@ -1517,16 +1495,33 @@ if [ "$task_number" = "19" ]; then
     -derivedDataPath "$derived" \
     -resultBundlePath "$result" \
     -parallel-testing-enabled NO \
-    CODE_SIGNING_ALLOWED=NO \
     test-without-building \
     -only-testing:PlanteriorTests/OperationalPrivacyTests \
     -only-testing:PlanteriorUITests/AppLaunchUITests/testReduceMotionLaunchContract \
     -only-testing:PlanteriorUITests/InventoryAccessibilityUITests \
     -only-testing:PlanteriorUITests/SettingsDeletionUITests/testCompletedReceiptAloneAuthorizesCleanupAtAX5 \
     -only-testing:PlanteriorUITests/OperationalAccessibilityUITests
-  if grep -R -E '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_-]+)' \
-    "$repo_root/ios" --exclude-dir=Planterior.xcodeproj --exclude-dir=.build; then
+  scan_pattern='(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_-]+)'
+  scan_exclusions='--exclude-dir=Planterior.xcodeproj --exclude-dir=.derivedData --exclude-dir=DerivedData --exclude-dir=SourcePackages --exclude-dir=build --exclude-dir=.build --exclude-dir=Intermediates.noindex'
+  # Keep generated build/dependency roots out of the grep traversal, but scan every other iOS path.
+  if grep -R -E "$scan_pattern" "$repo_root/ios" $scan_exclusions; then
     exit 71
+  fi
+  canary_root=$(mktemp -d "${TMPDIR:-/tmp}/planterior-task-19-secret-scan.XXXXXX")
+  canary_cleanup() { rm -rf "$canary_root"; }
+  trap 'canary_cleanup; final_cleanup=1; cleanup_task_19' EXIT
+  mkdir -p "$canary_root/cache/.derivedData" "$canary_root/implementation"
+  canary_token=AIza
+  canary_token="${canary_token}$(printf '%020d' 0)"
+  printf '%s\n' "$canary_token" > "$canary_root/cache/.derivedData/cache-fixture.txt"
+  printf '%s\n' "$canary_token" > "$canary_root/implementation/fixture.txt"
+  if grep -R -E "$scan_pattern" "$canary_root/cache" $scan_exclusions; then
+    printf 'IOS_SECRET_SCAN_CACHE_CANARY_FAILED\n' >&2
+    exit 72
+  fi
+  if ! grep -R -E "$scan_pattern" "$canary_root/implementation" $scan_exclusions; then
+    printf 'IOS_SECRET_SCAN_IMPLEMENTATION_CANARY_FAILED\n' >&2
+    exit 73
   fi
   gitleaks detect \
     --source "$repo_root/ios" \

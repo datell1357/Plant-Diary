@@ -96,62 +96,33 @@ private struct LocationPinShape: Shape {
 
 struct SettingsToggle: View {
     let title: String
+    let icon: SettingsIcon
     @Binding var isOn: Bool
     let identifier: String
 
     var body: some View {
-        HStack(spacing: PlanteriorSpacing.small) {
-            Text(title)
-            Spacer(minLength: PlanteriorSpacing.small)
-            ZStack {
-                Toggle("", isOn: $isOn)
-                    .labelsHidden()
-                    .opacity(0.001)
-                    .frame(
-                        width: PlanteriorControl.minimumTarget,
-                        height: PlanteriorControl.minimumTarget
-                    )
-                    .clipped()
-                    .allowsHitTesting(false)
-                    .accessibilityLabel(title)
-                    .accessibilityIdentifier(identifier)
-                SettingsToggleIndicator(isOn: isOn)
-                    .allowsHitTesting(false)
+        Toggle(isOn: $isOn) {
+            HStack(spacing: PlanteriorSpacing.medium) {
+                SettingsIconWell(icon: icon)
+                Text(title)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(
-                width: PlanteriorControl.minimumTarget,
-                height: PlanteriorControl.minimumTarget
+                maxWidth: .infinity,
+                minHeight: PlanteriorControl.minimumTarget,
+                alignment: .leading
             )
             .contentShape(Rectangle())
-            .onTapGesture {
-                isOn.toggle()
-            }
         }
-    }
-}
-
-private struct SettingsToggleIndicator: View {
-    let isOn: Bool
-
-    var body: some View {
-        Capsule()
-            .fill(
-                isOn
-                    ? PlanteriorPalette.accent.color
-                    : PlanteriorPalette.border.color
-            )
-            .frame(
-                width: SettingsReferenceMetrics.toggleWidth,
-                height: SettingsReferenceMetrics.toggleHeight
-            )
-            .overlay(alignment: isOn ? .trailing : .leading) {
-                Circle()
-                    .fill(PlanteriorPalette.surface.color)
-                    .frame(
-                        width: SettingsReferenceMetrics.toggleThumbSize,
-                        height: SettingsReferenceMetrics.toggleThumbSize
-                    )
-                    .padding(SettingsReferenceMetrics.toggleThumbInset)
-            }
+        .toggleStyle(.switch)
+        .tint(PlanteriorPalette.accent.color)
+        .foregroundStyle(PlanteriorPalette.textPrimary.color)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: PlanteriorControl.minimumTarget,
+            alignment: .leading
+        )
+        .contentShape(Rectangle())
+        .accessibilityIdentifier(identifier)
     }
 }

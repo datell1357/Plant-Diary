@@ -26,7 +26,8 @@ struct LoginSheet: View {
                     // Figma provider order is Google above Apple. Invocation
                     // remains native (Google SDK / ASAuthorization).
                     Button {
-                        guard let controller = UIApplication.shared.planteriorTopViewController else {
+                        let controller = UIApplication.shared.planteriorTopViewController
+                        guard let controller else {
                             return
                         }
                         Task {
@@ -71,9 +72,11 @@ struct LoginSheet: View {
                     } onCompletion: { result in
                         guard case let .success(authorization) = result else {
                             auth.cancelApple()
-                            if case let .failure(error) = result,
-                               (error as? ASAuthorizationError)?.code != .canceled {
-                                auth.reportAppleFailure()
+                            if case let .failure(error) = result {
+                                let code = (error as? ASAuthorizationError)?.code
+                                if code != .canceled {
+                                    auth.reportAppleFailure()
+                                }
                             }
                             return
                         }
@@ -94,9 +97,9 @@ struct LoginSheet: View {
                             Text("Apple로 계속하기")
                         }
                         .font(PlanteriorTypography.body.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(PlanteriorProviderPalette.appleButtonForeground)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.black)
+                        .background(PlanteriorProviderPalette.appleButtonBackground)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                     }
@@ -107,13 +110,14 @@ struct LoginSheet: View {
 
                     Text("로그인 시 서비스 이용 약관 및 개인정보 처리방침에 동의하는 것으로 간주됩니다.")
                         .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                        .foregroundStyle(PlanteriorPalette.textAccessibleCaption.color)
                         .multilineTextAlignment(.center)
                         .padding(.top, PlanteriorSpacing.large)
+                        .accessibilityIdentifier("auth.terms")
 
                     if let errorMessage = auth.errorMessage {
                         Text(errorMessage)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(PlanteriorPalette.destructive)
                             .padding(.top, PlanteriorSpacing.small)
                             .accessibilityIdentifier("auth.error")
                     }

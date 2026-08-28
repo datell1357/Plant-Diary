@@ -6,6 +6,7 @@ import SwiftUI
 
 struct InventoryView: View {
     @EnvironmentObject var auth: AuthRuntime
+    @EnvironmentObject var miniHomeStore: MiniHomeStore
     @Environment(\.sizeCategory) var sizeCategory
     @StateObject var repository: InventoryRepository
     @StateObject var collection = LocalPlantCollectionStore()
@@ -29,7 +30,8 @@ struct InventoryView: View {
             wrappedValue: InventoryRepository(
                 now: now,
                 allowsLocalAcquisition: Self.allowsLocalAcquisition,
-                failFirstAcquisition: Self.failsFirstAcquisition
+                failFirstAcquisition: Self.failsFirstAcquisition,
+                authoritativeService: Self.authoritativeService
             )
         )
         _progression = StateObject(
@@ -42,43 +44,52 @@ struct InventoryView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                storageHeader
-                if mode == .shop {
-                    shopCredit
+        GeometryReader { viewport in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    storageHeader
+                    if mode == .shop {
+                        shopCredit
+                    }
+                    categoryFilters
+                    if mode == .warehouse {
+                        warehouse
+                    } else {
+                        ShopView(
+                            entries: shopPage.entries,
+                            rowSpacing: InventoryReferenceMetrics.shopGridRowSpacing(
+                                scrollBodyHeight: viewport.size.height
+                            ),
+                            acquire: acquire,
+                            showDetail: { selectedItem = $0 }
+                        )
+                    }
                 }
-                categoryFilters
-                if mode == .warehouse {
-                    warehouse
-                } else {
-                    ShopView(
-                        entries: shopPage.entries,
-                        acquire: acquire,
-                        showDetail: { selectedItem = $0 }
-                    )
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(
+                .top,
+                InventoryReferenceMetrics.contentTopCorrection(
+                    measuredSafeAreaTop: viewport.safeAreaInsets.top
+                )
+            )
+            .accessibilityIdentifier("storage.screen")
         }
-        .padding(
-            .top,
-            PlanteriorControl.minimumTarget + PlanteriorSpacing.extraSmall
-        )
-        .ignoresSafeArea(edges: .top)
-        .background(PlanteriorPalette.canvas.color)
+        .background(PlanteriorPalette.canvas.color.ignoresSafeArea())
         .environment(\.sizeCategory, effectiveSizeCategory)
         .toolbar(.hidden, for: .navigationBar)
-        .accessibilityIdentifier("storage.screen")
         .task(id: accountScopeID) {
             repository.mount(accountID: accountScopeID)
             collection.mount(accountID: accountScopeID)
             collection.loadQAFixtureIfNeeded()
             progression.mount(accountID: progressionAccountID)
             progression.seedQAIfNeeded()
-            HomeCommittedMiniHomeRepository(accountID: accountScopeID)
-                .seedQAIfNeeded()
             repository.seedQAIfNeeded()
+            _ = await repository.refreshAuthoritative()
+            repository.synchronizeAppliedItems(with: miniHomeStore.committed)
+        }
+        .onChange(of: miniHomeStore.committed) { _, room in
+            repository.synchronizeAppliedItems(with: room)
         }
         .navigationDestination(isPresented: detailPresented) {
             if let selectedItem {
@@ -119,7 +130,30 @@ struct InventoryView: View {
     }
 }
 
+struct InventoryHeaderActionPresentation: Equatable {
+    let systemImage: String
+    let identifier: String
+    let accessibilityLabel: String
+}
+
 enum InventoryMode {
     case warehouse
     case shop
+
+    var headerAction: InventoryHeaderActionPresentation {
+        switch self {
+        case .warehouse:
+            InventoryHeaderActionPresentation(
+                systemImage: "archivebox",
+                identifier: "storage.mode.shop",
+                accessibilityLabel: "아이템 상점 열기"
+            )
+        case .shop:
+            InventoryHeaderActionPresentation(
+                systemImage: "shippingbox",
+                identifier: "storage.mode.warehouse",
+                accessibilityLabel: "나의 창고 열기"
+            )
+        }
+    }
 }

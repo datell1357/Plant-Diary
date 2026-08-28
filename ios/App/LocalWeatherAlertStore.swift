@@ -13,6 +13,7 @@ final class LocalWeatherAlertStore {
 
     private let defaults: UserDefaults
     private var key: String
+    private var accountScopeID = "signed-out"
     private var state = State()
 
     init(
@@ -25,8 +26,13 @@ final class LocalWeatherAlertStore {
     }
 
     func mount(accountID: String?) {
-        key = "weather.\(accountID ?? "signed-out").alerts"
+        accountScopeID = accountID ?? "signed-out"
+        key = "weather.\(accountScopeID).alerts"
         restore()
+    }
+
+    func isMounted(accountID: String?) -> Bool {
+        accountScopeID == (accountID ?? "signed-out")
     }
 
     #if DEBUG
@@ -57,6 +63,11 @@ final class LocalWeatherAlertStore {
 
     func plantEnabled(for plantID: PersonalPlantID) -> Bool {
         state.perPlantEnabled[plantID.rawValue] ?? true
+    }
+
+    func clearActiveRisks() {
+        state.activeRisks = [:]
+        persist()
     }
 
     func reconcile(

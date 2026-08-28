@@ -22,7 +22,7 @@ extension MiniHomeEditorView {
             resolveConflict(.save)
         }
         .accessibilityIdentifier("minihome.conflict.save")
-        Button("서버 버전 사용", role: .destructive) {
+        Button("최근 저장본 사용", role: .destructive) {
             resolveConflict(.discard)
         }
         .accessibilityIdentifier("minihome.conflict.discard")

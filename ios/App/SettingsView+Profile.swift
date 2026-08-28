@@ -26,9 +26,8 @@ extension SettingsView {
     }
 
     private var profileAvatar: some View {
-        Image(systemName: "leaf.fill")
+        Text(SettingsReferenceMetrics.profileAvatarGlyph)
             .font(.system(size: 28))
-            .foregroundStyle(PlanteriorPalette.accent.color)
             .frame(
                 width: SettingsReferenceMetrics.profileAvatarSize,
                 height: SettingsReferenceMetrics.profileAvatarSize
@@ -54,7 +53,8 @@ extension SettingsView {
             Text(verbatim: email)
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .accessibilityLabel(email)
                 .accessibilityIdentifier("settings.profile.email")
         }

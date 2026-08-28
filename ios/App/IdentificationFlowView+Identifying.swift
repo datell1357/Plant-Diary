@@ -97,15 +97,6 @@ extension IdentificationFlowView {
         .accessibilityLabel("분석 진행")
         .accessibilityValue("분석 중")
         .accessibilityIdentifier("capture.identifying.progress")
-        .overlay {
-            Color.clear
-                .accessibilityHidden(false)
-                .accessibilityIdentifier(
-                    usesStaticCapturePhase
-                        ? "capture.identifying.progress.static"
-                        : "capture.identifying.progress.animated"
-                )
-        }
     }
 
     @ViewBuilder

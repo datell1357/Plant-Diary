@@ -17,3 +17,19 @@
   checkpointed. Never remove user-authored, unrelated, or pre-existing files.
 - Verify cleanup by checking that the disposable path is absent and record a
   cleanup receipt with the QA evidence.
+
+## Simulator Resource Discipline
+
+- Reuse a compatible existing Simulator. Never create a device merely to give
+  an agent, attempt, digest, or reviewer a unique name.
+- A verification lane may own at most one Simulator. The only exception is a
+  visual run that simultaneously requires native 402pt and 390pt device
+  profiles; that run may own exactly two.
+- Before `simctl create`, confirm no compatible idle project-owned device can
+  be reused. Register `EXIT`, `INT`, `TERM`, and `HUP` cleanup traps before
+  booting; the trap must shut down and delete the exact created UDID.
+- Record every owned Simulator name and UDID in the run receipt. On every exit
+  path, verify those UDIDs no longer appear in `simctl list devices`.
+- Never delete a Simulator owned by another active process or an unrelated
+  user device. Stale project-owned devices may be removed only after process
+  ownership is checked.

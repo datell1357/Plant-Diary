@@ -9,6 +9,7 @@ struct InventoryPlacementFixture {
     let defaults: UserDefaults
     let now: Instant
     let item: ShopItem
+    let cache: MiniHomeVerifiedCache
 
     init() throws {
         let suiteName = "ItemPlacementCoordinatorTests-\(UUID())"
@@ -24,6 +25,7 @@ struct InventoryPlacementFixture {
             publicationState: .public,
             revision: Revision.parse(1)
         )
+        cache = MiniHomeVerifiedCache(defaults: defaults)
     }
 
     func inventory() -> InventoryRepository {
@@ -45,66 +47,27 @@ struct InventoryPlacementFixture {
         )
     }
 
-    func seedRoom() throws -> LocalMiniHomeRepository {
-        let repository = LocalMiniHomeRepository(
-            accountID: accountID,
-            defaults: defaults,
-            now: now
-        )
-        let room = try room()
-        guard case .committed = try repository.save(
-            draft: room,
-            expectedRevision: room.revision
-        ) else {
-            throw InventoryPlacementFixtureError.seedFailed
-        }
-        return repository
-    }
-
-    func verifyApply(
-        service: InventoryPlacementService,
-        inventory: InventoryRepository,
-        miniHome: LocalMiniHomeRepository
-    ) {
-        #expect(toggle(service: service, inventory: inventory) == .applied)
-        #expect(miniHome.load()?.placements.first?.itemID == item.id)
-        #expect(inventory.ownedItems.first?.applied == true)
-    }
-
-    func verifyRemoval(
-        service: InventoryPlacementService,
-        inventory: InventoryRepository,
-        miniHome: LocalMiniHomeRepository
-    ) {
-        #expect(toggle(service: service, inventory: inventory) == .removed)
-        #expect(miniHome.load()?.placements.isEmpty == true)
-        #expect(inventory.ownedItems.first?.itemID == item.id)
-        #expect(inventory.ownedItems.first?.applied == false)
-    }
-
-    private func room() throws -> MiniHome {
+    func room() throws -> MiniHome {
         try MiniHome(
             id: MiniHomeID.parse("inventory-room"),
             name: "초록 방",
             placements: [],
-            revision: Revision.parse(0),
+            revision: .zero,
             updatedAt: now
         )
     }
 
-    private func toggle(
-        service: InventoryPlacementService,
-        inventory: InventoryRepository
-    ) -> InventoryPlacementOutcome {
-        service.toggle(
-            item: item,
-            inventory: inventory,
-            accountID: accountID,
-            now: now
+    func store(
+        service: MiniHomeStoreServiceFake,
+        operationIDs: [String]
+    ) -> MiniHomeStore {
+        var remaining = operationIDs
+        return MiniHomeStore(
+            service: service,
+            cache: cache,
+            makeOperationID: {
+                try OperationID.parse(remaining.removeFirst())
+            }
         )
     }
-}
-
-private enum InventoryPlacementFixtureError: Error {
-    case seedFailed
 }

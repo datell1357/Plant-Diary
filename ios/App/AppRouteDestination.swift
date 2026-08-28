@@ -15,7 +15,7 @@ struct AppRouteDestination: View {
                 placeholder(for: .unavailable)
             }
         case .miniHome:
-            MiniHomeView(accountID: accountScopeID)
+            MiniHomeView()
         case .tabDetail(.collection):
             CollectionCareSummaryView()
         case .tabDetail(.settings):

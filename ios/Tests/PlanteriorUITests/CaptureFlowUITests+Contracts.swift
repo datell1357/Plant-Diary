@@ -76,7 +76,7 @@ extension CaptureFlowUITests {
             "duplicate recovery must route to the exact existing PlantCare detail"
         )
         XCTAssertTrue(
-            app.staticTexts["몬스테라 델리오사"].waitForExistence(timeout: 5),
+            app.staticTexts["몬스테라 델리시오사"].waitForExistence(timeout: 5),
             "duplicate recovery must show the exact existing plant title"
         )
     }

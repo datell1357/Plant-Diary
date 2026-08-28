@@ -27,37 +27,51 @@ struct PlantCareDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             detailTopBar
-            ScrollView {
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
-                    hero
-                    guideSection
-                        .padding(.top, PlanteriorSpacing.extraSmall)
-                    compactWateringCard
-                        .padding(.top, PlanteriorSpacing.medium)
-                    memoSection
-                    remedyLink
-                    weatherSection
-                    if showsEditing {
-                        titleSummary
-                        wateringEditorSection
-                        editingSection
+                .zIndex(1)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+                        hero
+                        guideSection
+                            .padding(.top, PlanteriorSpacing.extraSmall)
+                        compactWateringCard
+                            .padding(
+                                .top,
+                                PlantCareReferenceMetrics.guideToWateringInset
+                            )
+                        memoSection
+                            .padding(.top, PlantCareReferenceMetrics.memoTopInset)
+                        remedyLink
+                        weatherSection
+                        if showsEditing {
+                            titleSummary
+                            wateringEditorSection
+                            editingSection
+                        }
+                        timelineSection
+                        saveFeedbackLabel
+                        if let saveError {
+                            Text(saveError)
+                                .font(PlanteriorTypography.supporting)
+                                .foregroundStyle(PlanteriorPalette.warning.color)
+                                .accessibilityIdentifier("plant.detail.save-error")
+                        }
+                        deleteAction
                     }
-                    timelineSection
-                    saveFeedbackLabel
-                    if let saveError {
-                        Text(saveError)
-                            .font(PlanteriorTypography.supporting)
-                            .foregroundStyle(PlanteriorPalette.warning.color)
-                            .accessibilityIdentifier("plant.detail.save-error")
-                    }
-                    deleteAction
+                    .frame(
+                        width: proxy.size.width - (PlanteriorSpacing.large * 2),
+                        alignment: .leading
+                    )
+                    .padding(.horizontal, PlanteriorSpacing.large)
+                    .padding(
+                        .bottom,
+                        PlantCareReferenceMetrics.detailBottomScrollClearance
+                    )
                 }
-                .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.bottom, PlantCareReferenceMetrics.detailBottomScrollClearance)
+                .plantCareReferenceBody()
+                .scrollClipDisabled(!dynamicTypeSize.isAccessibilitySize)
+                .accessibilityIdentifier("plant.detail.screen")
             }
-            .plantCareReferenceBody()
-            .scrollClipDisabled(!dynamicTypeSize.isAccessibilitySize)
-            .accessibilityIdentifier("plant.detail.screen")
         }
         .background(PlanteriorPalette.canvas.color)
         .navigationBarBackButtonHidden(true)
@@ -86,7 +100,7 @@ struct PlantCareDetailView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
                 .clipped()
         }
-        .frame(height: 220)
+        .frame(height: PlantCareReferenceMetrics.heroHeight)
         .background(PlanteriorPalette.subtle.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
         .offset(y: PlantCareReferenceMetrics.heroTopInset)
@@ -101,8 +115,10 @@ struct PlantCareDetailView: View {
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("plant.detail.title")
-            Text(PlantCarePresentation.species(for: trimmedNickname))
+            let species = PlantCarePresentation.species(for: trimmedNickname)
+            Text(KoreanTypography.atomic(species))
                 .font(PlanteriorTypography.supporting.italic())
+                .accessibilityLabel(species)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .accessibilityIdentifier("plant.detail.species")
             Text(detailMetadata)
@@ -113,116 +129,44 @@ struct PlantCareDetailView: View {
     }
 
     private var guideSection: some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.medium) {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
             Text("식물 가이드 및 관리 기준")
                 .font(PlanteriorTypography.sectionTitle)
             LazyVGrid(columns: guideColumns, spacing: PlanteriorSpacing.small) {
                 ForEach(PlantCarePresentation.guideMetrics) { metric in
                     PlanteriorCard {
                         VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                            Label(metric.title, systemImage: metric.icon)
-                                .font(PlanteriorTypography.caption.weight(.semibold))
-                                .foregroundStyle(PlanteriorPalette.accent.color)
+                            HStack(spacing: PlanteriorSpacing.extraSmall) {
+                                Text(metric.icon)
+                                    .font(PlantCareReferenceMetrics.guideGlyphFont)
+                                    .accessibilityHidden(true)
+                                Text(metric.title)
+                                    .font(
+                                        PlanteriorTypography.caption.weight(.semibold)
+                                    )
+                                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                            }
                             Text(metric.value)
                                 .font(PlanteriorTypography.cardTitle)
                             Text(metric.hint)
                                 .font(PlanteriorTypography.microLabel)
-                                .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                                .foregroundStyle(
+                                    PlanteriorPalette.textAccessibleCaption.color
+                                )
                         }
                         .padding(.vertical, -PlanteriorSpacing.extraSmall)
                     }
                 }
             }
         }
+        .frame(
+            minHeight: dynamicTypeSize.isAccessibilitySize
+                ? nil
+                : PlantCareReferenceMetrics.guideMinimumHeight,
+            alignment: .top
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("plant.detail.guide")
-    }
-
-    private var memoSection: some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-            Text("관리 메모")
-                .font(PlanteriorTypography.sectionTitle)
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
-                Text(
-                    privateMemo.isEmpty
-                        ? "아직 작성한 관리 메모가 없어요."
-                        : privateMemo
-                )
-                .font(PlanteriorTypography.supporting)
-                .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("plant.detail.memo.body")
-                if let memoUpdatedOn {
-                    Text("수정일: \(memoUpdatedOn)")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textTertiary.color)
-                        .accessibilityIdentifier("plant.detail.memo-updated")
-                }
-            }
-            .padding(.horizontal, PlanteriorSpacing.medium)
-            .padding(.vertical, PlanteriorSpacing.large)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PlanteriorPalette.canvas.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("plant.detail.memo.card")
-            .overlay {
-                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                    .stroke(
-                        PlanteriorPalette.border.color,
-                        lineWidth: PlanteriorControl.hairline
-                    )
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("plant.detail.memo")
-    }
-
-    private var memoUpdatedOn: String? {
-        #if DEBUG
-            guard let value = ProcessInfo.processInfo.environment[
-                "QA_PLANT_DETAIL_UPDATED_ON"
-            ] else {
-                return nil
-            }
-            let components = value.split(separator: "-")
-            guard components.count == 3 else { return nil }
-            return "\(components[0]). \(components[1]). \(components[2])"
-        #else
-            return nil
-        #endif
-    }
-
-    private var remedyLink: some View {
-        NavigationLink {
-            PlantSymptomRemedyView(
-                displayName: trimmedNickname,
-                hasWateringBaseline: lastWateredOn != nil
-            )
-        } label: {
-            HStack(spacing: PlanteriorSpacing.medium) {
-                PlanteriorIconWell(systemImage: "cross.case")
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                    Text("증상 대처법")
-                        .font(PlanteriorTypography.cardTitle)
-                    Text("잎과 흙 상태를 직접 확인하는 방법")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                }
-                Spacer(minLength: PlanteriorSpacing.small)
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(PlanteriorPalette.textTertiary.color)
-            }
-            .padding(PlanteriorSpacing.large)
-            .background(PlanteriorPalette.surface.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
-            .overlay {
-                RoundedRectangle(cornerRadius: PlanteriorRadius.large)
-                    .stroke(PlanteriorPalette.border.color, lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("plant.detail.remedy")
     }
 
     private var deleteAction: some View {
@@ -237,7 +181,10 @@ struct PlantCareDetailView: View {
     private var guideColumns: [GridItem] {
         let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
         return Array(
-            repeating: GridItem(.flexible(), spacing: 10),
+            repeating: GridItem(
+                .flexible(),
+                spacing: PlantCareReferenceMetrics.guideGridSpacing
+            ),
             count: count
         )
     }

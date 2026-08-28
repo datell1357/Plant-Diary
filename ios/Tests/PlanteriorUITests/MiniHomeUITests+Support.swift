@@ -41,9 +41,10 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         )
         let edit = app.buttons["minihome.edit"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        assertSinglePersistentTabBar(in: app, selected: "tab.home")
         edit.tap()
         XCTAssertTrue(
-            app.scrollViews["minihome.editor"]
+            app.descendants(matching: .any)["minihome.editor"]
                 .waitForExistence(timeout: 5)
         )
     }
@@ -56,8 +57,8 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
         in app: XCUIApplication
     ) {
         XCTAssertTrue(
-            app.images["home.room.hero"].waitForExistence(timeout: 10),
-            "Home must keep projecting the committed room"
+            app.buttons["home.room.decorate"].waitForExistence(timeout: 10),
+            "Home must keep projecting the committed room controls"
         )
         let homeTitle = app.buttons["home.room.title"]
         XCTAssertTrue(homeTitle.waitForExistence(timeout: 10))
@@ -180,84 +181,5 @@ extension MiniHomeUITestSupport where Self: XCTestCase {
             XCTWaiter.wait(for: [changed], timeout: 5),
             .completed
         )
-    }
-
-    func waitForMiniHomeElement(
-        _ element: XCUIElement,
-        timeout: TimeInterval = 5,
-        trigger: () -> Void
-    ) {
-        let appeared = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true"),
-            object: element
-        )
-        trigger()
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [appeared], timeout: timeout),
-            .completed
-        )
-    }
-
-    func waitForMiniHomeElementToDisappear(
-        _ element: XCUIElement,
-        timeout: TimeInterval = 5,
-        trigger: () -> Void
-    ) {
-        let disappeared = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"),
-            object: element
-        )
-        trigger()
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [disappeared], timeout: timeout),
-            .completed
-        )
-    }
-
-    func triggerAndWaitForMiniHomeState(
-        _ expected: String,
-        in app: XCUIApplication,
-        trigger: () -> Void
-    ) {
-        let state = app.staticTexts["minihome.state"]
-        let changed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(
-                format: "exists == true AND label == %@",
-                expected
-            ),
-            object: state
-        )
-        trigger()
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [changed], timeout: 5),
-            .completed,
-            "MiniHome state: \(state.label)"
-        )
-    }
-
-    func attachScreenshot(named name: String) {
-        let attachment = XCTAttachment(
-            screenshot: XCUIScreen.main.screenshot()
-        )
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
-    func attachJSON(_ value: Any, named name: String) {
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: value,
-            options: [.prettyPrinted, .sortedKeys]
-        ) else {
-            XCTFail("JSON evidence could not be encoded")
-            return
-        }
-        let attachment = XCTAttachment(
-            data: data,
-            uniformTypeIdentifier: "public.json"
-        )
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 }

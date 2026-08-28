@@ -13,16 +13,17 @@ struct FigmaAssetContractTests {
         .capturePhoto: CGSize(width: 386, height: 444),
         .collectionHero: CGSize(width: 370, height: 220),
         .roomHero: CGSize(width: 358, height: 330),
+        .roomBase: CGSize(width: 358, height: 330),
         .storagePreview: CGSize(width: 362, height: 220)
     ]
 
     @Test
-    func exposesExactlyFortyUniqueResourceNames() {
+    func exposesExactlyFortySixUniqueResourceNames() {
         let cases = FigmaAsset.allCases
 
-        #expect(cases.count == 40)
-        #expect(Set(cases).count == 40)
-        #expect(Set(cases.map(\.resourceName)).count == 40)
+        #expect(cases.count == 46)
+        #expect(Set(cases).count == 46)
+        #expect(Set(cases.map(\.resourceName)).count == 46)
         #expect(cases.allSatisfy { !$0.resourceName.isEmpty })
     }
 
@@ -61,6 +62,7 @@ struct FigmaAssetContractTests {
         #expect(FigmaAsset.capturePhoto.rawValue == "FigmaCapturePhoto")
         #expect(FigmaAsset.collectionHero.rawValue == "FigmaCollectionHero")
         #expect(FigmaAsset.roomHero.rawValue == "FigmaRoomHero")
+        #expect(FigmaAsset.roomBase.rawValue == "FigmaRoomBase")
         #expect(FigmaAsset.storagePreview.rawValue == "FigmaStoragePreview")
         #expect(FigmaAsset.allCases.allSatisfy { $0.resourceName == $0.rawValue })
         #expect(FigmaAsset.allCases.allSatisfy { $0.rawValue.hasPrefix("Figma") })

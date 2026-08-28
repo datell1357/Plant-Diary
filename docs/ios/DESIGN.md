@@ -17,24 +17,39 @@ Dynamic Type, VoiceOver, touch targets, and adaptive preferences.
 
 ## 2. Color
 
-| Role | Swift token | Light value | Usage |
-|---|---|---:|---|
-| Canvas | `PlanteriorPalette.canvas` | `#FCFBF7` | App and scroll backgrounds |
-| Surface | `PlanteriorPalette.surface` | `#FFFFFF` | Cards, rows, sheets |
-| Subtle surface | `PlanteriorPalette.subtle` | `#EEF3F0` | Empty states and inactive nested cards |
-| Accent surface | `PlanteriorPalette.accentSurface` | `#EBF0EC` | Icon wells and selected panels |
-| Accent | `PlanteriorPalette.accent` | `#3D6642` | Primary actions, selection, active navigation |
-| Text primary | `PlanteriorPalette.textPrimary` | `#1F2937` | Titles and body |
-| Text secondary | `PlanteriorPalette.textSecondary` | `#6B7280` | Supporting copy and metadata |
-| Text tertiary | `PlanteriorPalette.textTertiary` | `#9CA3AF` | Placeholders and disabled labels |
-| Border | `PlanteriorPalette.border` | `#E5E7EB` | Card, row, field, and sheet boundaries |
-| Warning surface | `PlanteriorPalette.warningSurface` | `#FFF7D6` | Weather and care warnings |
-| Warning | `PlanteriorPalette.warning` | `#E97800` | Warning icon and emphasized copy |
-| Success surface | `PlanteriorPalette.successSurface` | `#EEF5EE` | Healthy and completed status |
-| Destructive | `PlanteriorPalette.destructive` | semantic system red | Deletion and irreversible actions |
+| Role | Swift token | Usage |
+|---|---|---|
+| Canvas | `PlanteriorPalette.canvas` | App and scroll backgrounds |
+| Surface | `PlanteriorPalette.surface` | Cards, rows, sheets |
+| Subtle surface | `PlanteriorPalette.subtle` | Empty states and inactive nested cards |
+| Accent surface | `PlanteriorPalette.accentSurface` | Icon wells and selected panels |
+| Accent | `PlanteriorPalette.accent` | Primary actions, selection, active navigation |
+| Text primary | `PlanteriorPalette.textPrimary` | Titles and body |
+| Text secondary | `PlanteriorPalette.textSecondary` | Supporting copy and metadata |
+| Accessible caption | `PlanteriorPalette.textAccessibleCaption` | Contrast-safe captions and supporting copy |
+| Text tertiary | `PlanteriorPalette.textTertiary` | Placeholders and disabled labels |
+| Text on accent | `PlanteriorPalette.textOnAccent` | Foreground on Accent actions, filters, and statuses |
+| Border | `PlanteriorPalette.border` | Card, row, field, and sheet boundaries |
+| Warning surface | `PlanteriorPalette.warningSurface` | General warning backgrounds |
+| Warning | `PlanteriorPalette.warning` | Warning icons and compact emphasis |
+| Warning text | `PlanteriorPalette.warningText` | Readable warning copy on light warning surfaces |
+| Success surface | `PlanteriorPalette.successSurface` | Healthy and completed status backgrounds |
+| Collection status | `PlanteriorPalette.collectionStatus` | Plant collection status indicators |
+| Home weather warning surface | `PlanteriorPalette.homeWeatherWarningSurface` | Home weather-alert background |
+| Home weather warning border | `PlanteriorPalette.homeWeatherWarningBorder` | Home weather-alert boundary |
+| Home care empty surface | `PlanteriorPalette.homeCareEmptySurface` | Home care empty-state background |
+| Attention | `PlanteriorPalette.attention` | Urgent attention indicator |
+| Attention text | `PlanteriorPalette.attentionText` | Readable attention-status copy |
+| Attention surface | `PlanteriorPalette.attentionSurface` | Attention-status background |
+| Media scrim | `PlanteriorPalette.mediaScrim` | High-contrast labels over photography |
+| Destructive | `PlanteriorPalette.destructive` | Deletion and irreversible actions |
 
-Provider-owned Google and Apple screens retain their provider colors. No
-provider color enters the app design system. Accent is functional emphasis,
+`ios/Packages/PlanteriorCore/Sources/PlanteriorDesignSystem/DesignTokens.swift`
+is the value source of truth; this contract maps semantic roles without copying
+raw literals. Provider-owned Google and Apple screens retain exact provider colors through
+`PlanteriorProviderPalette`; these semantic provider tokens may be used only at
+the provider invocation boundary. Provider colors do not enter app-owned
+surfaces. Accent is functional emphasis,
 never decoration. Add a semantic role here before adding a new visual color.
 
 ## 3. Typography
@@ -56,7 +71,9 @@ hierarchy, but shipping views use the semantic styles below so AX5 can reflow.
 
 Titles use one or two lines. Korean particles and short predicate phrases
 should not be orphaned when a slightly wider text region or a smaller semantic
-style can preserve meaning. Body copy never relies on truncation for required
+style can preserve meaning. Species names are atomic Hangul units: use the
+word-priority helper so names such as `몬스테라` never split between syllables.
+Dependent expressions such as `폭염 등` bind with a non-breaking space. Body copy never relies on truncation for required
 information.
 
 ## 4. Spacing and layout
@@ -76,7 +93,9 @@ All spacing is based on 4pt.
 
 The reference phone state is 402x874 with a 16pt screen gutter and 370pt
 full-width content. Every phone frame has one body scroll
-owner above a fixed safe-area-aware tab bar. The shell also reflows at 390x844.
+owner above a fixed safe-area-aware tab bar. The app-owned tab surface is 62pt
+above the native bottom safe area; its separator is y=778 in the 402x874
+reference. This 62pt visual surface replaces the earlier 50pt approximation. The shell also reflows at 390x844.
 Composite Figma boards use 40pt outer padding and 40pt gaps only to present
 multiple 402x874 screens; those values are not in-app gutters.
 
@@ -97,10 +116,22 @@ renders through navigation chrome.
 
 - Structure: one independent `NavigationStack` per Home, Collection, Storage,
   and Settings tab; a center camera action occupies the fifth visual position.
-- Layout: fixed safe-area bottom region; only the selected tab body scrolls.
+- Layout: fixed safe-area bottom region with a 62pt app-owned visual surface;
+  only the selected tab body scrolls.
 - State: selected icon and label use Accent; unselected items use secondary or
   tertiary text; camera is a 52pt Accent circle.
-- Behavior: camera dismissal returns to the previous tab and stack.
+- Behavior: camera dismissal returns to the previous tab and stack. Each tab's
+  `NavigationStack` and safe-area shell intentionally own the real 62pt app tab
+  bar, which remains visible on local pushed destinations, including Settings
+  Quiet Hours. This user-approved product contract overrides the older
+  authenticated Figma Quiet Hours frame that omitted tabs; the external Figma
+  file was not modified. Full-screen camera and identification flows, and
+  provider-owned flows, remain tab-free.
+- Rationale: stable tab navigation, exactly one app bar, and reserved scroll
+  clearance keep local navigation predictable and final content above material.
+- Verification: at 390pt and 402pt phone widths and AX sizes, show exactly one
+  bar with one selected item and prove every scroll owner's final content clears
+  the tab material.
 - Accessibility: each item exposes a label, selected trait, stable identifier,
   and at least a 44pt target.
 
@@ -116,7 +147,8 @@ renders through navigation chrome.
 ### Hero media
 
 - Structure: image-led room, plant, or item media with 16pt radius and explicit
-  aspect ratio.
+  aspect ratio. Home uses the authoritative 370x326 crop with its top interior
+  plane aligned to source row 136; no runtime color or brightness overlay.
 - Variants: miniature room, plant hero, item hero, camera/photo review.
 - State: loading uses a stable Subtle frame; unavailable uses meaningful copy,
   never a layout collapse.
@@ -136,9 +168,28 @@ renders through navigation chrome.
 
 - Structure: image, item name, state/price metadata, optional badge.
 - Layout: two columns at reference width; one readable column when Dynamic Type
-  or available width requires it.
+  or available width requires it. The authoritative Shop card is 173x180pt with
+  a 153x110pt image, 10pt image-to-title gap, and 12pt column gap. Row spacing
+  is 12pt at the 402x874 reference and contracts to the 8pt spacing token at
+  390x844 so the third card row clears the fixed tab material. The Inventory
+  body remains the only vertical scroll owner; the card grid owns no nested
+  scroll.
 - State: acquired, eligible, locked, placed, selected, and disabled.
 - Accessibility: eligibility is available as a semantic value, not color only.
+
+### Inventory detail and mode actions
+
+- Detail: after the fixed 220pt hero, the reference vertical cadence is 20pt to
+  the title block, an 8pt title/description gap, 25pt from the title block to
+  status, 20pt from status to the primary action, and 17pt from the action to
+  the example block. These Inventory-local values preserve the supplied 402
+  frame while the same body
+  remains responsive and scrollable at 390 and AX sizes.
+- Favorite defaults unselected in production and deterministic QA captures, so
+  the reference uses `star`; selecting it uses `star.fill` and updates the
+  accessibility action label. Tests exercise both states before capture.
+- Mode glyphs describe the visible surface: Warehouse uses the `archivebox` SF
+  Symbol and Shop uses `shippingbox`. Their button targets remain 44x44pt.
 
 ### Primary and secondary actions
 
@@ -156,6 +207,9 @@ renders through navigation chrome.
 - Variants: sign-in, room rename free, room rename paid, picker, and item
   detail.
 - Behavior: focus moves into the sheet; close restores the invoking control.
+  The sign-in sheet occupies y=470...777 at 402x874 and leaves the live tab layer
+  visibly present underneath; that tab layer is inert and accessibility-hidden
+  while the sheet is open.
 - Rename copy and entitlement state are explicit. The paid state must not
   silently spend value.
 
@@ -168,14 +222,18 @@ renders through navigation chrome.
   icon wells are not permitted (StyleGallery `icon-frame`). Wrapped labels align
   from their first text baseline and cannot enter the icon column.
 - Quiet hours: enable switch, start/end selectors, explanatory copy, warning,
-  and fixed save action.
+  and a fixed save action at default sizes. At accessibility sizes the same
+  native Save button is the ScrollView's final source child after the warning,
+  with safe-area spacing so painted and assistive traversal remain aligned.
 - Region: search, current-location action, current region, recent regions, and
   clear selection feedback.
 
 ### Capture and identification
 
-- Camera: full black surface with close, centered photo viewport, library,
-  shutter, and camera-switch controls.
+- Camera: full black surface with close, centered photo viewport, rounded scan
+  corners, `photo.on.rectangle` gallery glyph, and the reference two-ring
+  shutter. Review/result use a 40pt Surface circular back control and the review
+  primary action uses the reference `sparkle` silhouette.
 - Sticky completion actions belong to the screen's `ScrollView` safe-area inset,
   never an outer wrapper, so hero, selected detail, and alternate content can
   scroll entirely above the rendered action region at every Dynamic Type size.
@@ -190,8 +248,18 @@ renders through navigation chrome.
 - Structure: close/title/save header, room canvas, category tab strip,
   horizontally scrolling item selector, undo/reset footer.
 - Canvas: room remains the visual focus and supports touch plus VoiceOver move
-  actions. At AX5 it retains at least 180pt of visible height; the room scroll
-  region grows before fixed tray/footer strips can collapse the canvas.
+  actions. `FigmaRoomBase.png` carries the authoritative warm local-reference
+  material and directional-light grade as one reusable 358x330 background;
+  live placements render above it without a brightness or color overlay. The
+  358pt canvas keeps a centered 22pt gutter at 402pt and a centered 16pt gutter
+  at 390pt; it never clips a room edge to preserve the reference-width inset.
+  Tray sprites ship as authored RGBA with transparent margins; runtime
+  color-keying or product-region alpha masks are not permitted. The canonical
+  DEBUG-only fixture uses independently placed, movable
+  Monstera/sansevieria/succulent sprites that reproduce the supplied room
+  artwork; the Release binary contains no fixture IDs or fixture placement data.
+  At AX5 it retains at least 180pt of visible height; the room scroll region
+  grows before fixed tray/footer strips can collapse the canvas.
 - State: clean, dirty, saving, error, conflict, and unsaved-dismissal recovery.
 
 ## 6. Motion and interaction
@@ -213,7 +281,8 @@ The strategy is mixed tonal shift, subtle borders, and one restrained ambient
 shadow family. Canvas, Subtle, Accent Surface, and Surface provide most
 hierarchy. Cards may use a 1pt Border plus `y=1, blur=2, black 4%`; sheets and
 dialogs may use `y=-2, blur=16, black 10%`; the camera action may use
-`y=2, blur=8, Accent 25%`. Avoid additional decorative shadows, gradients,
+`y=2, blur=8, Accent 25%`; movable room props use the semantic
+`PlanteriorShadow.roomPlacement` (`x=1, y=3, blur=2, black 18%`). Avoid additional decorative shadows, gradients,
 glass effects, and nested card stacks.
 
 ## 8. Accessibility constraints and accepted debt
@@ -228,10 +297,22 @@ glass effects, and nested card stacks.
 - Body regions have one declared scroll owner; fixed headers and tab bars do
   not create nested vertical scrolling.
 - Focus order follows visual order. Opening and closing a modal has a stable
-  focus destination.
+  focus destination. Identifying progress exposes one labelled progress stop;
+  Settings exposes one native switch stop per toggle; Quiet Hours exposes its
+  complete warning as one source-ordered semantic stop with no decorative icon
+  or painted-text descendants; decorative hint glyphs and QA state seams are
+  not accessibility stops.
 - Reduce Motion removes non-essential motion.
 - Light appearance is the exact Figma reference. Additional appearances may
   use system adaptation only after the light contract remains intact.
+
+### Pixel evidence policy
+
+Compare app-owned content rectangles. Normalize or mask only system-owned
+chrome or dynamic regions, with explicit per-state bounds and a reviewed
+rationale recorded beside the evidence. Accepted product overrides, including
+persistent tabs, are visible contract annotations and must never be hidden by a
+mask. Comparison tooling does not imply or modify the external Figma source.
 
 ### Accepted debt
 

@@ -24,9 +24,11 @@ public enum PlanteriorPalette {
     public static let surface = PlanteriorColorToken(hex: "#FFFFFF")
     public static let subtle = PlanteriorColorToken(hex: "#EEF3F0")
     public static let accentSurface = PlanteriorColorToken(hex: "#EBF0EC")
+    public static let iconWellSurface = canvas
     public static let accent = PlanteriorColorToken(hex: "#3D6642")
     public static let textPrimary = PlanteriorColorToken(hex: "#1F2937")
     public static let textSecondary = PlanteriorColorToken(hex: "#6B7280")
+    public static let textAccessibleCaption = PlanteriorColorToken(hex: "#6B7280")
     public static let textTertiary = PlanteriorColorToken(hex: "#9CA3AF")
     public static let textOnAccent = PlanteriorColorToken(hex: "#FFFFFF")
     public static let border = PlanteriorColorToken(hex: "#E5E7EB")
@@ -34,14 +36,25 @@ public enum PlanteriorPalette {
     public static let warning = PlanteriorColorToken(hex: "#E97800")
     public static let warningText = PlanteriorColorToken(hex: "#8A4B00")
     public static let successSurface = PlanteriorColorToken(hex: "#EEF5EE")
+    public static let collectionStatus = PlanteriorColorToken(hex: "#10B981")
+    public static let homeWeatherWarningSurface = PlanteriorColorToken(hex: "#FEF3C7")
+    public static let homeWeatherWarningBorder = PlanteriorColorToken(hex: "#FCD34D")
+    public static let homeCareEmptySurface = PlanteriorColorToken(hex: "#F5FAF5")
     public static let attention = PlanteriorColorToken(hex: "#FF4D4F")
+    public static let attentionText = PlanteriorColorToken(hex: "#B42318")
     public static let attentionSurface = PlanteriorColorToken(hex: "#FFE8E8")
+    public static let mediaScrim = PlanteriorColorToken(hex: "#000000")
+    public static let destructive = Color.red
 }
 
-/// 4pt spacing grid from `docs/ios/DESIGN.md` §4. Names are spelled out because the
-/// repository lint forbids two-character identifiers; the scale itself is unchanged.
-/// `board` is Figma composite-board chrome, never an in-app gutter.
+/// Provider-owned colors are exact system primitives and stay at auth boundaries.
+public enum PlanteriorProviderPalette {
+    public static let appleButtonBackground = Color.black
+    public static let appleButtonForeground = Color.white
+}
+
 public enum PlanteriorSpacing {
+    public static let none: CGFloat = 0
     public static let extraSmall: CGFloat = 4
     public static let small: CGFloat = 8
     public static let medium: CGFloat = 12
@@ -52,17 +65,12 @@ public enum PlanteriorSpacing {
     public static let board: CGFloat = 40
 }
 
-/// In-app corner radii. The 48pt Figma phone radius is device chrome and is absent here.
-/// Shared app-owned frame geometry. Values here describe reusable chrome rather
-/// than the dimensions of any one feature's content.
 public enum PlanteriorLayout {
     public static let contentGutter: CGFloat = 16
     public static let topBarHeight: CGFloat = 56
-    /// Canonical app-owned tab content above the system home-indicator safe area.
-    public static let tabBarHeight: CGFloat = 50
-    /// Visible sheet content above the shell tab bar in the 402x874 reference.
+    /// App-owned surface above the native bottom safe area; separator y=778 at 402x874.
+    public static let tabBarHeight: CGFloat = 62
     public static let bottomPanelContentHeight: CGFloat = 306
-    /// Full white bottom-panel footprint, including the 98pt tab/home-indicator region.
     public static let bottomPanelTotalHeight: CGFloat = 404
     public static let modalWidth: CGFloat = 320
     public static let heroAspectRatio: CGFloat = 5.0 / 3.0
@@ -88,6 +96,9 @@ public enum PlanteriorControl {
     public static let navigationBarHeight = PlanteriorLayout.topBarHeight
     public static let rowHeight: CGFloat = 56
     public static let iconWellSize: CGFloat = 32
+    public static let iconWellCornerRadius = PlanteriorRadius.small
+    public static let compactVisualSize: CGFloat = 40
+    public static let secondaryButtonHeight: CGFloat = 48
     public static let hairline: CGFloat = 1
 
     public static func iconWellSize(
@@ -99,6 +110,12 @@ public enum PlanteriorControl {
 
 public enum PlanteriorOpacity {
     public static let dimmer: Double = 0.4
+    public static let mediaBadge: Double = 0.72
+    public static let disabled: Double = 0.55
+    public static let pressed: Double = 0.7
+    public static let strong: Double = 0.9
+    public static let medium: Double = 0.5
+    public static let faint: Double = 0.24
 }
 
 public struct PlanteriorShadowToken: Hashable, Sendable {
@@ -131,6 +148,13 @@ public enum PlanteriorShadow {
         offsetX: 0,
         offsetY: 2
     )
+    public static let roomPlacement = PlanteriorShadowToken(
+        color: PlanteriorPalette.mediaScrim,
+        opacity: 0.18,
+        radius: 2,
+        offsetX: 1,
+        offsetY: 3
+    )
 }
 
 public enum PlanteriorMotion {
@@ -141,123 +165,4 @@ public enum PlanteriorMotion {
     public static func standard(reduceMotion: Bool) -> Animation? {
         reduceMotion ? nil : .easeInOut(duration: duration(reduceMotion: false))
     }
-}
-
-/// Semantic card roles. Depth is border and tonal shift only; no decorative shadow.
-public enum PlanteriorCardVariant: Hashable, Sendable {
-    case standard
-    case subtle
-    case warning
-    case success
-    case selected
-    case disabled
-
-    public var background: PlanteriorColorToken {
-        switch self {
-        case .standard: PlanteriorPalette.surface
-        case .subtle, .disabled: PlanteriorPalette.subtle
-        case .warning: PlanteriorPalette.warningSurface
-        case .success: PlanteriorPalette.successSurface
-        case .selected: PlanteriorPalette.accentSurface
-        }
-    }
-
-    public var border: PlanteriorColorToken? {
-        switch self {
-        case .standard: PlanteriorPalette.border
-        case .selected: PlanteriorPalette.accent
-        case .subtle, .warning, .success, .disabled: nil
-        }
-    }
-
-    public var foreground: PlanteriorColorToken {
-        switch self {
-        case .disabled: PlanteriorPalette.textTertiary
-        case .warning: PlanteriorPalette.warning
-        case .standard, .subtle, .success, .selected: PlanteriorPalette.textPrimary
-        }
-    }
-}
-
-/// Semantic pill/status roles for counts, care state, and eligibility chips.
-public enum PlanteriorStatusVariant: Hashable, Sendable {
-    case accent
-    case neutral
-    case tonal
-    case warning
-    case attention
-
-    public var background: PlanteriorColorToken {
-        switch self {
-        case .accent: PlanteriorPalette.accent
-        case .neutral: PlanteriorPalette.subtle
-        case .tonal: PlanteriorPalette.accentSurface
-        case .warning: PlanteriorPalette.warningSurface
-        case .attention: PlanteriorPalette.attentionSurface
-        }
-    }
-
-    public var foreground: PlanteriorColorToken {
-        switch self {
-        case .accent: PlanteriorPalette.textOnAccent
-        case .neutral: PlanteriorPalette.textSecondary
-        case .tonal: PlanteriorPalette.accent
-        case .warning: PlanteriorPalette.warning
-        case .attention: PlanteriorPalette.attention
-        }
-    }
-}
-
-/// Semantic filter-chip roles shared by collection and inventory surfaces.
-public enum PlanteriorFilterStyle: Hashable, Sendable {
-    case selected
-    case unselected
-
-    public var background: PlanteriorColorToken {
-        self == .selected ? PlanteriorPalette.accent : PlanteriorPalette.surface
-    }
-
-    public var foreground: PlanteriorColorToken {
-        self == .selected ? PlanteriorPalette.textOnAccent : PlanteriorPalette.textSecondary
-    }
-
-    public var border: PlanteriorColorToken? {
-        self == .selected ? nil : PlanteriorPalette.border
-    }
-}
-
-/// Completion-action roles. Reference visual height is 52pt for both styles.
-public enum PlanteriorActionStyle: Hashable, Sendable {
-    case primary
-    case secondary
-
-    public var background: PlanteriorColorToken {
-        self == .primary ? PlanteriorPalette.accent : PlanteriorPalette.surface
-    }
-
-    public var foreground: PlanteriorColorToken {
-        self == .primary ? PlanteriorPalette.textOnAccent : PlanteriorPalette.textPrimary
-    }
-
-    public var border: PlanteriorColorToken? {
-        self == .primary ? nil : PlanteriorPalette.border
-    }
-
-    public var height: CGFloat {
-        PlanteriorControl.primaryButtonHeight
-    }
-}
-
-/// Dynamic Type roles from `docs/ios/DESIGN.md` §3. Fixed Figma point sizes describe
-/// hierarchy only; shipping views bind to these semantic styles so AX5 can reflow.
-public enum PlanteriorTypography {
-    public static let screenTitle = Font.headline.weight(.semibold)
-    public static let pageTitle = Font.title3.weight(.bold)
-    public static let heroGreeting = Font.title3.weight(.bold)
-    public static let sectionTitle = Font.headline.weight(.semibold)
-    public static let cardTitle = Font.subheadline.weight(.semibold)
-    public static let body = Font.body
-    public static let supporting = Font.subheadline
-    public static let caption = Font.caption
-    public static let microLabel = Font.caption2.weight(.medium)
 }

@@ -22,6 +22,30 @@ struct AppShellTests {
     }
 
     @Test
+    func settingsRootBackReturnsToLastNonSettingsTabWithoutChangingStacks() {
+        var navigation = AppNavigationState()
+        navigation.select(.collection)
+        navigation.push(.tabDetail(.collection))
+        navigation.select(.settings)
+
+        navigation.returnFromSettingsRoot()
+
+        #expect(navigation.selectedTab == .collection)
+        #expect(navigation.path(for: .collection) == [.tabDetail(.collection)])
+        #expect(navigation.path(for: .settings).isEmpty)
+    }
+
+    @Test
+    func settingsRootBackFallsBackToHome() {
+        var navigation = AppNavigationState()
+        navigation.select(.settings)
+
+        navigation.returnFromSettingsRoot()
+
+        #expect(navigation.selectedTab == .home)
+    }
+
+    @Test
     func cameraActionDoesNotReplaceSelectedTabOrItsStack() {
         var navigation = AppNavigationState()
         navigation.select(.collection)

@@ -20,7 +20,7 @@ swiftformat --lint \
   "$ios_root/Packages/PlanteriorCore/Sources" \
   "$ios_root/Packages/PlanteriorCore/Tests"
 swiftlint lint --strict --config "$repo_root/.swiftlint.yml"
-swift test --package-path "$ios_root/Packages/PlanteriorCore"
+swift test --no-parallel --package-path "$ios_root/Packages/PlanteriorCore"
 xcodebuild \
   -resolvePackageDependencies \
   -workspace Planterior.xcworkspace \
@@ -30,7 +30,6 @@ xcodebuild \
   -scheme Planterior \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
-  CODE_SIGNING_ALLOWED=NO \
   build-for-testing
 xcodebuild \
   -workspace Planterior.xcworkspace \
@@ -38,14 +37,18 @@ xcodebuild \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$result_bundle" \
-  CODE_SIGNING_ALLOWED=NO \
   test-without-building
 
 if grep -R -E \
   '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AIza[0-9A-Za-z_-]{20,}|ya29\.[0-9A-Za-z_-]+)' \
   "$repo_root/ios" \
   --exclude-dir=Planterior.xcodeproj \
-  --exclude-dir=.build; then
+  --exclude-dir=.derivedData \
+  --exclude-dir=DerivedData \
+  --exclude-dir=SourcePackages \
+  --exclude-dir=build \
+  --exclude-dir=.build \
+  --exclude-dir=Intermediates.noindex; then
   printf 'IOS_SECRET_SCAN_FAILED\n' >&2
   exit 71
 fi

@@ -4,16 +4,22 @@ import PlanteriorDomain
 extension InventoryRepository {
     func seedQAIfNeeded(processInfo: ProcessInfo = .processInfo) {
         #if DEBUG
+            guard processInfo.environment["QA_INVENTORY_FIXTURE"] == "1" else {
+                return
+            }
             resetQAIfNeeded(processInfo: processInfo)
-            guard processInfo.environment["QA_INVENTORY_FIXTURE"] == "1",
-                  catalog.isEmpty,
-                  let fixture = Self.qaFixture(now: now)
-            else {
+            if let snapshot = persistedSnapshot(), snapshot.source != .legacy {
+                catalog = snapshot.catalog
+                ownedItems = snapshot.ownedItems
+                return
+            }
+            guard let fixture = Self.qaFixture(now: now) else {
                 return
             }
             replaceFixture(
                 catalog: fixture.catalog,
-                ownedItems: fixture.ownedItems
+                ownedItems: fixture.ownedItems,
+                source: .qaFixture
             )
         #endif
     }
@@ -28,7 +34,7 @@ extension InventoryRepository {
         }
         defaults.removeObject(forKey: persistenceKey)
         defaults.set(resetToken, forKey: "qa.inventory.reset-token")
-        catalog = []
+        catalog = InventoryCatalog.items()
         ownedItems = []
     }
 
@@ -39,6 +45,41 @@ extension InventoryRepository {
             return nil
         }
 
+        guard let resolvedCatalog = qaCatalog(revision: revision) else {
+            return nil
+        }
+
+        let ownedIDs = [
+            "item-mini-shelf", "item-small-rug", "item-window-frame",
+            "item-flower-stand", "item-lamp", "item-wall-art", "item-chair",
+            "item-cushion", "item-book-cart", "item-plant-rack",
+            "item-round-mat", "item-cozy-rug"
+        ]
+        let appliedIDs = Set([
+            "item-mini-shelf", "item-small-rug", "item-flower-stand"
+        ])
+        let ownedItems = ownedIDs.compactMap { rawID -> OwnedItem? in
+            guard let itemID = try? ItemID.parse(rawID) else {
+                return nil
+            }
+            return OwnedItem(
+                itemID: itemID,
+                acquiredAt: now,
+                applied: appliedIDs.contains(rawID),
+                revision: revision
+            )
+        }
+        guard ownedItems.count == ownedIDs.count else {
+            return nil
+        }
+        return InventorySnapshot(
+            catalog: resolvedCatalog,
+            ownedItems: ownedItems,
+            source: .qaFixture
+        )
+    }
+
+    private static func qaCatalog(revision: Revision) -> [ShopItem]? {
         let catalog: [ShopItem?] = [
             qaItem("item-mini-shelf", "미니 책장", .furniture, .draft, revision),
             qaItem("item-small-rug", "작은 러그", .decoration, .draft, revision),
@@ -72,38 +113,8 @@ extension InventoryRepository {
                 "autumn-season"
             )
         ]
-        let resolvedCatalog = catalog.compactMap(\.self)
-        guard resolvedCatalog.count == catalog.count else {
-            return nil
-        }
-
-        let ownedIDs = [
-            "item-mini-shelf", "item-small-rug", "item-window-frame",
-            "item-flower-stand", "item-lamp", "item-wall-art", "item-chair",
-            "item-cushion", "item-book-cart", "item-plant-rack",
-            "item-round-mat", "item-cozy-rug"
-        ]
-        let appliedIDs = Set([
-            "item-mini-shelf", "item-small-rug", "item-flower-stand"
-        ])
-        let ownedItems = ownedIDs.compactMap { rawID -> OwnedItem? in
-            guard let itemID = try? ItemID.parse(rawID) else {
-                return nil
-            }
-            return OwnedItem(
-                itemID: itemID,
-                acquiredAt: now,
-                applied: appliedIDs.contains(rawID),
-                revision: revision
-            )
-        }
-        guard ownedItems.count == ownedIDs.count else {
-            return nil
-        }
-        return InventorySnapshot(
-            catalog: resolvedCatalog,
-            ownedItems: ownedItems
-        )
+        let resolved = catalog.compactMap(\.self)
+        return resolved.count == catalog.count ? resolved : nil
     }
 
     private static func qaItem(

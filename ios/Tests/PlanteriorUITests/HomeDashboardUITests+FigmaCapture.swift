@@ -41,12 +41,11 @@ extension HomeDashboardUITests {
 
     func testCaptureLoggedOutHomeState() {
         let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "0"
-        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        let receipt = applyLoggedOutFigmaLaunch(app)
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["home.greeting"].waitForExistence(timeout: 10))
+        waitForLoggedOutHomeFixture(in: app, receipt: receipt)
+        XCTAssertTrue(app.staticTexts["home.greeting"].exists)
         attachFigmaScreenshot(named: "home-logged-out")
     }
 

@@ -1,9 +1,14 @@
 import Foundation
 import PlanteriorDomain
 
-enum WeatherRepositoryError: Error {
+enum WeatherRepositoryError: Error, Equatable, Sendable {
     case unavailable
+    case configurationMissing
+    case invalidConfiguration
     case fixtureFailure
+    case transport
+    case httpStatus(Int)
+    case invalidResponse
 }
 
 protocol WeatherSnapshotRepository: Sendable {
@@ -11,16 +16,22 @@ protocol WeatherSnapshotRepository: Sendable {
 }
 
 struct UnavailableWeatherRepository: WeatherSnapshotRepository {
+    let error: WeatherRepositoryError
+
+    init(error: WeatherRepositoryError = .unavailable) {
+        self.error = error
+    }
+
     func snapshot(regionCode _: String) async throws -> WeatherSnapshot {
-        throw WeatherRepositoryError.unavailable
+        throw error
     }
 }
 
-struct QAWeatherRepository: WeatherSnapshotRepository {
-    let processInfo: ProcessInfo
+#if DEBUG
+    struct QAWeatherRepository: WeatherSnapshotRepository {
+        let processInfo: ProcessInfo
 
-    func snapshot(regionCode: String) async throws -> WeatherSnapshot {
-        #if DEBUG
+        func snapshot(regionCode: String) async throws -> WeatherSnapshot {
             let fixture = processInfo.environment["QA_WEATHER_FIXTURE"]
                 ?? processInfo.environment["QA_HOME_WEATHER_STATE"]
             guard let fixture else {
@@ -48,8 +59,6 @@ struct QAWeatherRepository: WeatherSnapshotRepository {
                 observedAt: observed,
                 expiresAt: expires
             )
-        #else
-            throw WeatherRepositoryError.unavailable
-        #endif
+        }
     }
-}
+#endif

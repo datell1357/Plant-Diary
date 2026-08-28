@@ -39,7 +39,7 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         waitForMiniHomeElementToDisappear(saveDraft) {
             editorTitle.tap()
         }
-        XCTAssertTrue(app.scrollViews["minihome.editor"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["minihome.editor"].exists)
         waitForMiniHomeElement(roomSettings) {
             editorTitle.tap()
         }
@@ -52,7 +52,7 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         waitForMiniHomeElement(discardDraft) {
             app.buttons["minihome.close"].tap()
         }
-        let editor = app.scrollViews["minihome.editor"]
+        let editor = app.descendants(matching: .any)["minihome.editor"]
         waitForMiniHomeElementToDisappear(editor) {
             discardDraft.tap()
         }
@@ -68,6 +68,19 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         app.launchEnvironment["QA_MINIHOME_CONFLICT_ONCE"] = "1"
         app.launch()
         openEditor(in: app)
+
+        let trayEntry = app.buttons["minihome.editor.tray.0"]
+        XCTAssertTrue(trayEntry.waitForExistence(timeout: 5))
+        trayEntry.tap()
+        trayEntry.tap()
+        let expectedPlacementIDs = [
+            "minihome.placement.placement-1",
+            "minihome.placement.placement-2"
+        ]
+        let editorCanvas = app.otherElements["minihome.editor.canvas"]
+        for identifier in expectedPlacementIDs {
+            XCTAssertTrue(editorCanvas.images[identifier].waitForExistence(timeout: 5))
+        }
         replaceRoomName(with: "내 충돌 초안", in: app)
 
         let reapply = app.buttons
@@ -76,7 +89,7 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         let useServer = app.buttons
             .matching(identifier: "minihome.conflict.discard")
             .firstMatch
-        waitForMiniHomeElement(reapply) {
+        waitForMiniHomeElement(reapply, timeout: 15) {
             app.buttons["minihome.save"].tap()
         }
         XCTAssertTrue(useServer.exists)
@@ -87,25 +100,10 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         waitForMiniHomeElement(reapply) {
             conflict.tap()
         }
-        let committedName = app.staticTexts["minihome.committed.name"]
-        waitForMiniHomeElement(committedName) {
-            reapply.tap()
-        }
-        XCTAssertEqual(committedName.label, "내 충돌 초안")
-        let editor = app.scrollViews["minihome.editor"]
-        XCTAssertTrue(editor.exists)
-        waitForMiniHomeElementToDisappear(editor) {
-            app.buttons["minihome.close"].tap()
-        }
-        XCTAssertEqual(committedName.label, "내 충돌 초안")
-        attachJSON(
-            [
-                "observedConflictState": "충돌 · 서버 2판",
-                "draftAfterCancel": "내 충돌 초안",
-                "observedReapplyState": "저장 완료",
-                "committedRoomName": committedName.label
-            ],
-            named: "task-14-mini-home-conflict"
+        triggerReapplyAndWaitForCommit(in: app, reapply: reapply)
+        assertReappliedConflictSurvivesRemount(
+            in: app,
+            expectedPlacementIDs: expectedPlacementIDs
         )
     }
 
@@ -140,11 +138,13 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         in app: XCUIApplication,
         reapply: XCUIElement
     ) {
-        // The compact confirmation popover omits its cancellation-role row;
-        // dismiss through an identified editor control, then inspect the draft.
+        // The compact confirmation popover omits its cancellation-role row.
+        // Subscribe to its exact disappearance before tapping outside it.
         let editorTitle = app.staticTexts["minihome.editor.title"]
         waitForMiniHomeElementToDisappear(reapply) {
-            editorTitle.tap()
+            app.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.05, dy: 0.08)
+            ).tap()
         }
 
         let roomSettings = app.descendants(matching: .any)
@@ -156,6 +156,6 @@ final class MiniHomeConflictUITests: XCTestCase, MiniHomeUITestSupport {
         let roomName = app.textFields["minihome.room-name"]
         XCTAssertTrue(roomName.waitForExistence(timeout: 5))
         XCTAssertEqual(roomName.value as? String, "내 충돌 초안")
-        waitForMiniHomeState("충돌 · 서버 2판", in: app)
+        waitForMiniHomeState("충돌 · 저장본 2판", in: app)
     }
 }

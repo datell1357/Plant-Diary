@@ -6,6 +6,7 @@ final class PlantRegistrationUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        app.launchEnvironment["QA_INITIAL_TAB"] = "collection"
         app.launchEnvironment["QA_MANUAL_REGISTRATION"] = "1"
         app.launchEnvironment["QA_REGISTRATION_LAST_WATERED_INSTANT"] =
             "2026-08-10T15:30:00Z"
@@ -14,6 +15,7 @@ final class PlantRegistrationUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.navigationBars["식물 등록"].waitForExistence(timeout: 5))
+        assertSinglePersistentTabBar(in: app, selected: "tab.collection")
         let name = app.textFields["registration.name"]
         name.tap()
         name.typeText("몬스테라")

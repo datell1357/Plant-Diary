@@ -58,18 +58,17 @@ extension InventoryView {
         return try? Instant.parse(formatter.string(from: Date()))
     }
 
-    static var usesReferenceFixture: Bool {
+    static var allowsLocalAcquisition: Bool {
         #if DEBUG
-            return ProcessInfo.processInfo.environment[
-                "QA_INVENTORY_FIXTURE"
-            ] == "1"
+            return true
         #else
             return false
         #endif
     }
 
-    static var allowsLocalAcquisition: Bool {
-        usesReferenceFixture
+    @MainActor
+    static var authoritativeService: any AuthoritativeInventoryService {
+        AuthoritativeInventoryServiceFactory.current()
     }
 
     static var failsFirstAcquisition: Bool {

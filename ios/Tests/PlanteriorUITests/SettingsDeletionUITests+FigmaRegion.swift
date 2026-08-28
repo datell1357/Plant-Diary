@@ -30,16 +30,17 @@ extension SettingsDeletionUITests {
         let title = titles.allElementsBoundByIndex.first {
             $0.frame.maxY <= body.frame.minY
         } ?? titles.firstMatch
+        let topOffset: CGFloat = app.frame.height == 874 ? 0 : -15
         XCTAssertTrue(back.isHittable)
         XCTAssertFalse(app.buttons["weather.region.save"].exists)
         XCTAssertEqual(back.frame.minX, 16, accuracy: 1)
-        XCTAssertEqual(back.frame.minY, 50, accuracy: 2)
+        XCTAssertEqual(back.frame.minY, 50 + topOffset, accuracy: 2)
         XCTAssertEqual(back.frame.width, 44, accuracy: 1)
         XCTAssertEqual(back.frame.height, 44, accuracy: 1)
         XCTAssertTrue(title.exists)
         XCTAssertFalse(back.frame.intersects(title.frame))
-        XCTAssertEqual(body.frame.minY, 100, accuracy: 1)
-        XCTAssertEqual(body.frame.maxY, 874, accuracy: 1)
+        XCTAssertEqual(body.frame.minY, 100 + topOffset, accuracy: 1)
+        XCTAssertEqual(body.frame.maxY, app.frame.height, accuracy: 1)
         assertReferenceRegionAnatomy(in: app)
         attachScreenshot(named: "region-402x874-light")
 
@@ -71,32 +72,8 @@ extension SettingsDeletionUITests {
             "-AppleLocale", "ko_KR"
         ]
         app.launch()
-        openFigmaSettings(in: app)
+        openAX5RegionSettings(in: app)
 
-        let openRegion = app.buttons["settings.region.open"]
-        XCTAssertTrue(openRegion.waitForExistence(timeout: 10))
-        // AX5 pushes the row below the fold; scroll until it is actionable
-        // rather than sleeping and hoping the layout settles.
-        let scroll = app.scrollViews["settings.screen"]
-        var scrolls = 0
-        while !openRegion.isHittable, scrolls < 6 {
-            scroll.swipeUp()
-            scrolls += 1
-        }
-        XCTAssertTrue(
-            openRegion.isHittable,
-            "settings.region.open must stay reachable at AX5"
-        )
-        openRegion.tap()
-
-        XCTAssertTrue(
-            app.scrollViews["region-settings.screen"]
-                .waitForExistence(timeout: 10)
-        )
-        XCTAssertTrue(
-            app.buttons["weather.use-current-location"]
-                .waitForExistence(timeout: 5)
-        )
         let title = app.staticTexts
             .matching(NSPredicate(format: "label == %@", "관리 지역 설정"))
             .element(boundBy: 0)
@@ -106,59 +83,22 @@ extension SettingsDeletionUITests {
             56,
             "the AX5 Region title must use multiple lines"
         )
-        XCTAssertFalse(
-            app.buttons["weather.region.back"].frame.intersects(title.frame)
-        )
         XCTAssertEqual(title.label, "관리 지역 설정")
         XCTAssertFalse(title.label.contains("\u{2026}"))
-        XCTAssertTrue(app.buttons["weather.region.back"].isHittable)
+        assertRegionHeaderReservesBackControlColumn(in: app, title: title)
 
-        let firstRow = app.buttons["weather.region-result.manual-seoul"]
-        let secondRow = app.buttons["weather.region-result.manual-busan"]
-        let thirdRow = app.buttons["weather.region-result.manual-haeundae"]
-        let firstName = app.staticTexts["서울특별시 강남구"]
-        let secondName = app.staticTexts["경기도 성남시 분당구"]
-        let thirdName = app.staticTexts["부산광역시 해운대구"]
-        let status = app.staticTexts["기준 지역"]
-        for row in [firstRow, secondRow, thirdRow] {
-            XCTAssertTrue(row.exists)
-            XCTAssertGreaterThan(
-                row.frame.height,
-                52,
-                "AX5 Region rows must expand beyond their default Large height"
-            )
-        }
-        XCTAssertLessThanOrEqual(firstRow.frame.maxY, secondRow.frame.minY)
-        XCTAssertLessThanOrEqual(secondRow.frame.maxY, thirdRow.frame.minY)
-        for (row, name, expectedName) in [
-            (firstRow, firstName, "서울특별시 강남구"),
-            (secondRow, secondName, "경기도 성남시 분당구"),
-            (thirdRow, thirdName, "부산광역시 해운대구")
-        ] {
-            XCTAssertTrue(name.exists)
-            XCTAssertEqual(name.label, expectedName)
-            XCTAssertFalse(name.label.contains("\u{2026}"))
-            XCTAssertTrue(
-                row.frame.contains(name.frame),
-                "the complete Region name must remain inside its AX5 row"
-            )
-        }
-        XCTAssertTrue(status.exists)
-        XCTAssertEqual(status.label, "기준 지역")
-        XCTAssertFalse(status.label.contains("\u{2026}"))
-        XCTAssertTrue(firstRow.frame.contains(status.frame))
+        let firstRow = assertRegionAX5RowsKeepCompleteNames(in: app)
+        assertRegionFirstRowClearsHeaderBand(in: app, title: title)
         attachJSON(
             [
                 "firstRowHeight": firstRow.frame.height,
-                "secondRowHeight": secondRow.frame.height,
-                "thirdRowHeight": thirdRow.frame.height,
                 "titleFrameHeight": title.frame.height,
                 "titleFrameWidth": title.frame.width
             ],
             named: "region-ax5-geometry"
         )
         scrollToHittable(
-            thirdRow,
+            app.buttons["weather.region-result.manual-haeundae"],
             in: app.scrollViews["region-settings.screen"]
         )
         attachScreenshot(named: "region-korean-ax5-reduce-motion")

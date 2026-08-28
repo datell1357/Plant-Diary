@@ -11,13 +11,20 @@ struct MiniHomeShareRenderResult {
     let pngData: Data
     let digest: String
     let snapshot: MiniHomeShareSnapshot
+    /// The exact room projection recorded in the export, retained for callers
+    /// and tests that need to compare editor, committed, and share output.
+    let placementProjection: [MiniRoomResolvedPlacement]
 }
 
 @MainActor
 struct MiniHomeShareRenderer {
     func render(room: MiniHome) -> MiniHomeShareRenderResult? {
         let snapshot = ShareSnapshotPolicy.snapshot(committed: room)
-        let content = MiniHomeShareCanvas(snapshot: snapshot)
+        let placementProjection = MiniRoomPlacementProjector.resolved(
+            placements: room.placements,
+            in: MiniHomeEditorCanvas.canvasSize
+        )
+        let content = MiniHomeShareCanvas(room: room)
             .frame(
                 width: CGFloat(ShareSnapshotPolicy.imageWidth),
                 height: CGFloat(ShareSnapshotPolicy.imageHeight)
@@ -36,55 +43,35 @@ struct MiniHomeShareRenderer {
             image: image,
             pngData: pngData,
             digest: digest,
-            snapshot: snapshot
+            snapshot: snapshot,
+            placementProjection: placementProjection
         )
     }
 }
 
 private struct MiniHomeShareCanvas: View {
-    let snapshot: MiniHomeShareSnapshot
+    let room: MiniHome
+
+    private static let exportSize = CGFloat(ShareSnapshotPolicy.imageWidth)
+    private static let roomScale = exportSize / MiniHomeEditorCanvas.canvasSize.width
 
     var body: some View {
         ZStack {
             PlanteriorPalette.canvas.color
-            RoundedRectangle(cornerRadius: 56)
-                .fill(PlanteriorPalette.surface.color)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 56)
-                        .stroke(
-                            PlanteriorPalette.accent.color.opacity(0.35),
-                            lineWidth: 8
-                        )
-                }
-                .padding(72)
-            ForEach(
-                Array(snapshot.placements.enumerated()),
-                id: \.offset
-            ) { _, placement in
-                Image(
-                    systemName: placement.kind == .plant
-                        ? "leaf.fill"
-                        : "shippingbox.fill"
-                )
-                .font(.system(size: 104, weight: .semibold))
-                .foregroundStyle(PlanteriorPalette.accent.color)
-                .position(
-                    x: 120 + placement.normalizedX * 960,
-                    y: 140 + placement.normalizedY * 760
-                )
-            }
-            VStack(spacing: 12) {
-                Spacer()
-                Text(snapshot.roomName)
-                    .font(.system(size: 72, weight: .bold))
-                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                Text("초보 식집사 미니홈")
-                    .font(.system(size: 36, weight: .medium))
-                    .foregroundStyle(
-                        PlanteriorPalette.textSecondary.color
-                    )
-                Spacer().frame(height: 72)
-            }
+            MiniHomeRoomComposition(
+                room: room,
+                background: MiniHomeEditorCanvas.baseAsset,
+                roomIdentifier: "minihome.share.room",
+                roomLabel: "저장된 미니홈 공유 이미지"
+            )
+            .frame(
+                width: MiniHomeEditorCanvas.canvasSize.width,
+                height: MiniHomeEditorCanvas.canvasSize.height
+            )
+            .scaleEffect(Self.roomScale)
+            .accessibilityHidden(true)
         }
+        .frame(width: Self.exportSize, height: Self.exportSize)
+        .clipped()
     }
 }

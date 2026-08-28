@@ -1,4 +1,3 @@
-import Foundation
 import PlanteriorData
 import PlanteriorDomain
 
@@ -7,73 +6,62 @@ enum InventoryPlacementOutcome: Equatable {
     case removed
     case unowned
     case limitReached
-    case failed
-    case unavailable
+    case failed(InventoryMutationFailure)
 }
 
 @MainActor
 struct InventoryPlacementService {
-    private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
-
     func toggle(
         item: ShopItem,
         inventory: InventoryRepository,
-        accountID: String?,
-        now: Instant?
-    ) -> InventoryPlacementOutcome {
-        guard inventory.allowsPlacementMutation,
-              let now
-        else {
-            return .unavailable
+        miniHome: MiniHomeStore
+    ) async -> InventoryPlacementOutcome {
+        guard inventory.allowsPlacementMutation else {
+            return .failed(
+                miniHome.accountID == nil
+                    ? .notAuthenticated
+                    : .localAcquisitionDisabled
+            )
         }
-        let miniHome = LocalMiniHomeRepository(
-            accountID: accountID,
-            defaults: defaults,
-            now: now
-        )
-        guard let room = miniHome.load() else {
-            return .unavailable
+        guard miniHome.accountID != nil else {
+            return .failed(.notAuthenticated)
         }
-        let isApplied = inventory.ownedItems.first(
-            where: { $0.itemID == item.id }
-        )?.applied == true
+        guard let room = miniHome.draft ?? miniHome.committed else {
+            return .failed(.roomUnavailable)
+        }
+        let isApplied = room.placements.contains { $0.itemID == item.id }
         do {
             let result = try placementResult(
                 item: item,
                 inventory: inventory,
-                room: room,
-                isApplied: isApplied
+                room: room
             )
-            guard inventory.canApply(result) else {
-                return .failed
+            miniHome.replaceDraftPlacements(result.placements)
+            await miniHome.save()
+            switch miniHome.state {
+            case .saved:
+                inventory.synchronizeAppliedItems(with: miniHome.committed)
+                return isApplied ? .removed : .applied
+            case .conflicted:
+                return .failed(.roomConflict)
+            case .idle, .mounting, .refreshing, .saving, .failed, .loadFailed:
+                return .failed(.persistenceFailed)
             }
-            return try commit(
-                result: result,
-                previousRoom: room,
-                inventory: inventory,
-                miniHome: miniHome,
-                success: isApplied ? .removed : .applied
-            )
         } catch ItemPlacementError.unownedItem {
             return .unowned
         } catch ItemPlacementError.categoryLimitReached {
             return .limitReached
         } catch {
-            return .failed
+            return .failed(.persistenceFailed)
         }
     }
 
     private func placementResult(
         item: ShopItem,
         inventory: InventoryRepository,
-        room: MiniHome,
-        isApplied: Bool
+        room: MiniHome
     ) throws -> ItemPlacementResult {
-        if isApplied {
+        if room.placements.contains(where: { $0.itemID == item.id }) {
             return ItemPlacementCoordinator.remove(
                 itemID: item.id,
                 ownedItems: inventory.ownedItems,
@@ -90,32 +78,5 @@ struct InventoryPlacementService {
                 normalizedY: 0.62
             )
         )
-    }
-
-    private func commit(
-        result: ItemPlacementResult,
-        previousRoom: MiniHome,
-        inventory: InventoryRepository,
-        miniHome: LocalMiniHomeRepository,
-        success: InventoryPlacementOutcome
-    ) throws -> InventoryPlacementOutcome {
-        let draft = MiniHome(
-            id: previousRoom.id,
-            name: previousRoom.name,
-            placements: result.placements,
-            revision: previousRoom.revision,
-            updatedAt: previousRoom.updatedAt
-        )
-        switch try miniHome.save(
-            draft: draft,
-            expectedRevision: previousRoom.revision
-        ) {
-        case .committed:
-            return inventory.apply(result)
-                ? success
-                : .failed
-        case .conflict, .failed:
-            return .failed
-        }
     }
 }

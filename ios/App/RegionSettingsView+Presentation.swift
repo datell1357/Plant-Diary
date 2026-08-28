@@ -65,7 +65,7 @@ extension RegionSettingsView {
                 Image(
                     systemName: usesCurrentLocation
                         ? "checkmark"
-                        : "arrow.clockwise"
+                        : "arrow.triangle.2.circlepath"
                 )
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .accessibilityHidden(true)
@@ -111,63 +111,71 @@ extension RegionSettingsView {
             onSaved()
         } label: {
             if sizeCategory.isAccessibilityCategory {
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                    HStack(spacing: PlanteriorSpacing.small) {
-                        if selected {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(PlanteriorPalette.accent.color)
-                                .accessibilityHidden(true)
-                        }
-                        regionName(region.name, selected: selected)
-                        Spacer(minLength: PlanteriorSpacing.small)
-                        if !selected {
-                            Image(systemName: "xmark.circle")
-                                .foregroundStyle(PlanteriorPalette.textTertiary.color)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    if selected {
-                        Text("기준 지역")
-                            .font(PlanteriorTypography.microLabel)
-                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(.horizontal, PlanteriorSpacing.large)
-                .padding(.vertical, PlanteriorSpacing.small)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: SettingsReferenceMetrics.regionRowHeight,
-                    alignment: .leading
-                )
-                .contentShape(Rectangle())
+                accessibilityRegionRow(region.name, selected: selected)
             } else {
-                HStack(spacing: PlanteriorSpacing.small) {
-                    if selected {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(PlanteriorPalette.accent.color)
-                            .accessibilityHidden(true)
-                    }
-                    regionName(region.name, selected: selected)
-                    Spacer(minLength: PlanteriorSpacing.small)
-                    if selected {
-                        Text("기준 지역")
-                            .font(PlanteriorTypography.microLabel)
-                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                    } else {
-                        Image(systemName: "xmark.circle")
-                            .foregroundStyle(PlanteriorPalette.textTertiary.color)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .padding(.horizontal, PlanteriorSpacing.large)
-                .frame(height: SettingsReferenceMetrics.regionRowHeight)
-                .contentShape(Rectangle())
+                compactRegionRow(region.name, selected: selected)
             }
         }
         .buttonStyle(.plain)
         .accessibilityValue(selected ? "선택됨" : "선택 안 됨")
         .accessibilityIdentifier("weather.region-result.\(region.code)")
+    }
+
+    private func accessibilityRegionRow(_ name: String, selected: Bool) -> some View {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+            HStack(spacing: PlanteriorSpacing.small) {
+                if selected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(PlanteriorPalette.accent.color)
+                        .accessibilityHidden(true)
+                }
+                regionName(name, selected: selected)
+                Spacer(minLength: PlanteriorSpacing.small)
+                if !selected {
+                    Image(systemName: "xmark.circle")
+                        .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                        .accessibilityHidden(true)
+                }
+            }
+            if selected {
+                Text("기준 지역")
+                    .font(PlanteriorTypography.microLabel)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .padding(.vertical, PlanteriorSpacing.small)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: SettingsReferenceMetrics.regionRowHeight,
+            alignment: .leading
+        )
+        .contentShape(Rectangle())
+    }
+
+    private func compactRegionRow(_ name: String, selected: Bool) -> some View {
+        HStack(spacing: PlanteriorSpacing.small) {
+            if selected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(PlanteriorPalette.accent.color)
+                    .accessibilityHidden(true)
+            }
+            regionName(name, selected: selected)
+            Spacer(minLength: PlanteriorSpacing.small)
+            if selected {
+                Text("기준 지역")
+                    .font(PlanteriorTypography.microLabel)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+            } else {
+                Image(systemName: "xmark.circle")
+                    .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, PlanteriorSpacing.large)
+        .frame(height: SettingsReferenceMetrics.regionRowHeight)
+        .contentShape(Rectangle())
     }
 
     private func regionName(_ name: String, selected: Bool) -> some View {

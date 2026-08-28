@@ -18,9 +18,12 @@ final class HomeDashboardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["home.care.row.0"].exists)
         // Migrated to the Figma room hero (§6.3), which replaces the old
         // mini-home summary row and still proves the committed room is shown.
-        let miniHome = app.images["home.room.hero"]
-        XCTAssertTrue(miniHome.exists)
+        XCTAssertFalse(
+            app.images["home.room.hero"].exists,
+            "the decorative room base must remain hidden from VoiceOver"
+        )
         XCTAssertTrue(app.buttons["home.room.title"].exists)
+        assertRoomVisualGeometry(in: app, state: "authenticated-default")
         XCTAssertTrue(app.staticTexts["home.weather.failed"].exists)
         XCTAssertTrue(app.staticTexts["home.notification.status"].exists)
         attachScreenshot(named: "task-12-home-dashboard")
@@ -41,8 +44,9 @@ final class HomeDashboardUITests: XCTestCase {
 
     func testLoggedOutAndSigningInStatesKeepIdentificationAvailable() {
         let loggedOut = XCUIApplication()
-        loggedOut.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        let receipt = applyLoggedOutFigmaLaunch(loggedOut)
         loggedOut.launch()
+        waitForLoggedOutHomeFixture(in: loggedOut, receipt: receipt)
 
         // Migrated to the Figma signed-out header (§8.3): the guest greeting and
         // the login link prove the logged-out state without hiding the body.
@@ -55,6 +59,10 @@ final class HomeDashboardUITests: XCTestCase {
         )
         XCTAssertFalse(loggedOut.buttons["home.identify"].exists)
         XCTAssertTrue(loggedOut.buttons["tab.camera"].exists)
+        XCTAssertEqual(loggedOut.staticTexts.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "home.care.row.")
+        ).count, 0)
+        XCTAssertTrue(loggedOut.staticTexts["home.care.empty"].exists)
         attachScreenshot(
             app: loggedOut,
             named: "task-12-home-logged-out"

@@ -8,22 +8,29 @@ enum SettingsReferenceMetrics {
     /// places app chrome at y=44, so only top chrome/body receives this delta.
     static let topSafeAreaCorrection: CGFloat = -18
     static let rootGroupSpacing: CGFloat = 22
+    /// Keeps the complete AX5 Quiet Hours row below the initial tab-material
+    /// boundary instead of painting only its leading portion behind the bar.
+    static let rootAccessibilityAlertOffset = PlanteriorSpacing.medium
     static let rootRowHeight: CGFloat = 52
-    static let toggleWidth: CGFloat = 44
-    static let toggleHeight: CGFloat = 24
-    static let toggleThumbSize: CGFloat = 20
-    static let toggleThumbInset: CGFloat = 2
     static let locationGlyphSize = CGSize(width: 14, height: 18)
     static let regionLocationGlyphSize = CGSize(width: 12, height: 15)
     static let profileAvatarSize: CGFloat = 60
+    static let profileAvatarGlyph = "🌿"
     static let rootDividerLeading = profileAvatarSize
     static let backGlyphSize: CGFloat = 18
     static let regionSearchHeight = PlanteriorControl.minimumTarget
     static let regionCurrentLocationHeight: CGFloat = 74
     static let regionRecentGap: CGFloat = 11
     static let regionRowHeight: CGFloat = 52
+    static let quietHoursInformationMinimumHeight: CGFloat = 38.333
+    static let quietHoursSectionHeadingMinimumHeight: CGFloat = 14.333
     static let warningHeight: CGFloat = 80
     static let warningIconWidth: CGFloat = 18
+    static let warningContentInset = PlanteriorSpacing.large
+    static let warningContentSpacing = PlanteriorSpacing.small
+    static let warningTypography = Font.system(size: 13, weight: .bold)
+    static let warningIconTypography = Font.system(size: 14, weight: .medium)
+    static let quietHoursDisclosureGlyphSize = CGSize(width: 16, height: 16)
     static let saveButtonHeight: CGFloat = 48
     static let saveBarVerticalInset: CGFloat = 11
 }

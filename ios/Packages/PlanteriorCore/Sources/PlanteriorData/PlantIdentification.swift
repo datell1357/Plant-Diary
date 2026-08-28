@@ -1,16 +1,6 @@
 import Foundation
 import PlanteriorDomain
 
-public struct IdentificationCandidate: Equatable, Sendable {
-    public let plantID: PlantContentID
-    public let score: Double
-
-    public init(plantID: PlantContentID, confidence: Double) {
-        self.plantID = plantID
-        score = confidence
-    }
-}
-
 public struct IdentificationCandidates: Equatable, Sendable {
     public let items: [IdentificationCandidate]
 
@@ -151,12 +141,10 @@ public actor PlantIdentificationCoordinator {
         plantID: String,
         confidence: Double
     ) throws {
-        let candidate = try IdentificationCandidate(
-            plantID: PlantContentID.parse(plantID),
-            confidence: confidence
-        )
         guard case let .candidates(candidates) = state,
-              candidates.items.contains(candidate)
+              let candidate = candidates.items.first(where: {
+                  $0.plantID.rawValue == plantID && $0.score == confidence
+              })
         else {
             return
         }

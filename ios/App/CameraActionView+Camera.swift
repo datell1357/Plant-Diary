@@ -1,17 +1,7 @@
 import PlanteriorDesignSystem
 import SwiftUI
 
-/// Figma `Screen-Camera-Capture` (figma-analysis §6.11): full black chrome with
-/// a leading close, a centered focus hint, an inset viewfinder card, and a
-/// bottom control row of library / shutter / camera-switch.
 extension CameraActionView {
-    /// §5 `cameraBackdrop` `#000000`. The shared palette is a light-appearance
-    /// contract; this is the one Figma-specified surface that is pure black, so
-    /// it is named here rather than diluting the semantic palette.
-    static var cameraBackdrop: Color {
-        .black
-    }
-
     var cameraSurface: some View {
         GeometryReader { geometry in
             let scale = CaptureLayoutMetrics.horizontalScale(
@@ -20,58 +10,58 @@ extension CameraActionView {
             VStack(spacing: 0) {
                 cameraTopBar
                 Spacer()
-                    .frame(height: CaptureLayoutMetrics.cameraViewportTopSpacing)
+                    .frame(
+                        height: sizeCategory.isAccessibilityCategory
+                            ? PlanteriorSpacing.large
+                            : CaptureLayoutMetrics.cameraViewportTopSpacing
+                    )
                 cameraViewport(scale: scale)
                 Spacer(minLength: 0)
                 cameraErrorRegion
                 cameraControlRow
             }
         }
-        .padding(.top, 48)
+        .padding(.top, CaptureLayoutMetrics.referenceStatusBarHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Self.cameraBackdrop.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture.camera")
-    }
-
-    private var cameraTopBar: some View {
-        ZStack {
-            Text("식물을 프레임 안에 맞춰주세요")
-                .font(PlanteriorTypography.supporting)
-                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                .accessibilityIdentifier("capture.hint")
-            HStack {
-                Button(action: dismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                        .frame(
-                            width: PlanteriorControl.minimumTarget,
-                            height: PlanteriorControl.minimumTarget
-                        )
-                }
-                .accessibilityLabel("촬영 닫기")
-                .accessibilityIdentifier("capture.close")
-                Spacer()
+        .onAppear {
+            prepareCameraPreview()
+        }
+        .onDisappear {
+            liveCamera.stop()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                prepareCameraPreview()
+            } else {
+                liveCamera.stop()
             }
         }
-        .padding(.horizontal, PlanteriorSpacing.large)
-        .frame(height: PlanteriorControl.navigationBarHeight)
     }
 
-    /// The Simulator uses a deterministic viewfinder fixture. The shutter and
-    /// flash affordance still enter the native capture pathway in production.
+    /// Production devices render the same live session used by the shutter.
     private func cameraViewport(scale: CGFloat) -> some View {
         let length = CaptureLayoutMetrics.cameraViewportLength * scale
         return ZStack {
-            Image(.captureCameraSimulation)
-                .resizable()
-                .scaledToFill()
-                .frame(width: length, height: length)
-                .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
-                .accessibilityIdentifier("capture.viewport")
-                .accessibilityLabel("카메라 미리보기")
+            if cameraPresentationMode == .deterministicFixture {
+                Image(.captureCameraSimulation)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: length, height: length)
+                    .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+                    .accessibilityIdentifier("capture.viewport")
+                    .accessibilityLabel("카메라 미리보기")
+            } else {
+                LiveCameraPreview(session: liveCamera.session)
+                    .frame(width: length, height: length)
+                    .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.extraLarge))
+                    .accessibilityElement()
+                    .accessibilityIdentifier("capture.viewport.live")
+                    .accessibilityLabel("실시간 카메라 미리보기")
+            }
             focusReticle(scale: scale)
         }
         .frame(width: length, height: length)
@@ -84,11 +74,15 @@ extension CameraActionView {
             )
             .stroke(
                 PlanteriorPalette.accent.color,
-                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(
+                    lineWidth: CaptureLayoutMetrics.cameraReticleStrokeWidth,
+                    lineCap: .round,
+                    lineJoin: .round
+                )
             )
             Circle()
                 .stroke(
-                    PlanteriorPalette.textOnAccent.color.opacity(0.9),
+                    PlanteriorPalette.textOnAccent.color.opacity(PlanteriorOpacity.strong),
                     lineWidth: PlanteriorControl.hairline * 2
                 )
                 .frame(
@@ -129,40 +123,40 @@ extension CameraActionView {
         }
     }
 
+    @ViewBuilder
     private var cameraControlRow: some View {
+        if sizeCategory.isAccessibilityCategory {
+            cameraControls
+                .frame(minHeight: CaptureLayoutMetrics.cameraControlMinimumTarget)
+                .padding(.horizontal, PlanteriorSpacing.medium)
+                .padding(.bottom, PlanteriorSpacing.large)
+        } else {
+            cameraControls
+                .frame(height: CaptureLayoutMetrics.cameraControlRowHeight)
+                .padding(.horizontal, PlanteriorSpacing.extraLarge)
+                .padding(.bottom, PlanteriorSpacing.large)
+        }
+    }
+
+    private var cameraControls: some View {
         HStack {
             libraryControl
-            Spacer()
+            Spacer(minLength: 0)
             shutterControl
-            Spacer()
+            Spacer(minLength: 0)
             flashControl
         }
-        .frame(height: CaptureLayoutMetrics.cameraControlRowHeight)
-        .padding(.horizontal, PlanteriorSpacing.extraLarge)
-        .padding(.bottom, PlanteriorSpacing.large)
     }
 
     private var shutterControl: some View {
         Button {
             requestCamera()
         } label: {
-            ZStack {
-                Circle()
-                    .strokeBorder(
-                        PlanteriorPalette.textOnAccent.color,
-                        lineWidth: CaptureLayoutMetrics.shutterStrokeWidth
-                    )
-                    .frame(
-                        width: CaptureLayoutMetrics.shutterRingDiameter,
-                        height: CaptureLayoutMetrics.shutterRingDiameter
-                    )
-                Circle()
-                    .fill(PlanteriorPalette.textOnAccent.color)
-                    .frame(
-                        width: CaptureLayoutMetrics.shutterDiameter,
-                        height: CaptureLayoutMetrics.shutterDiameter
-                    )
-            }
+            CameraShutterMark()
+                .offset(
+                    x: CaptureLayoutMetrics.shutterOffset.width,
+                    y: CaptureLayoutMetrics.shutterOffset.height
+                )
         }
         .accessibilityLabel("촬영")
         .accessibilityIdentifier("capture.shutter")
@@ -182,51 +176,5 @@ extension CameraActionView {
         .accessibilityValue(isFlashEnabled ? "켜짐" : "꺼짐")
         .accessibilityAddTraits(isFlashEnabled ? .isSelected : [])
         .accessibilityIdentifier("capture.flash")
-    }
-}
-
-struct CameraControlLabel: View {
-    let systemImage: String
-    let title: String
-    let labelID: String
-
-    var body: some View {
-        VStack(spacing: PlanteriorSpacing.extraSmall) {
-            Image(systemName: systemImage)
-                .font(.system(size: 22))
-            Text(title)
-                .font(PlanteriorTypography.microLabel)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 80)
-                .accessibilityIdentifier(labelID)
-        }
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-        .frame(width: 88)
-        .frame(minHeight: CaptureLayoutMetrics.cameraControlMinimumTarget)
-    }
-}
-
-private struct CameraCornerReticle: Shape {
-    let armLength: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        let arm = armLength
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY + arm))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX + arm, y: rect.minY))
-        path.move(to: CGPoint(x: rect.maxX - arm, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + arm))
-        path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - arm))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX - arm, y: rect.maxY))
-        path.move(to: CGPoint(x: rect.minX + arm, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - arm))
-        return path
     }
 }

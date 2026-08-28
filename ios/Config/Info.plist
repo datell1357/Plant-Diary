@@ -6,6 +6,10 @@
 	<string>식물 사진을 촬영해 식별하고 돌봄 기록에 추가하기 위해 카메라를 사용합니다.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>현재 지역의 날씨로 식물의 온도와 습도 위험을 안내하기 위해 위치를 사용합니다.</string>
+	<key>PLAN_OPEN_WEATHER_PROXY_BASE_URL</key>
+	<string>$(PLAN_OPEN_WEATHER_PROXY_BASE_URL)</string>
+	<key>PLAN_PLANT_ID_PROXY_BASE_URL</key>
+	<string>$(PLAN_PLANT_ID_PROXY_BASE_URL)</string>
 	<key>CFBundleDisplayName</key>
 	<string>초보 식집사</string>
 	<key>CFBundleExecutable</key>

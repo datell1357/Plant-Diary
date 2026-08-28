@@ -53,55 +53,22 @@ extension HomeDashboardView {
         renameDraft = ""
     }
 
-    /// The only path that charges. An unaffordable or empty rename is a no-op.
+    /// The only path that charges. The allowance commits only after the
+    /// authoritative room save succeeds.
     func commitRename() {
         let name = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, renameQuote.isAffordable else {
-            return
+        guard !name.isEmpty, renameQuote.isAffordable else { return }
+        Task {
+            var allowance = renameAllowance
+            guard allowance.commit() else { return }
+            miniHomeStore.renameDraft(name)
+            await miniHomeStore.save()
+            guard miniHomeStore.state == .saved else { return }
+            allowanceStore.save(allowance)
+            renameAllowance = allowance
+            reload()
+            dismissRename()
         }
-        var allowance = renameAllowance
-        guard allowance.commit() else {
-            return
-        }
-        guard persistRoomName(name) else {
-            return
-        }
-        allowanceStore.save(allowance)
-        renameAllowance = allowance
-        reload()
-        dismissRename()
-    }
-
-    /// Commits the new room title through `LocalMiniHomeRepository` so it
-    /// survives relaunch under the account scope.
-    private func persistRoomName(_ name: String) -> Bool {
-        guard let now = renameInstant else {
-            return false
-        }
-        let repository = LocalMiniHomeRepository(
-            accountID: accountScopeID,
-            now: now
-        )
-        guard let outcome = try? repository.rename(name) else {
-            return false
-        }
-        if case .committed = outcome {
-            return true
-        }
-        return false
-    }
-
-    private var renameInstant: Instant? {
-        #if DEBUG
-            if let value = ProcessInfo.processInfo.environment[
-                "QA_MINIHOME_NOW"
-            ] {
-                return try? Instant.parse(value)
-            }
-        #endif
-        return try? Instant.parse(
-            ISO8601DateFormatter().string(from: Date())
-        )
     }
 
     /// §6.2 notification button target.

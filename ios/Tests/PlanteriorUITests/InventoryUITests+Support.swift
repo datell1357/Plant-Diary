@@ -30,6 +30,21 @@ extension InventoryUITestSupport where Self: XCTestCase {
         return app
     }
 
+    func localCatalogInventoryApp(accountID: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launchEnvironment["QA_INVENTORY_ROUTE"] = "1"
+        app.launchEnvironment["QA_INVENTORY_MODE"] = "shop"
+        app.launchEnvironment["QA_INVENTORY_ACCOUNT_ID"] = accountID
+        app.launchEnvironment["QA_INVENTORY_NOW"] = "2026-08-11T02:00:00Z"
+        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        app.launchEnvironment["QA_WEATHER_AUTHORIZATION"] = "denied"
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "authorized"
+        app.launchEnvironment["QA_NOTIFICATION_ENDPOINT"] = "registered"
+        return app
+    }
+
     func openStorage(in app: XCUIApplication) {
         XCTAssertTrue(
             app.scrollViews["storage.screen"].waitForExistence(timeout: 10)

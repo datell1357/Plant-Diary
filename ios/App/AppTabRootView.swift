@@ -3,9 +3,11 @@ import SwiftUI
 
 struct AppTabRootView: View {
     let tab: AppTab
+    let selectTab: (AppTab) -> Void
     let openDetail: () -> Void
     let openCamera: () -> Void
     let openMiniHome: () -> Void
+    let returnFromSettingsRoot: () -> Void
     let authorizeAccountAction: () -> Bool
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
 
@@ -24,7 +26,10 @@ struct AppTabRootView: View {
         } else if tab == .storage {
             InventoryView()
         } else if tab == .settings {
-            SettingsView(openMilestones: openDetail)
+            SettingsView(
+                openMilestones: openDetail,
+                returnFromRoot: returnFromSettingsRoot
+            )
         } else {
             placeholder
         }

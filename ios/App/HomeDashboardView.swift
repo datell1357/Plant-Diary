@@ -10,6 +10,7 @@ struct HomeDashboardView: View {
     @Environment(\.sizeCategory) var sizeCategory
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @EnvironmentObject var auth: AuthRuntime
+    @EnvironmentObject var miniHomeStore: MiniHomeStore
     @ObservedObject var collection = LocalPlantCollectionStore.shared
     @StateObject var store = HomeDashboardStore()
     @StateObject var weatherRuntime = WeatherRuntime()
@@ -67,13 +68,13 @@ struct HomeDashboardView: View {
         )
         .contentMargins(.top, 0, for: .scrollContent)
         .accessibilityIdentifier("home.screen")
+        .accessibilityValue(store.qaFixtureMountReceipt)
         .background(PlanteriorPalette.canvas.color)
         .environment(\.sizeCategory, effectiveSizeCategory)
         .toolbar(.hidden, for: .navigationBar)
         .task {
             remountAccount(accountScopeID)
             collection.loadQAFixtureIfNeeded()
-            miniHomeRepository.seedQAIfNeeded()
             resetRenameStateForQAIfNeeded()
             renameAllowance = allowanceStore.load()
             notificationState = await NotificationRuntimeState.current()
@@ -86,6 +87,9 @@ struct HomeDashboardView: View {
             }
         }
         .onAppear {
+            reload()
+        }
+        .onChange(of: miniHomeStore.committed) {
             reload()
         }
         .onChange(of: collection.plants) {
@@ -115,13 +119,6 @@ struct HomeDashboardView: View {
             weatherRuntime.reconcileAlerts(
                 plants: collection.weatherPlantIDs
             )
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: .miniHomeCommittedDidChange
-            )
-        ) { _ in
-            reload()
         }
         .fullScreenCover(isPresented: $showsRegionSettings) {
             NavigationStack {

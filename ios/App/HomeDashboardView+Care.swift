@@ -18,7 +18,7 @@ extension HomeDashboardView {
             Group {
                 if store.snapshot.careItems.isEmpty {
                     careEmptyState
-                        .padding(.top, 19)
+                        .padding(.top, HomeReferenceMetrics.careEmptyTopInset)
                 } else {
                     VStack(spacing: PlanteriorSpacing.small) {
                         ForEach(
@@ -30,38 +30,8 @@ extension HomeDashboardView {
                     }
                 }
             }
-            .padding(.top, -10)
+            .padding(.top, HomeReferenceMetrics.careContentTopOffset)
         }
-    }
-
-    private var careHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: PlanteriorSpacing.small) {
-            Text("오늘의 식물 관리")
-                .font(PlanteriorTypography.sectionTitle)
-                .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                .accessibilityIdentifier("home.care.header")
-            Text(careBadgeText)
-                .font(PlanteriorTypography.microLabel)
-                .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                .padding(.horizontal, PlanteriorSpacing.small)
-                .padding(.vertical, PlanteriorSpacing.extraSmall)
-                .background(PlanteriorPalette.accent.color)
-                .clipShape(Capsule())
-                .accessibilityIdentifier("home.care.badge")
-            Spacer(minLength: PlanteriorSpacing.small)
-            if showsCareScheduleAction {
-                Button(action: requestMiniHomeOpen) {
-                    Text("일정 더보기")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.accent.color)
-                        .frame(minHeight: PlanteriorControl.minimumTarget)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("home.care.more")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isHeader)
     }
 
     private func careRow(_ item: HomeCareItem, index: Int) -> some View {
@@ -77,26 +47,26 @@ extension HomeDashboardView {
                 .accessibilityLabel("\(item.displayName) 사진")
                 .accessibilityIdentifier("home.care.media.\(index)")
             VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                Text(item.displayName)
+                Text(KoreanTypography.atomicParentheticalSpecies(in: item.displayName))
                     .font(PlanteriorTypography.cardTitle)
+                    .accessibilityLabel(item.displayName)
                     .foregroundStyle(PlanteriorPalette.textPrimary.color)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(HomeReferenceMetrics.careNameMinimumScale)
                     .accessibilityIdentifier("home.care.row.\(index)")
                 careStatus(item.status, index: index)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             careTrailing(item, index: index)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, HomeReferenceMetrics.careRowHorizontalInset)
         .frame(maxWidth: .infinity)
-        .frame(height: 76)
+        .frame(height: HomeReferenceMetrics.careRowHeight)
         .background(PlanteriorPalette.surface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder
     private func careStatus(_ status: HomeCareStatus, index: Int) -> some View {
         HStack(spacing: PlanteriorSpacing.extraSmall) {
             if case .due = status {
@@ -126,7 +96,7 @@ extension HomeDashboardView {
             .font(PlanteriorTypography.caption.weight(.semibold))
             .foregroundStyle(PlanteriorPalette.textOnAccent.color)
             .padding(.horizontal, PlanteriorSpacing.medium)
-            .frame(height: 32)
+            .frame(height: HomeReferenceMetrics.careTrailingHeight)
             .background(PlanteriorPalette.accent.color)
             .clipShape(Capsule())
             .buttonStyle(.plain)
@@ -141,7 +111,7 @@ extension HomeDashboardView {
                     .font(PlanteriorTypography.caption.weight(.semibold))
                     .foregroundStyle(PlanteriorPalette.accent.color)
                     .padding(.horizontal, PlanteriorSpacing.medium)
-                    .frame(height: 32)
+                    .frame(height: HomeReferenceMetrics.careTrailingHeight)
                     .background(PlanteriorPalette.successSurface.color)
                     .clipShape(Capsule())
                     .accessibilityIdentifier("home.care.trailing.\(index)")
@@ -172,7 +142,7 @@ extension HomeDashboardView {
             return nil
         }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        calendar.timeZone = .gmt
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -206,84 +176,22 @@ extension HomeDashboardView {
 
     /// Figma §6.6 Home zero state.
     var careEmptyState: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: HomeReferenceMetrics.careEmptySpacing) {
             Text("🌱")
-                .font(.system(size: 32))
+                .font(HomeReferenceMetrics.careEmptyGlyphFont)
                 .accessibilityHidden(true)
             Text("아직 등록된 식물이 없어요")
                 .font(PlanteriorTypography.cardTitle)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
             Text("카메라로 식물을 촬영해 등록해 보세요")
                 .font(PlanteriorTypography.caption)
-                .foregroundStyle(PlanteriorPalette.textTertiary.color)
+                .foregroundStyle(PlanteriorPalette.textAccessibleCaption.color)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 120)
-        .background(Color(red: 245.0 / 255, green: 250.0 / 255, blue: 245.0 / 255))
+        .frame(height: HomeReferenceMetrics.careEmptyHeight)
+        .background(PlanteriorPalette.homeCareEmptySurface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("home.care.empty")
-    }
-
-    var notificationSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("알림")
-                .font(PlanteriorTypography.sectionTitle)
-            PlanteriorCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    notificationAuthorizationText
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("기본 알림")
-                        Text(store.globalNotificationTime)
-                    }
-                    notificationEndpointText
-                    if notificationState.endpoint == .registered {
-                        Text("예정 알림 \(store.plannedNotificationCount)건")
-                            .accessibilityIdentifier(
-                                "home.notification.scheduled"
-                            )
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    var notificationAuthorizationText: some View {
-        switch notificationState.authorization {
-        case .notDetermined:
-            Text("알림 권한 미선택")
-                .accessibilityIdentifier("home.notification.status")
-        case .denied:
-            VStack(alignment: .leading, spacing: 2) {
-                Text("알림 꺼짐")
-                Text("돌봄 기능 유지")
-            }
-            .accessibilityIdentifier("home.notification.denied")
-        case .authorized:
-            Text("알림 켜짐")
-                .accessibilityIdentifier("home.notification.status")
-        }
-    }
-
-    var notificationEndpointText: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if notificationState.endpoint == .registered {
-                Text("알림 기기")
-                Text("등록 완료")
-            } else {
-                Text("서버 알림")
-                Text("준비 중")
-            }
-        }
-        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-    }
-
-    var syncSection: some View {
-        PlanteriorCard {
-            Text(syncText)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .accessibilityIdentifier("home.sync.status")
-        }
     }
 }

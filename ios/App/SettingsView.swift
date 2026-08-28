@@ -6,6 +6,7 @@ import UserNotifications
 
 struct SettingsView: View {
     let openMilestones: () -> Void
+    let returnFromRoot: (() -> Void)?
     @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) var openURL
     @Environment(\.sizeCategory) var sizeCategory
@@ -20,11 +21,23 @@ struct SettingsView: View {
     @State var showsRegionSettings = false
     @State var wateringEnabled = true
 
+    init(
+        openMilestones: @escaping () -> Void,
+        returnFromRoot: (() -> Void)? = nil
+    ) {
+        self.openMilestones = openMilestones
+        self.returnFromRoot = returnFromRoot
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             PlanteriorTopBar("설정", leading: {
                 SettingsBackButton(identifier: "settings.back") {
-                    dismiss()
+                    if let returnFromRoot {
+                        returnFromRoot()
+                    } else {
+                        dismiss()
+                    }
                 }
             })
             .settingsReferenceTopBar()
@@ -35,6 +48,12 @@ struct SettingsView: View {
                 ) {
                     profileCard
                     alertGroup
+                        .padding(
+                            .top,
+                            sizeCategory.isAccessibilityCategory
+                                ? SettingsReferenceMetrics.rootAccessibilityAlertOffset
+                                : PlanteriorSpacing.none
+                        )
                     environmentGroup
                     accountGroup
                     operationalGroup
@@ -47,8 +66,12 @@ struct SettingsView: View {
             .settingsReferenceBody()
         }
         .settingsReferenceChrome()
+        .accessibilityElement(children: .contain)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .navigationDestination(isPresented: $showsQuietHours) {
+            QuietHoursSettingsView(onSaved: reloadPresentedValues)
+        }
         .task {
             AnalyticsRecorder.shared.record(.screenViewed(.settings))
             mountPresentedAccount()
@@ -73,14 +96,6 @@ struct SettingsView: View {
         .onChange(of: auth.accountID?.rawValue) {
             mountPresentedAccount()
             reloadPresentedValues()
-        }
-        .fullScreenCover(isPresented: $showsQuietHours) {
-            NavigationStack {
-                QuietHoursSettingsView(
-                    showsCloseButton: true,
-                    onSaved: reloadPresentedValues
-                )
-            }
         }
         .fullScreenCover(isPresented: $showsRegionSettings) {
             NavigationStack {
@@ -114,10 +129,10 @@ struct SettingsView: View {
     }
 
     func mountPresentedAccount() {
+        weather.mount(accountID: accountScopeID)
         LocalNotificationPreferenceStore.shared.mount(
             accountID: accountScopeID
         )
-        weather.mount(accountID: accountScopeID)
     }
 
     var accountScopeID: String? {

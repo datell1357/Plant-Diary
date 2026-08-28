@@ -1,53 +1,79 @@
-import Foundation
 @testable import Planterior
-import PlanteriorDomain
 import Testing
 
 @MainActor
 struct ItemPlacementCoordinatorTests {
     @Test
-    func applyAndRemovePersistRoomAndPreserveOwnership() throws {
+    func applyAndRemoveCommitAuthoritativeRoomAndPreserveOwnership() async throws {
+        // Given
         let fixture = try InventoryPlacementFixture()
-        let miniHomeRepository = try fixture.seedRoom()
+        let service = MiniHomeStoreServiceFake()
+        let miniHome = fixture.store(
+            service: service,
+            operationIDs: ["placement-apply", "placement-remove"]
+        )
+        try await miniHome.mount(
+            accountID: fixture.accountID,
+            defaultDraft: fixture.room()
+        )
         let inventory = fixture.inventory()
         inventory.replaceFixture(
             catalog: [fixture.item],
             ownedItems: [fixture.ownedItem(applied: false)]
         )
-        let service = InventoryPlacementService(
-            defaults: fixture.defaults
-        )
-        fixture.verifyApply(
-            service: service,
+
+        // When
+        let applied = await InventoryPlacementService().toggle(
+            item: fixture.item,
             inventory: inventory,
-            miniHome: miniHomeRepository
+            miniHome: miniHome
         )
-        fixture.verifyRemoval(
-            service: service,
+        let removed = await InventoryPlacementService().toggle(
+            item: fixture.item,
             inventory: inventory,
-            miniHome: miniHomeRepository
+            miniHome: miniHome
         )
+
+        // Then
+        #expect(applied == .applied)
+        #expect(removed == .removed)
+        #expect(miniHome.committed?.placements.isEmpty == true)
+        #expect(miniHome.committed?.revision.rawValue == 2)
+        #expect(inventory.ownedItems.first?.itemID == fixture.item.id)
+        #expect(inventory.ownedItems.first?.applied == false)
     }
 
     @Test
-    func missingRoomPreflightPreservesInventory() throws {
+    func emptyServerCreatesRoomOnlyThroughExplicitPlacementSave() async throws {
+        // Given
         let fixture = try InventoryPlacementFixture()
+        let service = MiniHomeStoreServiceFake()
+        let miniHome = fixture.store(
+            service: service,
+            operationIDs: ["placement-first-save"]
+        )
+        try await miniHome.mount(
+            accountID: fixture.accountID,
+            defaultDraft: fixture.room()
+        )
         let inventory = fixture.inventory()
         inventory.replaceFixture(
             catalog: [fixture.item],
             ownedItems: [fixture.ownedItem(applied: false)]
         )
+        #expect(service.requests.isEmpty)
 
-        let outcome = InventoryPlacementService(
-            defaults: fixture.defaults
-        ).toggle(
+        // When
+        let outcome = await InventoryPlacementService().toggle(
             item: fixture.item,
             inventory: inventory,
-            accountID: fixture.accountID,
-            now: fixture.now
+            miniHome: miniHome
         )
 
-        #expect(outcome == .unavailable)
-        #expect(inventory.ownedItems.first?.applied == false)
+        // Then
+        #expect(outcome == .applied)
+        #expect(miniHome.committed?.revision.rawValue == 1)
+        #expect(miniHome.committed?.placements.first?.itemID == fixture.item.id)
+        #expect(inventory.ownedItems.first?.applied == true)
     }
 }

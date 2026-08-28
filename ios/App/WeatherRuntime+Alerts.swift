@@ -8,13 +8,12 @@ extension WeatherRuntime {
 
     func setGlobalAlertsEnabled(_ enabled: Bool) {
         globalAlertsEnabledState = enabled
-        LocalWeatherAlertStore.shared.setGlobalEnabled(enabled)
+        alertStore.setGlobalEnabled(enabled)
         reconcileAlerts(plants: latestPlantIDs)
     }
 
     func reloadAlertPreferences() {
-        globalAlertsEnabledState =
-            LocalWeatherAlertStore.shared.globalEnabled
+        globalAlertsEnabledState = alertStore.globalEnabled
     }
 
     func reconcileAlerts(plants: [PersonalPlantID]) {
@@ -31,7 +30,7 @@ extension WeatherRuntime {
         var newlyPlanned: [RiskType] = []
         for plantID in plants {
             let activeRisks = Set(latestEvaluation.risks)
-            let enteredRisks = LocalWeatherAlertStore.shared.reconcile(
+            let enteredRisks = alertStore.reconcile(
                 plantID: plantID,
                 activeRisks: activeRisks,
                 alertsAllowed: latestEvaluation.alertsAllowed &&
@@ -39,7 +38,7 @@ extension WeatherRuntime {
             )
             let alertsEnabled = latestEvaluation.alertsAllowed &&
                 globalAlertsEnabledState &&
-                LocalWeatherAlertStore.shared.plantEnabled(for: plantID)
+                alertStore.plantEnabled(for: plantID)
             if alertsEnabled {
                 var planned = plannedRisksByPlant[
                     plantID,
@@ -58,23 +57,34 @@ extension WeatherRuntime {
         }
     }
 
-    func prepareForAccountRemount() {
-        clearRegionStateForAccountRemount()
-        latestEvaluation = nil
-        latestPlantIDs = []
-        plannedRisksByPlant = [:]
+    func clearUnavailableRegionState() {
+        invalidateRefreshes()
+        locationManager.stopUpdatingLocation()
+        locationRequestToken = nil
+        locationRequestContext = nil
+        locationAuthorizationContext = nil
+        updateEffectiveRegionCode(nil)
         risks = []
         isStale = false
+        latestEvaluation = nil
+        plannedRisksByPlant = [:]
         plannedAlertCount = 0
         newlyPlannedAlertCount = 0
+        alertStore.clearActiveRisks()
         homeState = .unavailable
+    }
+
+    func prepareForAccountRemount() {
+        clearUnavailableRegionState()
+        clearRegionStateForAccountRemount()
+        latestPlantIDs = []
     }
 
     func setPlantAlertsEnabled(
         _ enabled: Bool,
         plantID: PersonalPlantID
     ) {
-        LocalWeatherAlertStore.shared.setPlantEnabled(
+        alertStore.setPlantEnabled(
             enabled,
             plantID: plantID
         )

@@ -10,63 +10,6 @@ import XCTest
 /// named screenshot. Assertions stay structural so no copy or pixel value is
 /// pinned here.
 extension CaptureFlowUITests {
-    func testCaptureCameraState() {
-        let app = XCUIApplication()
-        launchCapture(app)
-        openCamera(app)
-
-        XCTAssertTrue(
-            app.otherElements["capture.camera"].waitForExistence(timeout: 10)
-        )
-        XCTAssertTrue(app.buttons["capture.shutter"].isHittable)
-        attachFigmaScreenshot(named: "capture-camera")
-    }
-
-    func testCapturePhotoReviewState() {
-        let app = XCUIApplication()
-        launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
-        openCamera(app)
-
-        XCTAssertTrue(
-            app.otherElements["capture.photo-review"]
-                .waitForExistence(timeout: 10)
-        )
-        XCTAssertTrue(app.images["photo.review"].exists)
-        attachFigmaScreenshot(named: "capture-photo-review")
-    }
-
-    func testCaptureIdentifyingState() {
-        let app = XCUIApplication()
-        launchCapture(
-            app,
-            environment: [
-                "QA_PHOTO_FIXTURE": "valid",
-                "QA_IDENTIFICATION_STATE": "pending",
-                "QA_CAPTURE_STATIC_PHASE": "1"
-            ]
-        )
-        submitReviewedPhoto(app)
-
-        XCTAssertTrue(
-            app.otherElements["capture.identifying"]
-                .waitForExistence(timeout: 10)
-        )
-        attachFigmaScreenshot(named: "capture-identifying")
-    }
-
-    func testCaptureIdentificationResultState() {
-        let app = XCUIApplication()
-        launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
-        submitReviewedPhoto(app)
-
-        XCTAssertTrue(
-            app.otherElements["capture.identification-result"]
-                .waitForExistence(timeout: 15)
-        )
-        XCTAssertTrue(app.buttons["capture.result.register"].isHittable)
-        attachFigmaScreenshot(named: "capture-identification-result")
-    }
-
     func testCameraCaptureRendersFigmaBlackChromeWithShutterControls() {
         let app = XCUIApplication()
         launchCapture(app)
@@ -188,6 +131,7 @@ extension CaptureFlowUITests {
         XCTAssertTrue(
             app.otherElements["capture.identification-result"].waitForExistence(timeout: 15)
         )
+        assertResultSpeciesAccessibility(in: app)
         let confidence = app.descendants(matching: .any)["capture.result.confidence"]
         XCTAssertLessThan(
             confidence.frame.height,
@@ -224,25 +168,16 @@ extension CaptureFlowUITests {
 
     private func assertFrame(
         _ element: XCUIElement,
-        x: CGFloat,
-        y: CGFloat,
+        x expectedX: CGFloat,
+        y expectedY: CGFloat,
         width: CGFloat,
         height: CGFloat,
         accuracy: CGFloat = 2,
         message: String = ""
     ) {
-        XCTAssertEqual(element.frame.minX, x, accuracy: accuracy, message)
-        XCTAssertEqual(element.frame.minY, y, accuracy: accuracy, message)
+        XCTAssertEqual(element.frame.minX, expectedX, accuracy: accuracy, message)
+        XCTAssertEqual(element.frame.minY, expectedY, accuracy: accuracy, message)
         XCTAssertEqual(element.frame.width, width, accuracy: accuracy, message)
         XCTAssertEqual(element.frame.height, height, accuracy: accuracy, message)
-    }
-
-    private func attachFigmaScreenshot(named name: String) {
-        let attachment = XCTAttachment(
-            screenshot: XCUIScreen.main.screenshot()
-        )
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 }

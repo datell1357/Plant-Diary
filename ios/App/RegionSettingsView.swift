@@ -71,15 +71,50 @@ struct RegionSettingsView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
+    /// At AX sizes the centred title wraps to two lines and claims the whole
+    /// header band, leaving the back chevron floating inside the title's rows
+    /// with no column of its own and pushing the first list row under the
+    /// boundary. The AX branch stacks a reserved back-control band above a
+    /// separate wrapped-title band; Large keeps the shared centred top bar and
+    /// its exact reference geometry.
+    @ViewBuilder
     private var topBar: some View {
-        PlanteriorTopBar("관리 지역 설정", leading: {
-            SettingsBackButton(identifier: "weather.region.back") {
-                dismiss()
+        if sizeCategory.isAccessibilityCategory {
+            VStack(alignment: .leading, spacing: PlanteriorSpacing.small) {
+                backControl
+                    .frame(
+                        minWidth: PlanteriorControl.minimumTarget,
+                        minHeight: PlanteriorControl.minimumTarget,
+                        alignment: .leading
+                    )
+                Text("관리 지역\n설정")
+                    .font(PlanteriorTypography.screenTitle)
+                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("관리 지역 설정")
+                    .accessibilityAddTraits(.isHeader)
             }
-        }, trailing: {
-            EmptyView()
-        })
-        .settingsReferenceTopBar()
+            .padding(.horizontal, PlanteriorLayout.contentGutter)
+            .padding(.bottom, PlanteriorSpacing.small)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PlanteriorPalette.canvas.color)
+            .settingsReferenceTopBar()
+        } else {
+            PlanteriorTopBar("관리 지역 설정", leading: {
+                backControl
+            }, trailing: {
+                EmptyView()
+            })
+            .settingsReferenceTopBar()
+        }
+    }
+
+    private var backControl: some View {
+        SettingsBackButton(identifier: "weather.region.back") {
+            dismiss()
+        }
     }
 
     #if DEBUG
@@ -127,5 +162,4 @@ struct RegionSettingsView: View {
         case .notDetermined: return "위치를 확인해 현재 지역을 설정합니다"
         }
     }
-
 }

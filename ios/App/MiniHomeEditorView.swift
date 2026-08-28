@@ -13,6 +13,7 @@ struct MiniHomeEditorView: View {
     @ObservedObject var inventory: InventoryRepository
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.sizeCategory) private var sizeCategory
     @State var errorMessage: String?
     @State var showsUnsavedPrompt = false
     @State var showsConflictPrompt = false
@@ -24,21 +25,36 @@ struct MiniHomeEditorView: View {
     @FocusState var isNameFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            MiniRoomEditorHeader(
-                close: requestClose,
-                showRoomSettings: { showsRoomSettings = true },
-                save: save
+        GeometryReader { viewport in
+            VStack(spacing: 0) {
+                MiniRoomEditorHeader(
+                    close: requestClose,
+                    showRoomSettings: { showsRoomSettings = true },
+                    save: save
+                )
+                roomRegion
+                editorControls
+            }
+            // At the accessibility sizes the wrapped strips paint their
+            // complete Korean captions, so their intrinsic width exceeds the
+            // 402pt frame. Clamping the root to the viewport keeps every strip
+            // inside the window instead of centering a wider stack and pushing
+            // the edge controls offscreen.
+            .frame(width: viewport.size.width)
+            .padding(
+                .top,
+                min(
+                    PlanteriorSpacing.none,
+                    MiniRoomReferenceMetrics.statusBarHeight
+                        - viewport.safeAreaInsets.top
+                )
             )
-            .padding(.top, Self.figmaStatusBarHeight)
-            roomScrollRegion
-            editorControls
         }
-        .background(PlanteriorPalette.canvas.color)
-        .ignoresSafeArea(edges: .top)
+        .background(PlanteriorPalette.canvas.color.ignoresSafeArea())
         .navigationBarHidden(true)
         .interactiveDismissDisabled(store.hasUnsavedChanges)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("minihome.editor")
         .confirmationDialog(
             "저장하지 않은 변경사항이 있어요.",
             isPresented: $showsUnsavedPrompt
@@ -46,7 +62,7 @@ struct MiniHomeEditorView: View {
             unsavedDialogActions
         }
         .confirmationDialog(
-            "다른 기기에서 먼저 저장했어요.",
+            "다른 편집에서 먼저 저장했어요.",
             isPresented: $showsConflictPrompt
         ) {
             conflictDialogActions
@@ -63,125 +79,115 @@ struct MiniHomeEditorView: View {
     }
 
     /// The Figma board centers the 358x330 room in the space between the fixed
-    /// 52pt header and category strip. Keeping a non-scrolling `ScrollView`
-    /// preserves the editor's established accessibility container while making
-    /// the initial capture position deterministic.
-    private var roomScrollRegion: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                roomContent
-                    .padding(.top, Self.figmaCanvasTopInset)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: geometry.size.height,
-                        alignment: .top
-                    )
+    /// 52pt header and category strip. The region never scrolls, so it stays a
+    /// plain container: an inert scroll view would only add an assistive
+    /// container that reorders the room behind the lower control strips.
+    ///
+    /// The region carries no identifier of its own. Naming it collapsed it onto
+    /// the canvas below, overwriting `minihome.editor.canvas` and erasing the
+    /// room's assistive container while its placements stayed reachable; the
+    /// editor viewport name now lives on the editor root instead.
+    @ViewBuilder
+    private var roomRegion: some View {
+        if sizeCategory.isAccessibilityCategory {
+            // The wrapped strips below claim their intrinsic height first, so
+            // the room takes the remainder and never less than the readable
+            // minimum. A greedy region here pinned the exact 330pt room and
+            // compressed the strips until their rows overprinted each other.
+            GeometryReader { geometry in
+                roomContent(
+                    height: max(
+                        MiniRoomReferenceMetrics
+                            .accessibilityCanvasMinimumHeight,
+                        geometry.size.height
+                    ),
+                    availableWidth: geometry.size.width
+                )
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .top
+                )
             }
-            .scrollDisabled(true)
-            .scrollBounceBehavior(.basedOnSize)
-            .accessibilityIdentifier("minihome.editor")
+            .frame(
+                minHeight: MiniRoomReferenceMetrics
+                    .accessibilityCanvasMinimumHeight
+            )
+            .layoutPriority(-1)
+        } else {
+            GeometryReader { geometry in
+                roomContent(
+                    height: MiniRoomReferenceMetrics.canvasSize.height,
+                    availableWidth: geometry.size.width
+                )
+                .padding(.top, canvasTopInset)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: geometry.size.height,
+                    alignment: .top
+                )
+            }
         }
     }
 
+    /// The reference inset centers the exact 358x330 room between the fixed
+    /// header and category strip. The accessibility layout has no spare
+    /// vertical budget for it, so that branch starts the room directly under
+    /// the header instead.
+    private var canvasTopInset: CGFloat {
+        Self.figmaCanvasTopInset
+    }
+
     @ViewBuilder
-    private var roomContent: some View {
+    private func roomContent(
+        height: CGFloat,
+        availableWidth: CGFloat
+    ) -> some View {
         if let draft = store.draft {
             MiniHomeEditorCanvas(
                 room: draft,
-                placementAsset: asset(for:),
                 placementLabel: label(for:),
                 move: moveByDrag,
-                moveBy: moveBy
+                moveBy: moveBy,
+                height: height
             )
             .frame(maxWidth: Self.figmaCanvasWidth)
-            .padding(.horizontal, Self.figmaCanvasGutter)
-        }
-    }
-
-    @ViewBuilder
-    private var editorControls: some View {
-        MiniRoomEditorTabBar(
-            selection: $category,
-            reduceMotion: reduceMotion
-        )
-        MiniRoomEditorTray(
-            entries: trayEntries,
-            selectedEntryID: selectedEntryID,
-            emptyMessage: trayEmptyMessage,
-            select: place
-        )
-        MiniRoomEditorFooter(
-            canUndo: store.canUndoDraft,
-            canReset: store.hasUnsavedChanges,
-            undo: undo,
-            reset: reset
-        )
-    }
-
-    private var roomSettings: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-                roomNameField
-                MiniHomeEditorStatusStrip(
-                    stateLabel: stateLabel,
-                    errorMessage: errorMessage,
-                    conflictState: store.state,
-                    addPlant: requestPlantPickerFromRoomSettings,
-                    resolveConflict: { showsConflictPrompt = true }
+            .padding(
+                .horizontal,
+                MiniRoomReferenceMetrics.canvasGutter(
+                    availableWidth: availableWidth
                 )
-                Spacer()
-            }
-            .padding(PlanteriorSpacing.large)
-            .background(PlanteriorPalette.canvas.color)
-            .navigationTitle("방 설정")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("완료") { showsRoomSettings = false }
-                }
-            }
+            )
         }
-        .presentationDetents([.medium])
-        .accessibilityIdentifier("minihome.editor.room-settings")
     }
 
-    private var roomNameField: some View {
-        TextField("미니홈 이름", text: roomName)
-            .textFieldStyle(.plain)
-            .font(PlanteriorTypography.body)
-            .foregroundStyle(PlanteriorPalette.textPrimary.color)
-            .padding(.horizontal, PlanteriorSpacing.medium)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .background(PlanteriorPalette.surface.color)
-            .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.medium))
-            .overlay {
-                RoundedRectangle(cornerRadius: PlanteriorRadius.medium)
-                    .stroke(
-                        PlanteriorPalette.border.color,
-                        lineWidth: PlanteriorControl.hairline
-                    )
-            }
-            .submitLabel(.done)
-            .focused($isNameFocused)
-            .onSubmit { isNameFocused = false }
-            .accessibilityIdentifier("minihome.room-name")
-    }
-
-    private func requestPlantPickerFromRoomSettings() {
-        opensPlantPickerAfterRoomSettings = true
-        showsRoomSettings = false
-    }
-
-    private func presentDeferredPlantPicker() {
-        guard opensPlantPickerAfterRoomSettings else {
-            return
+    /// One source-ordered control container: category strip, tray, footer.
+    /// Grouping them keeps assistive traversal in the same order a sighted
+    /// customer works through the editor after the room itself.
+    private var editorControls: some View {
+        VStack(spacing: PlanteriorSpacing.none) {
+            MiniRoomEditorTabBar(
+                selection: $category,
+                reduceMotion: reduceMotion
+            )
+            MiniRoomEditorTray(
+                entries: trayEntries,
+                selectedEntryID: selectedEntryID,
+                emptyMessage: trayEmptyMessage,
+                select: place
+            )
+            MiniRoomEditorFooter(
+                canUndo: store.canUndoDraft,
+                canReset: store.hasUnsavedChanges,
+                undo: undo,
+                reset: reset
+            )
         }
-        opensPlantPickerAfterRoomSettings = false
-        showsPlantPicker = true
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("minihome.editor.controls")
     }
 
-    private static let figmaStatusBarHeight: CGFloat = 48
     private static let figmaCanvasWidth: CGFloat = 358
-    private static let figmaCanvasGutter: CGFloat = 22
     private static let figmaCanvasTopInset: CGFloat = 100
 
     var reduceMotion: Bool {

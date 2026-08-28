@@ -56,6 +56,24 @@ struct DomainContractTests {
         }
     }
 
+    @Test
+    func miniHomePlacementRejectsMalformedDecodedTarget() throws {
+        // Given
+        let malformed = try JSONSerialization.data(withJSONObject: [
+            "id": "fixture-placement",
+            "plantID": NSNull(),
+            "itemID": NSNull(),
+            "normalizedX": 0.5,
+            "normalizedY": 0.5,
+            "zIndex": 0
+        ])
+
+        // When / Then
+        #expect(throws: MiniHomePlacementError.invalidTarget) {
+            try JSONDecoder().decode(MiniHomePlacement.self, from: malformed)
+        }
+    }
+
     @Test(arguments: ["00:00", "09:00", "00:00:00", "23:59:59"])
     func localTimeAcceptsBoundaries(_ value: String) throws {
         let expected = value.count == 5 ? "\(value):00" : value

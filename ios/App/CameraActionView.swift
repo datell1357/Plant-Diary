@@ -9,6 +9,7 @@ import SwiftUI
 /// `IdentificationFlowView`, which this view hands off to on consent.
 struct CameraActionView: View {
     @Environment(\.sizeCategory) var sizeCategory
+    @Environment(\.scenePhase) var scenePhase
     let dismiss: () -> Void
     let complete: () -> Void
     let manualRegistration: () -> Void
@@ -16,23 +17,30 @@ struct CameraActionView: View {
     @State var pickerItem: PhotosPickerItem?
     @State var draft: NormalizedPhoto?
     @State var errorMessage: String?
-    @State var showsCamera = false
     @State var showsLibrary = false
     @State var showsAcknowledgement = false
     @State var cameraDenied = false
     @State var isFlashEnabled = false
+    @State var liveCamera = LiveCameraCapture()
+    let cameraPresentationMode: CameraPresentationMode
     private let consent = PhotoConsentCoordinator(transfer: IdentificationDraftStore.shared)
+
+    static var cameraBackdrop: Color {
+        .black
+    }
 
     init(
         dismiss: @escaping () -> Void,
         complete: @escaping () -> Void,
         manualRegistration: @escaping () -> Void,
-        restoresReviewedPhoto: Bool = false
+        restoresReviewedPhoto: Bool = false,
+        cameraPresentationMode: CameraPresentationMode = CameraPresentationPolicy.current
     ) {
         self.dismiss = dismiss
         self.complete = complete
         self.manualRegistration = manualRegistration
         self.restoresReviewedPhoto = restoresReviewedPhoto
+        self.cameraPresentationMode = cameraPresentationMode
     }
 
     var body: some View {
@@ -53,14 +61,6 @@ struct CameraActionView: View {
             }
             Task {
                 await load(item)
-            }
-        }
-        .fullScreenCover(isPresented: $showsCamera) {
-            SystemCameraPicker(flashMode: isFlashEnabled ? .on : .off) { data in
-                showsCamera = false
-                review(data)
-            } cancel: {
-                showsCamera = false
             }
         }
         .alert("사진 처리 안내", isPresented: $showsAcknowledgement) {
@@ -118,37 +118,6 @@ struct CameraActionView: View {
         Task { await consent.cancelSelection() }
     }
 
-    /// The shutter invokes the real capture stack. Flash is configured before
-    /// presentation and never opens the native camera by itself. The app never
-    /// draws a substitute camera: on denial it surfaces recovery instead.
-    func requestCamera() {
-        #if DEBUG
-            if ProcessInfo.processInfo.environment["QA_CAMERA_DENIED"] == "1" {
-                showDenied()
-                return
-            }
-        #endif
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            showsCamera = true
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                Task { @MainActor in
-                    granted ? (showsCamera = true) : showDenied()
-                }
-            }
-        case .denied, .restricted:
-            showDenied()
-        @unknown default:
-            showDenied()
-        }
-    }
-
-    private func showDenied() {
-        cameraDenied = true
-        errorMessage = "카메라를 사용할 수 없어요. 설정을 확인하거나 사진 보관함 또는 직접 등록을 이용하세요."
-    }
-
     private func load(_ item: PhotosPickerItem) async {
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -160,7 +129,8 @@ struct CameraActionView: View {
         }
     }
 
-    private func review(_ data: Data) {
+    func review(_ data: Data) {
+        liveCamera.stop()
         do {
             draft = try PhotoImagePipeline().normalize(data)
             if let draft {
@@ -179,9 +149,7 @@ struct CameraActionView: View {
         #if DEBUG
             switch ProcessInfo.processInfo.environment["QA_PHOTO_FIXTURE"] {
             case "valid":
-                let fixture = UIImage(named: FigmaAsset.capturePhoto.resourceName)?
-                    .pngData() ?? PhotoQAFixture.data
-                review(fixture)
+                review(cameraFixtureData)
             case "corrupt":
                 review(Data("corrupt".utf8))
             default:

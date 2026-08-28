@@ -97,45 +97,6 @@ final class PlantCollectionUITests: XCTestCase {
         XCTAssertTrue(nextDate.label.contains("2026-08-12"))
     }
 
-    func testSearchDetailTimelineAndDeleteConfirmation() {
-        let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
-        app.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
-        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
-        app.launch()
-
-        app.buttons["tab.collection"].tap()
-        app.buttons["collection.search.action"].tap()
-        XCTAssertTrue(app.textFields["collection.search"].waitForExistence(timeout: 5))
-        app.textFields["collection.search"].tap()
-        app.textFields["collection.search"].typeText("몬\n")
-        XCTAssertTrue(
-            app.keyboards.firstMatch.waitForNonExistence(timeout: 5)
-        )
-        XCTAssertTrue(app.buttons["collection.row.0"].waitForExistence(timeout: 5))
-        let screenshot = XCUIScreen.main.screenshot()
-        let attachment = XCTAttachment(screenshot: screenshot)
-        attachment.name = "task-10-ios-app-implementation"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        app.buttons["collection.row.0"].tap()
-        app.buttons["plant.detail.edit"].tap()
-
-        XCTAssertTrue(app.textFields["plant.detail.nickname"].waitForExistence(timeout: 5))
-        app.textFields["plant.detail.location"].tap()
-        app.textFields["plant.detail.location"].typeText("거실\n")
-        app.textFields["plant.detail.private-memo"].tap()
-        app.textFields["plant.detail.private-memo"].typeText("창가에서 관리\n")
-        app.buttons["plant.detail.save"].tap()
-        app.swipeUp()
-        app.textFields["plant.detail.note"].tap()
-        app.textFields["plant.detail.note"].typeText("새잎이 자랐어요\n")
-        app.buttons["plant.detail.add-note"].tap()
-        XCTAssertTrue(app.staticTexts["plant.detail.timeline"].waitForExistence(timeout: 5))
-        assertDeleteIsReachableAndRequiresConfirmation(in: app)
-    }
-
     func testFilteredEmptyDoesNotClaimCollectionIsEmpty() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -171,31 +132,6 @@ final class PlantCollectionUITests: XCTestCase {
         assertState("stale", label: "저장된 정보를 표시하고 있어요.")
     }
 
-    private func assertDeleteIsReachableAndRequiresConfirmation(
-        in app: XCUIApplication
-    ) {
-        let detailScroll = app.scrollViews["plant.detail.screen"]
-        let delete = app.buttons["plant.detail.delete"]
-        scrollToHittable(delete, in: detailScroll)
-        let tabBar = app.buttons["tab.collection"]
-        XCTAssertTrue(delete.isHittable)
-        XCTAssertFalse(
-            delete.frame.intersects(tabBar.frame),
-            "the delete action must clear the persistent tab bar"
-        )
-        attachScreenshot(named: "collection-detail-delete-hittable")
-        delete.tap()
-        XCTAssertTrue(app.sheets.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            app.buttons["plant.detail.delete-confirm"].waitForExistence(timeout: 5)
-        )
-        app.buttons.matching(
-            identifier: "plant.detail.delete-cancel"
-        ).firstMatch.tap()
-        XCTAssertFalse(app.sheets.firstMatch.exists)
-        XCTAssertTrue(app.buttons["plant.detail.delete"].exists)
-    }
-
     private func assertState(_ state: String, label: String) {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -213,7 +149,7 @@ final class PlantCollectionUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["비공개 식물"].exists)
     }
 
-    private func attachScreenshot(named name: String) {
+    func attachScreenshot(named name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways

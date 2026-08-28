@@ -1,3 +1,4 @@
+import CoreGraphics
 import PlanteriorDomain
 
 /// One card in the Figma `items-selector-panel`: a square asset tile plus a
@@ -44,21 +45,62 @@ enum MiniRoomPlantPresentation {
         .roomPlant01, .roomPlant02, .roomPlant03, .roomPlant04, .roomPlant05
     ]
 
-    /// `myroom-editor` tray order: 몬스테라 / 스투키 / 산세베리아 / 아레카야자 / 고무나무.
-    private static let namedAssets: [String: FigmaAsset] = [
-        "몬스테라": .roomPlant03,
-        "스투키": .roomPlant05,
-        "산세베리아": .roomPlant04,
-        "아레카야자": .roomPlant02,
-        "고무나무": .roomPlant01
-    ]
+    #if DEBUG
+        /// The canvas uses three independently movable props exported from the
+        /// room artwork; the tray uses the five authenticated 70pt selector
+        /// images. Keeping both maps fixture-only prevents QA presentation from
+        /// changing production's ID-stable authoritative projection.
+        static let referenceTrayAssets: [FigmaAsset] = [
+            .roomTrayPlant03, .roomTrayPlant05, .roomTrayPlant04,
+            .roomTrayPlant02, .roomTrayPlant01
+        ]
+
+        private static let fixtureCanvasAssets: [String: FigmaAsset] = [
+            "figma-room-plant-0": .roomPlant01,
+            "figma-room-plant-1": .roomPlant02,
+            "figma-room-plant-2": .roomPlant03
+        ]
+
+        private static let fixtureTrayAssets = Dictionary(
+            uniqueKeysWithValues: zip(
+                (0 ..< referenceTrayAssets.count).map {
+                    "figma-room-plant-\($0)"
+                },
+                referenceTrayAssets
+            )
+        )
+
+        private static let fixtureVisualSizes: [String: CGSize] = [
+            "figma-room-plant-0": CGSize(width: 50, height: 72),
+            "figma-room-plant-1": CGSize(width: 36, height: 67),
+            "figma-room-plant-2": CGSize(width: 35, height: 56)
+        ]
+    #endif
 
     static func asset(for plantID: PersonalPlantID) -> FigmaAsset {
-        assets[stableIndex(for: plantID.rawValue, count: assets.count)]
+        #if DEBUG
+            if let fixtureAsset = fixtureCanvasAssets[plantID.rawValue] {
+                return fixtureAsset
+            }
+        #endif
+        return assets[stableIndex(for: plantID.rawValue, count: assets.count)]
     }
 
-    static func asset(for plantID: PersonalPlantID, named name: String) -> FigmaAsset {
-        namedAssets[name] ?? asset(for: plantID)
+    static func trayAsset(for plantID: PersonalPlantID) -> FigmaAsset {
+        #if DEBUG
+            if let fixtureAsset = fixtureTrayAssets[plantID.rawValue] {
+                return fixtureAsset
+            }
+        #endif
+        return asset(for: plantID)
+    }
+
+    static func referenceVisualSize(for plantID: PersonalPlantID) -> CGSize? {
+        #if DEBUG
+            return fixtureVisualSizes[plantID.rawValue]
+        #else
+            return nil
+        #endif
     }
 
     static func stableIndex(for value: String, count: Int) -> Int {

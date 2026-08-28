@@ -10,7 +10,7 @@ struct MiniRoomEditorHeader: View {
 
     private static let height: CGFloat = 52
     private static let edgeActionInset: CGFloat = 10
-    private static let saveOpticalInset: CGFloat = -10
+    private static let saveOpticalInset: CGFloat = -8
     private static let contentVerticalOffset: CGFloat = -2
 
     var body: some View {
@@ -33,8 +33,13 @@ struct MiniRoomEditorHeader: View {
                 .font(PlanteriorTypography.screenTitle)
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .lineLimit(1)
+                .minimumScaleFactor(
+                    MiniRoomReferenceMetrics.headerTitleMinimumScale
+                )
+                .allowsTightening(true)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+                .layoutPriority(1)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: showRoomSettings)
                 .accessibilityElement()
@@ -49,9 +54,12 @@ struct MiniRoomEditorHeader: View {
                     .font(PlanteriorTypography.supporting.weight(.semibold))
                     .foregroundStyle(PlanteriorPalette.accent.color)
                     .lineLimit(1)
+                    .minimumScaleFactor(
+                        MiniRoomReferenceMetrics.headerSaveMinimumScale
+                    )
                     .frame(
-                        minWidth: PlanteriorControl.minimumTarget,
-                        minHeight: PlanteriorControl.minimumTarget,
+                        width: PlanteriorControl.minimumTarget,
+                        height: PlanteriorControl.minimumTarget,
                         alignment: .trailing
                     )
                     .contentShape(Rectangle())

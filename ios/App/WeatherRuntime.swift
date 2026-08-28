@@ -5,6 +5,36 @@ import PlanteriorData
 import PlanteriorDomain
 
 @MainActor
+final class WeatherAccountScopeCoordinator {
+    struct Identity: Equatable {
+        let accountID: String
+        let generation: UInt64
+    }
+
+    static let shared = WeatherAccountScopeCoordinator()
+
+    private var accountID = "signed-out"
+    private var generation: UInt64 = 0
+
+    @discardableResult
+    func prepareForMount(accountID: String?) -> Identity {
+        let normalizedAccountID = accountID ?? "signed-out"
+        if self.accountID != normalizedAccountID {
+            self.accountID = normalizedAccountID
+            generation &+= 1
+        }
+        return Identity(
+            accountID: normalizedAccountID,
+            generation: generation
+        )
+    }
+
+    func matches(_ identity: Identity) -> Bool {
+        accountID == identity.accountID && generation == identity.generation
+    }
+}
+
+@MainActor
 final class WeatherRuntime: NSObject, ObservableObject {
     @Published var authorization: LocationAuthorizationState =
         .notDetermined
@@ -23,20 +53,56 @@ final class WeatherRuntime: NSObject, ObservableObject {
         let qaLocationClient: QAWeatherLocationClient?
     #endif
     let defaults: UserDefaults
-    private let repository: any WeatherSnapshotRepository
+    let repository: any WeatherSnapshotRepository
+    let nowOverride: Instant?
+    let accountCoordinator: WeatherAccountScopeCoordinator
+    var requestGeneration: UInt64 = 0
+    let alertStore: LocalWeatherAlertStore
     var accountScopeID: String?
+    var mountedAccountIdentity: WeatherAccountScopeCoordinator.Identity?
+    struct LocationRequestContext: Equatable {
+        let accountIdentity: WeatherAccountScopeCoordinator.Identity
+        let token: UUID
+        let generation: UInt64
+    }
+
     var locationRequestToken: UUID?
+    var locationRequestGeneration: UInt64 = 0
+    var locationRequestContext: LocationRequestContext?
+    var locationAuthorizationContext: LocationRequestContext?
     var latestEvaluation: WeatherRiskEvaluation?
     var latestPlantIDs: [PersonalPlantID] = []
     var plannedRisksByPlant: [PersonalPlantID: Set<RiskType>] = [:]
 
-    override init() {
+    override convenience init() {
+        self.init(
+            repository: Self.currentRepository(),
+            defaults: .standard,
+            alertStore: .shared,
+            initialAccountScopeID: Self.initialAccountScopeID,
+            nowOverride: nil,
+            accountCoordinator: .shared
+        )
+    }
+
+    init(
+        repository: any WeatherSnapshotRepository,
+        defaults: UserDefaults = .standard,
+        alertStore: LocalWeatherAlertStore = .shared,
+        initialAccountScopeID: String = "signed-out",
+        nowOverride: Instant? = nil,
+        accountCoordinator: WeatherAccountScopeCoordinator = .shared
+    ) {
         #if DEBUG
             qaLocationClient = QAWeatherLocationClient()
         #endif
-        defaults = .standard
-        repository = Self.currentRepository()
-        accountScopeID = Self.initialAccountScopeID
+        self.defaults = defaults
+        self.repository = repository
+        self.nowOverride = nowOverride
+        self.accountCoordinator = accountCoordinator
+        self.alertStore = alertStore
+        accountScopeID = initialAccountScopeID
+        mountedAccountIdentity = nil
         super.init()
         defaults.removeObject(forKey: "weather.manual-region")
         locationManager.delegate = self
@@ -55,99 +121,39 @@ final class WeatherRuntime: NSObject, ObservableObject {
 
     func clearRegionStateForAccountRemount() {
         locationManager.stopUpdatingLocation()
-        locationRequestToken = nil
+        invalidateLocationRequest()
+        locationAuthorizationContext = nil
         locationRegionCode = nil
         effectiveRegionCode = nil
         accountScopeID = nil
+        mountedAccountIdentity = nil
+    }
+
+    func updateEffectiveRegionCode(_ regionCode: String?) {
+        effectiveRegionCode = regionCode
     }
 
     func requestLocationPermission() {
+        guard let mountedAccountIdentity else {
+            return
+        }
+        invalidateLocationRequest()
+        let context = LocationRequestContext(
+            accountIdentity: mountedAccountIdentity,
+            token: UUID(),
+            generation: locationRequestGeneration
+        )
+        locationAuthorizationContext = context
         locationManager.requestWhenInUseAuthorization()
     }
 
     #if DEBUG
         func revokeLocationForQA() {
             authorization = .denied
-            locationManager.stopUpdatingLocation()
-            locationRequestToken = nil
+            clearUnavailableRegionState()
             locationRegionCode = nil
         }
     #endif
-
-    func refresh(plants: [PersonalPlantID]) async {
-        let selection = WeatherRegionSelection(
-            authorization: authorization,
-            manualRegionCode: manualRegionCode,
-            locationRegionCode: locationRegionCode
-        )
-        guard let regionCode = selection.effectiveRegionCode else {
-            if selection.shouldRequestLocation {
-                if requestLocationIfNeeded() {
-                    homeState = .loading
-                }
-            } else {
-                homeState = .unavailable
-            }
-            effectiveRegionCode = nil
-            return
-        }
-        effectiveRegionCode = regionCode
-        homeState = .loading
-        do {
-            let snapshot = try await repository.snapshot(
-                regionCode: regionCode
-            )
-            try evaluate(snapshot: snapshot, plants: plants)
-        } catch {
-            risks = []
-            isStale = false
-            plannedAlertCount = 0
-            homeState = .failed
-        }
-    }
-
-    private func evaluate(
-        snapshot: WeatherSnapshot,
-        plants: [PersonalPlantID]
-    ) throws {
-        guard let now = effectiveNow else {
-            throw WeatherRepositoryError.fixtureFailure
-        }
-        let evaluation = try WeatherRiskEvaluator(now: now).evaluate(
-            snapshot: snapshot,
-            thresholds: .plantDefault,
-            globalAlertsEnabled: true,
-            perPlantAlertsEnabled: true
-        )
-        risks = evaluation.risks
-        isStale = evaluation.isStale
-        latestEvaluation = evaluation
-        reconcileAlerts(plants: plants)
-        homeState = .content(summary: summary(for: snapshot, evaluation))
-    }
-
-    private func summary(
-        for snapshot: WeatherSnapshot,
-        _ evaluation: WeatherRiskEvaluation
-    ) -> String {
-        evaluation.risks.isEmpty
-            ? "\(String(format: "%.0f", snapshot.temperatureCelsius))℃ · 위험 없음"
-            : "주의 \(evaluation.risks.count)건"
-    }
-
-    private var effectiveNow: Instant? {
-        #if DEBUG
-            let qaNow = ProcessInfo.processInfo.environment[
-                "QA_WEATHER_NOW"
-            ].flatMap { try? Instant.parse($0) }
-            if let qaNow {
-                return qaNow
-            }
-        #endif
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return try? Instant.parse(formatter.string(from: Date()))
-    }
 
     private func refreshAuthorization() {
         #if DEBUG
@@ -162,9 +168,14 @@ final class WeatherRuntime: NSObject, ObservableObject {
             accuracy: locationManager.accuracyAuthorization
         )
         if authorization == .denied {
-            locationManager.stopUpdatingLocation()
-            locationRequestToken = nil
-            locationRegionCode = nil
+            if mountedAccountIdentity != nil {
+                clearUnavailableRegionState()
+            } else {
+                locationManager.stopUpdatingLocation()
+                invalidateLocationRequest()
+                locationAuthorizationContext = nil
+                locationRegionCode = nil
+            }
         }
     }
 
@@ -178,5 +189,12 @@ final class WeatherRuntime: NSObject, ObservableObject {
 
     func completeLocationRequest() {
         locationRequestToken = nil
+        locationRequestContext = nil
+    }
+
+    func invalidateLocationRequest() {
+        locationRequestGeneration &+= 1
+        locationRequestToken = nil
+        locationRequestContext = nil
     }
 }

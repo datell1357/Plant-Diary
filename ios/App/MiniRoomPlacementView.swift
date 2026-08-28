@@ -9,20 +9,16 @@ struct MiniRoomPlacementView: View {
     let placement: MiniHomePlacement
     let asset: FigmaAsset
     let label: String
-    let side: CGFloat
+    let size: CGSize
     let moveBy: (MiniHomePlacement, Double, Double) -> Void
 
     private static let step = 0.1
 
     var body: some View {
-        Image(asset)
-            .resizable()
-            .scaledToFit()
-            .frame(width: side, height: side)
+        MiniRoomPlacementVisual(asset: asset, size: size)
             .accessibilityLabel(label)
             .accessibilityValue(
-                "가로 \(percentage(placement.normalizedX))퍼센트, " +
-                    "세로 \(percentage(placement.normalizedY))퍼센트"
+                MiniRoomPlacementPresentation.accessibilityValue(for: placement)
             )
             .accessibilityIdentifier(
                 "minihome.placement.\(placement.id.rawValue)"
@@ -39,9 +35,5 @@ struct MiniRoomPlacementView: View {
             .accessibilityAction(named: "아래로 이동") {
                 moveBy(placement, 0, Self.step)
             }
-    }
-
-    private func percentage(_ normalized: Double) -> Int {
-        Int((normalized * 100).rounded())
     }
 }

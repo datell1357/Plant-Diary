@@ -19,8 +19,12 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
         app.buttons["닫기"].tap()
         openDeletion(in: app)
         completeRequest(in: app)
+        let partialFailure = statusExpectation(
+            "일부 삭제 실패 · 계정 유지",
+            in: app
+        )
         app.buttons["account-deletion.qa.partial"].tap()
-        waitForStatus("일부 삭제 실패 · 계정 유지", in: app)
+        waitForStatus(partialFailure)
         let cleanup = app.staticTexts["account-deletion.cleanup-count"].label
         XCTAssertEqual(cleanup, "로컬 정리 0회")
         attachSettingsEvidence(
@@ -38,8 +42,13 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
         completeRequest(in: app)
         attachScreenshot(named: "task-18-deletion-ax5")
         app.swipeUp()
+        let completion = statusExpectation(
+            "삭제 완료 · 로컬 정리 승인됨",
+            in: app
+        )
         app.buttons["account-deletion.qa.complete"].tap()
-        waitForStatus("삭제 완료 · 로컬 정리 승인됨", in: app)
+        waitForStatus(completion)
+        let status = app.staticTexts["account-deletion.status"].label
         let cleanup = app.staticTexts["account-deletion.cleanup-count"].label
         let receipts = app.staticTexts[
             "account-deletion.cleanup-receipts"
@@ -48,7 +57,7 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
         XCTAssertEqual(receipts, "정리 영수증 8개")
         attachJSON(
             [
-                "observedStatus": "삭제 완료 · 로컬 정리 승인됨",
+                "observedStatus": status,
                 "observedCleanup": cleanup,
                 "observedReceipts": receipts
             ],
@@ -92,19 +101,25 @@ final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
 
     private func completeRequest(in app: XCUIApplication) {
         app.buttons["account-deletion.reauthenticate"].tap()
+        let requestReceived = statusExpectation(
+            "삭제 요청 접수됨 · 7일 유예",
+            in: app
+        )
         app.buttons["account-deletion.confirm"].tap()
-        waitForStatus("삭제 요청 접수됨 · 7일 유예", in: app)
+        waitForStatus(requestReceived)
     }
 
-    private func waitForStatus(
+    private func statusExpectation(
         _ label: String,
         in app: XCUIApplication
-    ) {
-        let state = app.staticTexts["account-deletion.status"]
-        let expectation = XCTNSPredicateExpectation(
+    ) -> XCTNSPredicateExpectation {
+        XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", label),
-            object: state
+            object: app.staticTexts["account-deletion.status"]
         )
+    }
+
+    private func waitForStatus(_ expectation: XCTestExpectation) {
         XCTAssertEqual(
             XCTWaiter.wait(for: [expectation], timeout: 5),
             .completed

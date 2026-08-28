@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct InventoryRepositoryTests {
     @Test
-    func productionRepositoryRejectsClientOwnershipCreation() throws {
+    func unavailableProductionServiceRejectsOwnershipCreation() async throws {
         let fixture = try InventoryRepositoryFixture()
         let repository = InventoryRepository(
             defaults: fixture.defaults,
@@ -14,24 +14,20 @@ struct InventoryRepositoryTests {
             allowsLocalAcquisition: false
         )
         repository.mount(accountID: fixture.accountA)
-        let publicItem = try fixture.item(id: "item-public")
-        repository.replaceFixture(
-            catalog: [publicItem],
-            ownedItems: []
-        )
+        let publicID = try #require(repository.catalog.first?.id)
 
-        let publicID = try ItemID.parse("item-public")
-        let outcome = repository.acquire(
+        let outcome = await repository.acquire(
             itemID: publicID,
             metConditions: []
         )
 
-        #expect(outcome == .unavailable)
+        #expect(outcome == .failed(.providerUnavailable))
         #expect(repository.ownedItems.isEmpty)
+        #expect(fixture.defaults.data(forKey: repository.persistenceKey) == nil)
     }
 
     @Test
-    func qaAcquisitionRetriesAndRejectsDuplicatesAndUnmetConditions() throws {
+    func qaAcquisitionRetriesAndRejectsDuplicatesAndUnmetConditions() async throws {
         let fixture = try InventoryRepositoryFixture()
         let repository = InventoryRepository(
             defaults: fixture.defaults,
@@ -54,28 +50,28 @@ struct InventoryRepositoryTests {
 
         let freeID = try ItemID.parse("item-free")
         #expect(
-            repository.acquire(
+            await repository.acquire(
                 itemID: freeID,
                 metConditions: []
-            ) == .failed
+            ) == .failed(.injectedFailure)
         )
         #expect(repository.ownedItems.isEmpty)
         #expect(
-            repository.acquire(
+            await repository.acquire(
                 itemID: freeID,
                 metConditions: []
             ) == .acquired
         )
         #expect(repository.ownedItems.map(\.itemID) == [freeID])
         #expect(
-            repository.acquire(
+            await repository.acquire(
                 itemID: freeID,
                 metConditions: []
             ) == .alreadyOwned
         )
         let lockedID = try ItemID.parse("item-locked")
         #expect(
-            repository.acquire(
+            await repository.acquire(
                 itemID: lockedID,
                 metConditions: []
             ) == .conditionNotMet("watered-10")

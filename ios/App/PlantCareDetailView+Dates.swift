@@ -71,30 +71,31 @@ enum PlantCarePresentation {
         .collectionPlant04,
         .collectionPlant05
     ]
+    private static let defaultPlantAssets: [String: FigmaAsset] = [
+        "local-0": .collectionPlant01,
+        "local-1": .collectionPlant02,
+        "local-2": .collectionPlant03,
+        "local-3": .collectionPlant04,
+        "local-4": .collectionPlant05
+    ]
+    private static let figmaPlantAssets: [String: FigmaAsset] = [
+        "local-0": .collectionPlant05,
+        "local-1": .collectionPlant03,
+        "local-2": .collectionPlant01,
+        "local-3": .collectionPlant04,
+        "local-4": .collectionPlant02
+    ]
 
     static func asset(for identity: String) -> FigmaAsset {
         #if DEBUG
             if ProcessInfo.processInfo.environment[
                 "QA_COLLECTION_FIGMA_FIXTURE"
-            ] == "1" {
-                switch identity {
-                case "local-0": return .collectionPlant05
-                case "local-1": return .collectionPlant03
-                case "local-2": return .collectionPlant01
-                case "local-3": return .collectionPlant04
-                case "local-4": return .collectionPlant02
-                default: break
-                }
+            ] == "1", let asset = figmaPlantAssets[identity] {
+                return asset
             }
         #endif
-        switch identity {
-        case "local-0": return .collectionPlant01
-        case "local-1": return .collectionPlant02
-        case "local-2": return .collectionPlant03
-        case "local-3": return .collectionPlant04
-        case "local-4": return .collectionPlant05
-        default: return plantAssets[stableIndex(for: identity)]
-        }
+        return defaultPlantAssets[identity]
+            ?? plantAssets[stableIndex(for: identity)]
     }
 
     static func collectionName(for identity: String, fallback: String) -> String {
@@ -130,28 +131,28 @@ enum PlantCarePresentation {
     static let guideMetrics = [
         PlantGuideMetric(
             id: "water",
-            icon: "drop.fill",
+            icon: "💧",
             title: "물 주기",
             value: "7~10일 간격",
             hint: "겉흙이 마르면 듬뿍"
         ),
         PlantGuideMetric(
             id: "light",
-            icon: "sun.max.fill",
-            title: "빛",
+            icon: "☀️",
+            title: "햇빛",
             value: "밝은 간접광",
             hint: "반그늘에서 가장 잘 자라요"
         ),
         PlantGuideMetric(
             id: "temperature",
-            icon: "thermometer.medium",
+            icon: "🌡️",
             title: "온도",
             value: "18~27°C",
             hint: "추위에 약하니 실내에"
         ),
         PlantGuideMetric(
             id: "humidity",
-            icon: "humidity.fill",
+            icon: "💨",
             title: "습도",
             value: "60% 이상",
             hint: "분무기로 자주 분무 필요"

@@ -68,7 +68,7 @@ struct PlantSymptomRemedyView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: PlanteriorSpacing.none) {
             remedyTopBar
             ScrollView {
                 VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
@@ -109,7 +109,7 @@ struct PlantSymptomRemedyView: View {
 
     private func symptomCard(_ index: Int) -> some View {
         let item = guidance[index]
-        return VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: PlanteriorSpacing.none) {
             Button {
                 expandedIndex = expandedIndex == index ? nil : index
             } label: {
@@ -144,9 +144,10 @@ struct PlantSymptomRemedyView: View {
                 guidanceBody(item, index: index)
                     .padding(.horizontal, PlanteriorSpacing.large)
                     .padding(.top, PlanteriorSpacing.medium)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, PlantCareReferenceMetrics.remedyExpandedBottomInset)
             }
         }
+        .remedyReferenceMinimumHeight(isExpanded: expandedIndex == index)
         .background(PlanteriorPalette.surface.color)
         .clipShape(RoundedRectangle(cornerRadius: PlanteriorRadius.large))
         .overlay {
@@ -156,15 +157,15 @@ struct PlantSymptomRemedyView: View {
                     lineWidth: PlanteriorControl.hairline
                 )
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("remedy.card.\(index)")
+        .remedyCardAccessibility(index: index)
     }
 
     private func guidanceBody(_ item: SymptomGuidance, index: Int) -> some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
             Text("⚠️ 원인")
                 .font(PlanteriorTypography.caption.weight(.semibold))
-                .foregroundStyle(PlanteriorPalette.warning.color)
+                .foregroundStyle(PlanteriorPalette.warningText.color)
+                .accessibilityIdentifier("remedy.cause-heading.\(index)")
             Text(item.cause)
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
@@ -173,11 +174,15 @@ struct PlantSymptomRemedyView: View {
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .foregroundStyle(PlanteriorPalette.accent.color)
                 .padding(.top, PlanteriorSpacing.extraSmall)
-            Text(item.action)
-                .font(PlanteriorTypography.supporting)
-                .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                .padding(.trailing, PlanteriorSpacing.extraLarge)
-                .accessibilityIdentifier("remedy.action.\(index)")
+            Text(KoreanTypography.binding(
+                item.action,
+                phrases: PlantCareKoreanPhrases.remedy
+            ))
+            .font(PlanteriorTypography.supporting)
+            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+            .padding(.trailing, PlanteriorSpacing.extraLarge)
+            .accessibilityLabel(item.action)
+            .accessibilityIdentifier("remedy.action.\(index)")
         }
     }
 }
@@ -190,7 +195,6 @@ private struct SymptomGuidance {
 }
 
 extension Notification.Name {
-    static let weatherAlertPreferencesDidChange = Notification.Name(
-        "weatherAlertPreferencesDidChange"
-    )
+    static let weatherAlertPreferencesDidChange =
+        Notification.Name("weatherAlertPreferencesDidChange")
 }

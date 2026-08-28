@@ -20,7 +20,8 @@ final class LocalPlantCollectionStore: ObservableObject {
     @Published private(set) var scrollAnchor: Int?
     @Published var snapshotState = CollectionViewState.content
     @Published private(set) var saveError: String?
-    private var accountID = "signed-out"
+    @Published var qaFixtureMountReceipt = "pending"
+    private(set) var accountID = "signed-out"
     let defaults: UserDefaults
     let notificationSchedules: LocalNotificationScheduleStore
     var plantsKey: String {
@@ -52,6 +53,7 @@ final class LocalPlantCollectionStore: ObservableObject {
         }
         self.accountID = mountedAccountID
         completedPlantIDs = []
+        qaFixtureMountReceipt = "pending"
         resetPersistenceForQA()
         restore()
     }

@@ -14,27 +14,45 @@ struct MiniRoomEditorTabBar: View {
     private static let referenceHorizontalInset: CGFloat = 8
     private static let plantIconSide: CGFloat = 18
     private static let underlineHeight: CGFloat = 2
-    /// Minimum readable tab width once Dynamic Type stops the labels fitting
-    /// five-across; beyond this the strip scrolls instead of colliding. This is
-    /// a FLOOR, not a fixed width: clamping the column to it split every
-    /// two-syllable Korean caption one syllable per line at AX5.
-    private static let scrollingTabMinimumWidth: CGFloat = 64
+
+    private static let plantIcon = UIImage(
+        named: "FigmaRoomCategoryPlant",
+        in: .main,
+        compatibleWith: nil
+    )
+
+    /// Source-ordered wrapped rows for the accessibility sizes. A horizontal
+    /// scroller here made the strip an assistive container that VoiceOver
+    /// traversed after the plain footer; wrapping keeps every tab a direct
+    /// child in reading order and each caption on one line.
+    private var accessibilityRows: [MiniRoomWrappedRow<MiniRoomCategory>] {
+        MiniRoomWrappedRow.rows(
+            of: MiniRoomCategory.allCases,
+            columns: MiniRoomReferenceMetrics
+                .accessibilityCategoryColumnCount
+        )
+    }
 
     var body: some View {
         Group {
             if sizeCategory.isAccessibilityCategory {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: PlanteriorSpacing.small) {
-                        ForEach(MiniRoomCategory.allCases) { category in
-                            tab(category)
-                                .frame(
-                                    minWidth: Self.scrollingTabMinimumWidth
-                                )
-                                .fixedSize(horizontal: true, vertical: false)
+                VStack(spacing: PlanteriorSpacing.small) {
+                    ForEach(accessibilityRows) { row in
+                        HStack(spacing: PlanteriorSpacing.small) {
+                            ForEach(row.elements) { category in
+                                tab(category)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            ForEach(0 ..< row.trailingGaps, id: \.self) { _ in
+                                Color.clear
+                                    .frame(maxWidth: .infinity)
+                                    .accessibilityHidden(true)
+                            }
                         }
                     }
-                    .padding(.horizontal, PlanteriorSpacing.small)
                 }
+                .padding(.horizontal, PlanteriorSpacing.small)
+                .padding(.vertical, PlanteriorSpacing.small)
             } else {
                 HStack(spacing: 0) {
                     ForEach(MiniRoomCategory.allCases) { category in
@@ -74,7 +92,9 @@ struct MiniRoomEditorTabBar: View {
                     .font(PlanteriorTypography.caption.weight(
                         selected ? .semibold : .regular
                     ))
-                    .lineLimit(2)
+                    .lineLimit(
+                        sizeCategory.isAccessibilityCategory ? 1 : 2
+                    )
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: false, vertical: true)
@@ -85,18 +105,12 @@ struct MiniRoomEditorTabBar: View {
                     ? PlanteriorPalette.accent.color
                     : PlanteriorPalette.textSecondary.color
             )
+            .frame(maxWidth: .infinity)
             .frame(
-                maxWidth: .infinity,
+                minHeight: PlanteriorControl.minimumTarget,
                 maxHeight: sizeCategory.isAccessibilityCategory
                     ? nil
                     : .infinity
-            )
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .padding(
-                .vertical,
-                sizeCategory.isAccessibilityCategory
-                    ? PlanteriorSpacing.small
-                    : 0
             )
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
@@ -120,12 +134,7 @@ struct MiniRoomEditorTabBar: View {
 
     @ViewBuilder
     private func categoryIcon(_ category: MiniRoomCategory) -> some View {
-        if category == .plant,
-           let image = UIImage(
-               named: "FigmaRoomCategoryPlant",
-               in: .main,
-               compatibleWith: nil
-           ) {
+        if category == .plant, let image = Self.plantIcon {
             Image(uiImage: image)
                 .renderingMode(.template)
                 .resizable()

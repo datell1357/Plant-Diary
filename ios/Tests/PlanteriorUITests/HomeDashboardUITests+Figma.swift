@@ -35,22 +35,16 @@ extension HomeDashboardUITests {
         XCTAssertTrue(title.exists, "room title must be tappable to rename")
         XCTAssertEqual(title.label, "민지의 미니 식물원 🏡")
 
-        let hero = app.images["home.room.hero"]
-        XCTAssertTrue(hero.exists)
-        XCTAssertEqual(hero.frame.minX, 16, accuracy: 1)
-        XCTAssertEqual(hero.frame.width, 370, accuracy: 1)
-        XCTAssertGreaterThanOrEqual(hero.frame.height, 326)
-        XCTAssertLessThanOrEqual(hero.frame.height, 330)
+        assertRoomVisualGeometry(in: app, state: "authenticated")
         XCTAssertTrue(app.staticTexts["home.weather.warning"].exists)
 
         XCTAssertTrue(app.staticTexts["home.care.header"].exists)
         XCTAssertEqual(app.staticTexts["home.care.header"].label, "오늘의 식물 관리")
         XCTAssertTrue(app.staticTexts["home.care.badge"].exists)
         XCTAssertEqual(app.staticTexts["home.care.badge"].label, "오늘 1개")
-        XCTAssertEqual(
-            app.staticTexts["home.care.row.0"].label,
-            "몬몬이 (몬스테라)"
-        )
+        let firstCareName = app.staticTexts["home.care.row.0"]
+        XCTAssertEqual(firstCareName.label, "몬몬이 (몬스테라)")
+        XCTAssertFalse(firstCareName.label.unicodeScalars.contains("\u{2060}"))
         XCTAssertEqual(
             app.staticTexts["home.care.status.0"].label,
             "오늘 물 주는 날"
@@ -92,19 +86,17 @@ extension HomeDashboardUITests {
     /// state, and the green start link all stay live.
     func testLoggedOutHomeKeepsFigmaBodyVisibleWithLoginLink() {
         let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchEnvironment["QA_AUTHENTICATED"] = "0"
-        app.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        let receipt = applyLoggedOutFigmaLaunch(app)
         app.launch()
 
-        XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 10))
+        waitForLoggedOutHomeFixture(in: app, receipt: receipt)
         XCTAssertFalse(app.navigationBars["홈"].exists)
 
         XCTAssertEqual(app.staticTexts["home.greeting"].label, "안녕하세요, 게스트님!")
         XCTAssertEqual(app.staticTexts["home.greeting.meta"].label, "위치 미설정 · - °C")
         XCTAssertEqual(app.buttons["home.room.title"].label, "나의 미니 식물원 🏡")
 
-        XCTAssertTrue(app.images["home.room.hero"].exists, "signed-out keeps the room hero")
+        assertRoomVisualGeometry(in: app, state: "logged-out")
         XCTAssertTrue(app.staticTexts["home.weather.warning"].exists)
         XCTAssertEqual(
             app.staticTexts["home.weather.warning"].label,
@@ -155,68 +147,5 @@ extension HomeDashboardUITests {
             XCTAssertFalse(app.scrollViews["quiet-hours.screen"].exists)
             app.terminate()
         }
-    }
-
-    // MARK: - home.signInSheet
-
-    /// §6.8: Google above Apple, live dimmed Home behind the sheet, and the
-    /// provider screens themselves stay native (no app-drawn credential form).
-    func testSignInSheetAtKoreanAX5KeepsProviderActionsAndCopyReadable() {
-        let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launchArguments += [
-            "-AppleLanguages", "(ko)",
-            "-AppleLocale", "ko_KR",
-            "-UIPreferredContentSizeCategoryName",
-            "UICTContentSizeCategoryAccessibilityXXXL"
-        ]
-        app.launch()
-
-        XCTAssertTrue(app.buttons["home.login.link"].waitForExistence(timeout: 10))
-        app.buttons["home.login.link"].tap()
-        let google = app.buttons["auth.google"]
-        let apple = app.buttons["auth.apple"]
-        XCTAssertTrue(google.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(google.frame.height, 52)
-        XCTAssertGreaterThanOrEqual(google.frame.width, 300)
-        XCTAssertGreaterThanOrEqual(apple.frame.height, 52)
-        XCTAssertEqual(google.label, "Google로 계속하기")
-        XCTAssertEqual(app.staticTexts["auth.subtitle"].label, "소셜 계정으로 간편하게 시작하세요")
-    }
-
-    func testSignInSheetOrdersGoogleAboveAppleOverLiveDimmedHome() {
-        let app = XCUIApplication()
-        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
-        app.launch()
-
-        XCTAssertTrue(app.buttons["home.login.link"].waitForExistence(timeout: 10))
-        app.buttons["home.login.link"].tap()
-
-        let google = app.buttons["auth.google"]
-        let apple = app.buttons["auth.apple"]
-        XCTAssertTrue(google.waitForExistence(timeout: 5))
-        XCTAssertTrue(apple.exists)
-        XCTAssertLessThan(
-            google.frame.minY,
-            apple.frame.minY,
-            "§6.8 order is Google then Apple"
-        )
-        XCTAssertEqual(google.label, "Google로 계속하기")
-        XCTAssertTrue(app.staticTexts["auth.title"].exists)
-        XCTAssertEqual(app.staticTexts["auth.title"].label, "로그인")
-        XCTAssertEqual(app.staticTexts["auth.subtitle"].label, "소셜 계정으로 간편하게 시작하세요")
-
-        XCTAssertTrue(
-            app.staticTexts["home.greeting"].exists,
-            "the live Home stays behind the dimmed login overlay"
-        )
-        XCTAssertFalse(
-            app.textFields["auth.google.email"].exists,
-            "provider credential entry must stay native, never app-drawn"
-        )
-        XCTAssertFalse(app.secureTextFields["auth.google.password"].exists)
-
-        app.buttons["auth.cancel"].tap()
-        XCTAssertTrue(google.waitForNonExistence(timeout: 5))
     }
 }

@@ -38,13 +38,18 @@ struct MiniHomeEditorStatusStrip: View {
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .accessibilityIdentifier("minihome.save-error")
-        case let .conflicted(serverRevision):
-            Button("충돌 해결 · 서버 \(serverRevision)판", action: resolveConflict)
+        case let .conflicted(latestRevision):
+            Button("충돌 해결 · 저장본 \(latestRevision)판", action: resolveConflict)
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.accent.color)
                 .frame(minHeight: PlanteriorControl.minimumTarget)
                 .accessibilityIdentifier("minihome.conflict")
-        case .idle, .saved:
+        case .loadFailed:
+            Text("저장본을 새로 불러오지 못했어요. 확인된 저장본과 초안은 유지돼요.")
+                .font(PlanteriorTypography.supporting)
+                .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                .accessibilityIdentifier("minihome.load-error")
+        case .idle, .mounting, .refreshing, .saving, .saved:
             EmptyView()
         }
     }

@@ -4,7 +4,16 @@
 DerivedData/
 *.xcarchive
 *.ipa
+*.py[cod]
+__pycache__/
 .omo/evidence/
 .omo/senpi-task/
 .omo/start-work/
 .omo/ulw-loop/
+/final-remediation-round-8/
+/final-reviews-v6/
+/todo17-verify/
+/ui-failure-fixes/
+/ios/build/
+/ios/ios/
+/firebase-backend/pubsub-debug.log

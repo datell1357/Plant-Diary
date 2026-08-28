@@ -4,7 +4,7 @@ import Testing
 @MainActor
 struct InventoryRepositoryAccountTests {
     @Test
-    func accountRemountRestoresOnlyThatAccountsInventory() throws {
+    func accountRemountRestoresOnlyThatAccountsInventory() async throws {
         let fixture = try InventoryRepositoryFixture()
         let repository = InventoryRepository(
             defaults: fixture.defaults,
@@ -15,14 +15,14 @@ struct InventoryRepositoryAccountTests {
         repository.mount(accountID: fixture.accountA)
         repository.replaceFixture(catalog: [item], ownedItems: [])
         #expect(
-            repository.acquire(
+            await repository.acquire(
                 itemID: item.id,
                 metConditions: []
             ) == .acquired
         )
 
         repository.mount(accountID: fixture.accountB)
-        #expect(repository.catalog.isEmpty)
+        #expect(repository.catalog.map(\.id) == InventoryCatalog.items().map(\.id))
         #expect(repository.ownedItems.isEmpty)
         repository.replaceFixture(catalog: [item], ownedItems: [])
 

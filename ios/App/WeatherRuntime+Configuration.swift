@@ -27,16 +27,47 @@ extension WeatherRuntime {
             defaults.set(normalized, forKey: manualRegionStorageKey)
         } else {
             defaults.removeObject(forKey: manualRegionStorageKey)
+            let selection = WeatherRegionSelection(
+                authorization: authorization,
+                manualRegionCode: nil,
+                locationRegionCode: locationRegionCode
+            )
+            if selection.effectiveRegionCode == nil {
+                clearUnavailableRegionState()
+            }
         }
+    }
+
+    static func prepareSharedAccountRemount(accountID: String?) {
+        WeatherAccountScopeCoordinator.shared.prepareForMount(
+            accountID: accountID
+        )
     }
 
     func mount(accountID: String?) {
         let nextScope = accountID ?? "signed-out"
-        guard accountScopeID != nextScope else {
+        let nextIdentity = accountCoordinator.prepareForMount(
+            accountID: accountID
+        )
+        guard
+            accountScopeID != nextScope ||
+            mountedAccountIdentity != nextIdentity
+        else {
+            if !alertStore.isMounted(accountID: nextScope) {
+                alertStore.mount(accountID: accountID)
+            }
+            reloadAlertPreferences()
             return
         }
-        prepareForAccountRemount()
+        let requiresRemount =
+            mountedAccountIdentity != nil || accountScopeID != nextScope
+        if requiresRemount {
+            prepareForAccountRemount()
+        }
         accountScopeID = nextScope
+        mountedAccountIdentity = nextIdentity
+        alertStore.mount(accountID: accountID)
+        reloadAlertPreferences()
     }
 
     static var initialAccountScopeID: String {
@@ -107,7 +138,11 @@ extension WeatherRuntime {
         #if DEBUG
             return QAWeatherRepository(processInfo: .processInfo)
         #else
-            return UnavailableWeatherRepository()
+            return WeatherRepositoryFactory.make(
+                baseURLString: Bundle.main.object(
+                    forInfoDictionaryKey: "PLAN_OPEN_WEATHER_PROXY_BASE_URL"
+                ) as? String
+            )
         #endif
     }
 
