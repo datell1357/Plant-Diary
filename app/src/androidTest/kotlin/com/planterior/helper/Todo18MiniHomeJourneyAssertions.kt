@@ -62,19 +62,33 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
     )
 
     lateinit var saveAttempt: Todo18BoundaryEvent
-    rendered.awaitMiniHome(
-        matches = {
-            (it.state as? MiniHomeUiState.Editing)?.saveState is MiniHomeSaveState.Failed
-        },
-        trigger = {
-            saveAttempt =
-                events.awaitBoundary("mini-home-save-attempt") {
-                    compose.onNodeWithTag(MiniHomeTestTags.SAVE).performClick()
-                }
-        },
-    )
-    compose.onNodeWithTag(MiniHomeTestTags.SAVE_FAILURE).assertIsDisplayed()
-    compose.onNodeWithTag(MiniHomeTestTags.RETRY).assertIsDisplayed()
+    Todo18IntegratedActionDiagnosticCapture(
+            runtime,
+            "offline-mini-home-save",
+            Todo18IntegratedActionKind.MINI_HOME_SAVE,
+        )
+        .run { action ->
+            rendered.awaitMiniHome(
+                matches = {
+                    (it.state as? MiniHomeUiState.Editing)?.saveState is MiniHomeSaveState.Failed
+                },
+                trigger = {
+                    saveAttempt =
+                        events.awaitBoundary("mini-home-save-attempt") {
+                            val editing =
+                                requireNotNull(
+                                    runtime.renderedStateSink.currentDisplayedMiniHomeState()?.state
+                                        as? MiniHomeUiState.Editing
+                                )
+                            assertMiniHomeSaveActionNode(editing.operationId)
+                            compose.onNodeWithTag(MiniHomeTestTags.SAVE).performClick()
+                        }
+                    action.recordBoundaryDelivery()
+                },
+            )
+            compose.onNodeWithTag(MiniHomeTestTags.SAVE_FAILURE).assertIsDisplayed()
+            compose.onNodeWithTag(MiniHomeTestTags.RETRY).assertIsDisplayed()
+        }
     val frozen = runtime.boundary.miniHomeSaveRequests.single().operationId
     assertEquals(frozen.value, saveAttempt.identity)
     assertNotNull(
@@ -149,19 +163,33 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDra
         trigger = { compose.onNodeWithTag(MiniHomeTestTags.plant(plantId)).performClick() },
     )
     lateinit var saveAttempt: Todo18BoundaryEvent
-    rendered.awaitMiniHome(
-        matches = {
-            (it.state as? MiniHomeUiState.Editing)?.saveState is MiniHomeSaveState.Conflict
-        },
-        trigger = {
-            saveAttempt =
-                events.awaitBoundary("mini-home-save-attempt") {
-                    compose.onNodeWithTag(MiniHomeTestTags.SAVE).performClick()
-                }
-        },
-    )
-    compose.onNodeWithTag(MiniHomeTestTags.CONFLICT).assertIsDisplayed()
-    compose.onNodeWithTag(MiniHomeTestTags.RETRY).assertIsDisplayed()
+    Todo18IntegratedActionDiagnosticCapture(
+            runtime,
+            "conflict-mini-home-save",
+            Todo18IntegratedActionKind.MINI_HOME_SAVE,
+        )
+        .run { action ->
+            rendered.awaitMiniHome(
+                matches = {
+                    (it.state as? MiniHomeUiState.Editing)?.saveState is MiniHomeSaveState.Conflict
+                },
+                trigger = {
+                    saveAttempt =
+                        events.awaitBoundary("mini-home-save-attempt") {
+                            val editing =
+                                requireNotNull(
+                                    runtime.renderedStateSink.currentDisplayedMiniHomeState()?.state
+                                        as? MiniHomeUiState.Editing
+                                )
+                            assertMiniHomeSaveActionNode(editing.operationId)
+                            compose.onNodeWithTag(MiniHomeTestTags.SAVE).performClick()
+                        }
+                    action.recordBoundaryDelivery()
+                },
+            )
+            compose.onNodeWithTag(MiniHomeTestTags.CONFLICT).assertIsDisplayed()
+            compose.onNodeWithTag(MiniHomeTestTags.RETRY).assertIsDisplayed()
+        }
     assertEquals(1, runtime.boundary.miniHomeSaveRequests.size)
     val operationId = runtime.boundary.miniHomeSaveRequests.single().operationId
     assertEquals(operationId.value, saveAttempt.identity)

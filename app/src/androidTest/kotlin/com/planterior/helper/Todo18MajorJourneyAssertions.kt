@@ -28,11 +28,22 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
     events.navigateTo(PlanteriorRoute.WateringConfirmation(plantId)) {
         compose.onNodeWithTag(WateringTestTags.RECORD).performScrollTo().performClick()
     }
-    events.awaitBoundary("watering-receipt") {
-        compose.onNodeWithTag(WateringTestTags.CONFIRM).performScrollTo().performClick()
-    }
-    compose.waitForIdle()
-    compose.onNodeWithTag(WateringTestTags.RESULT).assertIsDisplayed()
+    Todo18IntegratedActionDiagnosticCapture(
+            runtime,
+            "registration-watering-confirm",
+            Todo18IntegratedActionKind.WATERING_CONFIRM,
+        )
+        .run { action ->
+            events
+                .awaitBoundary("watering-receipt") {
+                    compose.onNodeWithTag(WateringTestTags.CONFIRM).performScrollTo()
+                    assertWateringConfirmActionNode(PersonalPlantId(plantId))
+                    compose.onNodeWithTag(WateringTestTags.CONFIRM).performClick()
+                }
+                .also { action.recordBoundaryDelivery() }
+            compose.waitForIdle()
+            compose.onNodeWithTag(WateringTestTags.RESULT).assertIsDisplayed()
+        }
     assertNotNull(
         runBlocking {
             runtime.database

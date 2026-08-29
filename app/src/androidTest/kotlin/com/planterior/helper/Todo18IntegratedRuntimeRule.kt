@@ -41,6 +41,10 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
         private set
 
     internal val renderedStateSink = Todo18RenderedStateSink()
+    private val actionDiagnostics = Todo18IntegratedActionDiagnostics()
+    internal val actionRecorder: Todo18IntegratedActionRecorder
+        get() = actionDiagnostics.recorder
+
     internal lateinit var miniHomeLoadDiagnostics: Todo18MiniHomeLoadDiagnosticRecorder
         private set
 
@@ -110,83 +114,95 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
         }
 
     override fun before() {
-        priorOverridePresent = todo18DebugRuntimeDependencyOverrides() != null
-        priorActivityCount = currentMainActivityCount()
-        if (priorOverridePresent) Todo18DebugRuntimeDependencies.clear()
-        application = ApplicationProvider.getApplicationContext()
-        application.registerActivityLifecycleCallbacks(activityCallbacks)
-        val shared = requireNotNull(application.repositoryRuntimeOrNull())
-        database = shared.database
-        database.clearAllTables()
-        boundary = Todo18Scenario(AccountId(accountUid))
-        miniHomeLoadDiagnostics =
-            Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)
+        actionDiagnostics.install()
+        try {
+            priorOverridePresent = todo18DebugRuntimeDependencyOverrides() != null
+            priorActivityCount = currentMainActivityCount()
+            if (priorOverridePresent) Todo18DebugRuntimeDependencies.clear()
+            application = ApplicationProvider.getApplicationContext()
+            application.registerActivityLifecycleCallbacks(activityCallbacks)
+            val shared = requireNotNull(application.repositoryRuntimeOrNull())
+            database = shared.database
+            database.clearAllTables()
+            boundary = Todo18Scenario(AccountId(accountUid))
+            miniHomeLoadDiagnostics =
+                Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)
 
-        val plants = Todo18PlantRepositoryFixture(boundary)
-        val registration =
-            Todo18RegistrationCommitDiagnosticRepository(
-                FirebaseRegistrationRepository(database, plants, plants, boundary::now),
-                renderedStateSink::onRegistrationCommitRepositoryEvent,
-            )
-        val collection = FirebaseCollectionRepository(database, plants, plants, boundary::now)
-        val miniHomeDelegate =
-            FirebaseMiniHomeRepository(
-                database,
-                Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics),
-                boundary::now,
-                beforePublicationRead = {
-                    miniHomeLoadDiagnostics.recordCurrent(
-                        Todo18MiniHomeLoadDiagnostic.PublicationReadEntered
-                    )
-                },
-            )
-        val miniHome =
-            Todo18MiniHomeLoadDiagnosticRepository(
-                delegate = miniHomeDelegate,
-                diagnostics = miniHomeLoadDiagnostics,
-            )
-        val inventory =
-            FirebaseInventoryRepository(
-                database,
-                Todo18InventoryRepositoryFixture(boundary),
-                boundary::now,
-            )
-        val watering =
-            OutboxWateringRepository(
-                database,
-                CollectionWateringPreparationSource(collection),
-                plants,
-                plants,
-                boundary::now,
-            )
+            val plants = Todo18PlantRepositoryFixture(boundary)
+            val registration =
+                Todo18RegistrationCommitDiagnosticRepository(
+                    FirebaseRegistrationRepository(database, plants, plants, boundary::now),
+                    renderedStateSink::onRegistrationCommitRepositoryEvent,
+                )
+            val collection = FirebaseCollectionRepository(database, plants, plants, boundary::now)
+            val miniHomeDelegate =
+                FirebaseMiniHomeRepository(
+                    database,
+                    Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics),
+                    boundary::now,
+                    beforePublicationRead = {
+                        miniHomeLoadDiagnostics.recordCurrent(
+                            Todo18MiniHomeLoadDiagnostic.PublicationReadEntered
+                        )
+                    },
+                )
+            val miniHome =
+                Todo18MiniHomeLoadDiagnosticRepository(
+                    delegate = miniHomeDelegate,
+                    diagnostics = miniHomeLoadDiagnostics,
+                )
+            val inventory =
+                FirebaseInventoryRepository(
+                    database,
+                    Todo18InventoryRepositoryFixture(boundary),
+                    boundary::now,
+                )
+            val watering =
+                OutboxWateringRepository(
+                    database,
+                    CollectionWateringPreparationSource(collection),
+                    plants,
+                    plants,
+                    boundary::now,
+                )
 
-        Todo18DebugRuntimeDependencies.install(
-            AuthRuntimeDependencyOverrides(
-                registrationRepository = registration,
-                collectionRepository = collection,
-                miniHomeRepository = miniHome,
-                miniHomeShareRepository = Todo18ShareRepositoryFixture(miniHome, boundary),
-                inventoryRepository = inventory,
-                wateringRepository = watering,
-                weatherRepository = Todo18WeatherRepositoryFixture(boundary),
-                weatherPermissionCapabilities = Todo18WeatherCapabilityStore(),
-                collectionThumbnailLoader = PlaceholderPlantThumbnailLoader,
-                catalogMediaLoader = PlaceholderCatalogMediaLoader,
-                accountDeletionDependencies =
-                    Todo18AccountDeletionRepositoryFixture(boundary).dependencies,
-                renderedStateSink = renderedStateSink,
+            Todo18DebugRuntimeDependencies.install(
+                AuthRuntimeDependencyOverrides(
+                    registrationRepository = registration,
+                    collectionRepository = collection,
+                    miniHomeRepository = miniHome,
+                    miniHomeShareRepository = Todo18ShareRepositoryFixture(miniHome, boundary),
+                    inventoryRepository = inventory,
+                    wateringRepository = watering,
+                    weatherRepository = Todo18WeatherRepositoryFixture(boundary),
+                    weatherPermissionCapabilities = Todo18WeatherCapabilityStore(),
+                    collectionThumbnailLoader = PlaceholderPlantThumbnailLoader,
+                    catalogMediaLoader = PlaceholderCatalogMediaLoader,
+                    accountDeletionDependencies =
+                        Todo18AccountDeletionRepositoryFixture(boundary).dependencies,
+                    renderedStateSink = renderedStateSink,
+                )
             )
-        )
+        } catch (failure: Throwable) {
+            actionDiagnostics.close()
+            throw failure
+        }
     }
 
     override fun after() {
-        if (::application.isInitialized) {
-            application.unregisterActivityLifecycleCallbacks(activityCallbacks)
+        try {
+            if (::application.isInitialized) {
+                application.unregisterActivityLifecycleCallbacks(activityCallbacks)
+            }
+            Todo18DebugCameraBoundary.clear()
+            Todo18DebugRuntimeDependencies.clear()
+            if (::database.isInitialized && database.isOpen) database.clearAllTables()
+        } finally {
+            actionDiagnostics.close()
         }
-        Todo18DebugCameraBoundary.clear()
-        Todo18DebugRuntimeDependencies.clear()
-        if (::database.isInitialized && database.isOpen) database.clearAllTables()
     }
+
+    internal fun actionListenerCount(): Int = actionDiagnostics.listenerCount()
 
     private fun currentMainActivityCount(): Int {
         var count = -1
