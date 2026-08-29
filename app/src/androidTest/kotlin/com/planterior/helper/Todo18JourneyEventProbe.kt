@@ -59,11 +59,16 @@ internal class Todo18JourneyEventProbe(
     fun awaitBoundary(kind: String, trigger: () -> Unit): Todo18BoundaryEvent =
         boundarySubscription(kind).use { subscription ->
             subscription.arm()
-            trigger()
-            subscription.await(
-                EVENT_TIMEOUT_MILLIS,
-                TimeUnit.MILLISECONDS,
-                "Todo18 boundary $kind",
+            triggerSettleAndAwait(
+                trigger = { subscription.trigger(trigger) },
+                settle = compose::waitForIdle,
+                await = {
+                    subscription.await(
+                        EVENT_TIMEOUT_MILLIS,
+                        TimeUnit.MILLISECONDS,
+                        "Todo18 boundary $kind",
+                    )
+                },
             )
         }
 

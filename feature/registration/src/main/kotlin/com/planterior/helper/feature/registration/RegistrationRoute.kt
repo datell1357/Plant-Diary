@@ -45,6 +45,8 @@ fun RegistrationRoute(
     onCompleted: (PersonalPlantId) -> Unit,
     onCancel: () -> Unit,
     authOwnership: RegistrationAuthOwnership = RegistrationAuthOwnership.Unknown,
+    onStateObserved: (RegistrationUiState) -> Unit = {},
+    diagnosticObserver: ((RegistrationDiagnosticEvent) -> Unit)? = null,
     productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
     val model =
@@ -59,6 +61,7 @@ fun RegistrationRoute(
                                 repository,
                                 savedStateHandle = createSavedStateHandle(),
                                 productEventRecorder = productEventRecorder,
+                                diagnosticObserver = diagnosticObserver,
                             )
                         )
                     }
@@ -72,6 +75,8 @@ fun RegistrationRoute(
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOpenExisting by rememberUpdatedState(onOpenExisting)
     val currentCompleted by rememberUpdatedState(onCompleted)
+    val currentStateObserved by rememberUpdatedState(onStateObserved)
+    val currentDiagnosticObserver by rememberUpdatedState(diagnosticObserver)
     val collector = remember(controller) { controller.attachNavigationCollector() }
     DisposableEffect(controller, collector) {
         onDispose { controller.detachNavigationCollector(collector) }
@@ -104,6 +109,17 @@ fun RegistrationRoute(
             }
         }
     LaunchedEffect(controller) { controller.start() }
+    LaunchedEffect(controller) {
+        controller.state.collect { state ->
+            publishRegistrationRouteState(
+                controller.diagnosticIdentity,
+                state,
+                currentDiagnosticObserver,
+            ) {
+                currentStateObserved(state)
+            }
+        }
+    }
     LaunchedEffect(
         controller,
         collector,
@@ -133,7 +149,9 @@ fun RegistrationRoute(
         onName = controller::changeName,
         onDate = controller::changeLastWateredDate,
         onSearch = { scope.launch { controller.search(it) } },
-        onSelectContent = controller::selectContent,
+        onSelectContent = { content ->
+            performRegistrationSelectContent(controller, content, currentDiagnosticObserver)
+        },
         onUseIdentificationPhoto = { selected ->
             controller.setPhoto(
                 if (selected && requestId != null)
@@ -142,7 +160,9 @@ fun RegistrationRoute(
             )
         },
         onPickPhoto = { photoPicker.launch("image/*") },
-        onSubmit = { scope.launch { controller.submit() } },
+        onSubmit = {
+            scope.launch { performRegistrationSubmit(controller, currentDiagnosticObserver) }
+        },
         onOpenExisting = controller::openExisting,
         onAddAnother = { scope.launch { controller.addAnother() } },
         onCancelDuplicate = onCancel,

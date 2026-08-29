@@ -53,6 +53,13 @@ class OutboxWateringRepository(
     }
 
     override suspend fun complete(request: WateringCompletionRequest): WateringCompletionResult {
+        WateringConfirmActionDiagnostics.observe(
+            WateringConfirmActionObservation(
+                WateringConfirmActionStage.REPOSITORY_COMPLETE_ENTRY,
+                request.plantId,
+                request.operationId,
+            )
+        )
         if (activeAccountOrNull() != request.accountId) return WateringCompletionResult.Forbidden
         if (request.wateredDate > now().atZone(request.accountZone).toLocalDate()) {
             return WateringCompletionResult.Failed(WateringCompletionFailure.INCONSISTENT_RECEIPT)
@@ -110,6 +117,13 @@ class OutboxWateringRepository(
             } catch (_: Exception) {
                 RemoteMutationResult.Failed("UNAVAILABLE")
             }
+        WateringConfirmActionDiagnostics.observe(
+            WateringConfirmActionObservation(
+                WateringConfirmActionStage.APPLY_RESULT,
+                request.plantId,
+                request.operationId,
+            )
+        )
         val revision =
             when (mutation) {
                 is RemoteMutationResult.Applied -> mutation.revision
@@ -156,6 +170,13 @@ class OutboxWateringRepository(
         missingFailure: WateringCompletionFailure,
     ): WateringCompletionResult {
         if (!isActive(request.accountId)) return WateringCompletionResult.Forbidden
+        WateringConfirmActionDiagnostics.observe(
+            WateringConfirmActionObservation(
+                WateringConfirmActionStage.RECEIPT_LOOKUP_ENTRY,
+                request.plantId,
+                request.operationId,
+            )
+        )
         val lookup =
             try {
                 remote.receipt(request.accountId, request.plantId, request.operationId)

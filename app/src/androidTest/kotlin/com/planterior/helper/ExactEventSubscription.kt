@@ -1,5 +1,8 @@
 package com.planterior.helper
 
+import com.planterior.helper.diagnostic.Todo18ExactEventObservation
+import com.planterior.helper.diagnostic.Todo18ExactEventObserver
+import com.planterior.helper.diagnostic.Todo18ExactEventPhase
 import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -866,6 +869,8 @@ internal class ExactEventSubscription<T>(
     private val classify: (T) -> ExactEventValueCategory = { ExactEventValueCategory.GENERIC },
     subscribe: ((T) -> Unit) -> ExactEventRegistration,
     private val stateObserver: ExactEventStateObserver = ExactEventStateObserver.NONE,
+    private val diagnosticObserver: Todo18ExactEventObserver? = null,
+    private val diagnosticSequence: (T) -> Long? = { null },
 ) : AutoCloseable {
     private val lock = Any()
     private val behavior = newBehaviorHandle(BehaviorComponent.SUBSCRIPTION)
@@ -892,6 +897,7 @@ internal class ExactEventSubscription<T>(
                 BehaviorTransition.SUBSCRIBED,
                 BehaviorPayload.Facts(phase = phase.behaviorPhase()),
             )
+            safeObserveExactEvent(Todo18ExactEventPhase.SUBSCRIBED)
         } catch (failure: Throwable) {
             sourceFailure = failure
             eventOrCancellation.countDown()
@@ -919,6 +925,21 @@ internal class ExactEventSubscription<T>(
                 ),
             )
         }
+        safeObserveExactEvent(Todo18ExactEventPhase.ARMED)
+    }
+
+    fun trigger(action: () -> Unit) {
+        safeObserveExactEvent(Todo18ExactEventPhase.TRIGGER_BEGIN)
+        try {
+            action()
+        } catch (failure: AssertionError) {
+            safeObserveExactEvent(Todo18ExactEventPhase.TRIGGER_FAILURE)
+            throw failure
+        } catch (failure: Exception) {
+            safeObserveExactEvent(Todo18ExactEventPhase.TRIGGER_FAILURE)
+            throw failure
+        }
+        safeObserveExactEvent(Todo18ExactEventPhase.TRIGGER_RETURN)
     }
 
     /** 정확한 이벤트 하나와 listener detach/drain terminal을 제한 시간 안에 기다린다. */
@@ -967,6 +988,14 @@ internal class ExactEventSubscription<T>(
                 selected
             }
         stateObserver.closeSelected(reason.name)
+        safeObserveExactEvent(
+            if (reason == CloseReason.SUCCESS) {
+                Todo18ExactEventPhase.AWAIT_SUCCESS
+            } else {
+                Todo18ExactEventPhase.AWAIT_FAILURE
+            },
+            matchingCount = synchronized(lock) { matchingEventCount },
+        )
         val terminal =
             checkNotNull(
                 closeObservation(
@@ -1015,6 +1044,7 @@ internal class ExactEventSubscription<T>(
 
     private fun onEvent(value: T) {
         val valueCategory = classify(value)
+        val sourceSequence = safeDiagnosticSequence(value)
         synchronized(lock) {
             behavior.observe(
                 BehaviorTransition.EVENT_RECEIVED,
@@ -1024,6 +1054,10 @@ internal class ExactEventSubscription<T>(
                 ),
             )
         }
+        safeObserveExactEvent(
+            Todo18ExactEventPhase.EVENT_RECEIVED,
+            sourceSequence = sourceSequence,
+        )
         val matched =
             try {
                 matches(value)
@@ -1035,35 +1069,58 @@ internal class ExactEventSubscription<T>(
                         valueCategory = valueCategory,
                     ),
                 )
+                safeObserveExactEvent(
+                    Todo18ExactEventPhase.EVENT_REJECTED,
+                    sourceSequence = sourceSequence,
+                )
                 recordSourceFailure(failure)
                 return
             }
-        synchronized(lock) {
-            val observation =
-                if (!matched || (phase != Phase.ARMED && phase != Phase.CLOSING)) {
-                    EventObservation(matched, false, matchingEventCount, phase)
-                } else {
-                    matchingEventCount += 1
-                    if (matchingEventCount == 1) accepted = value
-                    EventObservation(true, true, matchingEventCount, phase)
+        safeObserveExactEvent(
+            if (matched) {
+                Todo18ExactEventPhase.PREDICATE_TRUE
+            } else {
+                Todo18ExactEventPhase.PREDICATE_FALSE
+            },
+            sourceSequence = sourceSequence,
+        )
+        val observation =
+            synchronized(lock) {
+                val observed =
+                    if (!matched || (phase != Phase.ARMED && phase != Phase.CLOSING)) {
+                        EventObservation(matched, false, matchingEventCount, phase)
+                    } else {
+                        matchingEventCount += 1
+                        if (matchingEventCount == 1) accepted = value
+                        EventObservation(true, true, matchingEventCount, phase)
+                    }
+                behavior.observe(
+                    BehaviorTransition.EVENT_CLASSIFIED,
+                    BehaviorPayload.Facts(
+                        matched = observed.matched.behaviorFlag(),
+                        accepted = observed.acceptedGeneration.behaviorFlag(),
+                        matchingCount = observed.matchingCount,
+                        phase = observed.phase.behaviorPhase(),
+                        valueCategory = valueCategory,
+                    ),
+                )
+                if (observed.acceptedGeneration && observed.matchingCount == 1) {
+                    if (awaitClaimed) {
+                        firstEventForked = behavior.enterFirstEventCallbackBranch()
+                    }
+                    eventOrCancellation.countDown()
                 }
-            behavior.observe(
-                BehaviorTransition.EVENT_CLASSIFIED,
-                BehaviorPayload.Facts(
-                    matched = observation.matched.behaviorFlag(),
-                    accepted = observation.acceptedGeneration.behaviorFlag(),
-                    matchingCount = observation.matchingCount,
-                    phase = observation.phase.behaviorPhase(),
-                    valueCategory = valueCategory,
-                ),
-            )
-            if (observation.acceptedGeneration && observation.matchingCount == 1) {
-                if (awaitClaimed) {
-                    firstEventForked = behavior.enterFirstEventCallbackBranch()
-                }
-                eventOrCancellation.countDown()
+                observed
             }
-        }
+        safeObserveExactEvent(
+            if (observation.acceptedGeneration) {
+                Todo18ExactEventPhase.EVENT_ACCEPTED
+            } else {
+                Todo18ExactEventPhase.EVENT_REJECTED
+            },
+            matchingCount = observation.matchingCount,
+            sourceSequence = sourceSequence,
+        )
     }
 
     private data class EventObservation(
@@ -1152,6 +1209,7 @@ internal class ExactEventSubscription<T>(
         }
 
         stateObserver.closeLinearized(requestedReason.name, ownsDetach)
+        if (ownsDetach) safeObserveExactEvent(Todo18ExactEventPhase.DETACH)
 
         var callerOwnsLease = false
         if (ownsDetach) {
@@ -1239,7 +1297,50 @@ internal class ExactEventSubscription<T>(
                 closed.countDown()
                 outcomeLabel(terminal)
             }
+        safeObserveExactEvent(Todo18ExactEventPhase.DRAIN)
+        safeObserveExactEvent(Todo18ExactEventPhase.FINAL_LISTENER_COUNT)
         stateObserver.terminal(terminalLabel)
+    }
+
+    private fun safeDiagnosticSequence(value: T): Long? =
+        try {
+            diagnosticSequence(value)
+        } catch (_: AssertionError) {
+            notifyDiagnosticFailure()
+            null
+        } catch (_: Exception) {
+            notifyDiagnosticFailure()
+            null
+        }
+
+    private fun safeObserveExactEvent(
+        phase: Todo18ExactEventPhase,
+        matchingCount: Int? = null,
+        sourceSequence: Long? = null,
+    ) {
+        try {
+            diagnosticObserver?.observe(
+                Todo18ExactEventObservation(
+                    phase = phase,
+                    matchingCount = matchingCount,
+                    sourceSequence = sourceSequence,
+                )
+            )
+        } catch (_: AssertionError) {
+            notifyDiagnosticFailure()
+        } catch (_: Exception) {
+            notifyDiagnosticFailure()
+        }
+    }
+
+    private fun notifyDiagnosticFailure() {
+        try {
+            diagnosticObserver?.diagnosticFailure()
+        } catch (_: AssertionError) {
+            // Diagnostic failure reporting is best-effort and cannot escape.
+        } catch (_: Exception) {
+            // Diagnostic failure reporting is best-effort and cannot escape.
+        }
     }
 
     private fun Phase.behaviorPhase(): BehaviorPhase =

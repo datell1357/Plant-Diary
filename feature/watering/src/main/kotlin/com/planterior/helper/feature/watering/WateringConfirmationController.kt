@@ -58,10 +58,38 @@ class WateringConfirmationController(
     }
 
     suspend fun confirm() {
-        when (val current = _state.value) {
+        val current = _state.value
+        val snapshot =
+            when (current) {
+                is WateringConfirmationUiState.Ready -> current.snapshot
+                is WateringConfirmationUiState.Failure -> current.snapshot
+                else -> null
+            }
+        val operationId =
+            when (current) {
+                is WateringConfirmationUiState.Ready -> current.draft.operationId
+                is WateringConfirmationUiState.Failure -> current.draft.operationId
+                else -> null
+            }
+        WateringConfirmActionDiagnostics.observe(
+            WateringConfirmActionObservation(
+                WateringConfirmActionStage.CONTROLLER_ENTRY,
+                snapshot?.plantId,
+                operationId,
+            )
+        )
+        when (current) {
             is WateringConfirmationUiState.Ready -> {
                 val validation = validate(current.draft.wateredDate, current.snapshot)
                 if (validation.error != null || validation.date == null) {
+                    WateringConfirmActionDiagnostics.observe(
+                        WateringConfirmActionObservation(
+                            WateringConfirmActionStage.VALIDATION_DECISION,
+                            current.snapshot.plantId,
+                            current.draft.operationId,
+                            WateringConfirmActionDecision.REJECTED,
+                        )
+                    )
                     _state.value =
                         current.copy(
                             validationError = validation.error,
@@ -72,6 +100,14 @@ class WateringConfirmationController(
                         )
                     return
                 }
+                WateringConfirmActionDiagnostics.observe(
+                    WateringConfirmActionObservation(
+                        WateringConfirmActionStage.VALIDATION_DECISION,
+                        current.snapshot.plantId,
+                        current.draft.operationId,
+                        WateringConfirmActionDecision.ACCEPTED,
+                    )
+                )
                 val request =
                     WateringCompletionRequest(
                         current.snapshot.accountId,
@@ -138,6 +174,13 @@ class WateringConfirmationController(
                 nextDueDate,
                 request,
             )
+        WateringConfirmActionDiagnostics.observe(
+            WateringConfirmActionObservation(
+                WateringConfirmActionStage.SAVING_PUBLICATION,
+                request.plantId,
+                request.operationId,
+            )
+        )
         val result =
             try {
                 operation(request)

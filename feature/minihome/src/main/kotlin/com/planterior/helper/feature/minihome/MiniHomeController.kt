@@ -39,6 +39,8 @@ class MiniHomeController(
     private var activeDiscard: ControllerOperationToken? = null
     private var saveGeneration = 0L
     private var activeSave: ActiveSave? = null
+    val diagnosticIdentity = MiniHomeControllerIdentity(System.identityHashCode(this))
+
     private var confirmedSave =
         MiniHomeDraftCodec.decode(savedStateHandle[CONFIRMED_SAVE_KEY])?.let {
             ConfirmedSave(
@@ -307,24 +309,34 @@ class MiniHomeController(
         transitionAuthoritativeOwner(null)
     }
 
-    fun beginEditing() {
-        val viewing = _state.value as? MiniHomeUiState.Viewing ?: return
-        val token = captureToken(editing = null, guardDraftIdentity = false)
-        val operationId = operationIdFactory()
-        val editing =
-            MiniHomeUiState.Editing(
-                viewing.committed,
-                viewing.committed,
-                viewing.plants,
-                viewing.decorations,
-                null,
-                operationId,
-                MiniHomeSaveState.Idle,
-                stale = viewing.stale,
-                lineageId = operationId,
-                owner = viewing.owner,
+    fun beginEditing(diagnosticObserver: ((MiniHomeDiagnosticEvent) -> Unit)? = null) {
+        val before = _state.value
+        val viewing = before as? MiniHomeUiState.Viewing
+        if (viewing != null) {
+            val token = captureToken(editing = null, guardDraftIdentity = false)
+            val operationId = operationIdFactory()
+            val editing =
+                MiniHomeUiState.Editing(
+                    viewing.committed,
+                    viewing.committed,
+                    viewing.plants,
+                    viewing.decorations,
+                    null,
+                    operationId,
+                    MiniHomeSaveState.Idle,
+                    stale = viewing.stale,
+                    lineageId = operationId,
+                    owner = viewing.owner,
+                )
+            setEditing(editing, token)
+        }
+        safeMiniHomeDiagnostic(diagnosticObserver) {
+            MiniHomeDiagnosticEvent.BeginEditControllerTransition(
+                diagnosticIdentity,
+                before,
+                _state.value,
             )
-        setEditing(editing, token)
+        }
     }
 
     fun rename(value: String) = updateDraft { it.copy(name = value) }
@@ -684,18 +696,67 @@ class MiniHomeController(
     }
 
     suspend fun save() {
-        val editing = _state.value as? MiniHomeUiState.Editing ?: return
+        val current = _state.value
+        val currentOperationId = (current as? MiniHomeUiState.Editing)?.operationId
+        MiniHomeSaveActionDiagnostics.observe(
+            MiniHomeSaveActionObservation(
+                MiniHomeSaveActionStage.CONTROLLER_ENTRY,
+                currentOperationId,
+            )
+        )
+        val editing = current as? MiniHomeUiState.Editing
+        if (editing == null) {
+            MiniHomeSaveActionDiagnostics.observe(
+                MiniHomeSaveActionObservation(
+                    MiniHomeSaveActionStage.GUARD_DECISION,
+                    decision = MiniHomeSaveActionDecision.REJECTED,
+                )
+            )
+            return
+        }
         if (
             editing.saveState is MiniHomeSaveState.Conflict ||
                 editing.saveState is MiniHomeSaveState.ValidationFailed ||
                 editing.saveState is MiniHomeSaveState.ReconciliationRequired ||
                 editing.saveState is MiniHomeSaveState.Saving
         ) {
+            MiniHomeSaveActionDiagnostics.observe(
+                MiniHomeSaveActionObservation(
+                    MiniHomeSaveActionStage.GUARD_DECISION,
+                    editing.operationId,
+                    MiniHomeSaveActionDecision.REJECTED,
+                )
+            )
             return
         }
         val token = captureToken(editing)
-        val activeOwner = token.owner ?: return
-        MiniHomeRequestContract.validate(editing.request(activeOwner))?.let { violation ->
+        val activeOwner = token.owner
+        if (activeOwner == null) {
+            MiniHomeSaveActionDiagnostics.observe(
+                MiniHomeSaveActionObservation(
+                    MiniHomeSaveActionStage.GUARD_DECISION,
+                    editing.operationId,
+                    MiniHomeSaveActionDecision.REJECTED,
+                )
+            )
+            return
+        }
+        MiniHomeSaveActionDiagnostics.observe(
+            MiniHomeSaveActionObservation(
+                MiniHomeSaveActionStage.GUARD_DECISION,
+                editing.operationId,
+                MiniHomeSaveActionDecision.ACCEPTED,
+            )
+        )
+        val violation = MiniHomeRequestContract.validate(editing.request(activeOwner))
+        if (violation != null) {
+            MiniHomeSaveActionDiagnostics.observe(
+                MiniHomeSaveActionObservation(
+                    MiniHomeSaveActionStage.VALIDATION_DECISION,
+                    editing.operationId,
+                    MiniHomeSaveActionDecision.REJECTED,
+                )
+            )
             setEditing(
                 editing.copy(
                     issue =
@@ -709,8 +770,21 @@ class MiniHomeController(
             )
             return
         }
+        MiniHomeSaveActionDiagnostics.observe(
+            MiniHomeSaveActionObservation(
+                MiniHomeSaveActionStage.VALIDATION_DECISION,
+                editing.operationId,
+                MiniHomeSaveActionDecision.ACCEPTED,
+            )
+        )
         val frozen = editing.copy(saveState = MiniHomeSaveState.Saving, issue = null)
         if (!setEditing(frozen, token)) return
+        MiniHomeSaveActionDiagnostics.observe(
+            MiniHomeSaveActionObservation(
+                MiniHomeSaveActionStage.SAVING_PUBLICATION,
+                frozen.operationId,
+            )
+        )
         val requestToken = captureToken(frozen)
         val tracked = registerOwnerJob(requestToken)
         if (!isCurrent(requestToken)) {

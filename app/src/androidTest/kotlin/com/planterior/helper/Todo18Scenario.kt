@@ -1,12 +1,21 @@
 package com.planterior.helper
 
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlant
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
 import com.planterior.helper.core.model.RegistrationMethod
 import com.planterior.helper.feature.collection.RemotePersonalPlant
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionDiagnostics
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionObservation
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
 import com.planterior.helper.feature.minihome.MiniHomeSaveRequest
+import com.planterior.helper.feature.watering.WateringConfirmActionDiagnostics
+import com.planterior.helper.feature.watering.WateringConfirmActionObservation
+import com.planterior.helper.feature.watering.WateringConfirmActionStage
+import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic
+import com.planterior.helper.minihome.Todo18MiniHomeLoadObservation
 import java.io.Closeable
 import java.time.Instant
 import java.time.LocalDate
@@ -26,7 +35,13 @@ enum class Todo18ShareMode {
     DELETED,
 }
 
-data class Todo18BoundaryEvent(val kind: String, val identity: String)
+data class Todo18BoundaryEvent(
+    val kind: String,
+    val identity: String,
+    val loadId: Long? = null,
+    val readId: Long? = null,
+    val diagnosticOrder: Long? = null,
+)
 
 /** Shared deterministic state and event stream for the Todo18 boundary fixtures. */
 class Todo18Scenario(val accountId: AccountId) {
@@ -50,8 +65,59 @@ class Todo18Scenario(val accountId: AccountId) {
         return Closeable { listeners -= listener }
     }
 
+    fun listenerCount(): Int = listeners.size
+
     internal fun emit(kind: String, identity: String) {
         val event = Todo18BoundaryEvent(kind, identity)
+        listeners.forEach { listener ->
+            when (kind) {
+                "mini-home-save-attempt" ->
+                    MiniHomeSaveActionDiagnostics.observe(
+                        MiniHomeSaveActionObservation(
+                            MiniHomeSaveActionStage.LISTENER_DELIVERY,
+                            OperationId(identity),
+                        )
+                    )
+                "watering-receipt" ->
+                    WateringConfirmActionDiagnostics.observe(
+                        WateringConfirmActionObservation(
+                            WateringConfirmActionStage.LISTENER_DELIVERY,
+                            operationId = OperationId(identity),
+                        )
+                    )
+            }
+            listener(event)
+        }
+    }
+
+    internal fun emitMiniHomeLoadDiagnostic(observation: Todo18MiniHomeLoadObservation) {
+        val kind =
+            when (observation.diagnostic) {
+                Todo18MiniHomeLoadDiagnostic.LoadEntered -> "load-entered"
+                Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered -> "remote-load-entered"
+                Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned -> "remote-load-returned"
+                Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> "publication-read-entered"
+                is Todo18MiniHomeLoadDiagnostic.Terminal -> "load-terminal"
+            }
+        val identity =
+            when (observation.diagnostic) {
+                Todo18MiniHomeLoadDiagnostic.LoadEntered,
+                Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered,
+                Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned,
+                Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> accountId.value
+                Todo18MiniHomeLoadDiagnostic.Ready -> "Ready"
+                Todo18MiniHomeLoadDiagnostic.Forbidden -> "Forbidden"
+                Todo18MiniHomeLoadDiagnostic.Failed -> "Failed"
+                Todo18MiniHomeLoadDiagnostic.Cancelled -> "Cancelled"
+            }
+        val event =
+            Todo18BoundaryEvent(
+                kind = kind,
+                identity = identity,
+                loadId = observation.loadId.value,
+                readId = observation.readId?.ordinal,
+                diagnosticOrder = observation.order,
+            )
         listeners.forEach { it(event) }
     }
 

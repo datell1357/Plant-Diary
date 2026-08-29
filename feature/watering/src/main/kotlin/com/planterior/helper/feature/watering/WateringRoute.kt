@@ -18,6 +18,22 @@ import kotlinx.coroutines.launch
 private class WateringConfirmationViewModel(val controller: WateringConfirmationController) :
     ViewModel()
 
+suspend fun runWateringConfirmationAction(
+    controller: WateringConfirmationController,
+    publishCompleted: () -> Unit = {},
+) {
+    val ready = controller.state.value as? WateringConfirmationUiState.Ready
+    WateringConfirmActionDiagnostics.observe(
+        WateringConfirmActionObservation(
+            WateringConfirmActionStage.COROUTINE_ENTRY,
+            ready?.snapshot?.plantId,
+            ready?.draft?.operationId,
+        )
+    )
+    controller.confirm()
+    publishCompleted()
+}
+
 @Composable
 fun WateringConfirmationRoute(
     plantId: PersonalPlantId,
@@ -49,10 +65,9 @@ fun WateringConfirmationRoute(
     val controller = model.controller
     val state by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
-    val publishCompleted = {
-        (controller.state.value as? WateringConfirmationUiState.Completed)
-            ?.receipt
-            ?.let(onCompleted)
+    val publishCompleted: () -> Unit = {
+        val receipt = (controller.state.value as? WateringConfirmationUiState.Completed)?.receipt
+        if (receipt != null) onCompleted(receipt)
     }
     LaunchedEffect(controller) { controller.start() }
     LaunchedEffect(state) { publishCompleted() }
@@ -64,10 +79,7 @@ fun WateringConfirmationRoute(
         },
         onWateredDate = controller::changeWateredDate,
         onConfirm = {
-            scope.launch {
-                controller.confirm()
-                publishCompleted()
-            }
+            scope.launch { runWateringConfirmationAction(controller, publishCompleted) }
         },
         onRetry = {
             scope.launch {

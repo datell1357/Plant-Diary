@@ -145,13 +145,13 @@ fun CameraRoute(
                                 withContext(Dispatchers.IO) {
                                     preparer.prepare(debugUri, PhotoSource.Picker)
                                 }
-                            todo18DebugPhotoPreparationFinished(
-                                debugUri,
-                                result.isSuccess,
-                            )
                             result.fold(
                                 onSuccess = controller::photoPrepared,
                                 onFailure = { controller.photoRejected(it.photoError()) },
+                            )
+                            todo18DebugPhotoPreparationFinished(
+                                debugUri,
+                                result.isSuccess,
                             )
                         }
                     }

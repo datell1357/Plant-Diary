@@ -28,6 +28,7 @@ class RegistrationController(
     private val navigationIdentityFactory: () -> String = { UUID.randomUUID().toString() },
     private val savedStateHandle: SavedStateHandle? = null,
     private val productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
+    private val diagnosticObserver: ((RegistrationDiagnosticEvent) -> Unit)? = null,
 ) {
     private val restored = RegistrationSavedState.restore(savedStateHandle)
     private var session: RegistrationSession? = restored?.session
@@ -53,6 +54,7 @@ class RegistrationController(
     private var activeNavigationCollector: RegistrationNavigationCollector? = null
     private var searchGeneration = 0L
     private var registrationCompletionRecorded = restored?.state is RegistrationUiState.Completed
+    val diagnosticIdentity = RegistrationControllerIdentity(System.identityHashCode(this))
 
     init {
         saveState()
@@ -110,12 +112,26 @@ class RegistrationController(
         it.copy(lastWateredDate = value?.takeIf(String::isNotBlank))
     }
 
-    fun selectContent(content: RegistrationContent) = updateDraft {
-        it.copy(
-            name = content.name,
-            selectedContent = content,
-            duplicateApprovalFor = null,
-        )
+    fun selectContent(
+        content: RegistrationContent,
+        diagnosticObserver: ((RegistrationDiagnosticEvent) -> Unit)? = null,
+    ) {
+        val before = _state.value
+        updateDraft {
+            it.copy(
+                name = content.name,
+                selectedContent = content,
+                duplicateApprovalFor = null,
+            )
+        }
+        safeRegistrationDiagnostic(diagnosticObserver) {
+            RegistrationDiagnosticEvent.SelectContentControllerTransition(
+                diagnosticIdentity,
+                content.id,
+                before,
+                _state.value,
+            )
+        }
     }
 
     fun setPhoto(photo: RepresentativePhoto?) = updateDraft {
@@ -156,27 +172,74 @@ class RegistrationController(
     }
 
     suspend fun submit() {
-        val current = _state.value as? RegistrationUiState.Editing ?: return
+        val state = _state.value
+        reportDiagnostic {
+            RegistrationDiagnosticEvent.SubmitControllerEntry(diagnosticIdentity, state)
+        }
+        val current =
+            state as? RegistrationUiState.Editing
+                ?: run {
+                    reportDiagnostic {
+                        RegistrationDiagnosticEvent.SubmitValidation(
+                            diagnosticIdentity,
+                            RegistrationSubmitValidationOutcome.NotEditable,
+                        )
+                    }
+                    return
+                }
         val loaded = session
         if (loaded == null) {
+            reportDiagnostic {
+                RegistrationDiagnosticEvent.SubmitValidation(
+                    diagnosticIdentity,
+                    RegistrationSubmitValidationOutcome.SessionUnavailable,
+                )
+            }
             setState(RegistrationUiState.SessionFailed(RegistrationFailure.PROFILE_UNAVAILABLE))
             return
         }
         val (normalized, errors) = validate(current.draft, loaded)
         currentDraft = normalized
         if (errors.isNotEmpty()) {
+            reportDiagnostic {
+                RegistrationDiagnosticEvent.SubmitValidation(
+                    diagnosticIdentity,
+                    RegistrationSubmitValidationOutcome.Rejected(errors),
+                )
+            }
             setState(current.copy(draft = normalized, errors = errors, failure = null))
             return
         }
+        reportDiagnostic {
+            RegistrationDiagnosticEvent.SubmitValidation(
+                diagnosticIdentity,
+                RegistrationSubmitValidationOutcome.Accepted,
+            )
+        }
         val contentId = normalized.selectedContent?.id
         if (contentId != null && normalized.duplicateApprovalFor != contentId) {
+            reportDiagnostic {
+                RegistrationDiagnosticEvent.DuplicateLookupBegin(diagnosticIdentity, contentId)
+            }
             setState(RegistrationUiState.CheckingDuplicates(normalized))
             val duplicates =
                 try {
                     repository.findDuplicates(loaded.accountId, contentId, normalized.plantId)
                 } catch (error: CancellationException) {
+                    reportDiagnostic {
+                        RegistrationDiagnosticEvent.DuplicateLookupResult(
+                            diagnosticIdentity,
+                            RegistrationDuplicateLookupOutcome.Cancelled,
+                        )
+                    }
                     throw error
                 } catch (_: Exception) {
+                    reportDiagnostic {
+                        RegistrationDiagnosticEvent.DuplicateLookupResult(
+                            diagnosticIdentity,
+                            RegistrationDuplicateLookupOutcome.Failed,
+                        )
+                    }
                     setState(
                         RegistrationUiState.Editing(
                             normalized,
@@ -185,6 +248,13 @@ class RegistrationController(
                     )
                     return
                 }
+            reportDiagnostic {
+                RegistrationDiagnosticEvent.DuplicateLookupResult(
+                    diagnosticIdentity,
+                    if (duplicates.isEmpty()) RegistrationDuplicateLookupOutcome.Empty
+                    else RegistrationDuplicateLookupOutcome.Found(duplicates.size),
+                )
+            }
             if (duplicates.isNotEmpty()) {
                 setState(RegistrationUiState.DuplicateFound(normalized, duplicates))
                 return
@@ -238,6 +308,13 @@ class RegistrationController(
                         saveState()
                         return@synchronized false
                     }
+            }
+            reportDiagnostic {
+                RegistrationDiagnosticEvent.NavigationDispatched(
+                    diagnosticIdentity,
+                    event.identity,
+                    event.plantId,
+                )
             }
             navigate(event)
             _navigationEvent.value = null
@@ -346,6 +423,12 @@ class RegistrationController(
         when (result) {
             is RegistrationAttempt.Completed -> {
                 _state.value = RegistrationUiState.Completed(result.plant)
+                reportDiagnostic {
+                    RegistrationDiagnosticEvent.CompletedPublication(
+                        diagnosticIdentity,
+                        result.plant.id,
+                    )
+                }
                 if (!registrationCompletionRecorded) {
                     registrationCompletionRecorded = true
                     if (submission.method == RegistrationMethod.IDENTIFICATION_EDITED) {
@@ -384,8 +467,19 @@ class RegistrationController(
                     plantId = plantId,
                     kind = kind,
                 )
+            reportDiagnostic {
+                RegistrationDiagnosticEvent.NavigationEnqueued(
+                    diagnosticIdentity,
+                    checkNotNull(_navigationEvent.value).identity,
+                    plantId,
+                )
+            }
             saveState()
         }
+    }
+
+    private fun reportDiagnostic(event: () -> RegistrationDiagnosticEvent) {
+        safeRegistrationDiagnostic(diagnosticObserver, event)
     }
 
     private fun updateDraft(transform: (RegistrationDraft) -> RegistrationDraft) {

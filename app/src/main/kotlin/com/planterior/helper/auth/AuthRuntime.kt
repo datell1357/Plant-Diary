@@ -89,6 +89,7 @@ private constructor(
     val analyticsRuntime: AnalyticsRuntime?,
     val accountDeletionRuntime: AppAccountDeletionRuntime?,
     val accountDeletionDependencies: AccountDeletionDependencies?,
+    val renderedStateSink: RenderedStateSink?,
 ) {
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -226,6 +227,7 @@ private constructor(
                         shared.analyticsRuntime,
                     ),
                     null,
+                    null,
                 )
                 .withTodo18DebugOverrides()
         }
@@ -260,6 +262,7 @@ private constructor(
                 accountDeletionRuntime = accountDeletionRuntime,
                 accountDeletionDependencies =
                     overrides.accountDeletionDependencies ?: accountDeletionDependencies,
+                renderedStateSink = overrides.renderedStateSink,
             )
         }
 
@@ -335,6 +338,7 @@ private constructor(
                 null,
                 PlaceholderPlantThumbnailLoader,
                 PlaceholderCatalogMediaLoader,
+                null,
                 null,
                 null,
                 null,

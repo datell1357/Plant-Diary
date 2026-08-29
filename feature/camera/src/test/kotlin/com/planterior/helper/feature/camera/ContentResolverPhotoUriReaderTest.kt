@@ -4,7 +4,10 @@ import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -45,5 +48,37 @@ class ContentResolverPhotoUriReaderTest {
         assertTrue(probe is PhotoProbe.Readable)
         val result = PhotoValidator(reader).validate(Uri.fromFile(oversized).toString())
         assertEquals(PhotoError.TooLarge, (result as PhotoValidation.Invalid).error)
+    }
+
+    @Test
+    fun `unchecked reader failure is normalized as unreadable preparation failure`() {
+        val failingReader = PhotoUriReader {
+            throw UnsupportedOperationException("provider failure")
+        }
+        val preparer = PhotoPreparer(PhotoValidator(failingReader), PrivatePhotoStore(context))
+
+        val result = preparer.prepare("content://provider/photo", PhotoSource.Camera)
+
+        assertTrue(result.isFailure)
+        val failure = result.exceptionOrNull()
+        assertTrue(failure is PhotoPreparationException)
+        assertEquals(PhotoError.Unreadable, (failure as PhotoPreparationException).photoError)
+    }
+
+    @Test
+    fun `reader cancellation escapes photo preparation unchanged`() {
+        val cancellation = CancellationException("cancelled")
+        val cancellingReader = PhotoUriReader { throw cancellation }
+        val preparer =
+            PhotoPreparer(
+                PhotoValidator(cancellingReader),
+                PrivatePhotoStore(context),
+            )
+
+        val thrown =
+            assertThrows(CancellationException::class.java) {
+                preparer.prepare("content://provider/photo", PhotoSource.Camera)
+            }
+        assertSame(cancellation, thrown)
     }
 }

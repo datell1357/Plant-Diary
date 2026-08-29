@@ -22,12 +22,14 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.planterior.helper.auth.AuthRuntime
+import com.planterior.helper.auth.RenderedStateSink
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.ProductEventRecorder
 import com.planterior.helper.feature.auth.AuthUiState
 import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
+import com.planterior.helper.feature.registration.RegistrationAuthOwnership
 import com.planterior.helper.feature.weather.LocationPermission
 import com.planterior.helper.feature.weather.WeatherLocationGateway
 import com.planterior.helper.navigation.NotificationStackNavigator
@@ -72,6 +74,9 @@ class MainActivity : ComponentActivity() {
 
     internal val pendingNotificationIntentCount: Int
         get() = if (pendingDeepLinkDelivery == null) 0 else 1
+
+    internal val todo18RenderedStateSink: RenderedStateSink?
+        get() = authRuntime.renderedStateSink
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -437,6 +442,10 @@ internal fun PlanteriorApp(
             signedOutReturnRoute = (target as? PlanteriorRoute.Login)?.returnRoute,
             homeViewModel = resolvedHomeViewModel,
             registrationRepository = authRuntime?.registrationRepository,
+            registrationAuthOwnershipOverride =
+                authRuntime?.forcedHomeAccountUid?.let {
+                    RegistrationAuthOwnership.Authenticated(AccountId(it))
+                },
             collectionRepository = authRuntime?.collectionRepository,
             miniHomeRepository = authRuntime?.miniHomeRepository,
             miniHomeShareRepository = authRuntime?.miniHomeShareRepository,
@@ -454,6 +463,7 @@ internal fun PlanteriorApp(
             accountDeletionDependencies = authRuntime?.accountDeletionDependencies,
             accountDeletionDependencyFactory =
                 authRuntime?.accountDeletionRuntime?.let { runtime -> runtime::dependencies },
+            renderedStateSink = authRuntime?.renderedStateSink,
             onOpenLocationSettings = onOpenLocationSettings,
             notificationPermissionGranted =
                 notificationPermissionAction == NotificationPermissionAction.GRANTED ||

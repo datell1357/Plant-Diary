@@ -393,7 +393,23 @@ fun MiniHomeScreen(
                                 state.saveState is MiniHomeSaveState.Corrected
                         ) {
                             Button(
-                                onClick = { scope.launch { onSave() } },
+                                onClick = {
+                                    MiniHomeSaveActionDiagnostics.observe(
+                                        MiniHomeSaveActionObservation(
+                                            MiniHomeSaveActionStage.SCREEN_CALLBACK,
+                                            state.operationId,
+                                        )
+                                    )
+                                    scope.launch {
+                                        MiniHomeSaveActionDiagnostics.observe(
+                                            MiniHomeSaveActionObservation(
+                                                MiniHomeSaveActionStage.COROUTINE_ENTRY,
+                                                state.operationId,
+                                            )
+                                        )
+                                        onSave()
+                                    }
+                                },
                                 enabled = state.hasUnsavedChanges,
                                 modifier = Modifier.action(MiniHomeTestTags.SAVE),
                             ) {

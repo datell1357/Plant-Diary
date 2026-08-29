@@ -23,6 +23,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
 import com.planterior.helper.R
 import com.planterior.helper.analytics.AnalyticsConsentCoordinator
+import com.planterior.helper.auth.RenderedStateSink
+import com.planterior.helper.auth.runtimeDiagnosticActivityIdentity
+import com.planterior.helper.auth.runtimeDiagnosticIdentity
 import com.planterior.helper.core.designsystem.component.PlanteriorBottomBar
 import com.planterior.helper.core.designsystem.component.PlanteriorTab
 import com.planterior.helper.core.designsystem.icon.PlanteriorIcons
@@ -46,6 +49,8 @@ import com.planterior.helper.feature.home.HomeViewModel
 import com.planterior.helper.feature.identify.FirebaseIdentificationGateway
 import com.planterior.helper.feature.identify.IdentificationRoute
 import com.planterior.helper.feature.minihome.MiniHomeAuthOwnership
+import com.planterior.helper.feature.minihome.MiniHomeDiagnosticGenerations
+import com.planterior.helper.feature.minihome.MiniHomeHostDiagnosticIdentity
 import com.planterior.helper.feature.minihome.MiniHomePhotoLoader
 import com.planterior.helper.feature.minihome.MiniHomePhotoRequest
 import com.planterior.helper.feature.minihome.MiniHomeRepository
@@ -84,6 +89,7 @@ import com.planterior.helper.feature.weather.WeatherRoute
 import com.planterior.helper.identify.debugIdentificationGateway
 import com.planterior.helper.identify.photoIdentificationHandoff
 import com.planterior.helper.minihome.observeDebugMiniHomeState
+import com.planterior.helper.registration.observeDebugRegistrationState
 import com.planterior.helper.ui.PlaceholderScreen
 import java.time.Clock
 import kotlinx.coroutines.launch
@@ -119,6 +125,7 @@ fun PlanteriorNavHost(
     signedOutReturnRoute: String? = null,
     homeViewModel: HomeViewModel? = null,
     registrationRepository: RegistrationRepository? = null,
+    registrationAuthOwnershipOverride: RegistrationAuthOwnership? = null,
     collectionRepository: CollectionRepository? = null,
     miniHomeRepository: MiniHomeRepository? = null,
     miniHomeShareRepository: MiniHomeShareRepository? = null,
@@ -131,6 +138,7 @@ fun PlanteriorNavHost(
     weatherPermissionCapabilities: WeatherPermissionCapabilityStore? = null,
     accountDeletionDependencies: AccountDeletionDependencies? = null,
     accountDeletionDependencyFactory: ((String) -> AccountDeletionDependencies)? = null,
+    renderedStateSink: RenderedStateSink? = null,
     notificationPermissionGranted: Boolean = true,
     canRequestNotificationPermission: Boolean = false,
     onRequestNotificationPermission: () -> Unit = {},
@@ -143,14 +151,31 @@ fun PlanteriorNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry.toPlanteriorRoute()
+    val hostContext = LocalContext.current
+    val miniHomeDiagnosticsEnabled = renderedStateSink != null
+    val miniHomeDiagnosticGenerations =
+        remember(navController, miniHomeDiagnosticsEnabled) {
+            if (miniHomeDiagnosticsEnabled) MiniHomeDiagnosticGenerations() else null
+        }
+    val miniHomeHostDiagnosticIdentity =
+        remember(hostContext, navController, renderedStateSink) {
+            renderedStateSink?.let { sink ->
+                MiniHomeHostDiagnosticIdentity(
+                    activityIdentity = checkNotNull(runtimeDiagnosticActivityIdentity(hostContext)),
+                    navHostIdentity = checkNotNull(runtimeDiagnosticIdentity(navController)),
+                    callbackSinkIdentity = checkNotNull(runtimeDiagnosticIdentity(sink)),
+                )
+            }
+        }
     val liveAuthState by
         authCoordinator?.state?.collectAsState() ?: remember { mutableStateOf<AuthUiState?>(null) }
     val registrationAuthOwnership =
-        registrationAuthOwnership(
-            authState = liveAuthState,
-            coordinatorAvailable = authCoordinator != null,
-            enforcementEnabled = authRouteGuardEnabled,
-        )
+        registrationAuthOwnershipOverride
+            ?: registrationAuthOwnership(
+                authState = liveAuthState,
+                coordinatorAvailable = authCoordinator != null,
+                enforcementEnabled = authRouteGuardEnabled,
+            )
     val miniHomeAuthOwnership =
         miniHomeAuthOwnershipOverride
             ?: miniHomeAuthOwnership(
@@ -614,6 +639,7 @@ fun PlanteriorNavHost(
                         } ?: stringResource(R.string.screen_registration_description),
                 )
             } else {
+                val context = LocalContext.current
                 val registrationNavigation =
                     remember(navController) {
                         RegistrationNavigationCallbacks { destination ->
@@ -639,6 +665,12 @@ fun PlanteriorNavHost(
                         navController.popBackStack()
                     },
                     authOwnership = registrationAuthOwnership,
+                    onStateObserved = {
+                        renderedStateSink?.onRegistrationState(it)
+                        observeDebugRegistrationState(context, it)
+                    },
+                    diagnosticObserver =
+                        renderedStateSink?.let { it::onRegistrationDiagnosticEvent },
                     productEventRecorder = productEventRecorder,
                 )
             }
@@ -662,7 +694,14 @@ fun PlanteriorNavHost(
                     photoLoader =
                         miniHomePhotoLoader(collectionThumbnailLoader, catalogMediaLoader),
                     authOwnership = miniHomeAuthOwnership,
-                    onStateObserved = { observeDebugMiniHomeState(context, it) },
+                    onRawStateObserved = { renderedStateSink?.onMiniHomeRawState(it) },
+                    diagnosticObserver = renderedStateSink?.let { it::onMiniHomeDiagnosticEvent },
+                    diagnosticGenerations = miniHomeDiagnosticGenerations,
+                    hostDiagnosticIdentity = miniHomeHostDiagnosticIdentity,
+                    onStateObserved = {
+                        renderedStateSink?.onMiniHomeDisplayedState(it)
+                        observeDebugMiniHomeState(context, it)
+                    },
                 )
             }
         }

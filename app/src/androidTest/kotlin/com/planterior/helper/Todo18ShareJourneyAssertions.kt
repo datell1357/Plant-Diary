@@ -3,7 +3,6 @@ package com.planterior.helper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import com.planterior.helper.feature.share.MiniHomeShareTestTags
 import com.planterior.helper.navigation.PlanteriorRoute
 
@@ -16,7 +15,7 @@ internal fun Todo18MainActivityJourneyHarness.assertExpiredAndDeletedShareStates
         boundaryKind = "mini-home-loaded",
     )
     events.awaitBoundary("share-create") {
-        compose.onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE).performScrollTo().performClick()
+        compose.onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE).performClick()
     }
     compose.waitForIdle()
     compose.onNodeWithTag(MiniHomeShareTestTags.LINK_FAILURE).assertIsDisplayed()

@@ -8,8 +8,10 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextReplacement
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.PersonalPlantId
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +22,49 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class RegistrationScreenTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun `last watered field forwards fixed valid date`() {
+        // Given
+        val draft =
+            RegistrationDraft(
+                PersonalPlantId("plant-date"),
+                null,
+                "몬스테라",
+                null,
+                null,
+                null,
+            )
+        var enteredDate: String? = null
+        compose.setContent {
+            PlanteriorTheme {
+                RegistrationScreen(
+                    state = RegistrationUiState.Editing(draft),
+                    identifiedRequestId = null,
+                    onName = {},
+                    onDate = { enteredDate = it },
+                    onSearch = {},
+                    onSelectContent = {},
+                    onUseIdentificationPhoto = {},
+                    onPickPhoto = {},
+                    onSubmit = {},
+                    onOpenExisting = {},
+                    onAddAnother = {},
+                    onCancelDuplicate = {},
+                    onRetry = {},
+                    onCancel = {},
+                )
+            }
+        }
+
+        // When
+        compose
+            .onNodeWithTag(RegistrationTestTags.LAST_WATERED)
+            .performTextReplacement("2026-08-20")
+
+        // Then
+        compose.runOnIdle { assertEquals("2026-08-20", enteredDate) }
+    }
 
     @Test
     fun `direct entry and duplicate state expose the required actions`() {

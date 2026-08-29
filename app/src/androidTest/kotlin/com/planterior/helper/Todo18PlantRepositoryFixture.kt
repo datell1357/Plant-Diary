@@ -22,6 +22,9 @@ import com.planterior.helper.feature.registration.RegistrationRemoteDataSource
 import com.planterior.helper.feature.registration.RepresentativePhoto
 import com.planterior.helper.feature.watering.WateringCompletionReceipt
 import com.planterior.helper.feature.watering.WateringCompletionRequest
+import com.planterior.helper.feature.watering.WateringConfirmActionDiagnostics
+import com.planterior.helper.feature.watering.WateringConfirmActionObservation
+import com.planterior.helper.feature.watering.WateringConfirmActionStage
 import com.planterior.helper.feature.watering.WateringReceiptLookup
 import com.planterior.helper.feature.watering.WateringRemoteDataSource
 import com.planterior.helper.feature.watering.WateringRequestHash
@@ -144,7 +147,23 @@ internal class Todo18PlantRepositoryFixture(private val scenario: Todo18Scenario
     ): WateringReceiptLookup {
         require(accountId == scenario.accountId)
         val result = wateringReceipts[operationId.value]
-        if (result != null) scenario.emit("watering-receipt", operationId.value)
+        WateringConfirmActionDiagnostics.observe(
+            WateringConfirmActionObservation(
+                WateringConfirmActionStage.RECEIPT_LOOKUP_RESULT,
+                plantId,
+                operationId,
+            )
+        )
+        if (result != null) {
+            WateringConfirmActionDiagnostics.observe(
+                WateringConfirmActionObservation(
+                    WateringConfirmActionStage.FIXTURE_RECEIPT_EMIT,
+                    plantId,
+                    operationId,
+                )
+            )
+            scenario.emit("watering-receipt", operationId.value)
+        }
         return result?.let(WateringReceiptLookup::Found) ?: WateringReceiptLookup.NotFound
     }
 

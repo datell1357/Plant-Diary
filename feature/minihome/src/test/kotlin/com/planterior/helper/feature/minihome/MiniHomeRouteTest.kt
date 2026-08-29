@@ -30,6 +30,33 @@ class MiniHomeRouteTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun `route publishes initial Viewing target exactly once`() {
+        val repository = RouteTestRepository()
+        val rawStates = mutableListOf<MiniHomeUiState>()
+        val diagnostics = mutableListOf<MiniHomeDiagnosticEvent>()
+        compose.setContent {
+            PlanteriorTheme {
+                MiniHomeRoute(
+                    repository = repository,
+                    onBack = {},
+                    onOpenCollection = {},
+                    onRawStateObserved = rawStates::add,
+                    diagnosticObserver = diagnostics::add,
+                )
+            }
+        }
+
+        assertEquals(true, repository.loadCompleted)
+        assertEquals(1, rawStates.count { it is MiniHomeUiState.Viewing })
+        assertEquals(
+            1,
+            diagnostics.count {
+                it is MiniHomeDiagnosticEvent.RouteStateAudit && it.state is MiniHomeUiState.Viewing
+            },
+        )
+    }
+
+    @Test
     fun `A to B composition is synchronously redacted before success or failure effects`() {
         var state by mutableStateOf<MiniHomeUiState>(viewing("account-a", "A private room"))
         var auth by mutableStateOf<MiniHomeAuthOwnership>(authenticated("account-a"))

@@ -16,12 +16,15 @@ class Todo18IntegratedJourneySourceContractTest {
     fun `release dependency and camera seams are immutable pass throughs`() {
         val runtime = source(RELEASE_RUNTIME_OVERRIDE)
         val camera = source(RELEASE_CAMERA_OVERRIDE)
+        val registrationState = source(RELEASE_REGISTRATION_STATE)
 
         assertCode(runtime, "todo18DebugRuntimeDependencyOverrides()", "= null")
         assertFalse(runtime.contains("object Todo18DebugRuntimeDependencies"))
         assertCode(camera, "todo18DebugCameraPermission(actual: CameraPermission)", "= actual")
         assertCode(camera, "todo18DebugPhotoPickerUri(): String? = null")
         assertFalse(camera.contains("@Volatile"))
+        assertCode(registrationState, "observeDebugRegistrationState", "= Unit")
+        assertFalse(registrationState.contains("AtomicLong"))
     }
 
     @Test
@@ -29,6 +32,7 @@ class Todo18IntegratedJourneySourceContractTest {
         val contract = source(MAIN_OVERRIDE_CONTRACT)
         val runtime = source("app/src/main/kotlin/com/planterior/helper/auth/AuthRuntime.kt")
         val activity = source("app/src/main/kotlin/com/planterior/helper/MainActivity.kt")
+        val registrationState = source(DEBUG_REGISTRATION_STATE)
 
         listOf(
                 "RegistrationRepository",
@@ -46,6 +50,13 @@ class Todo18IntegratedJourneySourceContractTest {
             activity,
             "accountDeletionDependencies = authRuntime?.accountDeletionDependencies",
         )
+        assertCode(
+            registrationState,
+            "AtomicLong",
+            "currentDebugRegistrationState",
+            "subscribeToDebugRegistrationStates",
+            "observeDebugRegistrationState",
+        )
     }
 
     @Test
@@ -55,10 +66,12 @@ class Todo18IntegratedJourneySourceContractTest {
         val entryPoint = sources.getValue("Todo18IntegratedJourneyMainActivityTest.kt")
         val runtimeRule = sources.getValue("Todo18IntegratedRuntimeRule.kt")
         val eventProbe = sources.getValue("Todo18JourneyEventProbe.kt")
+        val renderedProbe = sources.getValue("Todo18RenderedStateProbe.kt")
 
         EXPECTED_JOURNEY_TESTS.forEach { assertFunction(entryPoint, it) }
         EXPECTED_ASSERTION_ROLES.forEach { assertFunction(allCode, it) }
         EXPECTED_PRODUCTION_REPOSITORIES.forEach { assertCode(runtimeRule, it) }
+        assertFalse(runtimeRule.contains("MiniHomeRepository by"))
         listOf("OFFLINE_ONCE", "REVISION_CONFLICT", "EXPIRED", "DELETED").forEach {
             assertCode(allCode, it)
         }
@@ -106,6 +119,15 @@ class Todo18IntegratedJourneySourceContractTest {
             "LeasedExactEventRegistration",
             "EVENT_TIMEOUT_MILLIS = 10_000L",
         )
+        assertCode(
+            renderedProbe,
+            "runtime.renderedStateSink",
+            "subscribeToDisplayedMiniHomeStates",
+            "subscribeToRegistrationStates",
+            "event.sequence >= floor",
+            "current()?.let(dispatch)",
+            "subscription.arm()",
+        )
         assertCode(sources.getValue("Todo18MainActivityJourneyHarness.kt"), "captureToImage")
         assertSizeContract()
 
@@ -114,6 +136,122 @@ class Todo18IntegratedJourneySourceContractTest {
                 assertFalse("$file contains $forbidden", code.contains(forbidden))
             }
         }
+    }
+
+    @Test
+    fun `registration harness uses the canonical fixture display name`() {
+        val fixture =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18PlantRepositoryFixture.kt"
+            )
+        val harness =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MainActivityJourneyHarness.kt"
+            )
+
+        assertCode(fixture, "RegistrationContent(scenario.contentId, \"몬스테라\")")
+        assertCode(harness, "assertTextContains(\"몬스테라\")")
+        assertFalse(harness.contains("assertTextContains(\"Monstera\")"))
+    }
+
+    @Test
+    fun `ordinal-6 journey enters fixed watering date through stable real field`() {
+        val registrationScreen =
+            source(
+                "feature/registration/src/main/kotlin/com/planterior/helper/feature/registration/RegistrationScreen.kt"
+            )
+        val registrationRoute =
+            source(
+                "feature/registration/src/main/kotlin/com/planterior/helper/feature/registration/RegistrationRoute.kt"
+            )
+        val harness =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MainActivityJourneyHarness.kt"
+            )
+
+        assertCode(
+            registrationScreen,
+            "const val LAST_WATERED = \"registration.last-watered\"",
+            "onValueChange = { onDate(it) }",
+            "testTag(RegistrationTestTags.LAST_WATERED)",
+        )
+        assertCode(registrationRoute, "onDate = controller::changeLastWateredDate")
+        assertCode(
+            harness,
+            "onNodeWithTag(RegistrationTestTags.LAST_WATERED)",
+            "performTextReplacement(\"2026-08-20\")",
+        )
+    }
+
+    @Test
+    fun `ordinal-6 boundary uses one compose settlement before exact await`() {
+        val eventProbe =
+            source("app/src/androidTest/kotlin/com/planterior/helper/Todo18JourneyEventProbe.kt")
+        val miniHome =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MiniHomeJourneyAssertions.kt"
+            )
+
+        assertCode(
+            eventProbe,
+            "subscription.arm()",
+            "triggerSettleAndAwait(",
+            "trigger = { subscription.trigger(trigger) }",
+            "settle = compose::waitForIdle",
+            "subscription.await(",
+        )
+        assertCode(
+            miniHome,
+            "events.awaitBoundary(\"mini-home-save-attempt\")",
+            "assertEquals(frozen.value, saveAttempt.identity)",
+            "assertEquals(operationId.value, saveAttempt.identity)",
+        )
+    }
+
+    @Test
+    fun `invocation-2 waits finalize source and APK bound receipts through exact observers`() {
+        val sources = todo18AndroidTestSources()
+        val capture = sources.getValue("Todo18TransitionDiagnosticCapture.kt")
+        val receipt = sources.getValue("Todo18TransitionDiagnosticReceiptJson.kt")
+        val miniHome = sources.getValue("Todo18MiniHomeJourneyAssertions.kt")
+        val harness = sources.getValue("Todo18MainActivityJourneyHarness.kt")
+
+        assertCode(
+            miniHome,
+            "Todo18WaitId.OFFLINE_INITIAL_VIEWING",
+            "Todo18WaitId.CONFLICT_BEGIN_EDIT",
+            "observer = observer",
+            "MiniHomeTestTags.EDIT).assertIsDisplayed()",
+            "MiniHomeTestTags.SAVE).assertIsDisplayed()",
+        )
+        assertCode(
+            harness,
+            "Todo18WaitId.REGISTRATION_SELECT_CONTENT",
+            "assertTextContains(\"몬스테라\")",
+        )
+        assertCode(
+            capture,
+            "preserveTodo18PrimaryFailure",
+            "Todo18CaptureExactEventObserver",
+            "capture.close()",
+            "initialSinkFreshness",
+            "activityCreateCount == 1",
+            "Todo18DebugRuntimeDependencies.current()",
+            "runtime.renderedStateSink",
+            "compose.activity.todo18RenderedStateSink",
+            "finalListenerCount",
+        )
+        assertCode(
+            receipt,
+            "todo18ExpectedSourceSha256",
+            "todo18ExpectedAppApkSha256",
+            "todo18ExpectedAndroidTestApkSha256",
+            "stateDispatches",
+            "exactEvents",
+            "requestedContentId",
+            "beforeState",
+            "afterState",
+        )
     }
 
     private fun assertSizeContract() {
@@ -125,6 +263,8 @@ class Todo18IntegratedJourneySourceContractTest {
                     root.resolve(RELEASE_RUNTIME_OVERRIDE),
                     root.resolve(DEBUG_CAMERA_OVERRIDE),
                     root.resolve(RELEASE_CAMERA_OVERRIDE),
+                    root.resolve(DEBUG_REGISTRATION_STATE),
+                    root.resolve(RELEASE_REGISTRATION_STATE),
                 )
         files.forEach { path ->
             val code = path.readText()
@@ -199,6 +339,10 @@ class Todo18IntegratedJourneySourceContractTest {
             "feature/camera/src/debug/kotlin/com/planterior/helper/feature/camera/Todo18DebugCameraBoundary.kt"
         const val RELEASE_CAMERA_OVERRIDE =
             "feature/camera/src/release/kotlin/com/planterior/helper/feature/camera/Todo18DebugCameraBoundary.kt"
+        const val DEBUG_REGISTRATION_STATE =
+            "app/src/debug/kotlin/com/planterior/helper/registration/DebugRegistrationState.kt"
+        const val RELEASE_REGISTRATION_STATE =
+            "app/src/release/kotlin/com/planterior/helper/registration/DebugRegistrationState.kt"
 
         val EXPECTED_JOURNEY_TESTS =
             listOf(

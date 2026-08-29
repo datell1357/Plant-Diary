@@ -1,10 +1,18 @@
 package com.planterior.helper
 
+import android.app.Activity
+import android.app.Application
+import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import com.planterior.helper.auth.AuthRuntimeDependencyOverrides
 import com.planterior.helper.auth.Todo18DebugRuntimeDependencies
+import com.planterior.helper.auth.todo18DebugRuntimeDependencyOverrides
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.diagnostic.Todo18CaptureFreshness
 import com.planterior.helper.feature.camera.CameraPermission
 import com.planterior.helper.feature.camera.Todo18DebugCameraBoundary
 import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
@@ -15,6 +23,12 @@ import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.shop.FirebaseInventoryRepository
 import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
 import com.planterior.helper.feature.watering.OutboxWateringRepository
+import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic
+import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
+import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRepository
+import com.planterior.helper.registration.Todo18RegistrationCommitDiagnosticRepository
+import java.util.Collections
+import java.util.IdentityHashMap
 import org.junit.rules.ExternalResource
 
 /** Installs production Room repositories with deterministic fakes only at remote/OS boundaries. */
@@ -26,21 +40,110 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
     lateinit var database: PlanteriorDatabase
         private set
 
+    internal val renderedStateSink = Todo18RenderedStateSink()
+    internal lateinit var miniHomeLoadDiagnostics: Todo18MiniHomeLoadDiagnosticRecorder
+        private set
+
+    internal val initialSinkFreshness =
+        Todo18CaptureFreshness(
+            initialSequence = renderedStateSink.sequenceValue(),
+            initialCurrentsEmpty =
+                renderedStateSink.currentRawMiniHomeState() == null &&
+                    renderedStateSink.currentDisplayedMiniHomeState() == null &&
+                    renderedStateSink.currentRegistrationState() == null,
+            initialListenerCount = renderedStateSink.primaryListenerCount(),
+            isolatedInstance = true,
+        )
+    internal var priorActivityCount = -1
+        private set
+
+    internal var priorOverridePresent = true
+        private set
+
+    internal val previousTeardownComplete: Boolean
+        get() = priorActivityCount == 0 && !priorOverridePresent
+
+    internal val activityCreateCount: Int
+        get() = synchronized(lifecycleLock) { createdActivities }
+
+    internal val activityDestroyCount: Int
+        get() = synchronized(lifecycleLock) { destroyedActivities }
+
+    internal val activityActiveCount: Int
+        get() = synchronized(lifecycleLock) { activeMainActivities.size }
+
+    private val lifecycleLock = Any()
+    private var createdActivities = 0
+    private var destroyedActivities = 0
+    private val activeMainActivities =
+        Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+    private lateinit var application: PlanteriorApplication
+    private val activityCallbacks =
+        object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+                if (activity is MainActivity) {
+                    synchronized(lifecycleLock) {
+                        createdActivities += 1
+                        activeMainActivities += activity
+                    }
+                }
+            }
+
+            override fun onActivityDestroyed(activity: Activity) {
+                if (activity is MainActivity) {
+                    synchronized(lifecycleLock) {
+                        destroyedActivities += 1
+                        activeMainActivities -= activity
+                    }
+                }
+            }
+
+            override fun onActivityStarted(activity: Activity) = Unit
+
+            override fun onActivityResumed(activity: Activity) = Unit
+
+            override fun onActivityPaused(activity: Activity) = Unit
+
+            override fun onActivityStopped(activity: Activity) = Unit
+
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+        }
+
     override fun before() {
-        val application = ApplicationProvider.getApplicationContext<PlanteriorApplication>()
+        priorOverridePresent = todo18DebugRuntimeDependencyOverrides() != null
+        priorActivityCount = currentMainActivityCount()
+        if (priorOverridePresent) Todo18DebugRuntimeDependencies.clear()
+        application = ApplicationProvider.getApplicationContext()
+        application.registerActivityLifecycleCallbacks(activityCallbacks)
         val shared = requireNotNull(application.repositoryRuntimeOrNull())
         database = shared.database
         database.clearAllTables()
         boundary = Todo18Scenario(AccountId(accountUid))
+        miniHomeLoadDiagnostics =
+            Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)
 
         val plants = Todo18PlantRepositoryFixture(boundary)
-        val registration = FirebaseRegistrationRepository(database, plants, plants, boundary::now)
+        val registration =
+            Todo18RegistrationCommitDiagnosticRepository(
+                FirebaseRegistrationRepository(database, plants, plants, boundary::now),
+                renderedStateSink::onRegistrationCommitRepositoryEvent,
+            )
         val collection = FirebaseCollectionRepository(database, plants, plants, boundary::now)
-        val miniHome =
+        val miniHomeDelegate =
             FirebaseMiniHomeRepository(
                 database,
-                Todo18MiniHomeRepositoryFixture(boundary),
+                Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics),
                 boundary::now,
+                beforePublicationRead = {
+                    miniHomeLoadDiagnostics.recordCurrent(
+                        Todo18MiniHomeLoadDiagnostic.PublicationReadEntered
+                    )
+                },
+            )
+        val miniHome =
+            Todo18MiniHomeLoadDiagnosticRepository(
+                delegate = miniHomeDelegate,
+                diagnostics = miniHomeLoadDiagnostics,
             )
         val inventory =
             FirebaseInventoryRepository(
@@ -71,14 +174,36 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                 catalogMediaLoader = PlaceholderCatalogMediaLoader,
                 accountDeletionDependencies =
                     Todo18AccountDeletionRepositoryFixture(boundary).dependencies,
+                renderedStateSink = renderedStateSink,
             )
         )
     }
 
     override fun after() {
+        if (::application.isInitialized) {
+            application.unregisterActivityLifecycleCallbacks(activityCallbacks)
+        }
         Todo18DebugCameraBoundary.clear()
         Todo18DebugRuntimeDependencies.clear()
         if (::database.isInitialized && database.isOpen) database.clearAllTables()
+    }
+
+    private fun currentMainActivityCount(): Int {
+        var count = -1
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val monitor = ActivityLifecycleMonitorRegistry.getInstance()
+            val active = Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
+            Stage.values()
+                .filterNot { it == Stage.DESTROYED }
+                .forEach { stage ->
+                    monitor
+                        .getActivitiesInStage(stage)
+                        .filterIsInstance<MainActivity>()
+                        .forEach(active::add)
+                }
+            count = active.size
+        }
+        return count
     }
 
     fun denyCameraPermission() {

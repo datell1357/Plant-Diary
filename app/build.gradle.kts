@@ -208,6 +208,8 @@ val signingInputs =
     )
 val releaseSigning = signingInputs.mapValues { releaseValue(it.value) }
 val hasReleaseSigning = releaseSigning.values.all { it != null }
+val todo18FrozenSourceSha256 =
+    providers.gradleProperty("todo18.frozenSourceSha256").orNull?.trim()?.lowercase().orEmpty()
 val minimumSdk = 29
 
 android {
@@ -245,6 +247,11 @@ android {
             buildConfigField("String", "FIREBASE_APP_ID", "\"1:1234567890:android:debug\"")
             buildConfigField("String", "FIREBASE_API_KEY", "\"demo-api-key\"")
             buildConfigField("String", "FIREBASE_STORAGE_BUCKET", "\"demo-planterior.appspot.com\"")
+            buildConfigField(
+                "String",
+                "TODO18_FROZEN_SOURCE_SHA256",
+                javaStringLiteral(todo18FrozenSourceSha256),
+            )
         }
         release {
             isDebuggable = false

@@ -12,6 +12,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.CancellationException
 
 /** 실제 URI 바이트를 제한 크기까지만 읽어 형식, 크기, EXIF를 검사한다. */
 class ContentResolverPhotoUriReader(private val resolver: ContentResolver) : PhotoUriReader {
@@ -119,7 +120,13 @@ class PhotoPreparer(
     private val store: PrivatePhotoStore,
 ) {
     fun prepare(uri: String?, source: PhotoSource): Result<PreparedPhoto> {
-        val validated = validator.validate(uri)
+        val validated =
+            try {
+                validator.validate(uri)
+            } catch (error: RuntimeException) {
+                if (error is CancellationException) throw error
+                return Result.failure(PhotoPreparationException(PhotoError.Unreadable))
+            }
         if (validated is PhotoValidation.Invalid) {
             return Result.failure(PhotoPreparationException(validated.error))
         }

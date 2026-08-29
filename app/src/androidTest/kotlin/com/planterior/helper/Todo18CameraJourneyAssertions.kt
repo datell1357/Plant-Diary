@@ -26,7 +26,7 @@ internal fun Todo18MainActivityJourneyHarness.assertMalformedPickerUriRejected()
     }
     assertTrue(!event.accepted)
     compose.waitForIdle()
-    compose.onNodeWithText("이 사진을 읽을 수 없어요. 다른 방법으로 계속해 주세요.").assertIsDisplayed()
+    compose.onNodeWithText("사진을 찾을 수 없어요. 다른 사진을 선택해 주세요.").assertIsDisplayed()
     compose.onNodeWithTag(CameraTestTags.PICKER).assertIsDisplayed()
     captureReceipt("camera-malformed-uri", "malformed-uri")
 }

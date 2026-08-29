@@ -35,6 +35,7 @@ import com.planterior.helper.core.model.PersonalPlantId
 object RegistrationTestTags {
     const val SCREEN = "registration.screen"
     const val NAME = "registration.name"
+    const val LAST_WATERED = "registration.last-watered"
     const val SEARCH = "registration.search"
     const val SEARCH_ACTION = "registration.search-action"
     const val SUBMIT = "registration.submit"
@@ -241,7 +242,7 @@ private fun EditingContent(
         value = state.draft.lastWateredDate.orEmpty(),
         onValueChange = { onDate(it) },
         label = { Text(stringResource(R.string.registration_last_watered)) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().testTag(RegistrationTestTags.LAST_WATERED),
         singleLine = true,
     )
     if (identifiedRequestId != null) {

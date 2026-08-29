@@ -29,6 +29,7 @@ import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
 import com.planterior.helper.feature.minihome.MiniHomeSaveRequest
 import com.planterior.helper.feature.minihome.MiniHomeSaveResult
+import com.planterior.helper.feature.minihome.MiniHomeSaveState
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.minihome.MiniHomeZIndex
 import java.time.Instant
@@ -97,6 +98,16 @@ enum class DebugMiniHomeStateMode {
     ERROR,
 }
 
+enum class DebugMiniHomeSaveStateMode {
+    IDLE,
+    SAVING,
+    FAILED,
+    VALIDATION_FAILED,
+    RECONCILIATION_REQUIRED,
+    CORRECTED,
+    CONFLICT,
+}
+
 data class DebugMiniHomePlacementSnapshot(
     val placementId: String,
     val targetId: String,
@@ -108,6 +119,7 @@ data class DebugMiniHomePlacementSnapshot(
 data class DebugMiniHomeStateSnapshot(
     val accountId: String,
     val mode: DebugMiniHomeStateMode,
+    val saveState: DebugMiniHomeSaveStateMode,
     val name: String?,
     val committedRevision: Long?,
     val layoutRevision: Long?,
@@ -133,6 +145,7 @@ fun observeDebugMiniHomeState(context: Context, state: MiniHomeUiState) {
                 DebugMiniHomeStateSnapshot(
                     state.accountId?.value.orEmpty(),
                     DebugMiniHomeStateMode.LOADING,
+                    DebugMiniHomeSaveStateMode.IDLE,
                     null,
                     null,
                     null,
@@ -142,6 +155,7 @@ fun observeDebugMiniHomeState(context: Context, state: MiniHomeUiState) {
                 DebugMiniHomeStateSnapshot(
                     state.owner.value,
                     DebugMiniHomeStateMode.VIEWING,
+                    DebugMiniHomeSaveStateMode.IDLE,
                     state.committed.name,
                     state.committed.revision.value,
                     state.committed.revision.value,
@@ -151,6 +165,7 @@ fun observeDebugMiniHomeState(context: Context, state: MiniHomeUiState) {
                 DebugMiniHomeStateSnapshot(
                     state.owner.value,
                     DebugMiniHomeStateMode.EDITING,
+                    state.saveState.debugMode(),
                     state.draft.name,
                     state.committed.revision.value,
                     state.draft.revision.value,
@@ -160,6 +175,7 @@ fun observeDebugMiniHomeState(context: Context, state: MiniHomeUiState) {
                 DebugMiniHomeStateSnapshot(
                     accountId,
                     DebugMiniHomeStateMode.FORBIDDEN,
+                    DebugMiniHomeSaveStateMode.IDLE,
                     null,
                     null,
                     null,
@@ -169,6 +185,7 @@ fun observeDebugMiniHomeState(context: Context, state: MiniHomeUiState) {
                 DebugMiniHomeStateSnapshot(
                     state.accountId.value,
                     DebugMiniHomeStateMode.UNAVAILABLE,
+                    DebugMiniHomeSaveStateMode.IDLE,
                     null,
                     null,
                     null,
@@ -178,6 +195,7 @@ fun observeDebugMiniHomeState(context: Context, state: MiniHomeUiState) {
                 DebugMiniHomeStateSnapshot(
                     accountId,
                     DebugMiniHomeStateMode.ERROR,
+                    DebugMiniHomeSaveStateMode.IDLE,
                     null,
                     null,
                     null,
@@ -205,13 +223,26 @@ private object DebugMiniHomeStateEvents {
         Log.i(
             STATE_EVENT_LOG_TAG,
             "sequence=${event.sequence} activity=${event.activityIdentity} " +
-                "account=${snapshot.accountId} mode=${snapshot.mode} name=${snapshot.name} " +
+                "account=${snapshot.accountId} mode=${snapshot.mode} saveState=${snapshot.saveState} " +
+                "name=${snapshot.name} " +
                 "committedRevision=${snapshot.committedRevision} " +
                 "layoutRevision=${snapshot.layoutRevision} placements=${snapshot.placements}",
         )
         listeners.forEach { it(event) }
     }
 }
+
+private fun MiniHomeSaveState.debugMode(): DebugMiniHomeSaveStateMode =
+    when (this) {
+        MiniHomeSaveState.Idle -> DebugMiniHomeSaveStateMode.IDLE
+        MiniHomeSaveState.Saving -> DebugMiniHomeSaveStateMode.SAVING
+        is MiniHomeSaveState.Failed -> DebugMiniHomeSaveStateMode.FAILED
+        is MiniHomeSaveState.ValidationFailed -> DebugMiniHomeSaveStateMode.VALIDATION_FAILED
+        is MiniHomeSaveState.ReconciliationRequired ->
+            DebugMiniHomeSaveStateMode.RECONCILIATION_REQUIRED
+        is MiniHomeSaveState.Corrected -> DebugMiniHomeSaveStateMode.CORRECTED
+        MiniHomeSaveState.Conflict -> DebugMiniHomeSaveStateMode.CONFLICT
+    }
 
 private fun MiniHomeLayout.debugPlacements(): List<DebugMiniHomePlacementSnapshot> =
     placements

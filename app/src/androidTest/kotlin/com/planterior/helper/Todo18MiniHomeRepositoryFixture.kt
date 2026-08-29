@@ -11,18 +11,25 @@ import com.planterior.helper.feature.minihome.MiniHomeLayout
 import com.planterior.helper.feature.minihome.MiniHomePlacementTarget
 import com.planterior.helper.feature.minihome.MiniHomePlantChoice
 import com.planterior.helper.feature.minihome.MiniHomeRemoteDataSource
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionDiagnostics
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionObservation
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
 import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
 import com.planterior.helper.feature.minihome.MiniHomeSaveRequest
 import com.planterior.helper.feature.minihome.RemoteMiniHomeSaveResult
 import com.planterior.helper.feature.minihome.RemoteMiniHomeSnapshot
+import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic
+import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
 import java.security.MessageDigest
 
 /**
  * Remote fixture for production
  * [com.planterior.helper.feature.minihome.FirebaseMiniHomeRepository].
  */
-internal class Todo18MiniHomeRepositoryFixture(private val scenario: Todo18Scenario) :
-    MiniHomeRemoteDataSource {
+internal class Todo18MiniHomeRepositoryFixture(
+    private val scenario: Todo18Scenario,
+    private val loadDiagnostics: Todo18MiniHomeLoadDiagnosticRecorder,
+) : MiniHomeRemoteDataSource {
     private var generation = 1L
     private var committedOperationId: OperationId? = null
     private var committedExpectedRevision: Revision? = null
@@ -40,13 +47,28 @@ internal class Todo18MiniHomeRepositoryFixture(private val scenario: Todo18Scena
     override fun activeAccount(): AccountId = scenario.accountId
 
     override suspend fun load(accountId: AccountId): RemoteMiniHomeSnapshot {
+        loadDiagnostics.recordCurrent(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
         require(accountId == scenario.accountId)
+        val loaded = snapshot()
         scenario.emit("mini-home-loaded", accountId.value)
-        return snapshot()
+        loadDiagnostics.recordCurrent(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
+        return loaded
     }
 
     override suspend fun save(request: MiniHomeSaveRequest): RemoteMiniHomeSaveResult {
+        MiniHomeSaveActionDiagnostics.observe(
+            MiniHomeSaveActionObservation(
+                MiniHomeSaveActionStage.FIXTURE_SAVE_ENTRY,
+                request.operationId,
+            )
+        )
         scenario.miniHomeSaveRequests += request
+        MiniHomeSaveActionDiagnostics.observe(
+            MiniHomeSaveActionObservation(
+                MiniHomeSaveActionStage.FIXTURE_EVENT_EMIT,
+                request.operationId,
+            )
+        )
         scenario.emit("mini-home-save-attempt", request.operationId.value)
         return when (scenario.miniHomeSaveMode) {
             Todo18MiniHomeSaveMode.OFFLINE_ONCE -> {

@@ -142,7 +142,16 @@ fun WateringConfirmationScreen(
                         state.validationError,
                         saving = false,
                         onWateredDate,
-                        onConfirm,
+                        onConfirm = {
+                            WateringConfirmActionDiagnostics.observe(
+                                WateringConfirmActionObservation(
+                                    WateringConfirmActionStage.SCREEN_CALLBACK,
+                                    state.snapshot.plantId,
+                                    state.draft.operationId,
+                                )
+                            )
+                            onConfirm()
+                        },
                     )
                 is WateringConfirmationUiState.Saving ->
                     ConfirmationForm(
