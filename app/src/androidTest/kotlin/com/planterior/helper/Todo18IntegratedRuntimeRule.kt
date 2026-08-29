@@ -140,6 +140,16 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                     database,
                     Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics),
                     boundary::now,
+                    beforeCacheApply = { accountId ->
+                        miniHomeLoadDiagnostics.recordCurrent(
+                            Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(accountId)
+                        )
+                    },
+                    afterCacheApply = { accountId, current ->
+                        miniHomeLoadDiagnostics.recordCurrent(
+                            Todo18MiniHomeLoadDiagnostic.CacheApplyReturned(accountId, current)
+                        )
+                    },
                     beforePublicationRead = {
                         miniHomeLoadDiagnostics.recordCurrent(
                             Todo18MiniHomeLoadDiagnostic.PublicationReadEntered

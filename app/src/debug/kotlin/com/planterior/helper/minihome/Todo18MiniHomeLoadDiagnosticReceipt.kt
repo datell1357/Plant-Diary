@@ -19,6 +19,20 @@ internal fun JsonObjectBuilder.putTodo18MiniHomeLoadProgress(progress: Todo18Min
                     put("loadId", observation.loadId.value)
                     put("readId", observation.readId?.ordinal)
                     put("stage", observation.receiptStage)
+                    val cacheAccountId =
+                        when (val diagnostic = observation.diagnostic) {
+                            is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
+                                diagnostic.accountId.value
+                            is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
+                                diagnostic.accountId.value
+                            else -> null
+                        }
+                    put("cacheAccountId", cacheAccountId)
+                    put(
+                        "cacheOutcome",
+                        (observation.diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheApplyReturned)
+                            ?.let { if (it.current) "current" else "conflict" },
+                    )
                 }
             )
         }

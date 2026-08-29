@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollTo
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
@@ -23,6 +24,7 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeSaveActionNode(
         operationId,
     )
     val save = compose.onNodeWithTag(MiniHomeTestTags.SAVE)
+    save.performScrollTo()
     save.assertIsDisplayed()
     runtime.actionRecorder.recordMiniHomeSemantic(
         MiniHomeSaveActionStage.SAVE_NODE_DISPLAYED,

@@ -1,5 +1,6 @@
 package com.planterior.helper.minihome
 
+import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.minihome.MiniHomeLoadResult
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import kotlinx.coroutines.CancellationException
@@ -17,6 +18,17 @@ internal sealed interface Todo18MiniHomeLoadDiagnostic {
 
     data object RemoteLoadReturned : Todo18MiniHomeLoadDiagnostic {
         override val receiptStage = "remote-load-returned"
+    }
+
+    data class CacheApplyEntered(val accountId: AccountId) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "cache-apply-entered"
+    }
+
+    data class CacheApplyReturned(
+        val accountId: AccountId,
+        val current: Boolean,
+    ) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "cache-apply-returned"
     }
 
     data object PublicationReadEntered : Todo18MiniHomeLoadDiagnostic {
@@ -74,6 +86,9 @@ internal class Todo18MiniHomeLoadDiagnosticRepository(
             result
         } catch (error: CancellationException) {
             load.record(Todo18MiniHomeLoadDiagnostic.Cancelled)
+            throw error
+        } catch (error: AssertionError) {
+            load.record(Todo18MiniHomeLoadDiagnostic.Failed)
             throw error
         } catch (error: Exception) {
             load.record(Todo18MiniHomeLoadDiagnostic.Failed)

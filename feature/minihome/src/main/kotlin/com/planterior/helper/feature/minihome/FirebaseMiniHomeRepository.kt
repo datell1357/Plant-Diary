@@ -174,6 +174,8 @@ class FirebaseMiniHomeRepository(
     private val database: PlanteriorDatabase,
     private val remote: MiniHomeRemoteDataSource,
     private val now: () -> Instant = Instant::now,
+    private val beforeCacheApply: suspend (AccountId) -> Unit = {},
+    private val afterCacheApply: suspend (AccountId, Boolean) -> Unit = { _, _ -> },
     private val beforePublicationRead: suspend (AccountId) -> Unit = {},
 ) : MiniHomeRepository {
     private val ownerOperations = ConcurrentHashMap<String, Mutex>()
@@ -204,7 +206,9 @@ class FirebaseMiniHomeRepository(
             if (snapshot.accountId != account || remote.activeAccount() != account) {
                 return MiniHomeLoadResult.Forbidden
             }
+            notifyCacheApplyEntered(account)
             val applied = cache(account, snapshot)
+            notifyCacheApplyReturned(account, applied)
             if (remote.activeAccount() != account) return MiniHomeLoadResult.Forbidden
             publishCurrentRoomWinner(
                 account = account,
@@ -218,6 +222,27 @@ class FirebaseMiniHomeRepository(
         } catch (_: Exception) {
             publishCurrentRoomWinner(account, token, stale = true)
         }
+    }
+
+    private suspend fun notifyCacheApplyEntered(account: AccountId) {
+        observeCacheDiagnostic { beforeCacheApply(account) }
+    }
+
+    private suspend fun notifyCacheApplyReturned(
+        account: AccountId,
+        applied: CoherentMiniHomeCacheApply,
+    ) {
+        observeCacheDiagnostic {
+            afterCacheApply(account, applied is CoherentMiniHomeCacheApply.Current)
+        }
+    }
+
+    private suspend fun observeCacheDiagnostic(observe: suspend () -> Unit) {
+        try {
+            observe()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: AssertionError) {} catch (_: Exception) {}
     }
 
     override suspend fun save(request: MiniHomeSaveRequest): MiniHomeSaveResult =

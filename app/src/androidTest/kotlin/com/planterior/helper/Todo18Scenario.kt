@@ -41,6 +41,7 @@ data class Todo18BoundaryEvent(
     val loadId: Long? = null,
     val readId: Long? = null,
     val diagnosticOrder: Long? = null,
+    val cacheOutcome: String? = null,
 )
 
 /** Shared deterministic state and event stream for the Todo18 boundary fixtures. */
@@ -96,6 +97,8 @@ class Todo18Scenario(val accountId: AccountId) {
                 Todo18MiniHomeLoadDiagnostic.LoadEntered -> "load-entered"
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered -> "remote-load-entered"
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned -> "remote-load-returned"
+                is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered -> "cache-apply-entered"
+                is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned -> "cache-apply-returned"
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> "publication-read-entered"
                 is Todo18MiniHomeLoadDiagnostic.Terminal -> "load-terminal"
             }
@@ -105,6 +108,10 @@ class Todo18Scenario(val accountId: AccountId) {
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered,
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned,
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> accountId.value
+                is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
+                    observation.diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
+                    observation.diagnostic.accountId.value
                 Todo18MiniHomeLoadDiagnostic.Ready -> "Ready"
                 Todo18MiniHomeLoadDiagnostic.Forbidden -> "Forbidden"
                 Todo18MiniHomeLoadDiagnostic.Failed -> "Failed"
@@ -117,6 +124,9 @@ class Todo18Scenario(val accountId: AccountId) {
                 loadId = observation.loadId.value,
                 readId = observation.readId?.ordinal,
                 diagnosticOrder = observation.order,
+                cacheOutcome =
+                    (observation.diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheApplyReturned)
+                        ?.let { if (it.current) "current" else "conflict" },
             )
         listeners.forEach { it(event) }
     }

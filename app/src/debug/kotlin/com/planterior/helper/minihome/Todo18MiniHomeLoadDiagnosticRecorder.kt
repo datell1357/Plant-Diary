@@ -154,7 +154,7 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
             }
         val duplicate =
             if (observation.readId == null) {
-                state.observations.any { it.diagnostic == observation.diagnostic }
+                state.observations.any { it.receiptStage == observation.receiptStage }
             } else {
                 state.observations.any { it.readId == observation.readId }
             }
@@ -191,6 +191,13 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                 diagnostic == Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned ->
+                diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+            is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
+                diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+            is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
                 diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ->

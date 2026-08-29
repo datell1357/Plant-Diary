@@ -33,7 +33,12 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             root.source(
                 "app/src/debug/kotlin/com/planterior/helper/Todo18DiagnosticReceiptFinalizer.kt"
             )
-        val diagnosticCode = "$capture\n$receipt\n$progressReceipt\n$finalization"
+        val reducer =
+            root.source(
+                "app/src/debug/kotlin/com/planterior/helper/minihome/" +
+                    "Todo18MiniHomeLoadReceiptReducer.kt"
+            )
+        val diagnosticCode = "$capture\n$receipt\n$progressReceipt\n$finalization\n$reducer"
         val assertions =
             root.source(
                 "app/src/androidTest/kotlin/com/planterior/helper/" +
@@ -55,7 +60,7 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "finally",
             "todo18-e2e-journeys",
             "mini-home-conflict-initial-load-diagnostic.json",
-            "todo18-mini-home-load-diagnostic-v3",
+            "todo18-mini-home-load-diagnostic-v4",
             "put(\"api\", input.api)",
             "remote-load-entered",
             "remote-load-returned",
@@ -77,7 +82,7 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "catch (failure: AssertionError)",
             "catch (failure: Exception)",
             "primaryFailure.addSuppressed(summary)",
-            "load-diagnostic-boundary-mismatch",
+            "Todo18MiniHomeLoadReceiptReducer.problems",
         )
         assertOrdered(
             capture,
@@ -136,6 +141,11 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
                 "app/src/androidTest/kotlin/com/planterior/helper/" +
                     "Todo18MiniHomeRepositoryFixture.kt"
             )
+        val repository =
+            root.source(
+                "feature/minihome/src/main/kotlin/com/planterior/helper/feature/minihome/" +
+                    "FirebaseMiniHomeRepository.kt"
+            )
 
         // When / Then
         assertCode(
@@ -144,12 +154,32 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "FirebaseMiniHomeRepository(",
             "Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)",
             "Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics)",
+            "beforeCacheApply =",
+            "Todo18MiniHomeLoadDiagnostic.CacheApplyEntered",
+            "afterCacheApply =",
+            "Todo18MiniHomeLoadDiagnostic.CacheApplyReturned",
             "beforePublicationRead =",
             "miniHomeLoadDiagnostics.recordCurrent(",
             "Todo18MiniHomeLoadDiagnostic.PublicationReadEntered",
             "Todo18MiniHomeLoadDiagnosticRepository(",
             "delegate = miniHomeDelegate",
             "diagnostics = miniHomeLoadDiagnostics",
+        )
+        assertCode(
+            repository,
+            "beforeCacheApply: suspend (AccountId) -> Unit = {}",
+            "afterCacheApply: suspend (AccountId, Boolean) -> Unit = { _, _ -> }",
+            "observeCacheDiagnostic",
+            "catch (error: CancellationException)",
+            "catch (_: AssertionError)",
+            "catch (_: Exception)",
+        )
+        assertOrdered(
+            repository,
+            "notifyCacheApplyEntered(account)",
+            "val applied = cache(account, snapshot)",
+            "notifyCacheApplyReturned(account, applied)",
+            "publishCurrentRoomWinner(",
         )
         assertOrdered(
             remoteFixture,

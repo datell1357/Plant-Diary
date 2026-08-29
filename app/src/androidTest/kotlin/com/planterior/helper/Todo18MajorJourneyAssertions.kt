@@ -5,6 +5,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.collection.PlantDetailTestTags
@@ -16,7 +17,6 @@ import com.planterior.helper.feature.weather.WeatherTestTags
 import com.planterior.helper.navigation.PlanteriorRoute
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 
 /** Assertions for the complete persisted product journey. */
 internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsInRoom() {
@@ -28,6 +28,10 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
     events.navigateTo(PlanteriorRoute.WateringConfirmation(plantId)) {
         compose.onNodeWithTag(WateringTestTags.RECORD).performScrollTo().performClick()
     }
+    val fixtureWateredDate = runtime.boundary.now().atZone(runtime.boundary.zone).toLocalDate()
+    compose
+        .onNodeWithTag(WateringTestTags.DATE_INPUT)
+        .performTextReplacement(fixtureWateredDate.toString())
     Todo18IntegratedActionDiagnosticCapture(
             runtime,
             "registration-watering-confirm",
@@ -44,13 +48,14 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
             compose.waitForIdle()
             compose.onNodeWithTag(WateringTestTags.RESULT).assertIsDisplayed()
         }
-    assertNotNull(
+    assertEquals(
+        fixtureWateredDate.toString(),
         runBlocking {
             runtime.database
                 .cacheDao()
                 .plant(Todo18IntegratedRuntimeRule.ACCOUNT_UID, plantId)
                 ?.lastWateredDate
-        }
+        },
     )
 
     events.navigateAndAwaitBoundary(

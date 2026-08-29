@@ -32,10 +32,14 @@ import com.planterior.helper.core.model.Revision
 import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
@@ -47,6 +51,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -401,6 +406,136 @@ class FirebaseMiniHomeRepositoryTest {
         assertEquals(fresh.committed, stale.committed)
         assertTrue(stale.stale)
         assertEquals(GridPosition(2, 2), stale.committed.placements.single().position)
+    }
+
+    @Test
+    fun `held cache transaction delays publication until coherent Room read can proceed`() =
+        runTest {
+            val remoteEntered = CompletableDeferred<Unit>()
+            val releaseRemote = CompletableDeferred<Unit>()
+            val delegate =
+                FakeRemote(layout(7)).apply {
+                    cacheGeneration = 7
+                    onLoad = {
+                        remoteEntered.complete(Unit)
+                        releaseRemote.await()
+                    }
+                }
+            val remoteReturned = CompletableDeferred<AccountId>()
+            val remote =
+                object : MiniHomeRemoteDataSource {
+                    override fun activeAccount(): AccountId = delegate.activeAccount()
+
+                    override suspend fun load(accountId: AccountId): RemoteMiniHomeSnapshot {
+                        val snapshot = delegate.load(accountId)
+                        remoteReturned.complete(snapshot.accountId)
+                        return snapshot
+                    }
+
+                    override suspend fun save(
+                        request: MiniHomeSaveRequest
+                    ): RemoteMiniHomeSaveResult = delegate.save(request)
+                }
+            val publicationEntered = CompletableDeferred<AccountId>()
+            val cacheEntered = CompletableDeferred<AccountId>()
+            val cacheReturned = CompletableDeferred<Pair<AccountId, Boolean>>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    remote,
+                    beforeCacheApply = { cacheEntered.complete(it) },
+                    afterCacheApply = { accountId, current ->
+                        cacheReturned.complete(accountId to current)
+                    },
+                    beforePublicationRead = { publicationEntered.complete(it) },
+                )
+            val transactionHeld = CompletableDeferred<Unit>()
+            val releaseTransaction = CompletableDeferred<Unit>()
+
+            Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { loadDispatcher ->
+                val loading = async(loadDispatcher) { repository.load() }
+                remoteEntered.await()
+                val transaction =
+                    async(Dispatchers.IO) {
+                        database.withTransaction {
+                            database.cacheDao().clearMiniHome("publication-transaction-gate")
+                            transactionHeld.complete(Unit)
+                            releaseTransaction.await()
+                        }
+                    }
+                transactionHeld.await()
+                releaseRemote.complete(Unit)
+                assertEquals(AccountId("account-a"), remoteReturned.await())
+                val loadDispatcherDrained = CompletableDeferred<Unit>()
+                launch(loadDispatcher) { loadDispatcherDrained.complete(Unit) }
+                loadDispatcherDrained.await()
+
+                assertEquals(AccountId("account-a"), cacheEntered.await())
+                assertFalse(transaction.isCompleted)
+                assertFalse(loading.isCompleted)
+                assertFalse(cacheReturned.isCompleted)
+                assertFalse(publicationEntered.isCompleted)
+
+                releaseTransaction.complete(Unit)
+                transaction.await()
+                assertEquals(AccountId("account-a") to true, cacheReturned.await())
+                assertEquals(AccountId("account-a"), publicationEntered.await())
+                val loaded = loading.await() as MiniHomeLoadResult.Ready
+                assertEquals(AccountId("account-a"), loaded.accountId)
+                assertEquals(Revision(7), loaded.committed.revision)
+                assertFalse(loaded.stale)
+            }
+        }
+
+    @Test
+    fun `cache diagnostic runtime exception cannot change successful load`() = runTest {
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                beforeCacheApply = { throw IllegalStateException("diagnostic runtime") },
+            )
+
+        val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+        assertEquals(Revision(7), loaded.committed.revision)
+        assertFalse(loaded.stale)
+    }
+
+    @Test
+    fun `cache diagnostic assertion cannot change successful load`() = runTest {
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                afterCacheApply = { _, _ -> throw AssertionError("diagnostic assertion") },
+            )
+
+        val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+        assertEquals(Revision(7), loaded.committed.revision)
+        assertFalse(loaded.stale)
+    }
+
+    @Test
+    fun `cache diagnostic cancellation remains the exact primary failure`() = runTest {
+        val expected = CancellationException("diagnostic cancellation")
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                beforeCacheApply = { throw expected },
+            )
+
+        val actual =
+            try {
+                repository.load()
+                throw AssertionError("Expected cancellation")
+            } catch (failure: CancellationException) {
+                failure
+            }
+
+        assertSame(expected, actual)
     }
 
     @Test

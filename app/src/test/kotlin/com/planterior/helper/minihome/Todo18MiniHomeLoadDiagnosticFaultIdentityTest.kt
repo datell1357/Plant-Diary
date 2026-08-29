@@ -70,6 +70,40 @@ class Todo18MiniHomeLoadDiagnosticFaultIdentityTest {
         assertEquals(2, repository.loadProgressSnapshot().recorderFailures.size)
     }
 
+    @Test
+    fun `recorder observer fault cannot replace the exact delegate assertion`() = runTest {
+        // Given
+        val expected = AssertionError("load assertion remained primary")
+        val recorder = Todo18MiniHomeLoadDiagnosticRecorder {
+            throw IllegalStateException("diagnostic observer failed")
+        }
+        val repository =
+            Todo18MiniHomeLoadDiagnosticRepository(
+                ActionRepository { throw expected },
+                recorder,
+            )
+
+        // When
+        val actual =
+            try {
+                repository.load()
+                fail("Expected delegate assertion")
+            } catch (failure: AssertionError) {
+                failure
+            }
+
+        // Then
+        assertSame(expected, actual)
+        assertEquals(
+            listOf(
+                Todo18MiniHomeLoadDiagnostic.LoadEntered,
+                Todo18MiniHomeLoadDiagnostic.Failed,
+            ),
+            repository.loadProgressSnapshot().observations.map { it.diagnostic },
+        )
+        assertEquals(2, repository.loadProgressSnapshot().recorderFailures.size)
+    }
+
     private class ActionRepository(private val loadAction: suspend () -> MiniHomeLoadResult) :
         MiniHomeRepository {
         override suspend fun load(): MiniHomeLoadResult = loadAction()

@@ -1,5 +1,7 @@
 package com.planterior.helper
 
+import com.planterior.helper.minihome.Todo18MiniHomeLoadBoundaryStage
+import com.planterior.helper.minihome.Todo18MiniHomeLoadReceiptReducer
 import java.io.File
 
 /** Pre-armed, instance-owned evidence capture for the Todo18 MiniHome diagnostic. */
@@ -47,64 +49,24 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
             val snapshot = timeline.snapshot()
             val progress = runtime.miniHomeLoadDiagnostics.snapshot()
             val expectedAccountId = runtime.boundary.accountId.value
-            LOAD_DIAGNOSTIC_KINDS.forEach { kind ->
-                if (snapshot.none { it.kind == kind }) problems += "missing-$kind"
-            }
-            if (
-                snapshot.any { entry ->
-                    entry.kind in ACCOUNT_STAGE_KINDS && entry.identity != expectedAccountId
-                }
-            ) {
-                problems += "load-stage-account-mismatch"
-            }
             val diagnosticEntries = snapshot.filter {
                 it.source == "boundary" && it.kind in LOAD_DIAGNOSTIC_KINDS
             }
-            if (
-                diagnosticEntries.any { entry ->
-                    entry.loadId == null ||
-                        entry.diagnosticOrder == null ||
-                        (entry.kind == PUBLICATION_READ_ENTERED && entry.readId == null)
-                }
-            ) {
-                problems += "load-diagnostic-identity-missing"
-            }
-            val expectedIdentities =
-                progress.observations.map { observation ->
-                    DiagnosticIdentity(
-                        diagnosticOrder = observation.order,
-                        loadId = observation.loadId.value,
-                        readId = observation.readId?.ordinal,
-                        kind =
-                            if (
-                                observation.diagnostic
-                                    is
-                                    com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic.Terminal
-                            ) {
-                                LOAD_TERMINAL
-                            } else {
-                                observation.receiptStage
-                            },
-                    )
-                }
-            val capturedIdentities = diagnosticEntries.map { entry ->
-                DiagnosticIdentity(
-                    diagnosticOrder = entry.diagnosticOrder,
-                    loadId = entry.loadId,
-                    readId = entry.readId,
-                    kind = entry.kind,
+            problems +=
+                Todo18MiniHomeLoadReceiptReducer.problems(
+                    expectedAccountId,
+                    progress,
+                    diagnosticEntries.map { entry ->
+                        Todo18MiniHomeLoadBoundaryStage(
+                            kind = entry.kind,
+                            identity = entry.identity,
+                            loadId = entry.loadId,
+                            readId = entry.readId,
+                            diagnosticOrder = entry.diagnosticOrder,
+                            cacheOutcome = entry.cacheOutcome,
+                        )
+                    },
                 )
-            }
-            if (capturedIdentities != expectedIdentities) {
-                problems += "load-diagnostic-boundary-mismatch"
-            }
-            val terminalIdentities =
-                diagnosticEntries.filter { it.kind == LOAD_TERMINAL }.mapNotNull { it.identity }
-            if (terminalIdentities.any { it !in TERMINAL_IDENTITIES }) {
-                problems += "unclassified-load-terminal"
-            }
-            problems += progress.recorderFailures.map { "recorder-failed:$it" }
-            problems += progress.progressionProblems()
 
             val status = if (problems.isEmpty()) "complete" else problems.joinToString()
             return Todo18DiagnosticReceiptFinalizer(
@@ -153,25 +115,16 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
         val displayed: AutoCloseable,
     )
 
-    private data class DiagnosticIdentity(
-        val diagnosticOrder: Long?,
-        val loadId: Long?,
-        val readId: Long?,
-        val kind: String?,
-    )
-
     private companion object {
-        const val LOAD_TERMINAL = "load-terminal"
-        const val PUBLICATION_READ_ENTERED = "publication-read-entered"
         val LOAD_DIAGNOSTIC_KINDS =
             setOf(
                 "load-entered",
                 "remote-load-entered",
                 "remote-load-returned",
-                PUBLICATION_READ_ENTERED,
-                LOAD_TERMINAL,
+                "cache-apply-entered",
+                "cache-apply-returned",
+                "publication-read-entered",
+                "load-terminal",
             )
-        val ACCOUNT_STAGE_KINDS = LOAD_DIAGNOSTIC_KINDS - LOAD_TERMINAL
-        val TERMINAL_IDENTITIES = setOf("Ready", "Forbidden", "Failed", "Cancelled")
     }
 }

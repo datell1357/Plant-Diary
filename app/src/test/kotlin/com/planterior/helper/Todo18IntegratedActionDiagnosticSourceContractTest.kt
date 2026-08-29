@@ -44,6 +44,27 @@ class Todo18IntegratedActionDiagnosticSourceContractTest {
     }
 
     @Test
+    fun `integrated Watering enters the fixture local date before action capture and checks it exactly`() {
+        val major = source("Todo18MajorJourneyAssertions.kt")
+        val deriveDate = "runtime.boundary.now().atZone(runtime.boundary.zone).toLocalDate()"
+        val replacement = "performTextReplacement(fixtureWateredDate.toString())"
+        val capture = "Todo18IntegratedActionDiagnosticCapture("
+
+        assertCode(
+            major,
+            deriveDate,
+            "WateringTestTags.DATE_INPUT",
+            replacement,
+            "fixtureWateredDate.toString(),",
+            "?.lastWateredDate",
+        )
+        assertTrue(
+            "Fixture date replacement must precede Watering action capture",
+            major.indexOf(replacement) < major.indexOf(capture),
+        )
+    }
+
+    @Test
     fun `all three actions unconditionally finalize source and APK bound ordered receipts`() {
         val miniHome = source("Todo18MiniHomeJourneyAssertions.kt")
         val major = source("Todo18MajorJourneyAssertions.kt")

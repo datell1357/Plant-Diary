@@ -26,7 +26,7 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
     val entered = input.timeline.filter { it.kind == "load-entered" }
     val terminals = input.timeline.filter { it.kind == "load-terminal" }
     val receipt = buildJsonObject {
-        put("schema", "todo18-mini-home-load-diagnostic-v3")
+        put("schema", "todo18-mini-home-load-diagnostic-v4")
         put("scenario", "mini-home-conflict-initial-load")
         put("api", input.api)
         put("expectedAccountId", input.expectedAccountId)
@@ -62,6 +62,7 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
                         put("loadId", entry.loadId)
                         put("readId", entry.readId)
                         put("diagnosticOrder", entry.diagnosticOrder)
+                        put("cacheOutcome", entry.cacheOutcome)
                         put("sinkSequence", entry.sinkSequence)
                         put("state", entry.state)
                         put("owner", entry.owner)

@@ -17,6 +17,7 @@ internal class Timeline {
                     loadId = event.loadId,
                     readId = event.readId,
                     diagnosticOrder = event.diagnosticOrder,
+                    cacheOutcome = event.cacheOutcome,
                 )
         }
 
@@ -43,6 +44,7 @@ internal data class TimelineEntry(
     val loadId: Long? = null,
     val readId: Long? = null,
     val diagnosticOrder: Long? = null,
+    val cacheOutcome: String? = null,
     val sinkSequence: Long? = null,
     val state: String? = null,
     val owner: String? = null,
