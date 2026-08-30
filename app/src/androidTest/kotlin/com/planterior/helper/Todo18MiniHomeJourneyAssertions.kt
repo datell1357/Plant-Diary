@@ -4,8 +4,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.planterior.helper.diagnostic.Todo18WaitId
 import com.planterior.helper.feature.minihome.MiniHomePlacementTarget
+import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
 import com.planterior.helper.feature.minihome.MiniHomeSaveState
 import com.planterior.helper.feature.minihome.MiniHomeTestTags
 import com.planterior.helper.feature.minihome.MiniHomeUiState
@@ -87,7 +89,9 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
                 },
             )
             compose.onNodeWithTag(MiniHomeTestTags.SAVE_FAILURE).assertIsDisplayed()
-            compose.onNodeWithTag(MiniHomeTestTags.RETRY).assertIsDisplayed()
+            val retry = compose.onNodeWithTag(MiniHomeTestTags.RETRY)
+            retry.performScrollTo()
+            retry.assertIsDisplayed()
         }
     val frozen = runtime.boundary.miniHomeSaveRequests.single().operationId
     assertEquals(frozen.value, saveAttempt.identity)
@@ -162,6 +166,13 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDra
         },
         trigger = { compose.onNodeWithTag(MiniHomeTestTags.plant(plantId)).performClick() },
     )
+    val editing =
+        requireNotNull(
+            runtime.renderedStateSink.currentDisplayedMiniHomeState()?.state
+                as? MiniHomeUiState.Editing
+        )
+    val expectedDraft = editing.draft
+    val expectedOperationId = editing.operationId
     lateinit var saveAttempt: Todo18BoundaryEvent
     Todo18IntegratedActionDiagnosticCapture(
             runtime,
@@ -170,8 +181,14 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDra
         )
         .run { action ->
             rendered.awaitMiniHome(
-                matches = {
-                    (it.state as? MiniHomeUiState.Editing)?.saveState is MiniHomeSaveState.Conflict
+                matches = { event ->
+                    val editing = event.state as? MiniHomeUiState.Editing
+                    editing?.saveState ==
+                        MiniHomeSaveState.ReconciliationRequired(
+                            MiniHomeSaveFailure.REVISION_CONFLICT
+                        ) &&
+                        editing.draft == expectedDraft &&
+                        editing.operationId == expectedOperationId
                 },
                 trigger = {
                     saveAttempt =
@@ -187,8 +204,9 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDra
                     action.recordBoundaryDelivery()
                 },
             )
-            compose.onNodeWithTag(MiniHomeTestTags.CONFLICT).assertIsDisplayed()
-            compose.onNodeWithTag(MiniHomeTestTags.RETRY).assertIsDisplayed()
+            val reconcile = compose.onNodeWithTag(MiniHomeTestTags.RECONCILE)
+            reconcile.performScrollTo()
+            reconcile.assertIsDisplayed()
         }
     assertEquals(1, runtime.boundary.miniHomeSaveRequests.size)
     val operationId = runtime.boundary.miniHomeSaveRequests.single().operationId

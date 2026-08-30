@@ -99,7 +99,7 @@ class Todo18IntegratedJourneySourceContractTest {
             ".operation(",
             "listOf(frozen, frozen)",
             "MiniHomeTestTags.SAVE_FAILURE",
-            "MiniHomeTestTags.CONFLICT",
+            "MiniHomeTestTags.RECONCILE",
             "MiniHomeTestTags.RETRY",
         )
         assertCode(
@@ -205,6 +205,113 @@ class Todo18IntegratedJourneySourceContractTest {
             "events.awaitBoundary(\"mini-home-save-attempt\")",
             "assertEquals(frozen.value, saveAttempt.identity)",
             "assertEquals(operationId.value, saveAttempt.identity)",
+        )
+    }
+
+    @Test
+    fun `Offline Retry scrolls the exact selected node before displayed assertion`() {
+        val miniHome =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MiniHomeJourneyAssertions.kt"
+            )
+        val tokens =
+            listOf(
+                "val retry = compose.onNodeWithTag(MiniHomeTestTags.RETRY)",
+                "retry.performScrollTo()",
+                "retry.assertIsDisplayed()",
+            )
+        val positions = tokens.map(miniHome::indexOf)
+
+        tokens.zip(positions).forEach { (token, position) ->
+            assertTrue("Missing ordered code token: $token", position >= 0)
+        }
+        assertTrue("Retry interaction tokens are out of order", positions == positions.sorted())
+    }
+
+    @Test
+    fun `Conflict awaits reconciliation and scrolls the exact recovery action`() {
+        val miniHome =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MiniHomeJourneyAssertions.kt"
+            )
+        val conflict =
+            miniHome
+                .substringAfter(
+                    "internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDraft()"
+                )
+                .substringBefore("\ninternal fun ")
+        val tokens =
+            listOf(
+                "val expectedDraft = editing.draft",
+                "val expectedOperationId = editing.operationId",
+                "MiniHomeSaveState.ReconciliationRequired(",
+                "MiniHomeSaveFailure.REVISION_CONFLICT",
+                "editing.draft == expectedDraft",
+                "editing.operationId == expectedOperationId",
+                "val reconcile = compose.onNodeWithTag(MiniHomeTestTags.RECONCILE)",
+                "reconcile.performScrollTo()",
+                "reconcile.assertIsDisplayed()",
+            )
+        val positions = tokens.map(conflict::indexOf)
+
+        tokens.zip(positions).forEach { (token, position) ->
+            assertTrue("Missing ordered Conflict code token: $token", position >= 0)
+        }
+        assertTrue(
+            "Conflict reconciliation tokens are out of order",
+            positions == positions.sorted(),
+        )
+        assertFalse(conflict.contains("MiniHomeSaveState.Conflict"))
+        assertFalse(conflict.contains("MiniHomeTestTags.CONFLICT"))
+        assertFalse(conflict.contains("MiniHomeTestTags.RETRY"))
+    }
+
+    @Test
+    fun `inventory acquire waits for exact authoritative cache settlement`() {
+        val runtime =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18IntegratedRuntimeRule.kt"
+            )
+        val journey =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MajorJourneyAssertions.kt"
+            )
+        val inventoryJourney =
+            journey
+                .substringAfter("boundaryKind = \"inventory-loaded\"")
+                .substringBefore("boundaryKind = \"mini-home-loaded\"")
+        val inventoryRuntime =
+            runtime.substringAfter("val inventory =").substringBefore("val watering =")
+
+        assertCode(
+            inventoryRuntime,
+            "Todo18InventoryCacheSettlementRepository(",
+            "delegate =",
+            "FirebaseInventoryRepository(",
+            "onSettled = {",
+            "boundary.emit(\"inventory-cache-settled\", it.operationId.value)",
+        )
+        val tokens =
+            listOf(
+                "lateinit var acquired: Todo18BoundaryEvent",
+                "events.awaitBoundary(\"inventory-cache-settled\")",
+                "events.awaitBoundary(\"inventory-acquired\")",
+                "onNodeWithTag(InventoryTestTags.acquire(ItemId(\"todo18-planter\")))",
+                "assertEquals(acquired.identity, settled.identity)",
+                "compose.onNodeWithTag(InventoryTestTags.FEEDBACK).assertIsDisplayed()",
+                "runtime.database.cacheDao().ownedItems(Todo18IntegratedRuntimeRule.ACCOUNT_UID).size",
+            )
+        val positions = tokens.map(inventoryJourney::indexOf)
+        val clickPosition = inventoryJourney.indexOf(".performClick()", positions[3])
+
+        tokens.zip(positions).forEach { (token, position) ->
+            assertTrue("Missing ordered Inventory settlement token: $token", position >= 0)
+        }
+        assertTrue("Missing exact Inventory acquire click", clickPosition >= 0)
+        val orderedPositions = positions.take(4) + clickPosition + positions.drop(4)
+        assertTrue(
+            "Inventory settlement tokens are out of order",
+            orderedPositions == orderedPositions.sorted(),
         )
     }
 

@@ -23,6 +23,7 @@ import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.shop.FirebaseInventoryRepository
 import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
 import com.planterior.helper.feature.watering.OutboxWateringRepository
+import com.planterior.helper.inventory.Todo18InventoryCacheSettlementRepository
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRepository
@@ -161,11 +162,12 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                     delegate = miniHomeDelegate,
                     diagnostics = miniHomeLoadDiagnostics,
                 )
+            val inventoryRemote = Todo18InventoryRepositoryFixture(boundary)
             val inventory =
-                FirebaseInventoryRepository(
-                    database,
-                    Todo18InventoryRepositoryFixture(boundary),
-                    boundary::now,
+                Todo18InventoryCacheSettlementRepository(
+                    delegate =
+                        FirebaseInventoryRepository(database, inventoryRemote, boundary::now),
+                    onSettled = { boundary.emit("inventory-cache-settled", it.operationId.value) },
                 )
             val watering =
                 OutboxWateringRepository(

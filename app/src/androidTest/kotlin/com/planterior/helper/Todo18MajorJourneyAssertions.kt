@@ -67,9 +67,17 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
         .onNodeWithTag(InventoryTestTags.item(ItemId("todo18-planter")))
         .performScrollTo()
         .assertIsDisplayed()
-    events.awaitBoundary("inventory-acquired") {
-        compose.onNodeWithTag(InventoryTestTags.acquire(ItemId("todo18-planter"))).performClick()
-    }
+    lateinit var acquired: Todo18BoundaryEvent
+    val settled =
+        events.awaitBoundary("inventory-cache-settled") {
+            acquired =
+                events.awaitBoundary("inventory-acquired") {
+                    compose
+                        .onNodeWithTag(InventoryTestTags.acquire(ItemId("todo18-planter")))
+                        .performClick()
+                }
+        }
+    assertEquals(acquired.identity, settled.identity)
     compose.waitForIdle()
     compose.onNodeWithTag(InventoryTestTags.FEEDBACK).assertIsDisplayed()
     assertEquals(

@@ -3,12 +3,14 @@ package com.planterior.helper.action
 import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.Lifecycle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -36,6 +38,7 @@ import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -129,6 +132,7 @@ class MiniHomeSaveActionEntryTraceTest {
 
             compose.onNodeWithTag(MiniHomeTestTags.EDIT).performClick()
             compose.onNodeWithTag(MiniHomeTestTags.plant(plantId)).performClick()
+            val beforeSave = rawStates.last() as MiniHomeUiState.Editing
             recordSaveSemantics(trace)
             compose.onNodeWithTag(MiniHomeTestTags.SAVE).performClick()
             compose.waitForIdle()
@@ -145,6 +149,8 @@ class MiniHomeSaveActionEntryTraceTest {
                             .REVISION_CONFLICT,
                         (saveState as MiniHomeSaveState.ReconciliationRequired).failure,
                     )
+                    assertEquals(beforeSave.operationId, editing.operationId)
+                    assertEquals(beforeSave.draft, editing.draft)
                 }
                 Todo18MiniHomeSaveMode.OFFLINE_ONCE ->
                     assertTrue(
@@ -177,6 +183,21 @@ class MiniHomeSaveActionEntryTraceTest {
                 observations.mapNotNull(MiniHomeSaveActionObservation::decision),
             )
             assertEquals(1, scenario.miniHomeSaveRequests.size)
+            if (mode == Todo18MiniHomeSaveMode.OFFLINE_ONCE) {
+                compose.onAllNodesWithTag(MiniHomeTestTags.RETRY).assertCountEquals(1)
+                val retry = compose.onNodeWithTag(MiniHomeTestTags.RETRY)
+                assertThrows(AssertionError::class.java) { retry.assertIsDisplayed() }
+                retry.performScrollTo()
+                retry.assertIsDisplayed()
+            }
+            if (mode == Todo18MiniHomeSaveMode.REVISION_CONFLICT) {
+                compose.onAllNodesWithTag(MiniHomeTestTags.CONFLICT).assertCountEquals(0)
+                compose.onAllNodesWithTag(MiniHomeTestTags.RETRY).assertCountEquals(0)
+                compose.onAllNodesWithTag(MiniHomeTestTags.RECONCILE).assertCountEquals(1)
+                val reconcile = compose.onNodeWithTag(MiniHomeTestTags.RECONCILE)
+                reconcile.performScrollTo()
+                reconcile.assertIsDisplayed()
+            }
         } finally {
             compose.unregisterIdlingResource(routeIdlingResource)
             boundary.close()
