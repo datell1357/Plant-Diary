@@ -21,6 +21,9 @@ import com.planterior.helper.core.database.MiniHomeCacheWatermarkEntity
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkKind
 import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.core.database.RoomTransactionOwner
+import com.planterior.helper.core.database.RoomTransactionOwnerDiagnostics
+import com.planterior.helper.core.database.RoomTransactionOwnerObservation
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
@@ -502,6 +505,151 @@ class FirebaseMiniHomeRepositoryTest {
         }
 
     @Test
+    fun `second publication read suspended by Room cancellation does not report a return`() =
+        runTest {
+            val secondReadEntered = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val releaseSecondReadCallback = CompletableDeferred<Unit>()
+            val firstReadReturned = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val secondReadReturned = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    beforePublicationRead = { _, readIdentity ->
+                        if (readIdentity.value == 2L) {
+                            secondReadEntered.complete(readIdentity)
+                            releaseSecondReadCallback.await()
+                        }
+                    },
+                    afterPublicationRead = { _, readIdentity ->
+                        when (readIdentity.value) {
+                            1L -> firstReadReturned.complete(readIdentity)
+                            2L -> secondReadReturned.complete(readIdentity)
+                        }
+                    },
+                )
+            val transactionHeld = CompletableDeferred<Unit>()
+            val releaseTransaction = CompletableDeferred<Unit>()
+
+            Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { loadDispatcher ->
+                val loading = async(loadDispatcher) { repository.load() }
+                val completion = CompletableDeferred<Throwable?>()
+                loading.invokeOnCompletion(completion::complete)
+                val readIdentity = secondReadEntered.await()
+                val transaction =
+                    async(Dispatchers.IO) {
+                        database.withTransaction {
+                            database.cacheDao().clearMiniHome("second-publication-read-gate")
+                            transactionHeld.complete(Unit)
+                            releaseTransaction.await()
+                        }
+                    }
+                transactionHeld.await()
+
+                try {
+                    releaseSecondReadCallback.complete(Unit)
+                    val loadDispatcherDrained = CompletableDeferred<Unit>()
+                    launch(loadDispatcher) { loadDispatcherDrained.complete(Unit) }
+                    loadDispatcherDrained.await()
+
+                    assertEquals(MiniHomePublicationReadIdentity(1L), firstReadReturned.await())
+                    assertEquals(MiniHomePublicationReadIdentity(2L), readIdentity)
+                    assertFalse(secondReadReturned.isCompleted)
+                    assertFalse(loading.isCompleted)
+
+                    val expected = CancellationException("cancel suspended publication read")
+                    loading.cancel(expected)
+                    val cancellationDispatcherDrained = CompletableDeferred<Unit>()
+                    launch(loadDispatcher) { cancellationDispatcherDrained.complete(Unit) }
+                    cancellationDispatcherDrained.await()
+
+                    assertTrue(loading.isCompleted)
+                    assertSame(expected, completion.await())
+                    val actual =
+                        try {
+                            loading.await()
+                            throw AssertionError("Expected cancellation")
+                        } catch (failure: CancellationException) {
+                            failure
+                        }
+                    assertEquals(expected.javaClass, actual.javaClass)
+                    assertEquals(expected.message, actual.message)
+                    assertFalse(secondReadReturned.isCompleted)
+                } finally {
+                    releaseTransaction.complete(Unit)
+                    transaction.await()
+                    loading.cancel()
+                }
+            }
+        }
+
+    @Test
+    fun `second publication read returns after Room transaction releases before load finalizes`() =
+        runTest {
+            val secondReadEntered = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val releaseSecondReadCallback = CompletableDeferred<Unit>()
+            val firstReadReturned = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val secondReadReturned = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    beforePublicationRead = { _, readIdentity ->
+                        if (readIdentity.value == 2L) {
+                            secondReadEntered.complete(readIdentity)
+                            releaseSecondReadCallback.await()
+                        }
+                    },
+                    afterPublicationRead = { _, readIdentity ->
+                        when (readIdentity.value) {
+                            1L -> firstReadReturned.complete(readIdentity)
+                            2L -> secondReadReturned.complete(readIdentity)
+                        }
+                    },
+                )
+            val transactionHeld = CompletableDeferred<Unit>()
+            val releaseTransaction = CompletableDeferred<Unit>()
+
+            Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { loadDispatcher ->
+                val loading = async(loadDispatcher) { repository.load() }
+                val completion = CompletableDeferred<Throwable?>()
+                loading.invokeOnCompletion(completion::complete)
+                val readIdentity = secondReadEntered.await()
+                val transaction =
+                    async(Dispatchers.IO) {
+                        database.withTransaction {
+                            database
+                                .cacheDao()
+                                .clearMiniHome("second-publication-read-release-gate")
+                            transactionHeld.complete(Unit)
+                            releaseTransaction.await()
+                        }
+                    }
+                transactionHeld.await()
+
+                releaseSecondReadCallback.complete(Unit)
+                val loadDispatcherDrained = CompletableDeferred<Unit>()
+                launch(loadDispatcher) { loadDispatcherDrained.complete(Unit) }
+                loadDispatcherDrained.await()
+
+                assertEquals(MiniHomePublicationReadIdentity(1L), firstReadReturned.await())
+                assertEquals(MiniHomePublicationReadIdentity(2L), readIdentity)
+                assertFalse(secondReadReturned.isCompleted)
+                assertFalse(loading.isCompleted)
+
+                releaseTransaction.complete(Unit)
+                transaction.await()
+                val loaded = loading.await() as MiniHomeLoadResult.Ready
+
+                assertTrue(secondReadReturned.isCompleted)
+                assertEquals(MiniHomePublicationReadIdentity(2L), secondReadReturned.await())
+                assertEquals(null, completion.await())
+                assertEquals(Revision(7), loaded.committed.revision)
+                assertFalse(loaded.stale)
+            }
+        }
+
+    @Test
     fun `cache diagnostic runtime exception cannot change successful load`() = runTest {
         val repository =
             FirebaseMiniHomeRepository(
@@ -515,6 +663,64 @@ class FirebaseMiniHomeRepositoryTest {
         assertEquals(Revision(7), loaded.committed.revision)
         assertFalse(loaded.stale)
     }
+
+    @Test
+    fun `tagged shared Room writer holds the second publication read until its terminal`() =
+        runTest {
+            val observations = mutableListOf<RoomTransactionOwnerObservation>()
+            val diagnostics = RoomTransactionOwnerDiagnostics(observations::add)
+            val startTransaction = CompletableDeferred<Unit>()
+            val transactionHeld = CompletableDeferred<Unit>()
+            val releaseTransaction = CompletableDeferred<Unit>()
+            val secondReadEntered = CompletableDeferred<Unit>()
+            val secondReadReturned = CompletableDeferred<Unit>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    beforePublicationRead = { _, readIdentity ->
+                        if (readIdentity.value == 2L) {
+                            startTransaction.complete(Unit)
+                            transactionHeld.await()
+                            secondReadEntered.complete(Unit)
+                        }
+                    },
+                    afterPublicationRead = { _, readIdentity ->
+                        if (readIdentity.value == 2L) secondReadReturned.complete(Unit)
+                    },
+                )
+
+            val transaction =
+                async(Dispatchers.IO) {
+                    startTransaction.await()
+                    diagnostics.observe(RoomTransactionOwner.ANALYTICS_ENQUEUE) {
+                        database.withTransaction {
+                            database.cacheDao().clearMiniHome("tagged-shared-room-holder")
+                            transactionHeld.complete(Unit)
+                            releaseTransaction.await()
+                        }
+                    }
+                }
+            val loading = async { repository.load() }
+            secondReadEntered.await()
+            transactionHeld.await()
+
+            assertFalse(secondReadReturned.isCompleted)
+            assertFalse(loading.isCompleted)
+            assertEquals(1, observations.size)
+            assertTrue(observations.single() is RoomTransactionOwnerObservation.Began)
+
+            releaseTransaction.complete(Unit)
+            transaction.await()
+            val loaded = loading.await() as MiniHomeLoadResult.Ready
+
+            assertTrue(secondReadReturned.isCompleted)
+            assertEquals(2, observations.size)
+            assertEquals(observations[0].token, observations[1].token)
+            assertTrue(observations[1] is RoomTransactionOwnerObservation.Returned)
+            assertEquals(Revision(7), loaded.committed.revision)
+            assertFalse(loaded.stale)
+        }
 
     @Test
     fun `cache diagnostic assertion cannot change successful load`() = runTest {

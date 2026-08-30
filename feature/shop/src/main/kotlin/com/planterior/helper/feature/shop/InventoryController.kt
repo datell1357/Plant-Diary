@@ -401,7 +401,8 @@ class InventoryController(
                             result.receipt,
                             InventoryOwnershipReceiptKind.ACQUIRED,
                         )
-                    publishTerminalFeedback(action.token, feedback)
+                    finishAcquisitionRequest(action.token, feedback)
+                    enqueueTerminalFeedback(action.token, feedback)
                     reloadAfterAcquisition(action.token)
                 }
                 is InventoryAcquireResult.AlreadyOwned -> {
@@ -410,7 +411,8 @@ class InventoryController(
                             result.receipt,
                             InventoryOwnershipReceiptKind.ALREADY_OWNED,
                         )
-                    publishTerminalFeedback(action.token, feedback)
+                    finishAcquisitionRequest(action.token, feedback)
+                    enqueueTerminalFeedback(action.token, feedback)
                     reloadAfterAcquisition(action.token)
                 }
                 is InventoryAcquireResult.ConditionNotMet ->
@@ -528,12 +530,15 @@ class InventoryController(
         return feedbackToken.copy(receiptKind = kind, terminalReceipt = terminalReceipt)
     }
 
-    private suspend fun publishTerminalFeedback(token: ActionToken, feedback: FeedbackToken) {
-        val receipt = requireNotNull(feedback.terminalReceipt)
+    private fun finishAcquisitionRequest(token: ActionToken, feedback: FeedbackToken) {
         mutateContent(token) { content ->
             clearPending(feedback)
             content.copy(acquiringItemId = null)
         }
+    }
+
+    private suspend fun enqueueTerminalFeedback(token: ActionToken, feedback: FeedbackToken) {
+        val receipt = requireNotNull(feedback.terminalReceipt)
         receiptDelivery.withLock {
             enqueueReceiptCandidates(
                 token,
@@ -545,7 +550,6 @@ class InventoryController(
                     )
                 ),
             )
-            presentNextReceiptLocked(token)
         }
     }
 
@@ -594,8 +598,7 @@ class InventoryController(
                     loaded.receiptCandidatesAuthoritative,
                 )
             InventoryLoadResult.Forbidden,
-            InventoryLoadResult.Failed ->
-                receiptDelivery.withLock { presentNextReceiptLocked(token) }
+            InventoryLoadResult.Failed -> Unit
         }
     }
 
@@ -641,12 +644,22 @@ class InventoryController(
     ) {
         mutate(token) {
             val existing = receiptCandidates.associateBy { it.receiptId }
+            val retainedLocal = receiptCandidates.filter {
+                it.feedback?.terminalReceipt != null && it.receiptId !in receiptsById
+            }
             receiptCandidates.clear()
             receiptIds.distinct().forEach { receiptId ->
                 if (receiptId !in receiptsById) {
                     receiptCandidates +=
                         existing[receiptId]
                             ?: ReceiptCandidate(receiptId, expected = null, feedback = null)
+                }
+            }
+            retainedLocal.forEach { candidate ->
+                if (receiptCandidates.none { it.receiptId == candidate.receiptId }) {
+                    val insertionIndex = receiptCandidates.indexOfFirst { candidate.precedes(it) }
+                    if (insertionIndex < 0) receiptCandidates += candidate
+                    else receiptCandidates.add(insertionIndex, candidate)
                 }
             }
             val scheduled = scheduledReceiptRedelivery
@@ -679,6 +692,11 @@ class InventoryController(
     }
 
     private fun ReceiptCandidate.precedes(other: ReceiptCandidate): Boolean {
+        val sequence = feedback?.sequence
+        val otherSequence = other.feedback?.sequence
+        if (sequence != null && otherSequence != null && sequence != otherSequence) {
+            return sequence > otherSequence
+        }
         val receipt = expected?.receipt ?: return false
         val otherReceipt = other.expected?.receipt ?: return false
         return receipt.createdAtEpochMillis < otherReceipt.createdAtEpochMillis ||
@@ -738,8 +756,20 @@ class InventoryController(
             val content = _state.value as? InventoryUiState.Content ?: return@synchronized null
             if (content.feedbackReceiptId != null) return@synchronized null
             val next = receiptCandidates.firstOrNull() ?: return@synchronized null
-            next
+            next.takeIf { it.isEligibleForPresentation(content, token) }
         }
+
+    private fun ReceiptCandidate.isEligibleForPresentation(
+        content: InventoryUiState.Content,
+        token: ActionToken,
+    ): Boolean {
+        val localTerminal = feedback?.terminalReceipt ?: return true
+        return content.owner == token.owner &&
+            content.snapshot.accountId == token.owner &&
+            localTerminal.owner == token.owner &&
+            !content.stale &&
+            content.snapshot.owned.any { it.itemId == localTerminal.itemId }
+    }
 
     private fun publishClaimedReceipt(
         token: ActionToken,
@@ -753,7 +783,8 @@ class InventoryController(
                 content.owner != token.owner ||
                     claim.receipt.owner != token.owner ||
                     content.feedbackReceiptId != null ||
-                    receiptCandidates.firstOrNull() != candidate
+                    receiptCandidates.firstOrNull() != candidate ||
+                    !candidate.isEligibleForPresentation(content, token)
             ) {
                 return@synchronized null
             }
@@ -826,7 +857,8 @@ class InventoryController(
             if (!isCurrentLocked(token)) return@synchronized false
             val content = _state.value as? InventoryUiState.Content ?: return@synchronized false
             content.feedbackReceiptId == null &&
-                receiptCandidates.firstOrNull()?.receiptId == candidate.receiptId
+                receiptCandidates.firstOrNull()?.receiptId == candidate.receiptId &&
+                candidate.isEligibleForPresentation(content, token)
         }
 
     private fun discardUnavailableCandidate(

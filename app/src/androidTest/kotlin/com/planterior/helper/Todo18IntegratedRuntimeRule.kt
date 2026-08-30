@@ -13,6 +13,8 @@ import com.planterior.helper.auth.todo18DebugRuntimeDependencyOverrides
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.diagnostic.Todo18CaptureFreshness
+import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerRecorder
+import com.planterior.helper.diagnostic.attachTodo18RoomTransactionOwnerListener
 import com.planterior.helper.feature.camera.CameraPermission
 import com.planterior.helper.feature.camera.Todo18DebugCameraBoundary
 import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
@@ -50,6 +52,8 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
         private set
 
     internal val inventorySettlementDiagnostics = Todo18InventorySettlementDiagnosticRecorder()
+    internal val roomTransactionOwners = Todo18RoomTransactionOwnerRecorder()
+    private var roomTransactionOwnerListener: AutoCloseable? = null
 
     internal val initialSinkFreshness =
         Todo18CaptureFreshness(
@@ -120,6 +124,8 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
 
     override fun before() {
         actionDiagnostics.install()
+        roomTransactionOwnerListener =
+            attachTodo18RoomTransactionOwnerListener(roomTransactionOwners::record)
         try {
             priorOverridePresent = todo18DebugRuntimeDependencyOverrides() != null
             priorActivityCount = currentMainActivityCount()
@@ -187,6 +193,8 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                 )
             )
         } catch (failure: Throwable) {
+            roomTransactionOwnerListener?.close()
+            roomTransactionOwnerListener = null
             actionDiagnostics.close()
             throw failure
         }
@@ -201,6 +209,8 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             Todo18DebugRuntimeDependencies.clear()
             if (::database.isInitialized && database.isOpen) database.clearAllTables()
         } finally {
+            roomTransactionOwnerListener?.close()
+            roomTransactionOwnerListener = null
             actionDiagnostics.close()
         }
     }

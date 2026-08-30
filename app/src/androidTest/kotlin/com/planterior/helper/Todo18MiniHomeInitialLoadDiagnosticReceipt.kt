@@ -1,5 +1,6 @@
 package com.planterior.helper
 
+import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassification
 import com.planterior.helper.minihome.Todo18MiniHomeLoadProgress
 import com.planterior.helper.minihome.putTodo18MiniHomeLoadProgress
 import java.io.File
@@ -17,6 +18,7 @@ internal data class Todo18MiniHomeInitialLoadReceipt(
     val progress: Todo18MiniHomeLoadProgress,
     val primaryFailure: Throwable?,
     val problems: List<String>,
+    val transactionOwner: Todo18RoomTransactionOwnerClassification,
 )
 
 internal fun writeTodo18MiniHomeInitialLoadReceipt(
@@ -43,6 +45,18 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
         }
         putJsonArray("diagnosticFailures") { input.problems.forEach(::add) }
         put(
+            "sharedRoomTransactionOwner",
+            when (val classification = input.transactionOwner) {
+                is Todo18RoomTransactionOwnerClassification.Exact ->
+                    buildJsonObject {
+                        put("classification", classification.owner.name)
+                        put("token", classification.token)
+                    }
+                Todo18RoomTransactionOwnerClassification.Unknown ->
+                    buildJsonObject { put("classification", "UNKNOWN") }
+            },
+        )
+        put(
             "journeyFailure",
             input.primaryFailure?.let { failure ->
                 buildJsonObject {
@@ -66,6 +80,10 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
                         put("sinkSequence", entry.sinkSequence)
                         put("state", entry.state)
                         put("owner", entry.owner)
+                        put("transactionOwner", entry.transactionOwner)
+                        put("transactionToken", entry.transactionToken)
+                        put("transactionFailureClass", entry.transactionFailureClass)
+                        put("transactionFailureMessage", entry.transactionFailureMessage)
                     }
                 )
             }

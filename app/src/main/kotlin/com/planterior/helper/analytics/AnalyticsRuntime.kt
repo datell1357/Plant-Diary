@@ -3,6 +3,8 @@ package com.planterior.helper.analytics
 import android.content.Context
 import androidx.work.WorkManager
 import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.core.database.RoomTransactionOwner
+import com.planterior.helper.core.database.RoomTransactionOwnerDiagnostics
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +26,8 @@ class AnalyticsRuntime(
             null
         }
     },
+    private val transactionOwners: RoomTransactionOwnerDiagnostics =
+        RoomTransactionOwnerDiagnostics(),
     private val firebaseUid: () -> String?,
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -32,6 +36,7 @@ class AnalyticsRuntime(
             database.analyticsEventQueueDao(),
             scope,
             AnalyticsWorkEnqueuer { workController()?.enqueue() },
+            transactionOwners = transactionOwners,
         )
     val sessionTracker = AnalyticsSessionTracker(recorder)
     val consent =
@@ -51,7 +56,9 @@ class AnalyticsRuntime(
 
                 override suspend fun prepareOwner(ownerUid: String) {
                     workController()?.cancel()
-                    database.analyticsEventQueueDao().purgeOtherOwners(ownerUid)
+                    transactionOwners.observe(RoomTransactionOwner.ANALYTICS_CONSENT_PURGE) {
+                        database.analyticsEventQueueDao().purgeOtherOwners(ownerUid)
+                    }
                 }
 
                 override suspend fun cancelWorkAndPurge(ownerUid: String?) {
@@ -63,9 +70,17 @@ class AnalyticsRuntime(
                     }
                     try {
                         if (ownerUid == null) {
-                            database.analyticsEventQueueDao().purgeAll()
+                            transactionOwners.observe(
+                                RoomTransactionOwner.ANALYTICS_CONSENT_PURGE
+                            ) {
+                                database.analyticsEventQueueDao().purgeAll()
+                            }
                         } else {
-                            database.analyticsEventQueueDao().purgeOwner(ownerUid)
+                            transactionOwners.observe(
+                                RoomTransactionOwner.ANALYTICS_CONSENT_PURGE
+                            ) {
+                                database.analyticsEventQueueDao().purgeOwner(ownerUid)
+                            }
                         }
                     } catch (error: Exception) {
                         failure?.addSuppressed(error) ?: run { failure = error }
@@ -82,6 +97,7 @@ class AnalyticsRuntime(
             AnalyticsWorkerSessionProvider {
                 AnalyticsWorkerSession(firebaseUid(), recorder.currentAuthorization())
             },
+            transactionOwners = transactionOwners,
         )
 
     suspend fun deletionReceived(ownerUid: String) {

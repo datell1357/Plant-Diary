@@ -3,6 +3,7 @@ package com.planterior.helper.navigation
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -19,6 +20,7 @@ import com.planterior.helper.auth.Todo18DebugRuntimeDependencies
 import com.planterior.helper.core.designsystem.theme.PlanteriorTheme
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.MiniHomeId
+import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.Revision
 import com.planterior.helper.diagnostic.Todo18PipelineEventKind
 import com.planterior.helper.diagnostic.Todo18StateChannel
@@ -29,7 +31,12 @@ import com.planterior.helper.feature.minihome.MiniHomeDiscardHandle
 import com.planterior.helper.feature.minihome.MiniHomeDiscardResult
 import com.planterior.helper.feature.minihome.MiniHomeLayout
 import com.planterior.helper.feature.minihome.MiniHomeLoadResult
+import com.planterior.helper.feature.minihome.MiniHomePlantChoice
 import com.planterior.helper.feature.minihome.MiniHomeRepository
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionDiagnostics
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionObservation
+import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
+import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
 import com.planterior.helper.feature.minihome.MiniHomeSaveRequest
 import com.planterior.helper.feature.minihome.MiniHomeSaveResult
 import com.planterior.helper.feature.minihome.MiniHomeTestTags
@@ -117,6 +124,77 @@ class Todo18OfflineNavHostPublicationTest {
             displayedSubscription.close()
             rawSubscription.close()
             capture.close()
+        }
+    }
+
+    @Test
+    fun `offline Retry Saved revision 2 publishes controller raw route displayed and sink`() {
+        val sink = Todo18RenderedStateSink()
+        val repository = HostOfflineRetryRepository()
+        val runtime = installRuntime(sink, repository)
+        val raw = mutableListOf<Todo18MiniHomeStateEvent>()
+        val route = mutableListOf<Todo18MiniHomeStateEvent>()
+        val displayed = mutableListOf<Todo18MiniHomeStateEvent>()
+        val observations = mutableListOf<MiniHomeSaveActionObservation>()
+        val rawSubscription = sink.subscribeToRawMiniHomeStates(raw::add)
+        val routeSubscription = sink.subscribeToRouteMiniHomeStates(route::add)
+        val displayedSubscription = sink.subscribeToDisplayedMiniHomeStates(displayed::add)
+        val actionDiagnostic = MiniHomeSaveActionDiagnostics.install { observation ->
+            observations += observation
+        }
+
+        try {
+            mount(runtime, OWNER_A) { sink }
+            compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
+            compose.waitForIdle()
+            compose
+                .onNodeWithTag(MiniHomeTestTags.plant(OFFLINE_PLANT))
+                .performScrollTo()
+                .performClick()
+            compose.waitForIdle()
+            compose.onNodeWithTag(MiniHomeTestTags.SAVE).performScrollTo().performClick()
+            compose.waitForIdle()
+
+            val retry = compose.onNodeWithTag(MiniHomeTestTags.RETRY)
+            retry.performScrollTo()
+            retry.assertIsDisplayed()
+            retry.performClick()
+            compose.waitForIdle()
+
+            val finalRaw = raw.filter { it.state.isCommittedRevision(Revision(2)) }
+            val finalRoute = route.filter { it.state.isCommittedRevision(Revision(2)) }
+            val finalDisplayed = displayed.filter { it.state.isCommittedRevision(Revision(2)) }
+            assertEquals(
+                "repository must fail once then return persisted revision 2",
+                2,
+                repository.saveCalls,
+            )
+            assertEquals(2, repository.saveRequests.size)
+            val firstRequest = repository.saveRequests.first()
+            val retryRequest = repository.saveRequests.last()
+            assertEquals(firstRequest.operationId, retryRequest.operationId)
+            assertEquals(firstRequest.lineageId, retryRequest.lineageId)
+            assertEquals(1, finalRaw.size)
+            assertEquals(1, finalRoute.size)
+            assertEquals(1, finalDisplayed.size)
+            assertTrue(finalRaw.single().sequence < finalRoute.single().sequence)
+            assertTrue(finalRoute.single().sequence < finalDisplayed.single().sequence)
+            listOf(finalRaw, finalRoute, finalDisplayed).forEach { events ->
+                val outcome = (events.single().state as MiniHomeUiState.Viewing).exitOutcome
+                assertEquals(firstRequest.operationId, outcome?.operationId)
+                assertEquals(firstRequest.lineageId, outcome?.lineageId)
+                assertEquals(OWNER_A, outcome?.owner)
+            }
+            val stages = observations.map { it.stage }
+            assertEquals(1, stages.count { it == MiniHomeSaveActionStage.SCREEN_CALLBACK })
+            assertEquals(1, stages.count { it == MiniHomeSaveActionStage.COROUTINE_ENTRY })
+            assertEquals(2, stages.count { it == MiniHomeSaveActionStage.CONTROLLER_ENTRY })
+            assertEquals(2, stages.count { it == MiniHomeSaveActionStage.SAVING_PUBLICATION })
+        } finally {
+            actionDiagnostic.close()
+            displayedSubscription.close()
+            routeSubscription.close()
+            rawSubscription.close()
         }
     }
 
@@ -236,9 +314,12 @@ class Todo18OfflineNavHostPublicationTest {
         }
     }
 
-    private fun installRuntime(sink: Todo18RenderedStateSink) =
+    private fun installRuntime(
+        sink: Todo18RenderedStateSink,
+        repository: MiniHomeRepository = HostMiniHomeRepository(),
+    ) =
         AuthRuntimeDependencyOverrides(
-                miniHomeRepository = HostMiniHomeRepository(),
+                miniHomeRepository = repository,
                 renderedStateSink = sink,
             )
             .also(Todo18DebugRuntimeDependencies::install)
@@ -294,8 +375,49 @@ class Todo18OfflineNavHostPublicationTest {
             MiniHomeDiscardResult.Rejected
     }
 
+    private class HostOfflineRetryRepository : MiniHomeRepository {
+        var saveCalls = 0
+            private set
+
+        val saveRequests = mutableListOf<MiniHomeSaveRequest>()
+
+        override suspend fun load(): MiniHomeLoadResult =
+            MiniHomeLoadResult.Ready(
+                accountId = OWNER_A,
+                committed =
+                    MiniHomeLayout(
+                        MiniHomeId("offline-retry-home"),
+                        "Offline retry host",
+                        emptyList(),
+                        Revision(1),
+                        Instant.EPOCH,
+                    ),
+                plants = listOf(MiniHomePlantChoice(OFFLINE_PLANT, "Offline plant", null)),
+                decorations = emptyList(),
+                stale = false,
+                pending = null,
+            )
+
+        override suspend fun save(request: MiniHomeSaveRequest): MiniHomeSaveResult {
+            saveCalls += 1
+            saveRequests += request
+            return if (saveCalls == 1) {
+                MiniHomeSaveResult.Failed(MiniHomeSaveFailure.NETWORK)
+            } else {
+                MiniHomeSaveResult.Saved(request.layout.copy(revision = Revision(2)))
+            }
+        }
+
+        override suspend fun abandon(handle: MiniHomeDiscardHandle): MiniHomeDiscardResult =
+            MiniHomeDiscardResult.Rejected
+    }
+
+    private fun MiniHomeUiState.isCommittedRevision(revision: Revision): Boolean =
+        this is MiniHomeUiState.Viewing && committed.revision == revision
+
     private companion object {
         val OWNER_A = AccountId("offline-owner-a")
         val OWNER_B = AccountId("offline-owner-b")
+        val OFFLINE_PLANT = PersonalPlantId("offline-retry-plant")
     }
 }

@@ -1,5 +1,7 @@
 package com.planterior.helper
 
+import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassification
+import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassifier
 import com.planterior.helper.minihome.Todo18MiniHomeLoadBoundaryStage
 import com.planterior.helper.minihome.Todo18MiniHomeLoadReceiptReducer
 import java.io.File
@@ -32,6 +34,8 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                     sink.subscribeToDisplayedMiniHomeStates { event ->
                         timeline.recordState("displayed", event)
                     },
+                transactionOwner =
+                    runtime.roomTransactionOwners.subscribe(timeline::recordTransactionOwner),
             ),
         )
     }
@@ -45,6 +49,7 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
             close("load-boundary-listener", subscriptions.boundary, problems)
             close("raw-state-listener", subscriptions.raw, problems)
             close("displayed-state-listener", subscriptions.displayed, problems)
+            close("transaction-owner-listener", subscriptions.transactionOwner, problems)
 
             val snapshot = timeline.snapshot()
             val progress = runtime.miniHomeLoadDiagnostics.snapshot()
@@ -68,6 +73,19 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                     },
                 )
 
+            val transactionOwner =
+                Todo18RoomTransactionOwnerClassifier.classify(
+                    snapshot.mapNotNull(TimelineEntry::transactionOwnerClassificationEvent)
+                )
+            if (
+                primaryFailure != null &&
+                    snapshot.any { it.kind == "publication-read-entered" && it.readId == 2L } &&
+                    snapshot.none { it.kind == "publication-read-returned" && it.readId == 2L } &&
+                    transactionOwner == Todo18RoomTransactionOwnerClassification.Unknown
+            ) {
+                problems += "shared-room-transaction-owner:UNKNOWN"
+            }
+
             val status = if (problems.isEmpty()) "complete" else problems.joinToString()
             return Todo18DiagnosticReceiptFinalizer(
                     receiptFile = ::receiptFile,
@@ -83,6 +101,7 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                             progress = progress,
                             primaryFailure = primaryFailure,
                             problems = problems,
+                            transactionOwner = transactionOwner,
                         ),
                     )
                 }
@@ -113,6 +132,7 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
         val boundary: AutoCloseable,
         val raw: AutoCloseable,
         val displayed: AutoCloseable,
+        val transactionOwner: AutoCloseable,
     )
 
     private companion object {

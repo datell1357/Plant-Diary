@@ -595,6 +595,7 @@ fun InventoryItemDetailRoute(
     onBack: () -> Unit,
     onOpenMiniHome: () -> Unit,
     bottomBar: @Composable () -> Unit = {},
+    onStateObserved: (InventoryUiState) -> Unit = {},
     mediaLoader: CatalogMediaLoader = PlaceholderCatalogMediaLoader,
     productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
 ) {
@@ -613,6 +614,7 @@ fun InventoryItemDetailRoute(
     val state by controller.state.collectAsState()
     val displayed = state.displayedFor(authOwnership)
     val scope = rememberCoroutineScope()
+    SideEffect { onStateObserved(displayed) }
     LifecycleResumeEffect(controller, authOwnership) {
         val load = scope.launch { controller.start(authOwnership) }
         onPauseOrDispose { load.cancel() }

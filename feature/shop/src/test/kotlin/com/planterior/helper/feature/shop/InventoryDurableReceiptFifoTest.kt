@@ -191,6 +191,7 @@ class InventoryDurableReceiptFifoTest {
 
         private var owner = initialOwner
         private val rows = linkedMapOf<InventoryReceiptId, Row>()
+        private val ownedItems = linkedSetOf<ItemId>()
         private val acquireSignals = mutableMapOf<ItemId, CompletableDeferred<Unit>>()
         private val presentationSignals =
             mutableMapOf<InventoryReceiptId, CompletableDeferred<Unit>>()
@@ -204,7 +205,18 @@ class InventoryDurableReceiptFifoTest {
 
         override suspend fun load(): InventoryLoadResult =
             InventoryLoadResult.Ready(
-                snapshot(owner, catalog),
+                snapshot(owner, catalog)
+                    .copy(
+                        owned =
+                            ownedItems.map { itemId ->
+                                OwnedInventoryItem(
+                                    itemId,
+                                    Instant.EPOCH,
+                                    applied = false,
+                                    revision = Revision(1),
+                                )
+                            }
+                    ),
                 false,
                 rows.values
                     .filter { it.receipt.owner == owner }
@@ -239,6 +251,7 @@ class InventoryDurableReceiptFifoTest {
                     index,
                 )
             rows.putIfAbsent(terminal.receiptId, Row(terminal))
+            ownedItems += request.itemId
             return InventoryAcquireResult.Success(ownership)
         }
 
@@ -268,7 +281,10 @@ class InventoryDurableReceiptFifoTest {
                     ownership,
                     createdAt,
                 )
-                .also { rows[it.receiptId] = Row(it) }
+                .also {
+                    rows[it.receiptId] = Row(it)
+                    ownedItems += it.itemId
+                }
         }
 
         fun switchOwner(accountId: AccountId) {

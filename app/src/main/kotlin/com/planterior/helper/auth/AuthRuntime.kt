@@ -130,7 +130,10 @@ private constructor(
                     ),
                     identity,
                     FirestoreAccountProfileStore(shared.functions),
-                    RoomAccountSessionCache(shared.syncRepository),
+                    RoomAccountSessionCache(
+                        shared.syncRepository,
+                        shared.transactionOwnerDiagnostics,
+                    ),
                     FirestoreAccountSynchronizer(
                         debugAccountSyncRemote(
                             activity,
@@ -140,6 +143,7 @@ private constructor(
                         outbox = shared.syncRepository,
                         isCurrentOwner = { shared.auth.currentUser?.uid == it },
                         writeGate = accountSyncWriteGate,
+                        transactionOwners = shared.transactionOwnerDiagnostics,
                     ),
                     beforeSignOut =
                         notificationEndpointRevocationAction(

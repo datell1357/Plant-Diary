@@ -35,6 +35,8 @@ import com.planterior.helper.core.database.MIGRATION_7_8
 import com.planterior.helper.core.database.MIGRATION_8_9
 import com.planterior.helper.core.database.MIGRATION_9_10
 import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.core.database.RoomTransactionOwnerDiagnostics
+import com.planterior.helper.diagnostic.roomTransactionOwnerDiagnostics
 import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRemoteDataSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRepository
@@ -78,6 +80,7 @@ private constructor(
     val collectionThumbnailLoader: FirebasePlantThumbnailLoader,
     val catalogMediaLoader: FirebaseCatalogMediaLoader,
     val analyticsRuntime: AnalyticsRuntime,
+    val transactionOwnerDiagnostics: RoomTransactionOwnerDiagnostics,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
 
@@ -138,6 +141,7 @@ private constructor(
                     )
                     .build()
             return try {
+                val transactionOwnerDiagnostics = roomTransactionOwnerDiagnostics()
                 val mutationGateway = FirebaseRemoteMutationGateway(functions)
                 val syncRepository = OfflineFirstSyncRepository(database, mutationGateway)
                 val registrationRepository =
@@ -209,9 +213,11 @@ private constructor(
                         applicationContext,
                         database,
                         FirebaseAnalyticsRemoteGateway(functions),
+                        transactionOwners = transactionOwnerDiagnostics,
                     ) {
                         auth.currentUser?.uid
                     },
+                    transactionOwnerDiagnostics,
                 )
             } catch (error: Throwable) {
                 database.close()

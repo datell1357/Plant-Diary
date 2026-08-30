@@ -13,6 +13,8 @@ import com.planterior.helper.core.database.CachedWateringScheduleEntity
 import com.planterior.helper.core.database.LastSyncEntity
 import com.planterior.helper.core.database.MiniHomeCacheApplyResult
 import com.planterior.helper.core.database.PlanteriorDatabase
+import com.planterior.helper.core.database.RoomTransactionOwner
+import com.planterior.helper.core.database.RoomTransactionOwnerDiagnostics
 import com.planterior.helper.core.model.AccountId
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -207,15 +209,22 @@ class FirestoreAccountSyncRemote(
     }
 }
 
-class RoomAccountSessionCache(private val repository: OfflineFirstSyncRepository) :
-    AccountSessionCache {
+class RoomAccountSessionCache(
+    private val repository: OfflineFirstSyncRepository,
+    private val transactionOwners: RoomTransactionOwnerDiagnostics =
+        RoomTransactionOwnerDiagnostics(),
+) : AccountSessionCache {
     override suspend fun clearVisible(accountUid: String?) {
-        repository.deactivate()
+        transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SESSION_CACHE_ACTIVATION) {
+            repository.deactivate()
+        }
     }
 
     override fun activate(accountUid: String?) {
-        if (accountUid == null) repository.deactivate()
-        else repository.activate(AccountId(accountUid))
+        transactionOwners.observeImmediate(RoomTransactionOwner.ACCOUNT_SESSION_CACHE_ACTIVATION) {
+            if (accountUid == null) repository.deactivate()
+            else repository.activate(AccountId(accountUid))
+        }
     }
 }
 
@@ -226,6 +235,8 @@ class FirestoreAccountSynchronizer(
     private val now: () -> Instant = Instant::now,
     private val isCurrentOwner: (String) -> Boolean = { true },
     private val writeGate: AccountSyncWriteGate = AccountSyncWriteGate(),
+    private val transactionOwners: RoomTransactionOwnerDiagnostics =
+        RoomTransactionOwnerDiagnostics(),
 ) : AccountSynchronizer {
     constructor(
         firestore: FirebaseFirestore,
@@ -235,6 +246,7 @@ class FirestoreAccountSynchronizer(
         now: () -> Instant = Instant::now,
         isCurrentOwner: (String) -> Boolean = { true },
         writeGate: AccountSyncWriteGate = AccountSyncWriteGate(),
+        transactionOwners: RoomTransactionOwnerDiagnostics = RoomTransactionOwnerDiagnostics(),
     ) : this(
         FirestoreAccountSyncRemote(firestore, functions),
         database,
@@ -242,6 +254,7 @@ class FirestoreAccountSynchronizer(
         now,
         isCurrentOwner,
         writeGate,
+        transactionOwners,
     )
 
     override suspend fun sync(accountUid: String): SyncSummary {
@@ -252,7 +265,9 @@ class FirestoreAccountSynchronizer(
             syncDomain(accountUid, SyncDomain.PLANTS) {
                 val replay = outbox?.let { repository ->
                     writeGate.writeIfCurrent(accountUid) {
-                        repository.sync(AccountId(accountUid))
+                        transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SYNC_WRITE) {
+                            repository.sync(AccountId(accountUid))
+                        }
                     }
                 }
                 val entities =
@@ -273,9 +288,11 @@ class FirestoreAccountSynchronizer(
                         )
                     }
                 writeGate.writeIfCurrent(accountUid) {
-                    database.cacheDao().reconcilePlants(accountUid, entities)
-                    check(replay == null || (replay.conflicts == 0 && replay.failed == 0)) {
-                        "Outbox replay did not reach an authoritative result"
+                    transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SYNC_WRITE) {
+                        database.cacheDao().reconcilePlants(accountUid, entities)
+                        check(replay == null || (replay.conflicts == 0 && replay.failed == 0)) {
+                            "Outbox replay did not reach an authoritative result"
+                        }
                     }
                 }
             }
@@ -299,7 +316,9 @@ class FirestoreAccountSynchronizer(
                         )
                     }
                 writeGate.writeIfCurrent(accountUid) {
-                    database.cacheDao().reconcileSchedules(accountUid, entities)
+                    transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SYNC_WRITE) {
+                        database.cacheDao().reconcileSchedules(accountUid, entities)
+                    }
                 }
             }
         ) {
@@ -354,11 +373,13 @@ class FirestoreAccountSynchronizer(
                         )
                     }
                 writeGate.writeIfCurrent(accountUid) {
-                    check(
-                        database.cacheDao().applyAuthoritativeMiniHome(write)
-                            !is MiniHomeCacheApplyResult.Conflict
-                    ) {
-                        "Authoritative mini-home cache identity conflicted"
+                    transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SYNC_WRITE) {
+                        check(
+                            database.cacheDao().applyAuthoritativeMiniHome(write)
+                                !is MiniHomeCacheApplyResult.Conflict
+                        ) {
+                            "Authoritative mini-home cache identity conflicted"
+                        }
                     }
                 }
                 confirmedDeletion = authoritative.takeIf { it.layout == null }
@@ -369,14 +390,16 @@ class FirestoreAccountSynchronizer(
         val deletion = confirmedDeletion
         if (completedThisAttempt.size == SyncDomain.entries.size && deletion != null) {
             writeGate.writeIfCurrent(accountUid) {
-                if (isCurrentOwner(accountUid)) {
-                    database
-                        .cacheDao()
-                        .purgeConvergedMiniHomeDeletionTombstone(
-                            accountUid,
-                            deletion.generation,
-                            requireNotNull(deletion.tombstoneId),
-                        )
+                transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SYNC_WRITE) {
+                    if (isCurrentOwner(accountUid)) {
+                        database
+                            .cacheDao()
+                            .purgeConvergedMiniHomeDeletionTombstone(
+                                accountUid,
+                                deletion.generation,
+                                requireNotNull(deletion.tombstoneId),
+                            )
+                    }
                 }
             }
         }
@@ -431,7 +454,11 @@ class FirestoreAccountSynchronizer(
                     "unavailable",
                 )
             }
-        writeGate.writeIfCurrent(accountUid) { database.syncDao().upsertLastSync(record) }
+        writeGate.writeIfCurrent(accountUid) {
+            transactionOwners.observe(RoomTransactionOwner.ACCOUNT_SYNC_WRITE) {
+                database.syncDao().upsertLastSync(record)
+            }
+        }
         return succeeded
     }
 }

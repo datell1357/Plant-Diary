@@ -2,6 +2,8 @@ package com.planterior.helper.analytics
 
 import com.planterior.helper.core.database.AnalyticsEventQueueDao
 import com.planterior.helper.core.database.AnalyticsEventQueueEntity
+import com.planterior.helper.core.database.RoomTransactionOwner
+import com.planterior.helper.core.database.RoomTransactionOwnerDiagnostics
 import com.planterior.helper.core.model.ClientProductEvent
 import com.planterior.helper.core.model.ProductEventRecorder
 import java.time.Clock
@@ -32,6 +34,8 @@ class QueuedProductEventRecorder(
     private val workEnqueuer: AnalyticsWorkEnqueuer,
     private val clock: Clock = Clock.systemUTC(),
     private val eventId: () -> String = { UUID.randomUUID().toString() },
+    private val transactionOwners: RoomTransactionOwnerDiagnostics =
+        RoomTransactionOwnerDiagnostics(),
 ) : ProductEventRecorder {
     private val authorizationLock = Any()
     private var authorization: AnalyticsAuthorization? = null
@@ -54,20 +58,24 @@ class QueuedProductEventRecorder(
         scope.launch {
             try {
                 if (currentAuthorization() != acknowledged) return@launch
-                queue.enqueueBounded(
-                    AnalyticsEventQueueEntity(
-                        accountId = acknowledged.ownerUid,
-                        eventId = id,
-                        eventName = event.event.name,
-                        consentRevision = acknowledged.consentRevision,
-                        enqueuedAtEpochMillis = enqueuedAt,
-                    ),
-                    expiredAtOrBeforeEpochMillis = enqueuedAt - RAW_EVENT_RETENTION.toMillis(),
-                )
+                transactionOwners.observe(RoomTransactionOwner.ANALYTICS_ENQUEUE) {
+                    queue.enqueueBounded(
+                        AnalyticsEventQueueEntity(
+                            accountId = acknowledged.ownerUid,
+                            eventId = id,
+                            eventName = event.event.name,
+                            consentRevision = acknowledged.consentRevision,
+                            enqueuedAtEpochMillis = enqueuedAt,
+                        ),
+                        expiredAtOrBeforeEpochMillis = enqueuedAt - RAW_EVENT_RETENTION.toMillis(),
+                    )
+                }
                 if (currentAuthorization() == acknowledged) {
                     workEnqueuer.enqueue()
                 } else {
-                    queue.delete(acknowledged.ownerUid, acknowledged.consentRevision, id)
+                    transactionOwners.observe(RoomTransactionOwner.ANALYTICS_ENQUEUE) {
+                        queue.delete(acknowledged.ownerUid, acknowledged.consentRevision, id)
+                    }
                 }
             } catch (error: CancellationException) {
                 throw error

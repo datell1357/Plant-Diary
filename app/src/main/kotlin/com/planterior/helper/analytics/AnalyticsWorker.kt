@@ -13,6 +13,8 @@ import androidx.work.WorkerParameters
 import com.google.common.util.concurrent.ListenableFuture
 import com.planterior.helper.core.database.AnalyticsEventQueueDao
 import com.planterior.helper.core.database.AnalyticsEventQueueEntity
+import com.planterior.helper.core.database.RoomTransactionOwner
+import com.planterior.helper.core.database.RoomTransactionOwnerDiagnostics
 import com.planterior.helper.core.model.ClientProductEvent
 import java.time.Clock
 import java.util.UUID
@@ -42,26 +44,28 @@ class AnalyticsDeliveryTask(
     private val remote: AnalyticsRemoteGateway,
     private val sessionProvider: AnalyticsWorkerSessionProvider,
     private val clock: Clock = Clock.systemUTC(),
+    private val transactionOwners: RoomTransactionOwnerDiagnostics =
+        RoomTransactionOwnerDiagnostics(),
 ) {
     suspend fun run(): AnalyticsDeliveryTaskResult {
         val initial = sessionProvider.current()
         val firebaseUid = initial.firebaseUid
         if (firebaseUid == null) {
-            queue.purgeAll()
+            write { queue.purgeAll() }
             return AnalyticsDeliveryTaskResult.COMPLETE
         }
         val authorization = initial.authorization
         if (authorization == null) {
-            queue.purgeOtherOwners(firebaseUid)
+            write { queue.purgeOtherOwners(firebaseUid) }
             return AnalyticsDeliveryTaskResult.COMPLETE
         }
         if (firebaseUid != authorization.ownerUid) {
-            queue.purgeOwner(authorization.ownerUid)
+            write { queue.purgeOwner(authorization.ownerUid) }
             return AnalyticsDeliveryTaskResult.COMPLETE
         }
         val expiryBoundary = clock.millis() - RAW_EVENT_RETENTION.toMillis()
-        queue.purgeExpired(authorization.ownerUid, expiryBoundary)
-        queue.purgeOtherRevisions(authorization.ownerUid, authorization.consentRevision)
+        write { queue.purgeExpired(authorization.ownerUid, expiryBoundary) }
+        write { queue.purgeOtherRevisions(authorization.ownerUid, authorization.consentRevision) }
         while (true) {
             val batch =
                 queue.oldestBatch(
@@ -74,7 +78,7 @@ class AnalyticsDeliveryTask(
             val deliverable = batch.mapNotNull { row ->
                 val event = row.clientEventOrNull()
                 if (event == null) {
-                    queue.delete(row.accountId, row.consentRevision, row.eventId)
+                    write { queue.delete(row.accountId, row.consentRevision, row.eventId) }
                     null
                 } else {
                     row to
@@ -87,7 +91,7 @@ class AnalyticsDeliveryTask(
             }
             if (deliverable.isEmpty()) continue
             if (!stillAuthorized(authorization)) {
-                queue.purgeOwner(authorization.ownerUid)
+                write { queue.purgeOwner(authorization.ownerUid) }
                 return AnalyticsDeliveryTaskResult.COMPLETE
             }
             val acknowledgements =
@@ -103,16 +107,16 @@ class AnalyticsDeliveryTask(
                 } catch (_: AnalyticsTransportException) {
                     return AnalyticsDeliveryTaskResult.RETRY
                 } catch (_: AnalyticsStaleOrDisabledException) {
-                    queue.purgeOwner(authorization.ownerUid)
+                    write { queue.purgeOwner(authorization.ownerUid) }
                     return AnalyticsDeliveryTaskResult.COMPLETE
                 } catch (_: AnalyticsPermanentSchemaException) {
                     deliverable.forEach { (row) ->
-                        queue.delete(row.accountId, row.consentRevision, row.eventId)
+                        write { queue.delete(row.accountId, row.consentRevision, row.eventId) }
                     }
                     continue
                 }
             if (!stillAuthorized(authorization)) {
-                queue.purgeOwner(authorization.ownerUid)
+                write { queue.purgeOwner(authorization.ownerUid) }
                 return AnalyticsDeliveryTaskResult.COMPLETE
             }
             if (
@@ -122,13 +126,13 @@ class AnalyticsDeliveryTask(
                     }
             ) {
                 deliverable.forEach { (row) ->
-                    queue.delete(row.accountId, row.consentRevision, row.eventId)
+                    write { queue.delete(row.accountId, row.consentRevision, row.eventId) }
                 }
                 continue
             }
             acknowledgements.zip(deliverable).forEach { (_, event) ->
                 val row = event.first
-                queue.delete(row.accountId, row.consentRevision, row.eventId)
+                write { queue.delete(row.accountId, row.consentRevision, row.eventId) }
             }
         }
     }
@@ -137,6 +141,9 @@ class AnalyticsDeliveryTask(
         val current = sessionProvider.current()
         return current.firebaseUid == expected.ownerUid && current.authorization == expected
     }
+
+    private suspend fun <T> write(block: suspend () -> T): T =
+        transactionOwners.observe(RoomTransactionOwner.ANALYTICS_WORKER_DELIVERY, block)
 }
 
 class AnalyticsDeliveryWorker(

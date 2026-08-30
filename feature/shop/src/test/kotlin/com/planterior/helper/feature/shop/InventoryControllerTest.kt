@@ -8,6 +8,7 @@ import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.Revision
 import java.time.Instant
 import java.util.ArrayDeque
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -19,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -500,7 +502,6 @@ class InventoryControllerTest {
         firstAcquire.started.await()
         firstAcquire.result.complete(success(account, firstItem))
         staleFirstReload.started.await()
-        controller.consumeVisibleFeedback()
 
         val second = async { controller.acquire(secondItem.id) }
         secondAcquire.started.await()
@@ -536,6 +537,12 @@ class InventoryControllerTest {
 
         val final = controller.state.value as InventoryUiState.Content
         assertEquals(InventoryFeedback.ALREADY_OWNED, final.feedback)
+        assertEquals(
+            "${account.value}/${secondOperation.value}",
+            final.feedbackReceiptId?.value,
+        )
+        assertEquals(secondItem.id, repository.claimedExpected.single().receipt.itemId)
+        assertEquals(secondOperation, repository.claimedExpected.single().operationId)
         assertEquals(
             listOf(firstItem.id, secondItem.id),
             final.snapshot.owned.map { it.itemId }.sortedBy { it.value },
@@ -646,48 +653,169 @@ class InventoryControllerTest {
         }
 
     @Test
-    fun `acknowledged receipt cannot be republished by its delayed acquisition reload`() = runTest {
-        val account = AccountId("account-a")
-        val acquiredItem = item("delayed-reload-acked-item")
-        val operationId = OperationId("operation-delayed-reload-acked")
-        val receipt =
-            terminalReceipt(
-                operationId,
-                InventoryOwnershipReceiptKind.ACQUIRED,
-                ownershipReceipt(account, acquiredItem),
-            )
-        val repository =
-            DelayedReloadLedgerRepository(
-                snapshot(account, acquiredItem.id.value),
-                ownedSnapshot(account, acquiredItem),
-                receipt,
-            )
-        val controller =
-            InventoryController(
-                repository,
-                SavedStateHandle(),
-                operationIdFactory = { operationId },
-            )
-        controller.start(InventoryAuthOwnership.Authenticated(account))
+    fun `delayed acquisition reload publishes feedback only with authoritative ownership`() =
+        runTest {
+            val account = AccountId("account-a")
+            val acquiredItem = item("delayed-reload-acked-item")
+            val operationId = OperationId("operation-delayed-reload-acked")
+            val receipt =
+                terminalReceipt(
+                    operationId,
+                    InventoryOwnershipReceiptKind.ACQUIRED,
+                    ownershipReceipt(account, acquiredItem),
+                )
+            val repository =
+                DelayedReloadLedgerRepository(
+                    snapshot(account, acquiredItem.id.value),
+                    ownedSnapshot(account, acquiredItem),
+                    receipt,
+                )
+            val controller =
+                InventoryController(
+                    repository,
+                    SavedStateHandle(),
+                    operationIdFactory = { operationId },
+                )
+            controller.start(InventoryAuthOwnership.Authenticated(account))
 
-        val acquisition = async { controller.acquire(acquiredItem.id) }
-        repository.reloadStarted.await()
-        var content = controller.state.value as InventoryUiState.Content
-        assertEquals(receipt.receiptId, content.feedbackReceiptId)
+            val acquisition = async { controller.acquire(acquiredItem.id) }
+            repository.reloadStarted.await()
+            var content = controller.state.value as InventoryUiState.Content
+            assertNull(content.feedback)
+            assertNull(content.feedbackReceiptId)
 
-        controller.consumeVisibleFeedback()
-        content = controller.state.value as InventoryUiState.Content
-        assertNull(content.feedback)
-        assertNull(content.feedbackReceiptId)
+            repository.releaseReload.complete(Unit)
+            acquisition.await()
 
-        repository.releaseReload.complete(Unit)
-        acquisition.await()
+            content = controller.state.value as InventoryUiState.Content
+            assertEquals(receipt.receiptId, content.feedbackReceiptId)
+            assertEquals(acquiredItem.id, content.snapshot.owned.single().itemId)
 
-        content = controller.state.value as InventoryUiState.Content
-        assertNull(content.feedback)
-        assertNull(content.feedbackReceiptId)
-        assertEquals(1, repository.acknowledgements)
-    }
+            controller.consumeVisibleFeedback()
+            content = controller.state.value as InventoryUiState.Content
+            assertNull(content.feedback)
+            assertNull(content.feedbackReceiptId)
+            assertEquals(1, repository.acknowledgements)
+        }
+
+    @Test
+    fun `terminal candidate waits through failed forbidden stale and missing ownership reloads`() =
+        runTest {
+            val account = AccountId("account-a")
+            val acquiredItem = item("retained-terminal-item")
+            val operationId = OperationId("operation-retained-terminal")
+            val receipt = ownershipReceipt(account, acquiredItem)
+            val terminalResults =
+                listOf(
+                    InventoryAcquireResult.Success(receipt) to InventoryFeedback.ACQUIRED,
+                    InventoryAcquireResult.AlreadyOwned(receipt) to InventoryFeedback.ALREADY_OWNED,
+                )
+            val blockedReloads =
+                listOf(
+                    InventoryLoadResult.Failed,
+                    InventoryLoadResult.Forbidden,
+                    InventoryLoadResult.Ready(ownedSnapshot(account, acquiredItem), stale = true),
+                    InventoryLoadResult.Ready(snapshot(account, acquiredItem.id.value), false),
+                )
+
+            terminalResults.forEach { (terminalResult, expectedFeedback) ->
+                blockedReloads.forEach { blockedReload ->
+                    val repository = ControlledRepository()
+                    repository.loads +=
+                        ControlledCall(
+                            completed(
+                                InventoryLoadResult.Ready(
+                                    snapshot(account, acquiredItem.id.value),
+                                    false,
+                                )
+                            )
+                        )
+                    repository.acquisitions += ControlledCall(completed(terminalResult))
+                    repository.loads += ControlledCall(completed(blockedReload))
+                    repository.loads +=
+                        ControlledCall(
+                            completed(
+                                InventoryLoadResult.Ready(
+                                    ownedSnapshot(account, acquiredItem),
+                                    false,
+                                )
+                            )
+                        )
+                    val controller =
+                        InventoryController(repository, SavedStateHandle()) { operationId }
+                    controller.start(InventoryAuthOwnership.Authenticated(account))
+
+                    controller.acquire(acquiredItem.id)
+
+                    var content = controller.state.value as InventoryUiState.Content
+                    assertNull(content.feedback)
+                    assertEquals(0, repository.claimAttempts)
+
+                    controller.retry()
+
+                    content = controller.state.value as InventoryUiState.Content
+                    assertEquals(expectedFeedback, content.feedback)
+                    assertEquals(acquiredItem.id, content.snapshot.owned.single().itemId)
+                    assertEquals(
+                        "${account.value}/${operationId.value}",
+                        content.feedbackReceiptId?.value,
+                    )
+                    assertEquals(1, repository.claimAttempts)
+                    assertEquals(
+                        acquiredItem.id,
+                        repository.claimedExpected.single().receipt.itemId,
+                    )
+                }
+            }
+        }
+
+    @Test
+    fun `cancelled authoritative reload retains exact terminal candidate for later load`() =
+        runTest {
+            val account = AccountId("account-a")
+            val acquiredItem = item("cancelled-reload-item")
+            val operationId = OperationId("operation-cancelled-reload")
+            val repository = ControlledRepository()
+            repository.loads +=
+                ControlledCall(
+                    completed(
+                        InventoryLoadResult.Ready(
+                            snapshot(account, acquiredItem.id.value),
+                            false,
+                        )
+                    )
+                )
+            repository.acquisitions += ControlledCall(completed(success(account, acquiredItem)))
+            val cancelledReload = ControlledCall<InventoryLoadResult>()
+            repository.loads += cancelledReload
+            repository.loads +=
+                ControlledCall(
+                    completed(
+                        InventoryLoadResult.Ready(ownedSnapshot(account, acquiredItem), false)
+                    )
+                )
+            val controller = InventoryController(repository, SavedStateHandle()) { operationId }
+            controller.start(InventoryAuthOwnership.Authenticated(account))
+
+            val acquisition = async { controller.acquire(acquiredItem.id) }
+            val completion = CompletableDeferred<Throwable?>()
+            acquisition.invokeOnCompletion(completion::complete)
+            cancelledReload.started.await()
+            val expected = CancellationException("cancel authoritative reload")
+            acquisition.cancel(expected)
+            acquisition.join()
+
+            assertSame(expected, completion.await())
+            assertEquals(0, repository.claimAttempts)
+
+            controller.retry()
+
+            val content = controller.state.value as InventoryUiState.Content
+            assertEquals(InventoryFeedback.ACQUIRED, content.feedback)
+            assertEquals(acquiredItem.id, content.snapshot.owned.single().itemId)
+            assertEquals("${account.value}/${operationId.value}", content.feedbackReceiptId?.value)
+            assertEquals(1, repository.claimAttempts)
+        }
 
     @Test
     fun `delayed acquisition payload cannot republish a receipt acknowledged before response`() =
@@ -718,7 +846,7 @@ class InventoryControllerTest {
             val content = controller.state.value as InventoryUiState.Content
             assertNull(content.feedback)
             assertNull(content.feedbackReceiptId)
-            assertEquals(1, repository.claimAttempts)
+            assertEquals(0, repository.claimAttempts)
         }
 
     @Test
@@ -1200,6 +1328,9 @@ class InventoryControllerTest {
     private class ControlledRepository : InventoryRepository {
         val loads = ArrayDeque<ControlledCall<InventoryLoadResult>>()
         val acquisitions = ArrayDeque<ControlledCall<InventoryAcquireResult>>()
+        val claimedExpected = mutableListOf<InventoryAcquisitionTerminalReceipt>()
+        var claimAttempts = 0
+            private set
 
         override suspend fun load(): InventoryLoadResult = loads.removeFirst().await()
 
@@ -1212,6 +1343,8 @@ class InventoryControllerTest {
             claimant: InventoryReceiptClaimant,
         ): InventoryReceiptClaimResult {
             val receipt = expected?.receipt ?: knownReceipts.getValue(receiptId)
+            claimAttempts += 1
+            claimedExpected += receipt
             return InventoryReceiptClaimResult.Claimed(receipt.claimedBy(claimant))
         }
 
