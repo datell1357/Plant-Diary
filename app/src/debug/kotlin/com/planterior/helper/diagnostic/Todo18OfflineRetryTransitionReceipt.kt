@@ -1,5 +1,13 @@
 package com.planterior.helper.diagnostic
 
+import java.io.File
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+
 internal enum class Todo18OfflineRetryTransitionStage {
     TRIGGER_RETURNED,
     MINI_HOME_COMMITTED,
@@ -17,7 +25,15 @@ internal data class Todo18OfflineRetryTransitionObservation(
 internal data class Todo18OfflineRetryTransitionReceipt(
     val observations: List<Todo18OfflineRetryTransitionObservation>,
     val closed: Boolean,
+    val outcomeClass: String? = null,
+    val outcomeMessage: String? = null,
 ) {
+    fun withPrimaryFailure(primaryFailure: Throwable): Todo18OfflineRetryTransitionReceipt =
+        copy(
+            outcomeClass = primaryFailure.javaClass.name,
+            outcomeMessage = primaryFailure.message,
+        )
+
     fun requireComplete(operationId: String, committedIdentity: String, finalRevision: Long) {
         require(closed) { "offline-retry-transition-unclosed" }
         require(committedIdentity == operationId) { "offline-retry-boundary-identity-mismatch" }
@@ -34,6 +50,33 @@ internal data class Todo18OfflineRetryTransitionReceipt(
     }
 }
 
+internal fun writeTodo18OfflineRetryTransitionReceipt(
+    file: File,
+    receipt: Todo18OfflineRetryTransitionReceipt,
+) {
+    file.writeText(
+        buildJsonObject {
+            put("schema", "todo18-offline-retry-transition-v2")
+            put("status", if (receipt.outcomeClass == null) "complete" else "partial")
+            put("closed", receipt.closed)
+            put("outcomeClass", receipt.outcomeClass?.let(::JsonPrimitive) ?: JsonNull)
+            put("outcomeMessage", receipt.outcomeMessage?.let(::JsonPrimitive) ?: JsonNull)
+            putJsonArray("observations") {
+                receipt.observations.forEach { observation ->
+                    add(
+                        buildJsonObject {
+                            put("stage", observation.stage.name)
+                            put("operationId", observation.operationId)
+                            put("revision", observation.revision)
+                        }
+                    )
+                }
+            }
+        }
+            .toString()
+    )
+}
+
 internal class Todo18OfflineRetryTransitionRecorder {
     private val lock = Any()
     private val observations = mutableListOf<Todo18OfflineRetryTransitionObservation>()
@@ -46,10 +89,15 @@ internal class Todo18OfflineRetryTransitionRecorder {
         }
     }
 
-    fun close(): Todo18OfflineRetryTransitionReceipt =
+    fun close(primaryFailure: Throwable? = null): Todo18OfflineRetryTransitionReceipt =
         synchronized(lock) {
             check(!closed) { "offline-retry-transition-already-closed" }
             closed = true
-            Todo18OfflineRetryTransitionReceipt(observations.toList(), closed = true)
+            Todo18OfflineRetryTransitionReceipt(
+                observations.toList(),
+                closed = true,
+                outcomeClass = primaryFailure?.javaClass?.name,
+                outcomeMessage = primaryFailure?.message,
+            )
         }
 }

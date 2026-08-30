@@ -23,6 +23,9 @@ import com.planterior.helper.feature.shop.FirebaseInventoryRepository
 import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
 import com.planterior.helper.feature.watering.OutboxWateringRepository
 import com.planterior.helper.inventory.Todo18InventoryCacheSettlementRepository
+import com.planterior.helper.inventory.Todo18InventorySettlementDiagnosticRecorder
+import com.planterior.helper.inventory.Todo18InventorySettlementObservation
+import com.planterior.helper.inventory.Todo18InventorySettlementStage
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
 import com.planterior.helper.registration.Todo18RegistrationCommitDiagnosticRepository
 import java.util.Collections
@@ -45,6 +48,8 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
 
     internal lateinit var miniHomeLoadDiagnostics: Todo18MiniHomeLoadDiagnosticRecorder
         private set
+
+    internal val inventorySettlementDiagnostics = Todo18InventorySettlementDiagnosticRecorder()
 
     internal val initialSinkFreshness =
         Todo18CaptureFreshness(
@@ -127,6 +132,7 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             boundary = Todo18Scenario(AccountId(accountUid))
             miniHomeLoadDiagnostics =
                 Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)
+            renderedStateSink.observeInventoryDiagnostics(inventorySettlementDiagnostics::record)
 
             val plants = Todo18PlantRepositoryFixture(boundary)
             val registration =
@@ -142,8 +148,17 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                 Todo18InventoryCacheSettlementRepository(
                     delegate =
                         FirebaseInventoryRepository(database, inventoryRemote, boundary::now),
-                    onSettled = { boundary.emit("inventory-cache-settled", it.operationId.value) },
+                    onSettled = {
+                        boundary.emit("inventory-cache-settled", it.operationId.value)
+                        inventorySettlementDiagnostics.record(
+                            Todo18InventorySettlementObservation(
+                                Todo18InventorySettlementStage.BOUNDARY_DELIVERY,
+                                it,
+                            )
+                        )
+                    },
                     onAcquired = renderedStateSink::armInventoryFeedback,
+                    diagnostics = inventorySettlementDiagnostics,
                 )
             val watering =
                 OutboxWateringRepository(

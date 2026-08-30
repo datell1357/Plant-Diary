@@ -13,6 +13,30 @@ class Todo18IntegratedJourneySourceContractTest {
     private val androidTestRoot = root.resolve("app/src/androidTest/kotlin/com/planterior/helper")
 
     @Test
+    fun `failure preserving captures bind late validation and semantic reducer verdicts`() {
+        val offline =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/" +
+                    "Todo18OfflineRetryTransitionDiagnosticCapture.kt"
+            )
+        val inventory =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/" +
+                    "Todo18InventorySettlementDiagnosticCapture.kt"
+            )
+
+        assertCode(
+            offline,
+            "receipt = requireNotNull(receipt).withPrimaryFailure(primaryFailure)",
+        )
+        assertCode(
+            inventory,
+            "Todo18InventorySettlementReceiptReducer.problems(observations)",
+            ".finish(primaryFailure != null, status)",
+        )
+    }
+
+    @Test
     fun `release dependency and camera seams are immutable pass throughs`() {
         val runtime = source(RELEASE_RUNTIME_OVERRIDE)
         val camera = source(RELEASE_CAMERA_OVERRIDE)

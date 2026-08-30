@@ -19,6 +19,8 @@ import com.planterior.helper.feature.registration.RegistrationUiState
 import com.planterior.helper.feature.shop.InventoryFeedback
 import com.planterior.helper.feature.shop.InventoryUiState
 import com.planterior.helper.inventory.Todo18InventoryCacheSettlement
+import com.planterior.helper.inventory.Todo18InventorySettlementObservation
+import com.planterior.helper.inventory.Todo18InventorySettlementStage
 import com.planterior.helper.registration.Todo18RegistrationCommitRepositoryEvent
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -35,6 +37,8 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     private val registrationStates = Todo18PrimaryEventStream<Todo18RegistrationStateEvent>()
     private val inventoryFeedback = Todo18PrimaryEventStream<Todo18InventoryFeedbackEvent>()
     private val armedInventorySettlement = AtomicReference<Todo18InventoryCacheSettlement?>()
+    private val inventoryDiagnosticObserver =
+        AtomicReference<(Todo18InventorySettlementObservation) -> Unit>({})
 
     private constructor(recorder: Todo18WaitDiagnosticRecorder) {
         this.recorder = recorder
@@ -113,6 +117,10 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
         armedInventorySettlement.set(settlement)
     }
 
+    fun observeInventoryDiagnostics(observer: (Todo18InventorySettlementObservation) -> Unit) {
+        inventoryDiagnosticObserver.set(observer)
+    }
+
     override fun onInventoryState(state: InventoryUiState) {
         val content = state as? InventoryUiState.Content ?: return
         if (content.stale) return
@@ -133,6 +141,23 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
                 InventoryFeedback.ACQUIRED,
             )
         )
+        try {
+            inventoryDiagnosticObserver
+                .get()
+                .invoke(
+                    Todo18InventorySettlementObservation(
+                        Todo18InventorySettlementStage.RENDERED_FEEDBACK,
+                        settlement,
+                        stale = content.stale,
+                        ownedItemIds = content.snapshot.owned.map { it.itemId },
+                        feedback = content.feedback,
+                    )
+                )
+        } catch (_: AssertionError) {
+            return
+        } catch (_: Exception) {
+            return
+        }
     }
 
     override fun onMiniHomeDiagnosticEvent(event: MiniHomeDiagnosticEvent) =

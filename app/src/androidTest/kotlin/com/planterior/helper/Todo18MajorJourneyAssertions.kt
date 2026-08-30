@@ -68,37 +68,39 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
         .onNodeWithTag(InventoryTestTags.item(ItemId("todo18-planter")))
         .performScrollTo()
         .assertIsDisplayed()
-    lateinit var acquired: Todo18BoundaryEvent
-    lateinit var settled: Todo18BoundaryEvent
-    val feedback =
-        rendered.awaitInventoryFeedback(
-            matches = {
-                it.feedback == InventoryFeedback.ACQUIRED &&
-                    it.settlement.accountId.value == Todo18IntegratedRuntimeRule.ACCOUNT_UID &&
-                    it.settlement.itemId == ItemId("todo18-planter")
-            },
-            trigger = {
-                settled =
-                    events.awaitBoundary("inventory-cache-settled") {
-                        acquired =
-                            events.awaitBoundary("inventory-acquired") {
-                                compose
-                                    .onNodeWithTag(
-                                        InventoryTestTags.acquire(ItemId("todo18-planter"))
-                                    )
-                                    .performClick()
-                            }
-                    }
+    Todo18InventorySettlementDiagnosticCapture(runtime, compose).capture {
+        lateinit var acquired: Todo18BoundaryEvent
+        lateinit var settled: Todo18BoundaryEvent
+        val feedback =
+            rendered.awaitInventoryFeedback(
+                matches = {
+                    it.feedback == InventoryFeedback.ACQUIRED &&
+                        it.settlement.accountId.value == Todo18IntegratedRuntimeRule.ACCOUNT_UID &&
+                        it.settlement.itemId == ItemId("todo18-planter")
+                },
+                trigger = {
+                    settled =
+                        events.awaitBoundary("inventory-cache-settled") {
+                            acquired =
+                                events.awaitBoundary("inventory-acquired") {
+                                    compose
+                                        .onNodeWithTag(
+                                            InventoryTestTags.acquire(ItemId("todo18-planter"))
+                                        )
+                                        .performClick()
+                                }
+                        }
+                },
+            )
+        assertEquals(acquired.identity, settled.identity)
+        assertEquals(acquired.identity, feedback.settlement.operationId.value)
+        assertEquals(
+            1,
+            runBlocking {
+                runtime.database.cacheDao().ownedItems(Todo18IntegratedRuntimeRule.ACCOUNT_UID).size
             },
         )
-    assertEquals(acquired.identity, settled.identity)
-    assertEquals(acquired.identity, feedback.settlement.operationId.value)
-    assertEquals(
-        1,
-        runBlocking {
-            runtime.database.cacheDao().ownedItems(Todo18IntegratedRuntimeRule.ACCOUNT_UID).size
-        },
-    )
+    }
 
     events.navigateAndAwaitBoundary(
         route = PlanteriorRoute.MiniHome,

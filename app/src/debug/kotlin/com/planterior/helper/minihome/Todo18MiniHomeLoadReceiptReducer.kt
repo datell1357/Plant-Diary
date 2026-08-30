@@ -12,6 +12,7 @@ internal data class Todo18MiniHomeLoadBoundaryStage(
 internal object Todo18MiniHomeLoadReceiptReducer {
     private const val LOAD_TERMINAL = "load-terminal"
     private const val PUBLICATION_READ_ENTERED = "publication-read-entered"
+    private const val PUBLICATION_READ_RETURNED = "publication-read-returned"
     private const val CACHE_APPLY_RETURNED = "cache-apply-returned"
     private val requiredKinds =
         listOf(
@@ -21,6 +22,7 @@ internal object Todo18MiniHomeLoadReceiptReducer {
             "cache-apply-entered",
             CACHE_APPLY_RETURNED,
             PUBLICATION_READ_ENTERED,
+            PUBLICATION_READ_RETURNED,
             LOAD_TERMINAL,
         )
     private val terminalIdentities = setOf("Ready", "Forbidden", "Failed", "Cancelled")
@@ -48,13 +50,22 @@ internal object Todo18MiniHomeLoadReceiptReducer {
                     stage.identity == null ||
                     stage.loadId == null ||
                     stage.diagnosticOrder == null ||
-                    (stage.kind == PUBLICATION_READ_ENTERED && stage.readId == null) ||
-                    (stage.kind != PUBLICATION_READ_ENTERED && stage.readId != null) ||
+                    (stage.kind in publicationReadKinds && stage.readId == null) ||
+                    (stage.kind !in publicationReadKinds && stage.readId != null) ||
                     (stage.kind == CACHE_APPLY_RETURNED && stage.cacheOutcome !in cacheOutcomes) ||
                     (stage.kind != CACHE_APPLY_RETURNED && stage.cacheOutcome != null)
             }
         ) {
             problems += "load-diagnostic-malformed"
+        }
+        val reads =
+            stages.filter { it.kind in publicationReadKinds }.groupBy { it.loadId to it.readId }
+        if (
+            reads.values.any { read ->
+                read.map { it.kind } != listOf(PUBLICATION_READ_ENTERED, PUBLICATION_READ_RETURNED)
+            }
+        ) {
+            problems += "publication-read-identity-mismatch"
         }
 
         val expected = progress.observations.map { it.boundaryStage(expectedAccountId) }
@@ -88,6 +99,8 @@ internal object Todo18MiniHomeLoadReceiptReducer {
         problems += progress.progressionProblems()
         return problems.distinct()
     }
+
+    private val publicationReadKinds = setOf(PUBLICATION_READ_ENTERED, PUBLICATION_READ_RETURNED)
 
     private fun Todo18MiniHomeLoadObservation.boundaryStage(
         expectedAccountId: String

@@ -104,7 +104,8 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
     )
 
     lateinit var committed: Todo18BoundaryEvent
-    Todo18OfflineRetryTransitionDiagnosticCapture(runtime, frozen.value).use { diagnostic ->
+    Todo18OfflineRetryTransitionDiagnosticCapture(runtime, compose, frozen.value).capture {
+        val diagnostic = this
         rendered.awaitMiniHome(
             matches = {
                 ((it.state as? MiniHomeUiState.Viewing)?.committed?.revision?.value ?: 0L) > 1L

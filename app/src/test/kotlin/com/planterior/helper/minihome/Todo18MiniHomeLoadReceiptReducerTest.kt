@@ -31,6 +31,33 @@ class Todo18MiniHomeLoadReceiptReducerTest {
     }
 
     @Test
+    fun `missing publication read return is rejected`() {
+        val fixture = completeFixture()
+
+        val problems =
+            Todo18MiniHomeLoadReceiptReducer.problems(
+                ACCOUNT,
+                fixture.progress,
+                fixture.stages.filterNot { it.kind == "publication-read-returned" },
+            )
+
+        assertTrue("missing-publication-read-returned" in problems)
+    }
+
+    @Test
+    fun `publication read return with a different read identity is rejected`() {
+        val fixture = completeFixture()
+        val stages =
+            fixture.stages.map { stage ->
+                if (stage.kind == "publication-read-returned") stage.copy(readId = 99L) else stage
+            }
+
+        val problems = Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, stages)
+
+        assertTrue("publication-read-identity-mismatch" in problems)
+    }
+
+    @Test
     fun `duplicate cache entry is rejected by actual progression`() {
         val recorder = Todo18MiniHomeLoadDiagnosticRecorder {}
         val load = recorder.startLoad()
@@ -119,7 +146,8 @@ class Todo18MiniHomeLoadReceiptReducerTest {
         load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
         load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(AccountId(ACCOUNT)))
         load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyReturned(AccountId(ACCOUNT), true))
-        load.recordPublicationRead()
+        val readId = load.recordPublicationRead()
+        recorder.record(load.id, Todo18MiniHomeLoadDiagnostic.PublicationReadReturned, readId)
         load.record(Todo18MiniHomeLoadDiagnostic.Ready)
         val progress = recorder.snapshot()
         return Fixture(progress, progress.toStages())

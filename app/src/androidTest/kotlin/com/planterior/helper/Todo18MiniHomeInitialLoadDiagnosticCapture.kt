@@ -124,6 +124,7 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                 "cache-apply-entered",
                 "cache-apply-returned",
                 "publication-read-entered",
+                "publication-read-returned",
                 "load-terminal",
             )
     }

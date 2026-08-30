@@ -19,9 +19,31 @@ import com.planterior.helper.inventory.Todo18InventoryCacheSettlement
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Todo18InventoryRenderedFeedbackSinkTest {
+    @Test
+    fun `rendered diagnostic retains exact non stale feedback semantic facts`() {
+        val sink = Todo18RenderedStateSink()
+        val observations =
+            mutableListOf<com.planterior.helper.inventory.Todo18InventorySettlementObservation>()
+        sink.observeInventoryDiagnostics(observations::add)
+        sink.armInventoryFeedback(SETTLEMENT)
+
+        sink.onInventoryState(content(ITEM, stale = false))
+
+        val observation = observations.single()
+        assertEquals(
+            com.planterior.helper.inventory.Todo18InventorySettlementStage.RENDERED_FEEDBACK,
+            observation.stage,
+        )
+        assertEquals(InventoryFeedback.ACQUIRED, observation.feedback)
+        assertEquals(false, observation.stale)
+        assertTrue(ITEM in observation.ownedItemIds.orEmpty())
+        assertEquals(SETTLEMENT, observation.settlement)
+    }
+
     @Test
     fun `exact acquired route state emits one rendered feedback receipt and closes listener`() {
         val sink = Todo18RenderedStateSink()

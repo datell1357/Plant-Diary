@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -166,6 +167,112 @@ class Todo18InventoryCacheSettlementRepositoryTest {
                 assertSame(expected, repository.load())
                 assertSame(expected, repository.load())
             }
+        }
+
+    @Test
+    fun `diagnostic localizes exact successful settlement stages and load facts`() = runTest {
+        val expected = ready(snapshot(OWNER, ITEM), stale = false)
+        val delegate = Delegate(loadResults = ArrayDeque(listOf(expected)))
+        val diagnostics = Todo18InventorySettlementDiagnosticRecorder()
+        val repository =
+            Todo18InventoryCacheSettlementRepository(
+                delegate,
+                onSettled = {},
+                diagnostics = diagnostics,
+            )
+
+        repository.acquire(request())
+        repository.load()
+
+        val observations = diagnostics.snapshot()
+        assertEquals(
+            listOf(
+                Todo18InventorySettlementStage.ACQUIRE_RESULT,
+                Todo18InventorySettlementStage.ACQUISITION_ARMED,
+                Todo18InventorySettlementStage.LOAD_ENTERED,
+                Todo18InventorySettlementStage.LOAD_RETURNED,
+                Todo18InventorySettlementStage.SETTLEMENT_ELIGIBILITY,
+                Todo18InventorySettlementStage.SETTLEMENT_ATTEMPT,
+                Todo18InventorySettlementStage.SETTLEMENT_EMISSION,
+            ),
+            observations.map { it.stage },
+        )
+        assertTrue(observations.all { it.settlement == settlement() })
+        val returned = observations.single {
+            it.stage == Todo18InventorySettlementStage.LOAD_RETURNED
+        }
+        assertEquals("Ready", returned.loadKind)
+        assertEquals(false, returned.stale)
+        assertEquals(listOf(ITEM), returned.ownedItemIds)
+        assertEquals(
+            true,
+            observations
+                .single {
+                    it.stage == Todo18InventorySettlementStage.SETTLEMENT_ELIGIBILITY
+                }
+                .eligible,
+        )
+    }
+
+    @Test
+    fun `actual receipt reducer requires authoritative load eligibility and rendered semantics`() =
+        runTest {
+            val expected = ready(snapshot(OWNER, ITEM), stale = false)
+            val diagnostics = Todo18InventorySettlementDiagnosticRecorder()
+            val repository =
+                Todo18InventoryCacheSettlementRepository(
+                    Delegate(loadResults = ArrayDeque(listOf(expected))),
+                    onSettled = {},
+                    diagnostics = diagnostics,
+                )
+            repository.acquire(request())
+            repository.load()
+            val settlement = settlement()
+            val complete =
+                diagnostics.snapshot() +
+                    Todo18InventorySettlementObservation(
+                        Todo18InventorySettlementStage.BOUNDARY_DELIVERY,
+                        settlement,
+                    ) +
+                    Todo18InventorySettlementObservation(
+                        Todo18InventorySettlementStage.RENDERED_FEEDBACK,
+                        settlement,
+                        stale = false,
+                        ownedItemIds = listOf(ITEM),
+                        feedback = com.planterior.helper.feature.shop.InventoryFeedback.ACQUIRED,
+                    )
+
+            assertEquals(
+                emptyList<String>(),
+                Todo18InventorySettlementReceiptReducer.problems(complete),
+            )
+            listOf(
+                    complete.map {
+                        if (it.stage == Todo18InventorySettlementStage.LOAD_RETURNED) {
+                            it.copy(stale = true)
+                        } else it
+                    },
+                    complete.map {
+                        if (it.stage == Todo18InventorySettlementStage.LOAD_RETURNED) {
+                            it.copy(ownedItemIds = emptyList())
+                        } else it
+                    },
+                    complete.map {
+                        if (it.stage == Todo18InventorySettlementStage.SETTLEMENT_ELIGIBILITY) {
+                            it.copy(eligible = false)
+                        } else it
+                    },
+                    complete.map {
+                        if (it.stage == Todo18InventorySettlementStage.RENDERED_FEEDBACK) {
+                            it.copy(feedback = null)
+                        } else it
+                    },
+                )
+                .forEach { malformed ->
+                    assertTrue(
+                        Todo18InventorySettlementReceiptReducer.problems(malformed).isNotEmpty()
+                    )
+                }
         }
 
     private class Delegate(

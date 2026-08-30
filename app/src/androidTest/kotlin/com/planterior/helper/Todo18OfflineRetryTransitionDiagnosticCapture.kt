@@ -5,11 +5,14 @@ import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionObservation
 import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionReceipt
 import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionRecorder
 import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionStage
+import com.planterior.helper.diagnostic.writeTodo18OfflineRetryTransitionReceipt
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import java.io.Closeable
+import java.io.File
 
 internal class Todo18OfflineRetryTransitionDiagnosticCapture(
     runtime: Todo18IntegratedRuntimeRule,
+    private val compose: Todo18ComposeRule,
     private val operationId: String,
 ) : AutoCloseable {
     private val recorder = Todo18OfflineRetryTransitionRecorder()
@@ -68,6 +71,9 @@ internal class Todo18OfflineRetryTransitionDiagnosticCapture(
             }
     }
 
+    fun <T> capture(block: Todo18OfflineRetryTransitionDiagnosticCapture.() -> T): T =
+        preserveTodo18PrimaryFailure({ block() }, ::finish)
+
     fun recordTriggerReturned() {
         recorder.record(
             Todo18OfflineRetryTransitionObservation(
@@ -97,6 +103,30 @@ internal class Todo18OfflineRetryTransitionDiagnosticCapture(
         if (receipt != null) return
         registrations.asReversed().forEach(AutoCloseable::close)
         receipt = recorder.close()
+    }
+
+    private fun finish(primaryFailure: Throwable?): IllegalStateException? {
+        if (receipt == null) {
+            registrations.asReversed().forEach(AutoCloseable::close)
+            receipt = recorder.close(primaryFailure)
+        } else if (primaryFailure != null) {
+            receipt = requireNotNull(receipt).withPrimaryFailure(primaryFailure)
+        }
+        return Todo18DiagnosticReceiptFinalizer(
+                receiptFile = ::receiptFile,
+                diagnosticName = "Todo18 Offline retry transition",
+            )
+            .finish(primaryFailure != null, "complete") { file ->
+                writeTodo18OfflineRetryTransitionReceipt(file, requireNotNull(receipt))
+            }
+    }
+
+    private fun receiptFile(): File {
+        val directory =
+            requireNotNull(compose.activity.getExternalFilesDir("todo18-e2e-journeys")).also {
+                check(it.exists() || it.mkdirs())
+            }
+        return File(directory, "offline-retry-transition-diagnostic.json")
     }
 
     private fun Todo18MiniHomeStateEvent.retryViewing(): Pair<String, Long>? {
