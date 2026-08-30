@@ -35,6 +35,10 @@ internal sealed interface Todo18MiniHomeLoadDiagnostic {
         override val receiptStage = "publication-read-entered"
     }
 
+    data object PublicationReadReturned : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "publication-read-returned"
+    }
+
     sealed interface Terminal : Todo18MiniHomeLoadDiagnostic
 
     data object Ready : Terminal {

@@ -2,6 +2,8 @@ package com.planterior.helper
 
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationUiState
+import com.planterior.helper.feature.shop.InventoryFeedback
+import com.planterior.helper.inventory.Todo18InventoryCacheSettlement
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicReference
 
@@ -13,6 +15,12 @@ internal data class Todo18MiniHomeStateEvent(
 internal data class Todo18RegistrationStateEvent(
     val sequence: Long,
     val state: RegistrationUiState,
+)
+
+internal data class Todo18InventoryFeedbackEvent(
+    val sequence: Long,
+    val settlement: Todo18InventoryCacheSettlement,
+    val feedback: InventoryFeedback,
 )
 
 internal class Todo18PrimaryEventStream<T> {

@@ -104,17 +104,21 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
     )
 
     lateinit var committed: Todo18BoundaryEvent
-    rendered.awaitMiniHome(
-        matches = {
-            ((it.state as? MiniHomeUiState.Viewing)?.committed?.revision?.value ?: 0L) > 1L
-        },
-        trigger = {
-            committed =
-                events.awaitBoundary("mini-home-committed") {
-                    compose.onNodeWithTag(MiniHomeTestTags.RETRY).performClick()
-                }
-        },
-    )
+    Todo18OfflineRetryTransitionDiagnosticCapture(runtime, frozen.value).use { diagnostic ->
+        rendered.awaitMiniHome(
+            matches = {
+                ((it.state as? MiniHomeUiState.Viewing)?.committed?.revision?.value ?: 0L) > 1L
+            },
+            trigger = {
+                committed =
+                    events.awaitBoundary("mini-home-committed") {
+                        compose.onNodeWithTag(MiniHomeTestTags.RETRY).performClick()
+                        diagnostic.recordTriggerReturned()
+                    }
+            },
+        )
+        diagnostic.requireComplete(frozen, committed)
+    }
     assertEquals(frozen.value, committed.identity)
     assertEquals(
         listOf(frozen, frozen),

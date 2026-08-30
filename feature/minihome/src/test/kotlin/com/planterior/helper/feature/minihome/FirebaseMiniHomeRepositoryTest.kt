@@ -437,6 +437,9 @@ class FirebaseMiniHomeRepositoryTest {
                     ): RemoteMiniHomeSaveResult = delegate.save(request)
                 }
             val publicationEntered = CompletableDeferred<AccountId>()
+            val publicationReadIdentity = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val publicationReturned =
+                CompletableDeferred<Pair<AccountId, MiniHomePublicationReadIdentity>>()
             val cacheEntered = CompletableDeferred<AccountId>()
             val cacheReturned = CompletableDeferred<Pair<AccountId, Boolean>>()
             val repository =
@@ -447,7 +450,13 @@ class FirebaseMiniHomeRepositoryTest {
                     afterCacheApply = { accountId, current ->
                         cacheReturned.complete(accountId to current)
                     },
-                    beforePublicationRead = { publicationEntered.complete(it) },
+                    beforePublicationRead = { accountId, readIdentity ->
+                        publicationEntered.complete(accountId)
+                        publicationReadIdentity.complete(readIdentity)
+                    },
+                    afterPublicationRead = { accountId, readIdentity ->
+                        publicationReturned.complete(accountId to readIdentity)
+                    },
                 )
             val transactionHeld = CompletableDeferred<Unit>()
             val releaseTransaction = CompletableDeferred<Unit>()
@@ -475,11 +484,16 @@ class FirebaseMiniHomeRepositoryTest {
                 assertFalse(loading.isCompleted)
                 assertFalse(cacheReturned.isCompleted)
                 assertFalse(publicationEntered.isCompleted)
+                assertFalse(publicationReturned.isCompleted)
 
                 releaseTransaction.complete(Unit)
                 transaction.await()
                 assertEquals(AccountId("account-a") to true, cacheReturned.await())
                 assertEquals(AccountId("account-a"), publicationEntered.await())
+                assertEquals(
+                    AccountId("account-a") to publicationReadIdentity.await(),
+                    publicationReturned.await(),
+                )
                 val loaded = loading.await() as MiniHomeLoadResult.Ready
                 assertEquals(AccountId("account-a"), loaded.accountId)
                 assertEquals(Revision(7), loaded.committed.revision)
@@ -525,6 +539,49 @@ class FirebaseMiniHomeRepositoryTest {
                 database,
                 FakeRemote(layout(7)).apply { cacheGeneration = 7 },
                 beforeCacheApply = { throw expected },
+            )
+
+        val actual =
+            try {
+                repository.load()
+                throw AssertionError("Expected cancellation")
+            } catch (failure: CancellationException) {
+                failure
+            }
+
+        assertSame(expected, actual)
+    }
+
+    @Test
+    fun `publication return runtime and assertion faults cannot change successful load`() =
+        runTest {
+            listOf<Throwable>(
+                    IllegalStateException("publication runtime"),
+                    AssertionError("publication assertion"),
+                )
+                .forEach { observerFailure ->
+                    val repository =
+                        FirebaseMiniHomeRepository(
+                            database,
+                            FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                            afterPublicationRead = { _, _ -> throw observerFailure },
+                        )
+
+                    val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+                    assertEquals(Revision(7), loaded.committed.revision)
+                    assertFalse(loaded.stale)
+                }
+        }
+
+    @Test
+    fun `publication return cancellation remains the exact primary failure`() = runTest {
+        val expected = CancellationException("publication cancellation")
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                afterPublicationRead = { _, _ -> throw expected },
             )
 
         val actual =
@@ -604,7 +661,7 @@ class FirebaseMiniHomeRepositoryTest {
             FirebaseMiniHomeRepository(
                 database,
                 remote,
-                beforePublicationRead = {
+                beforePublicationRead = { _, _ ->
                     if (gateRead) {
                         rereadEntered.complete(Unit)
                         releaseReread.await()
@@ -698,7 +755,7 @@ class FirebaseMiniHomeRepositoryTest {
                 FirebaseMiniHomeRepository(
                     database,
                     remote,
-                    beforePublicationRead = {
+                    beforePublicationRead = { _, _ ->
                         if (watchReread) rereadAttempted.complete(Unit)
                     },
                 )

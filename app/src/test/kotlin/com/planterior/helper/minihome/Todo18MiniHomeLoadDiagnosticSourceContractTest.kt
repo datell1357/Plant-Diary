@@ -131,7 +131,11 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
         val runtimeRule =
             root.source(
                 "app/src/androidTest/kotlin/com/planterior/helper/Todo18IntegratedRuntimeRule.kt"
-            )
+            ) +
+                root.source(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MiniHomeRuntimeRepository.kt"
+                )
         val releaseOverrides =
             root.source(
                 "app/src/release/kotlin/com/planterior/helper/auth/Todo18DebugRuntimeDependencies.kt"
@@ -150,20 +154,21 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
         // When / Then
         assertCode(
             runtimeRule,
-            "val miniHomeDelegate =",
+            "todo18MiniHomeRuntimeRepository(",
             "FirebaseMiniHomeRepository(",
             "Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)",
-            "Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics)",
+            "Todo18MiniHomeRepositoryFixture(boundary, diagnostics)",
             "beforeCacheApply =",
             "Todo18MiniHomeLoadDiagnostic.CacheApplyEntered",
             "afterCacheApply =",
             "Todo18MiniHomeLoadDiagnostic.CacheApplyReturned",
             "beforePublicationRead =",
-            "miniHomeLoadDiagnostics.recordCurrent(",
+            "diagnostics.recordCurrentPublicationRead(",
             "Todo18MiniHomeLoadDiagnostic.PublicationReadEntered",
+            "afterPublicationRead =",
+            "Todo18MiniHomeLoadDiagnostic.PublicationReadReturned",
             "Todo18MiniHomeLoadDiagnosticRepository(",
-            "delegate = miniHomeDelegate",
-            "diagnostics = miniHomeLoadDiagnostics",
+            "diagnostics = diagnostics",
         )
         assertCode(
             repository,

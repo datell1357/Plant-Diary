@@ -16,8 +16,12 @@ import com.planterior.helper.feature.minihome.MiniHomeDiagnosticEvent
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationDiagnosticEvent
 import com.planterior.helper.feature.registration.RegistrationUiState
+import com.planterior.helper.feature.shop.InventoryFeedback
+import com.planterior.helper.feature.shop.InventoryUiState
+import com.planterior.helper.inventory.Todo18InventoryCacheSettlement
 import com.planterior.helper.registration.Todo18RegistrationCommitRepositoryEvent
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /** Instance-owned rendered-state transport shared by the target runtime and its Todo18 rule. */
 internal class Todo18RenderedStateSink : RenderedStateSink {
@@ -26,8 +30,11 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     private val displayedRuntimeDiagnostic: Todo18MiniHomeDisplayedRuntimeDiagnostic
     private val sequence = AtomicLong()
     private val rawMiniHomeStates = Todo18PrimaryEventStream<Todo18MiniHomeStateEvent>()
+    private val routeMiniHomeStates = Todo18PrimaryEventStream<Todo18MiniHomeStateEvent>()
     private val displayedMiniHomeStates = Todo18PrimaryEventStream<Todo18MiniHomeStateEvent>()
     private val registrationStates = Todo18PrimaryEventStream<Todo18RegistrationStateEvent>()
+    private val inventoryFeedback = Todo18PrimaryEventStream<Todo18InventoryFeedbackEvent>()
+    private val armedInventorySettlement = AtomicReference<Todo18InventoryCacheSettlement?>()
 
     private constructor(recorder: Todo18WaitDiagnosticRecorder) {
         this.recorder = recorder
@@ -56,6 +63,10 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
         }
         publishMiniHome(Todo18StateChannel.MINI_HOME_DISPLAYED, displayedMiniHomeStates, event)
         displayedRuntimeDiagnostic.onSinkReturn(state, event.sequence, binding)
+    }
+
+    override fun onMiniHomeRouteDisplayedState(state: MiniHomeUiState) {
+        routeMiniHomeStates.publish(Todo18MiniHomeStateEvent(sequence.incrementAndGet(), state))
     }
 
     override fun onRegistrationState(state: RegistrationUiState) {
@@ -98,6 +109,32 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
             recorder.recordPipeline(Todo18PipelineEventKind.PRIMARY_DISPATCH_RETURN, event.sequence)
     }
 
+    fun armInventoryFeedback(settlement: Todo18InventoryCacheSettlement) {
+        armedInventorySettlement.set(settlement)
+    }
+
+    override fun onInventoryState(state: InventoryUiState) {
+        val content = state as? InventoryUiState.Content ?: return
+        if (content.stale) return
+        if (content.feedback != InventoryFeedback.ACQUIRED) return
+        val settlement = armedInventorySettlement.get() ?: return
+        if (
+            content.owner != settlement.accountId ||
+                content.feedbackReceiptId?.value !=
+                    "${settlement.accountId.value}/${settlement.operationId.value}" ||
+                content.snapshot.owned.none { it.itemId == settlement.itemId }
+        )
+            return
+        if (!armedInventorySettlement.compareAndSet(settlement, null)) return
+        inventoryFeedback.publish(
+            Todo18InventoryFeedbackEvent(
+                sequence.incrementAndGet(),
+                settlement,
+                InventoryFeedback.ACQUIRED,
+            )
+        )
+    }
+
     override fun onMiniHomeDiagnosticEvent(event: MiniHomeDiagnosticEvent) =
         displayedRuntimeDiagnostic.onDiagnosticEvent(event)
 
@@ -128,7 +165,11 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     fun currentDisplayedMiniHomeState(): Todo18MiniHomeStateEvent? =
         displayedMiniHomeStates.current()
 
+    fun currentRouteMiniHomeState(): Todo18MiniHomeStateEvent? = routeMiniHomeStates.current()
+
     fun currentRegistrationState(): Todo18RegistrationStateEvent? = registrationStates.current()
+
+    fun currentInventoryFeedback(): Todo18InventoryFeedbackEvent? = inventoryFeedback.current()
 
     fun subscribeToRawMiniHomeStates(listener: (Todo18MiniHomeStateEvent) -> Unit): AutoCloseable =
         rawMiniHomeStates.subscribe(listener)
@@ -137,16 +178,26 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
         listener: (Todo18MiniHomeStateEvent) -> Unit
     ): AutoCloseable = displayedMiniHomeStates.subscribe(listener)
 
+    fun subscribeToRouteMiniHomeStates(
+        listener: (Todo18MiniHomeStateEvent) -> Unit
+    ): AutoCloseable = routeMiniHomeStates.subscribe(listener)
+
     fun subscribeToRegistrationStates(
         listener: (Todo18RegistrationStateEvent) -> Unit
     ): AutoCloseable = registrationStates.subscribe(listener)
+
+    fun subscribeToInventoryFeedback(
+        listener: (Todo18InventoryFeedbackEvent) -> Unit
+    ): AutoCloseable = inventoryFeedback.subscribe(listener)
 
     fun sequenceValue(): Long = sequence.get()
 
     fun primaryListenerCount(): Int =
         rawMiniHomeStates.listenerCount() +
+            routeMiniHomeStates.listenerCount() +
             displayedMiniHomeStates.listenerCount() +
-            registrationStates.listenerCount()
+            registrationStates.listenerCount() +
+            inventoryFeedback.listenerCount()
 
     fun isFresh(): Boolean = captureFreshness().fresh
 

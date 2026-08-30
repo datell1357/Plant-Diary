@@ -13,8 +13,10 @@ internal fun Todo18RenderedStateSink.captureFreshness() =
         initialSequence = sequenceValue(),
         initialCurrentsEmpty =
             currentRawMiniHomeState() == null &&
+                currentRouteMiniHomeState() == null &&
                 currentDisplayedMiniHomeState() == null &&
-                currentRegistrationState() == null,
+                currentRegistrationState() == null &&
+                currentInventoryFeedback() == null,
         initialListenerCount = primaryListenerCount(),
         isolatedInstance = true,
     )

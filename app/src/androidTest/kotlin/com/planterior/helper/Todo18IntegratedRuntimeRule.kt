@@ -18,15 +18,12 @@ import com.planterior.helper.feature.camera.Todo18DebugCameraBoundary
 import com.planterior.helper.feature.collection.CollectionWateringPreparationSource
 import com.planterior.helper.feature.collection.FirebaseCollectionRepository
 import com.planterior.helper.feature.collection.PlaceholderPlantThumbnailLoader
-import com.planterior.helper.feature.minihome.FirebaseMiniHomeRepository
 import com.planterior.helper.feature.registration.FirebaseRegistrationRepository
 import com.planterior.helper.feature.shop.FirebaseInventoryRepository
 import com.planterior.helper.feature.shop.PlaceholderCatalogMediaLoader
 import com.planterior.helper.feature.watering.OutboxWateringRepository
 import com.planterior.helper.inventory.Todo18InventoryCacheSettlementRepository
-import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
-import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRepository
 import com.planterior.helper.registration.Todo18RegistrationCommitDiagnosticRepository
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -54,8 +51,10 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             initialSequence = renderedStateSink.sequenceValue(),
             initialCurrentsEmpty =
                 renderedStateSink.currentRawMiniHomeState() == null &&
+                    renderedStateSink.currentRouteMiniHomeState() == null &&
                     renderedStateSink.currentDisplayedMiniHomeState() == null &&
-                    renderedStateSink.currentRegistrationState() == null,
+                    renderedStateSink.currentRegistrationState() == null &&
+                    renderedStateSink.currentInventoryFeedback() == null,
             initialListenerCount = renderedStateSink.primaryListenerCount(),
             isolatedInstance = true,
         )
@@ -136,38 +135,15 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                     renderedStateSink::onRegistrationCommitRepositoryEvent,
                 )
             val collection = FirebaseCollectionRepository(database, plants, plants, boundary::now)
-            val miniHomeDelegate =
-                FirebaseMiniHomeRepository(
-                    database,
-                    Todo18MiniHomeRepositoryFixture(boundary, miniHomeLoadDiagnostics),
-                    boundary::now,
-                    beforeCacheApply = { accountId ->
-                        miniHomeLoadDiagnostics.recordCurrent(
-                            Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(accountId)
-                        )
-                    },
-                    afterCacheApply = { accountId, current ->
-                        miniHomeLoadDiagnostics.recordCurrent(
-                            Todo18MiniHomeLoadDiagnostic.CacheApplyReturned(accountId, current)
-                        )
-                    },
-                    beforePublicationRead = {
-                        miniHomeLoadDiagnostics.recordCurrent(
-                            Todo18MiniHomeLoadDiagnostic.PublicationReadEntered
-                        )
-                    },
-                )
             val miniHome =
-                Todo18MiniHomeLoadDiagnosticRepository(
-                    delegate = miniHomeDelegate,
-                    diagnostics = miniHomeLoadDiagnostics,
-                )
+                todo18MiniHomeRuntimeRepository(database, boundary, miniHomeLoadDiagnostics)
             val inventoryRemote = Todo18InventoryRepositoryFixture(boundary)
             val inventory =
                 Todo18InventoryCacheSettlementRepository(
                     delegate =
                         FirebaseInventoryRepository(database, inventoryRemote, boundary::now),
                     onSettled = { boundary.emit("inventory-cache-settled", it.operationId.value) },
+                    onAcquired = renderedStateSink::armInventoryFeedback,
                 )
             val watering =
                 OutboxWateringRepository(

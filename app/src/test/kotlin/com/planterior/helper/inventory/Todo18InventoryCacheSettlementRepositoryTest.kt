@@ -125,7 +125,7 @@ class Todo18InventoryCacheSettlementRepositoryTest {
     fun `delegate exception and cancellation identities remain primary`() = runTest {
         val loadFailure = IllegalStateException("load failed")
         val loadDelegate = Delegate(loadAction = { throw loadFailure })
-        val loadRepository = Todo18InventoryCacheSettlementRepository(loadDelegate) {}
+        val loadRepository = Todo18InventoryCacheSettlementRepository(loadDelegate, onSettled = {})
         val actualLoadFailure =
             try {
                 loadRepository.load()
@@ -137,7 +137,8 @@ class Todo18InventoryCacheSettlementRepositoryTest {
 
         val acquireCancellation = CancellationException("acquire cancelled")
         val acquireDelegate = Delegate(acquireAction = { throw acquireCancellation })
-        val acquireRepository = Todo18InventoryCacheSettlementRepository(acquireDelegate) {}
+        val acquireRepository =
+            Todo18InventoryCacheSettlementRepository(acquireDelegate, onSettled = {})
         val actualCancellation =
             try {
                 acquireRepository.acquire(request())
@@ -156,7 +157,10 @@ class Todo18InventoryCacheSettlementRepositoryTest {
                 val expected = ready(snapshot(OWNER, ITEM), false)
                 val delegate = Delegate(loadResults = ArrayDeque(listOf(expected, expected)))
                 val repository =
-                    Todo18InventoryCacheSettlementRepository(delegate) { throw observerFailure }
+                    Todo18InventoryCacheSettlementRepository(
+                        delegate,
+                        onSettled = { throw observerFailure },
+                    )
 
                 repository.acquire(request())
                 assertSame(expected, repository.load())

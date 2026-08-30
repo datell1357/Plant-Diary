@@ -12,7 +12,7 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
     private val root = repositoryRoot()
 
     @Test
-    fun `MiniHome and Registration probes settle Compose between trigger and exact await`() {
+    fun `rendered probes settle Compose between trigger and exact await`() {
         // Given
         val probe =
             root
@@ -23,10 +23,14 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                 .readText()
         val miniHome =
             probe.substringAfter("fun awaitMiniHome(").substringBefore("fun awaitRegistration(")
-        val registration = probe.substringAfter("fun awaitRegistration(")
+        val registration =
+            probe
+                .substringAfter("fun awaitRegistration(")
+                .substringBefore("fun awaitInventoryFeedback(")
+        val inventory = probe.substringAfter("fun awaitInventoryFeedback(")
 
         // When / Then
-        listOf(miniHome, registration).forEach { method ->
+        listOf(miniHome, registration, inventory).forEach { method ->
             assertOrdered(
                 method,
                 "subscription.arm()",
@@ -37,9 +41,9 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                 "subscription.await(",
             )
         }
-        assertEquals(2, probe.countOccurrences("subscription.arm()"))
-        assertEquals(2, probe.countOccurrences("triggerSettleAndAwait("))
-        assertEquals(2, probe.countOccurrences("settle = compose::waitForIdle"))
+        assertEquals(3, probe.countOccurrences("subscription.arm()"))
+        assertEquals(3, probe.countOccurrences("triggerSettleAndAwait("))
+        assertEquals(3, probe.countOccurrences("settle = compose::waitForIdle"))
         assertTrue(probe.contains("EVENT_TIMEOUT_MILLIS = 10_000L"))
         assertFalse(probe.contains("compose.waitForIdle()"))
     }

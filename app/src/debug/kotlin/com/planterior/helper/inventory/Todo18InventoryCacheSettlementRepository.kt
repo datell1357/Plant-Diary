@@ -18,6 +18,7 @@ data class Todo18InventoryCacheSettlement(
 internal class Todo18InventoryCacheSettlementRepository(
     private val delegate: InventoryRepository,
     private val onSettled: (Todo18InventoryCacheSettlement) -> Unit,
+    private val onAcquired: (Todo18InventoryCacheSettlement) -> Unit = {},
 ) : InventoryRepository by delegate {
     private val lock = Any()
     private val armed = linkedMapOf<OperationId, Todo18InventoryCacheSettlement>()
@@ -25,14 +26,14 @@ internal class Todo18InventoryCacheSettlementRepository(
     override suspend fun acquire(request: InventoryAcquireRequest): InventoryAcquireResult {
         val result = delegate.acquire(request)
         if (result is InventoryAcquireResult.Success) {
-            synchronized(lock) {
-                armed[request.operationId] =
-                    Todo18InventoryCacheSettlement(
-                        request.accountId,
-                        request.itemId,
-                        request.operationId,
-                    )
-            }
+            val settlement =
+                Todo18InventoryCacheSettlement(
+                    request.accountId,
+                    request.itemId,
+                    request.operationId,
+                )
+            synchronized(lock) { armed[request.operationId] = settlement }
+            report(settlement, onAcquired)
         }
         return result
     }
@@ -46,13 +47,16 @@ internal class Todo18InventoryCacheSettlementRepository(
                     .filter { settlement -> snapshot.settles(settlement) }
                     .onEach { settlement -> armed.remove(settlement.operationId) }
             }
-        settled.forEach(::report)
+        settled.forEach { report(it, onSettled) }
         return result
     }
 
-    private fun report(settlement: Todo18InventoryCacheSettlement) {
+    private fun report(
+        settlement: Todo18InventoryCacheSettlement,
+        observer: (Todo18InventoryCacheSettlement) -> Unit,
+    ) {
         try {
-            onSettled(settlement)
+            observer(settlement)
         } catch (_: AssertionError) {
             return
         } catch (_: Exception) {

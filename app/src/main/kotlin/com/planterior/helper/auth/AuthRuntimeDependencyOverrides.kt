@@ -15,6 +15,7 @@ import com.planterior.helper.feature.settings.AccountDeletionDependencies
 import com.planterior.helper.feature.share.MiniHomeShareRepository
 import com.planterior.helper.feature.shop.CatalogMediaLoader
 import com.planterior.helper.feature.shop.InventoryRepository
+import com.planterior.helper.feature.shop.InventoryUiState
 import com.planterior.helper.feature.watering.WateringNotificationSettingsRepository
 import com.planterior.helper.feature.watering.WateringRepository
 import com.planterior.helper.feature.weather.WeatherPermissionCapabilityStore
@@ -26,7 +27,11 @@ interface RenderedStateSink {
 
     fun onMiniHomeDisplayedState(state: MiniHomeUiState)
 
+    fun onMiniHomeRouteDisplayedState(state: MiniHomeUiState) = Unit
+
     fun onRegistrationState(state: RegistrationUiState)
+
+    fun onInventoryState(state: InventoryUiState) = Unit
 
     fun onMiniHomeDiagnosticEvent(event: MiniHomeDiagnosticEvent) = Unit
 

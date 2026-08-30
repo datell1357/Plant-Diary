@@ -100,6 +100,7 @@ class Todo18Scenario(val accountId: AccountId) {
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered -> "cache-apply-entered"
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned -> "cache-apply-returned"
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> "publication-read-entered"
+                Todo18MiniHomeLoadDiagnostic.PublicationReadReturned -> "publication-read-returned"
                 is Todo18MiniHomeLoadDiagnostic.Terminal -> "load-terminal"
             }
         val identity =
@@ -108,6 +109,7 @@ class Todo18Scenario(val accountId: AccountId) {
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered,
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned,
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> accountId.value
+                Todo18MiniHomeLoadDiagnostic.PublicationReadReturned -> accountId.value
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
                     observation.diagnostic.accountId.value
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->

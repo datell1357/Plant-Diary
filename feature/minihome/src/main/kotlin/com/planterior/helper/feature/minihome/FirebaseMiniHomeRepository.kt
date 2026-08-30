@@ -36,6 +36,7 @@ import java.security.MessageDigest
 import java.text.Normalizer
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
@@ -170,13 +171,21 @@ interface MiniHomeRemoteDataSource {
     suspend fun save(request: MiniHomeSaveRequest): RemoteMiniHomeSaveResult
 }
 
+@JvmInline value class MiniHomePublicationReadIdentity(val value: Long)
+
 class FirebaseMiniHomeRepository(
     private val database: PlanteriorDatabase,
     private val remote: MiniHomeRemoteDataSource,
     private val now: () -> Instant = Instant::now,
     private val beforeCacheApply: suspend (AccountId) -> Unit = {},
     private val afterCacheApply: suspend (AccountId, Boolean) -> Unit = { _, _ -> },
-    private val beforePublicationRead: suspend (AccountId) -> Unit = {},
+    private val beforePublicationRead:
+        suspend (AccountId, MiniHomePublicationReadIdentity) -> Unit =
+        { _, _ ->
+        },
+    private val afterPublicationRead: suspend (AccountId, MiniHomePublicationReadIdentity) -> Unit =
+        { _, _ ->
+        },
 ) : MiniHomeRepository {
     private val ownerOperations = ConcurrentHashMap<String, Mutex>()
     private val recentSaveOutcomes = ConcurrentHashMap<String, RegisteredSaveOutcome>()
@@ -186,6 +195,7 @@ class FirebaseMiniHomeRepository(
     private var requestGeneration = 0L
     private val currentOwnerRequest = mutableMapOf<String, Long>()
     private val lastPublished = mutableMapOf<String, MiniHomePublicationVersion>()
+    private val publicationReadSequence = AtomicLong()
 
     override suspend fun load(): MiniHomeLoadResult {
         val account = remote.activeAccount() ?: return MiniHomeLoadResult.Forbidden
@@ -1132,11 +1142,14 @@ class FirebaseMiniHomeRepository(
     private suspend fun readCoherentCachedPublication(
         account: AccountId
     ): CachedMiniHomePublication {
-        beforePublicationRead(account)
+        val readIdentity =
+            MiniHomePublicationReadIdentity(publicationReadSequence.incrementAndGet())
+        observePublicationRead { beforePublicationRead(account, readIdentity) }
         val raw = database.withTransaction {
             database.cacheDao().currentMiniHomeSnapshotCache(account.value) to
                 database.cacheDao().plants(account.value)
         }
+        notifyPublicationReadReturned(account, readIdentity)
         val snapshotState = raw.first
         val incoherentSnapshot = snapshotState?.coherent == false
         val inventoryState = snapshotState?.inventory
@@ -1174,6 +1187,23 @@ class FirebaseMiniHomeRepository(
             corruptInventoryGeneration = corruptInventory,
             incoherentSnapshot = incoherentSnapshot,
         )
+    }
+
+    private suspend fun notifyPublicationReadReturned(
+        account: AccountId,
+        readIdentity: MiniHomePublicationReadIdentity,
+    ) = observePublicationRead { afterPublicationRead(account, readIdentity) }
+
+    private suspend fun observePublicationRead(observe: suspend () -> Unit) {
+        try {
+            observe()
+        } catch (failure: kotlinx.coroutines.CancellationException) {
+            throw failure
+        } catch (_: AssertionError) {
+            return
+        } catch (_: Exception) {
+            return
+        }
     }
 
     private fun recoverCachedLayout(

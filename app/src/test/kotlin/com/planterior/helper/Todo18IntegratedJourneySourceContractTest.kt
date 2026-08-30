@@ -64,7 +64,9 @@ class Todo18IntegratedJourneySourceContractTest {
         val sources = todo18AndroidTestSources()
         val allCode = sources.values.joinToString("\n")
         val entryPoint = sources.getValue("Todo18IntegratedJourneyMainActivityTest.kt")
-        val runtimeRule = sources.getValue("Todo18IntegratedRuntimeRule.kt")
+        val runtimeRule =
+            sources.getValue("Todo18IntegratedRuntimeRule.kt") +
+                sources.getValue("Todo18MiniHomeRuntimeRepository.kt")
         val eventProbe = sources.getValue("Todo18JourneyEventProbe.kt")
         val renderedProbe = sources.getValue("Todo18RenderedStateProbe.kt")
 
@@ -88,7 +90,7 @@ class Todo18IntegratedJourneySourceContractTest {
             "ownedItems(",
             "miniHomePlacements(",
             "WateringTestTags.RESULT",
-            "InventoryTestTags.FEEDBACK",
+            "InventoryFeedback.ACQUIRED",
             "MiniHomeShareTestTags.LINK_URL",
             "WeatherTestTags.STALE",
             "account-deletion.remaining.AUTH_ACCOUNT",
@@ -271,7 +273,11 @@ class Todo18IntegratedJourneySourceContractTest {
         val runtime =
             source(
                 "app/src/androidTest/kotlin/com/planterior/helper/Todo18IntegratedRuntimeRule.kt"
-            )
+            ) +
+                source(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MiniHomeRuntimeRepository.kt"
+                )
         val journey =
             source(
                 "app/src/androidTest/kotlin/com/planterior/helper/Todo18MajorJourneyAssertions.kt"
@@ -294,25 +300,128 @@ class Todo18IntegratedJourneySourceContractTest {
         val tokens =
             listOf(
                 "lateinit var acquired: Todo18BoundaryEvent",
+                "rendered.awaitInventoryFeedback(",
                 "events.awaitBoundary(\"inventory-cache-settled\")",
                 "events.awaitBoundary(\"inventory-acquired\")",
-                "onNodeWithTag(InventoryTestTags.acquire(ItemId(\"todo18-planter\")))",
+                "InventoryTestTags.acquire(ItemId(\"todo18-planter\"))",
                 "assertEquals(acquired.identity, settled.identity)",
-                "compose.onNodeWithTag(InventoryTestTags.FEEDBACK).assertIsDisplayed()",
+                "assertEquals(acquired.identity, feedback.settlement.operationId.value)",
                 "runtime.database.cacheDao().ownedItems(Todo18IntegratedRuntimeRule.ACCOUNT_UID).size",
             )
         val positions = tokens.map(inventoryJourney::indexOf)
-        val clickPosition = inventoryJourney.indexOf(".performClick()", positions[3])
+        val clickPosition = inventoryJourney.indexOf(".performClick()", positions[4])
 
         tokens.zip(positions).forEach { (token, position) ->
             assertTrue("Missing ordered Inventory settlement token: $token", position >= 0)
         }
         assertTrue("Missing exact Inventory acquire click", clickPosition >= 0)
-        val orderedPositions = positions.take(4) + clickPosition + positions.drop(4)
+        val orderedPositions = positions.take(5) + clickPosition + positions.drop(5)
         assertTrue(
             "Inventory settlement tokens are out of order",
             orderedPositions == orderedPositions.sorted(),
         )
+    }
+
+    @Test
+    fun `runtime initial freshness matches every rendered sink current`() {
+        val runtime =
+            source(
+                    "app/src/androidTest/kotlin/com/planterior/helper/Todo18IntegratedRuntimeRule.kt"
+                )
+                .substringAfter("internal val initialSinkFreshness")
+                .substringBefore("internal var priorActivityCount")
+        val snapshots =
+            source("app/src/debug/kotlin/com/planterior/helper/Todo18RenderedStateSnapshots.kt")
+                .substringAfter("initialCurrentsEmpty =")
+                .substringBefore("initialListenerCount")
+        val currents =
+            listOf(
+                "currentRawMiniHomeState() == null",
+                "currentRouteMiniHomeState() == null",
+                "currentDisplayedMiniHomeState() == null",
+                "currentRegistrationState() == null",
+                "currentInventoryFeedback() == null",
+            )
+
+        currents.forEach { current ->
+            assertCode(runtime, current)
+            assertCode(snapshots, current)
+        }
+    }
+
+    @Test
+    fun `Offline final Retry closes an exact five-boundary transition receipt`() {
+        val navigation =
+            source("app/src/main/kotlin/com/planterior/helper/navigation/PlanteriorNavHost.kt")
+        val journey =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MiniHomeJourneyAssertions.kt"
+            )
+        val retry = journey.substringAfter("lateinit var committed: Todo18BoundaryEvent")
+
+        assertCode(
+            retry,
+            "Todo18OfflineRetryTransitionDiagnosticCapture(",
+            "recordTriggerReturned()",
+            "events.awaitBoundary(\"mini-home-committed\")",
+            "requireComplete(frozen, committed)",
+        )
+        assertCode(navigation, "onMiniHomeRouteDisplayedState(it)")
+    }
+
+    @Test
+    fun `Conflict publication reads record exact matched return identities`() {
+        val repository =
+            source(
+                "feature/minihome/src/main/kotlin/com/planterior/helper/feature/minihome/" +
+                    "FirebaseMiniHomeRepository.kt"
+            )
+        val runtime =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18IntegratedRuntimeRule.kt"
+            ) +
+                source(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MiniHomeRuntimeRepository.kt"
+                )
+
+        assertCode(
+            repository,
+            "afterPublicationRead:",
+            "notifyPublicationReadReturned(account, readIdentity)",
+        )
+        assertCode(
+            runtime,
+            "afterPublicationRead =",
+            "Todo18MiniHomeLoadDiagnostic.PublicationReadReturned",
+        )
+    }
+
+    @Test
+    fun `Inventory route forwards exact rendered acquired feedback before the real click`() {
+        val contract = source(MAIN_OVERRIDE_CONTRACT)
+        val navigation =
+            source("app/src/main/kotlin/com/planterior/helper/navigation/PlanteriorNavHost.kt")
+        val journey =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MajorJourneyAssertions.kt"
+            )
+        val inventory =
+            journey
+                .substringAfter("boundaryKind = \"inventory-loaded\"")
+                .substringBefore("boundaryKind = \"mini-home-loaded\"")
+
+        assertCode(contract, "fun onInventoryState(state: InventoryUiState) = Unit")
+        assertCode(navigation, "onStateObserved = { renderedStateSink?.onInventoryState(it) }")
+        assertCode(
+            inventory,
+            "rendered.awaitInventoryFeedback(",
+            "InventoryFeedback.ACQUIRED",
+            "InventoryTestTags.acquire(ItemId(\"todo18-planter\"))",
+            "assertEquals(acquired.identity, settled.identity)",
+            "ownedItems(Todo18IntegratedRuntimeRule.ACCOUNT_UID).size",
+        )
+        assertFalse(inventory.contains("InventoryTestTags.FEEDBACK).assertIsDisplayed()"))
     }
 
     @Test

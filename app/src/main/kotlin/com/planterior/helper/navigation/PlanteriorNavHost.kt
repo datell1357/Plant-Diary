@@ -366,6 +366,7 @@ fun PlanteriorNavHost(
                     },
                     bottomBar = bottomBar,
                     mediaLoader = catalogMediaLoader,
+                    onStateObserved = { renderedStateSink?.onInventoryState(it) },
                 )
             }
         }
@@ -699,6 +700,7 @@ fun PlanteriorNavHost(
                     diagnosticGenerations = miniHomeDiagnosticGenerations,
                     hostDiagnosticIdentity = miniHomeHostDiagnosticIdentity,
                     onStateObserved = {
+                        renderedStateSink?.onMiniHomeRouteDisplayedState(it)
                         renderedStateSink?.onMiniHomeDisplayedState(it)
                         observeDebugMiniHomeState(context, it)
                     },

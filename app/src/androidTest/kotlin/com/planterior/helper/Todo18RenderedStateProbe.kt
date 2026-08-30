@@ -82,6 +82,39 @@ internal class Todo18RenderedStateProbe(
         return observed
     }
 
+    fun awaitInventoryFeedback(
+        matches: (Todo18InventoryFeedbackEvent) -> Boolean,
+        trigger: () -> Unit,
+    ): Todo18InventoryFeedbackEvent {
+        val sink = runtime.renderedStateSink
+        val floor = sink.currentInventoryFeedback()?.sequence ?: 0L
+        return ExactEventSubscription(
+                matches = { event -> event.sequence >= floor && matches(event) },
+                subscribe = { receiver ->
+                    leasedRegistration(
+                        receiver,
+                        sink::subscribeToInventoryFeedback,
+                        sink::currentInventoryFeedback,
+                    )
+                },
+                diagnosticSequence = Todo18InventoryFeedbackEvent::sequence,
+            )
+            .use { subscription ->
+                subscription.arm()
+                triggerSettleAndAwait(
+                    trigger = { subscription.trigger(trigger) },
+                    settle = compose::waitForIdle,
+                    await = {
+                        subscription.await(
+                            EVENT_TIMEOUT_MILLIS,
+                            TimeUnit.MILLISECONDS,
+                            "Todo18 Inventory rendered feedback",
+                        )
+                    },
+                )
+            }
+    }
+
     private fun <T> leasedRegistration(
         receiver: (T) -> Unit,
         subscribe: ((T) -> Unit) -> AutoCloseable,

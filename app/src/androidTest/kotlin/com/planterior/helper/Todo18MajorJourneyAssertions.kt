@@ -11,6 +11,7 @@ import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.feature.collection.PlantDetailTestTags
 import com.planterior.helper.feature.minihome.MiniHomeTestTags
 import com.planterior.helper.feature.share.MiniHomeShareTestTags
+import com.planterior.helper.feature.shop.InventoryFeedback
 import com.planterior.helper.feature.shop.InventoryTestTags
 import com.planterior.helper.feature.watering.WateringTestTags
 import com.planterior.helper.feature.weather.WeatherTestTags
@@ -68,18 +69,30 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
         .performScrollTo()
         .assertIsDisplayed()
     lateinit var acquired: Todo18BoundaryEvent
-    val settled =
-        events.awaitBoundary("inventory-cache-settled") {
-            acquired =
-                events.awaitBoundary("inventory-acquired") {
-                    compose
-                        .onNodeWithTag(InventoryTestTags.acquire(ItemId("todo18-planter")))
-                        .performClick()
-                }
-        }
+    lateinit var settled: Todo18BoundaryEvent
+    val feedback =
+        rendered.awaitInventoryFeedback(
+            matches = {
+                it.feedback == InventoryFeedback.ACQUIRED &&
+                    it.settlement.accountId.value == Todo18IntegratedRuntimeRule.ACCOUNT_UID &&
+                    it.settlement.itemId == ItemId("todo18-planter")
+            },
+            trigger = {
+                settled =
+                    events.awaitBoundary("inventory-cache-settled") {
+                        acquired =
+                            events.awaitBoundary("inventory-acquired") {
+                                compose
+                                    .onNodeWithTag(
+                                        InventoryTestTags.acquire(ItemId("todo18-planter"))
+                                    )
+                                    .performClick()
+                            }
+                    }
+            },
+        )
     assertEquals(acquired.identity, settled.identity)
-    compose.waitForIdle()
-    compose.onNodeWithTag(InventoryTestTags.FEEDBACK).assertIsDisplayed()
+    assertEquals(acquired.identity, feedback.settlement.operationId.value)
     assertEquals(
         1,
         runBlocking {

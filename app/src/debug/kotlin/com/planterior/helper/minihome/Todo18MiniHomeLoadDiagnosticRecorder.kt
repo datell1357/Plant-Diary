@@ -55,6 +55,24 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         }
     }
 
+    suspend fun recordCurrentPublicationRead(
+        diagnostic: Todo18MiniHomeLoadDiagnostic,
+        ordinal: Long,
+    ) {
+        require(
+            diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned
+        )
+        val job = checkNotNull(coroutineContext[Job])
+        val load = synchronized(lock) { checkNotNull(activeLoads[job]?.peekLast()) }
+        val readId = Todo18MiniHomePublicationReadId(load.id, ordinal)
+        if (diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered) {
+            load.recordPublicationRead(readId)
+        } else {
+            record(load.id, diagnostic, readId)
+        }
+    }
+
     suspend fun <T> withLoad(load: Todo18MiniHomeLoad, block: suspend () -> T): T {
         val job = checkNotNull(coroutineContext[Job])
         synchronized(lock) { activeLoads.getOrPut(job, ::ArrayDeque).addLast(load) }
@@ -156,7 +174,9 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
             if (observation.readId == null) {
                 state.observations.any { it.receiptStage == observation.receiptStage }
             } else {
-                state.observations.any { it.readId == observation.readId }
+                state.observations.any {
+                    it.readId == observation.readId && it.receiptStage == observation.receiptStage
+                }
             }
         val kind =
             when {
@@ -201,6 +221,10 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                 diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ->
+                diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+            Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ->
                 diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             is Todo18MiniHomeLoadDiagnostic.Terminal -> false
