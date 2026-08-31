@@ -4,6 +4,7 @@ import com.planterior.helper.core.database.RoomTransactionOwnerObservation
 import com.planterior.helper.diagnostic.Todo18OrderedRoomTransactionOwnerObservation
 import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassificationEvent
 import com.planterior.helper.feature.minihome.MiniHomeUiState
+import com.planterior.helper.minihome.Todo18MiniHomeRenderedState
 
 internal class Timeline {
     private val lock = Any()
@@ -38,6 +39,7 @@ internal class Timeline {
                     sinkSequence = event.sequence,
                     state = event.state.stateName(),
                     owner = event.state.owner?.value,
+                    stateLoadId = event.loadIdentity?.value,
                 )
         }
 
@@ -95,11 +97,15 @@ internal data class TimelineEntry(
     val sinkSequence: Long? = null,
     val state: String? = null,
     val owner: String? = null,
+    val stateLoadId: Long? = null,
     val transactionOwner: String? = null,
     val transactionToken: Long? = null,
     val transactionFailureClass: String? = null,
     val transactionFailureMessage: String? = null,
 )
+
+internal fun TimelineEntry.renderedState(): Todo18MiniHomeRenderedState =
+    Todo18MiniHomeRenderedState(source, state, owner, stateLoadId)
 
 internal fun TimelineEntry.transactionOwnerClassificationEvent():
     Todo18RoomTransactionOwnerClassificationEvent? =

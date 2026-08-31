@@ -154,6 +154,7 @@ class ExactEventSubscriptionTest {
         classify: (T) -> ExactEventValueCategory = { ExactEventValueCategory.GENERIC },
         leaseObserver: ExactEventLeaseObserver = ExactEventLeaseObserver.NONE,
         stateObserver: ExactEventStateObserver = ExactEventStateObserver.NONE,
+        acceptRegistrationReplay: Boolean = false,
     ): Fixture<T> {
         val registration = AtomicReference<LeasedExactEventRegistration<T>?>()
         val subscription =
@@ -170,8 +171,123 @@ class ExactEventSubscriptionTest {
                         .also(registration::set)
                 },
                 stateObserver = stateObserver,
+                acceptRegistrationReplay = acceptRegistrationReplay,
             )
         return Fixture(source, subscription, registration)
+    }
+
+    private fun <T> registrationReplayFixture(
+        replay: List<T>,
+        matches: (T) -> Boolean,
+    ): Fixture<T> {
+        val source = EventSource<T>()
+        val registration = AtomicReference<LeasedExactEventRegistration<T>?>()
+        val subscription =
+            ExactEventSubscription(
+                matches = matches,
+                subscribe = { receiver ->
+                    LeasedExactEventRegistration(
+                            receiver,
+                            register = { listener ->
+                                source.register(listener)
+                                replay.forEach(listener)
+                            },
+                            unregister = source::unregister,
+                        )
+                        .also(registration::set)
+                },
+                acceptRegistrationReplay = true,
+            )
+        return Fixture(source, subscription, registration)
+    }
+
+    @Test
+    fun matchingRegistrationReplayIsAcceptedOnlyByExplicitOptIn() {
+        val fixture =
+            registrationReplayFixture(
+                replay = listOf(RouteEvent("home", 2)),
+                matches = { it.route == "home" && it.generation == 2 },
+            )
+
+        assertTrue(fixture.subscription.hasAcceptedEvent())
+        fixture.subscription.arm()
+        assertEquals(2, fixture.subscription.await(BOUND, TimeUnit.SECONDS, "home").generation)
+        assertClean(fixture)
+    }
+
+    @Test
+    fun registrationReplayRejectsWrongLoadAccountAndSequenceBeforeExactEvent() {
+        val expected = LoadEvent("home", "account-a", 12L, 7L)
+        val fixture =
+            registrationReplayFixture(
+                replay =
+                    listOf(
+                        expected.copy(account = "account-b"),
+                        expected.copy(sequence = 11L),
+                        expected.copy(loadId = 6L),
+                    ),
+                matches = {
+                    it.route == expected.route &&
+                        it.account == expected.account &&
+                        it.sequence > 11L &&
+                        it.loadId == expected.loadId
+                },
+            )
+
+        assertFalse(fixture.subscription.hasAcceptedEvent())
+        fixture.subscription.arm()
+        fixture.source.emit(expected.copy(sequence = 12L))
+        assertEquals(expected, fixture.subscription.await(BOUND, TimeUnit.SECONDS, "load"))
+        assertClean(fixture)
+    }
+
+    @Test
+    fun duplicateRegistrationReplayIsTerminalDuplicateAfterArm() {
+        val event = RouteEvent("home", 2)
+        val fixture =
+            registrationReplayFixture(
+                replay = listOf(event, event),
+                matches = { it == event },
+            )
+
+        fixture.subscription.arm()
+        assertFailure(ExactEventFailure.DUPLICATE) {
+            fixture.subscription.await(BOUND, TimeUnit.SECONDS, "home")
+        }
+        assertClean(fixture)
+    }
+
+    @Test
+    fun registrationReplayPredicateFaultIsSourceFailureWithoutLeak() {
+        val fixture =
+            registrationReplayFixture(
+                replay = listOf(RouteEvent("home", 2)),
+                matches = { throw SourceProblem("predicate") },
+            )
+
+        fixture.subscription.arm()
+        assertFailure(ExactEventFailure.SOURCE) {
+            fixture.subscription.await(BOUND, TimeUnit.SECONDS, "home")
+        }
+        assertClean(fixture)
+    }
+
+    @Test
+    fun acceptedRegistrationReplayCanBeCancelledAndClosedExactlyOnce() {
+        val event = RouteEvent("home", 2)
+        val fixture =
+            registrationReplayFixture(
+                replay = listOf(event),
+                matches = { it == event },
+            )
+
+        fixture.subscription.arm()
+        fixture.subscription.close()
+        assertFailure(ExactEventFailure.CANCELLED) {
+            fixture.subscription.await(BOUND, TimeUnit.SECONDS, "home")
+        }
+        assertEquals(0, fixture.source.emit(event))
+        assertClean(fixture)
     }
 
     @Test
@@ -1202,6 +1318,13 @@ class ExactEventSubscriptionTest {
     private data class GenerationEvent(val kind: String, val generation: Int)
 
     private data class RouteEvent(val route: String, val generation: Int)
+
+    private data class LoadEvent(
+        val route: String,
+        val account: String,
+        val sequence: Long,
+        val loadId: Long,
+    )
 
     private fun routeValueCategory(event: RouteEvent): ExactEventValueCategory =
         when (event.route) {

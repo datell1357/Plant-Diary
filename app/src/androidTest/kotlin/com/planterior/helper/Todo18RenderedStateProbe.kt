@@ -61,6 +61,7 @@ internal class Todo18RenderedStateProbe(
                     )
                 },
                 diagnosticSequence = Todo18MiniHomeStateEvent::sequence,
+                acceptRegistrationReplay = true,
             )
             .use { subscription ->
                 subscription.arm()

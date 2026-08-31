@@ -79,6 +79,12 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                     "app/src/androidTest/kotlin/com/planterior/helper/Todo18JourneyEventProbe.kt"
                 )
                 .readText()
+        val renderedProbe =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/Todo18RenderedStateProbe.kt"
+                )
+                .readText()
         val journey =
             root
                 .resolve(
@@ -127,6 +133,21 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
         )
         assertTrue(eventStream.contains("val loadIdentity: MiniHomeLoadIdentity?"))
         assertTrue(eventStream.contains("(state as? MiniHomeUiState.Viewing)?.loadIdentity"))
+        assertTrue(renderedProbe.contains("acceptRegistrationReplay = true"))
+        assertTrue(
+            renderedProbe
+                .substringAfter("fun awaitMiniHomeViewingAfterLoad(")
+                .substringBefore("fun awaitRegistration(")
+                .contains("acceptRegistrationReplay = true")
+        )
+        assertTrue(
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/ExactEventSubscription.kt"
+                )
+                .readText()
+                .contains("private val acceptRegistrationReplay: Boolean = false")
+        )
     }
 
     @Test

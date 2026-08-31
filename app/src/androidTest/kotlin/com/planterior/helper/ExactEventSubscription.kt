@@ -862,7 +862,8 @@ internal class ExactEventException(
  * 트리거 전에 등록한 실제 이벤트 관찰을 단일 lock 상태 기계로 닫는다.
  *
  * Callback lease는 helper lock을 잡기 전에 adapter에서 획득된다. 닫기 중 도착한 callback은 제거 전에 이미 획득된 callback이므로 동일
- * 세대에 포함된다. 성공은 detach/drain completion 뒤 정확히 한 이벤트일 때만 확정된다.
+ * 세대에 포함된다. 성공은 detach/drain completion 뒤 정확히 한 이벤트일 때만 확정된다. 등록 중 현재값 replay는 기본적으로 stale로 거부하며,
+ * [acceptRegistrationReplay]가 명시된 post-load barrier만 등록 호출의 동기 replay를 첫 후보로 보존한다.
  */
 internal class ExactEventSubscription<T>(
     private val matches: (T) -> Boolean,
@@ -871,9 +872,11 @@ internal class ExactEventSubscription<T>(
     private val stateObserver: ExactEventStateObserver = ExactEventStateObserver.NONE,
     private val diagnosticObserver: Todo18ExactEventObserver? = null,
     private val diagnosticSequence: (T) -> Long? = { null },
+    private val acceptRegistrationReplay: Boolean = false,
 ) : AutoCloseable {
     private val lock = Any()
     private val behavior = newBehaviorHandle(BehaviorComponent.SUBSCRIPTION)
+    private val registrationReplayThread = Thread.currentThread()
     private val eventOrCancellation = CountDownLatch(1)
     private val closed = CountDownLatch(1)
     private var phase = Phase.REGISTERED
@@ -885,6 +888,7 @@ internal class ExactEventSubscription<T>(
     private var firstEventForked = false
     private var sourceFailure: Throwable? = null
     private var registration: ExactEventRegistration? = null
+    private var registrationReplayWindow = acceptRegistrationReplay
 
     init {
         behavior.observe(
@@ -893,12 +897,14 @@ internal class ExactEventSubscription<T>(
         )
         try {
             registration = subscribe(::onEvent)
+            synchronized(lock) { registrationReplayWindow = false }
             behavior.observe(
                 BehaviorTransition.SUBSCRIBED,
                 BehaviorPayload.Facts(phase = phase.behaviorPhase()),
             )
             safeObserveExactEvent(Todo18ExactEventPhase.SUBSCRIBED)
         } catch (failure: Throwable) {
+            synchronized(lock) { registrationReplayWindow = false }
             sourceFailure = failure
             eventOrCancellation.countDown()
             behavior.observe(
@@ -1086,8 +1092,15 @@ internal class ExactEventSubscription<T>(
         )
         val observation =
             synchronized(lock) {
+                val registrationReplay =
+                    acceptRegistrationReplay &&
+                        registrationReplayWindow &&
+                        Thread.currentThread() === registrationReplayThread
                 val observed =
-                    if (!matched || (phase != Phase.ARMED && phase != Phase.CLOSING)) {
+                    if (
+                        !matched ||
+                            (!registrationReplay && phase != Phase.ARMED && phase != Phase.CLOSING)
+                    ) {
                         EventObservation(matched, false, matchingEventCount, phase)
                     } else {
                         matchingEventCount += 1

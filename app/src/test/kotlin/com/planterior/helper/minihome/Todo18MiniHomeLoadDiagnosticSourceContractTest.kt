@@ -38,7 +38,14 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
                 "app/src/debug/kotlin/com/planterior/helper/minihome/" +
                     "Todo18MiniHomeLoadReceiptReducer.kt"
             )
-        val diagnosticCode = "$capture\n$receipt\n$progressReceipt\n$finalization\n$reducer"
+        val renderedViewingIdentity =
+            root.source(
+                "app/src/debug/kotlin/com/planterior/helper/minihome/" +
+                    "Todo18MiniHomeRenderedViewingIdentity.kt"
+            )
+        val diagnosticCode =
+            "$capture\n$receipt\n$progressReceipt\n$finalization\n$reducer\n" +
+                renderedViewingIdentity
         val assertions =
             root.source(
                 "app/src/androidTest/kotlin/com/planterior/helper/" +
@@ -66,7 +73,7 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "todo18-e2e-journeys",
             "captureInitialLoad(scenarioName",
             "File(directory, \"\$scenarioName-diagnostic.json\")",
-            "todo18-mini-home-load-diagnostic-v4",
+            "todo18-mini-home-load-diagnostic-v5",
             "put(\"api\", input.api)",
             "remote-load-entered",
             "remote-load-returned",
@@ -85,6 +92,11 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "loadEntered",
             "loadTerminal",
             "timeline",
+            "stateLoadId",
+            "renderedViewingIdentityProblems",
+            "rendered-viewing-",
+            "load-identity-missing",
+            "load-identity-mismatch",
             "catch (failure: AssertionError)",
             "catch (failure: Exception)",
             "primaryFailure.addSuppressed(summary)",

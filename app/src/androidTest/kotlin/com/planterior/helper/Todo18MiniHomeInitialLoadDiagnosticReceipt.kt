@@ -3,6 +3,7 @@ package com.planterior.helper
 import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassification
 import com.planterior.helper.minihome.Todo18MiniHomeLoadProgress
 import com.planterior.helper.minihome.putTodo18MiniHomeLoadProgress
+import com.planterior.helper.minihome.putTodo18MiniHomeRenderedState
 import java.io.File
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.add
@@ -29,7 +30,7 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
     val entered = input.timeline.filter { it.kind == "load-entered" }
     val terminals = input.timeline.filter { it.kind == "load-terminal" }
     val receipt = buildJsonObject {
-        put("schema", "todo18-mini-home-load-diagnostic-v4")
+        put("schema", "todo18-mini-home-load-diagnostic-v5")
         put("scenario", input.scenarioName)
         put("api", input.api)
         put("expectedAccountId", input.expectedAccountId)
@@ -84,8 +85,7 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
                         put("pendingReadFailureClass", entry.pendingReadFailureClass)
                         put("pendingReadFailureMessage", entry.pendingReadFailureMessage)
                         put("sinkSequence", entry.sinkSequence)
-                        put("state", entry.state)
-                        put("owner", entry.owner)
+                        putTodo18MiniHomeRenderedState(entry.renderedState())
                         put("transactionOwner", entry.transactionOwner)
                         put("transactionToken", entry.transactionToken)
                         put("transactionFailureClass", entry.transactionFailureClass)

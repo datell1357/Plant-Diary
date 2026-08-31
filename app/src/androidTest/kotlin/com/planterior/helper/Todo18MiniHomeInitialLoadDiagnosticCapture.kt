@@ -4,6 +4,7 @@ import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassification
 import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerClassifier
 import com.planterior.helper.minihome.Todo18MiniHomeLoadBoundaryStage
 import com.planterior.helper.minihome.Todo18MiniHomeLoadReceiptReducer
+import com.planterior.helper.minihome.renderedViewingIdentityProblems
 import java.io.File
 
 /** Pre-armed, instance-owned evidence capture for the Todo18 MiniHome diagnostic. */
@@ -59,6 +60,12 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
             val diagnosticEntries = snapshot.filter {
                 it.source == "boundary" && it.kind in LOAD_DIAGNOSTIC_KINDS
             }
+            problems +=
+                renderedViewingIdentityProblems(
+                    expectedAccountId,
+                    progress,
+                    snapshot.map(TimelineEntry::renderedState),
+                )
             problems +=
                 Todo18MiniHomeLoadReceiptReducer.problems(
                     expectedAccountId,
