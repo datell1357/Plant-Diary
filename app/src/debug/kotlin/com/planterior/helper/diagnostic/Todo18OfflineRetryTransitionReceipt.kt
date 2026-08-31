@@ -2,6 +2,7 @@ package com.planterior.helper.diagnostic
 
 import com.planterior.helper.feature.minihome.MiniHomeRetryObservation
 import com.planterior.helper.feature.minihome.MiniHomeRetryStage
+import com.planterior.helper.feature.minihome.MiniHomeSaveResultDetails
 import java.io.File
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -33,8 +34,7 @@ internal data class Todo18OfflineRetryBoundaryObservation(
     val guardDraftIdentity: Boolean?,
     val revision: Long?,
     val outcome: String?,
-    val resultIdentity: Int?,
-    val failureIdentity: Int?,
+    val resultDetails: MiniHomeSaveResultDetails?,
     val failureClass: String?,
     val failureMessage: String?,
 )
@@ -139,8 +139,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
             "offline-retry-boundary-callback-payload-mismatch"
         }
         require(
-            callback.resultIdentity == null &&
-                callback.failureIdentity == null &&
+            callback.resultDetails == null &&
                 callback.failureClass == null &&
                 callback.failureMessage == null
         ) {
@@ -150,8 +149,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
             "offline-retry-boundary-coroutine-entry-payload-mismatch"
         }
         require(
-            coroutineEntry.resultIdentity == null &&
-                coroutineEntry.failureIdentity == null &&
+            coroutineEntry.resultDetails == null &&
                 coroutineEntry.failureClass == null &&
                 coroutineEntry.failureMessage == null
         ) {
@@ -161,8 +159,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
             "offline-retry-boundary-coroutine-terminal-mismatch"
         }
         require(
-            coroutineReturned.resultIdentity == null &&
-                coroutineReturned.failureIdentity == null &&
+            coroutineReturned.resultDetails == null &&
                 coroutineReturned.failureClass == null &&
                 coroutineReturned.failureMessage == null
         ) {
@@ -222,8 +219,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
             "offline-retry-boundary-repository-entry-payload-mismatch"
         }
         require(
-            repositoryEntry.resultIdentity == null &&
-                repositoryEntry.failureIdentity == null &&
+            repositoryEntry.resultDetails == null &&
                 repositoryEntry.failureClass == null &&
                 repositoryEntry.failureMessage == null
         ) {
@@ -235,12 +231,18 @@ internal data class Todo18OfflineRetryTransitionReceipt(
         require(repositoryReturned.revision == finalRevision) {
             "offline-retry-boundary-repository-revision-mismatch"
         }
-        val resultIdentity =
-            requireNotNull(repositoryReturned.resultIdentity) {
-                "offline-retry-boundary-result-identity-missing"
+        val resultDetails =
+            requireNotNull(repositoryReturned.resultDetails) {
+                "offline-retry-boundary-result-details-missing"
             }
-        require(repositoryReturned.failureIdentity == null) {
-            "offline-retry-boundary-repository-failure-identity-present"
+        require(resultDetails is MiniHomeSaveResultDetails.Saved) {
+            "offline-retry-boundary-repository-result-kind-mismatch"
+        }
+        require(resultDetails.revision == finalRevision) {
+            "offline-retry-boundary-repository-result-revision-mismatch"
+        }
+        require(resultDetails.layoutId.isNotBlank()) {
+            "offline-retry-boundary-repository-result-layout-id-missing"
         }
         require(
             repositoryReturned.failureClass == null && repositoryReturned.failureMessage == null
@@ -250,12 +252,11 @@ internal data class Todo18OfflineRetryTransitionReceipt(
         require(savedApply.revision == finalRevision) {
             "offline-retry-boundary-saved-apply-revision-mismatch"
         }
-        require(savedApply.resultIdentity == resultIdentity) {
-            "offline-retry-boundary-result-identity-mismatch"
+        require(savedApply.resultDetails == resultDetails) {
+            "offline-retry-boundary-result-details-mismatch"
         }
         require(
             savedApply.outcome == null &&
-                savedApply.failureIdentity == null &&
                 savedApply.failureClass == null &&
                 savedApply.failureMessage == null
         ) {
@@ -264,8 +265,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
         require(
             setStateAttempted.revision == null &&
                 setStateAttempted.outcome == null &&
-                setStateAttempted.resultIdentity == null &&
-                setStateAttempted.failureIdentity == null &&
+                setStateAttempted.resultDetails == null &&
                 setStateAttempted.failureClass == null &&
                 setStateAttempted.failureMessage == null
         ) {
@@ -274,8 +274,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
         require(
             setStateApplied.revision == finalRevision &&
                 setStateApplied.outcome == null &&
-                setStateApplied.resultIdentity == null &&
-                setStateApplied.failureIdentity == null &&
+                setStateApplied.resultDetails == null &&
                 setStateApplied.failureClass == null &&
                 setStateApplied.failureMessage == null
         ) {
@@ -285,8 +284,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
             "offline-retry-boundary-raw-publication-payload-mismatch"
         }
         require(
-            rawPublication.resultIdentity == null &&
-                rawPublication.failureIdentity == null &&
+            rawPublication.resultDetails == null &&
                 rawPublication.failureClass == null &&
                 rawPublication.failureMessage == null
         ) {
@@ -331,7 +329,7 @@ internal fun writeTodo18OfflineRetryTransitionReceipt(
 ) {
     file.writeText(
         buildJsonObject {
-            put("schema", "todo18-offline-retry-transition-v3")
+            put("schema", "todo18-offline-retry-transition-v4")
             put("status", if (receipt.outcomeClass == null) "complete" else "partial")
             put("closed", receipt.closed)
             put("outcomeClass", receipt.outcomeClass?.let(::JsonPrimitive) ?: JsonNull)
@@ -362,8 +360,10 @@ internal fun writeTodo18OfflineRetryTransitionReceipt(
                             )
                             put("revision", observation.revision)
                             put("outcome", observation.outcome?.let(::JsonPrimitive) ?: JsonNull)
-                            put("resultIdentity", observation.resultIdentity)
-                            put("failureIdentity", observation.failureIdentity)
+                            put(
+                                "resultDetails",
+                                observation.resultDetails?.toJson() ?: JsonNull,
+                            )
                             put(
                                 "failureClass",
                                 observation.failureClass?.let(::JsonPrimitive) ?: JsonNull,
@@ -407,8 +407,7 @@ internal class Todo18OfflineRetryTransitionRecorder {
                     guardDraftIdentity = observation.guardDraftIdentity,
                     revision = observation.revision,
                     outcome = observation.outcome,
-                    resultIdentity = observation.result?.let(System::identityHashCode),
-                    failureIdentity = observation.failure?.let(System::identityHashCode),
+                    resultDetails = observation.resultDetails,
                     failureClass = observation.failure?.javaClass?.name,
                     failureMessage = observation.failure?.message,
                 )
@@ -427,4 +426,61 @@ internal class Todo18OfflineRetryTransitionRecorder {
                 retryObservations = retryObservations.toList(),
             )
         }
+}
+
+private fun MiniHomeSaveResultDetails.toJson() = buildJsonObject {
+    when (this@toJson) {
+        is MiniHomeSaveResultDetails.Saved -> {
+            put("kind", "SAVED")
+            put("layoutId", layoutId)
+            put("revision", revision)
+        }
+        is MiniHomeSaveResultDetails.Conflict -> {
+            put("kind", "CONFLICT")
+            put("authoritativeLayoutId", authoritativeLayoutId)
+            put("authoritativeRevision", authoritativeRevision)
+            put("plantCount", plantCount)
+            put("decorationCount", decorationCount)
+        }
+        is MiniHomeSaveResultDetails.Failed -> {
+            put("kind", "FAILED")
+            put("failure", failure.name)
+            put("hasDiscardHandle", hasDiscardHandle)
+        }
+        is MiniHomeSaveResultDetails.RequiresCorrection -> {
+            put("kind", "REQUIRES_CORRECTION")
+            put("failure", failure.name)
+            put("details", details?.let(::JsonPrimitive) ?: JsonNull)
+            put("hasDiscardHandle", hasDiscardHandle)
+        }
+        is MiniHomeSaveResultDetails.RequiresReconciliation -> {
+            put("kind", "REQUIRES_RECONCILIATION")
+            put("failure", failure.name)
+            put("hasDiscardHandle", hasDiscardHandle)
+        }
+        is MiniHomeSaveResultDetails.Reconciled -> {
+            put("kind", "RECONCILED")
+            put("failure", failure.name)
+            put("authoritativeLayoutId", authoritativeLayoutId)
+            put("authoritativeRevision", authoritativeRevision)
+            put("correctedDraftLayoutId", correctedDraftLayoutId)
+            put("correctedDraftRevision", correctedDraftRevision)
+            put("plantCount", plantCount)
+            put("decorationCount", decorationCount)
+            put("removedTargets", removedTargets)
+        }
+        is MiniHomeSaveResultDetails.PendingChanged -> {
+            put("kind", "PENDING_CHANGED")
+            put("currentOperationPresent", currentOperationPresent)
+            put("operationId", operationId?.let(::JsonPrimitive) ?: JsonNull)
+            put("expectedRevision", expectedRevision)
+            put("layoutId", layoutId?.let(::JsonPrimitive) ?: JsonNull)
+            put("layoutRevision", layoutRevision)
+            put("state", state?.name?.let(::JsonPrimitive) ?: JsonNull)
+            put("failure", failure?.name?.let(::JsonPrimitive) ?: JsonNull)
+            put("failureDetails", failureDetails?.let(::JsonPrimitive) ?: JsonNull)
+            put("hasDiscardHandle", hasDiscardHandle)
+        }
+        MiniHomeSaveResultDetails.Forbidden -> put("kind", "FORBIDDEN")
+    }
 }

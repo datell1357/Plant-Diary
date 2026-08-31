@@ -44,6 +44,11 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
                 "app/src/androidTest/kotlin/com/planterior/helper/" +
                     "Todo18MiniHomeJourneyAssertions.kt"
             )
+        val majorJourney =
+            root.source(
+                "app/src/androidTest/kotlin/com/planterior/helper/" +
+                    "Todo18MajorJourneyAssertions.kt"
+            )
         val exactEventTests =
             root.source(
                 "app/src/androidTest/kotlin/com/planterior/helper/ExactEventSubscriptionTest.kt"
@@ -59,7 +64,8 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "subscribeToDisplayedMiniHomeStates",
             "finally",
             "todo18-e2e-journeys",
-            "mini-home-conflict-initial-load-diagnostic.json",
+            "captureInitialLoad(scenarioName",
+            "File(directory, \"\$scenarioName-diagnostic.json\")",
             "todo18-mini-home-load-diagnostic-v4",
             "put(\"api\", input.api)",
             "remote-load-entered",
@@ -86,7 +92,7 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
         )
         assertOrdered(
             capture,
-            "val armed = arm()",
+            "val armed = arm(scenarioName)",
             "preserveTodo18PrimaryFailure(block",
             "armed::finish",
         )
@@ -99,9 +105,18 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
         )
         assertCode(
             assertions,
-            "captureConflictInitialLoad",
+            "captureInitialLoad(",
+            "\"mini-home-conflict-initial-load\"",
             "rendered.awaitMiniHome",
             "navigateDirectly(PlanteriorRoute.MiniHome)",
+        )
+        assertOrdered(
+            majorJourney,
+            "captureInitialLoad(",
+            "\"registration-mini-home-initial-load\"",
+            "events.navigateAndAwaitMiniHomeLoaded()",
+            "rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)",
+            "onNodeWithTag(MiniHomeTestTags.EDIT)",
         )
         assertCode(
             exactEventTests,
@@ -144,6 +159,11 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             root.source(
                 "app/src/androidTest/kotlin/com/planterior/helper/" +
                     "Todo18MiniHomeRepositoryFixture.kt"
+            )
+        val recorder =
+            root.source(
+                "app/src/debug/kotlin/com/planterior/helper/minihome/" +
+                    "Todo18MiniHomeLoadDiagnosticRecorder.kt"
             )
         val repository =
             root.source(
@@ -188,9 +208,17 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
         )
         assertOrdered(
             remoteFixture,
-            "recordCurrent(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)",
+            "recordCurrentIfActive(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)",
             "scenario.emit(\"mini-home-loaded\"",
-            "recordCurrent(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)",
+            "recordCurrentIfActive(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)",
+        )
+        assertCode(
+            recorder,
+            "suspend fun recordCurrent(diagnostic",
+            "checkNotNull(activeLoads[job]?.peekLast())",
+            "suspend fun recordCurrentIfActive(diagnostic",
+            "activeLoads[job]?.peekLast() } ?: return false",
+            "return true",
         )
         assertFalse(releaseOverrides.contains("Todo18MiniHomeLoadDiagnosticRepository"))
         assertFalse(runtimeRule.contains("InMemoryMiniHomeRepository"))

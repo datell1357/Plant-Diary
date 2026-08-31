@@ -140,7 +140,9 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
 internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDraft() {
     val plantId = runtime.boundary.seedPlant()
     runtime.boundary.miniHomeSaveMode = Todo18MiniHomeSaveMode.REVISION_CONFLICT
-    Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureConflictInitialLoad {
+    Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureInitialLoad(
+        "mini-home-conflict-initial-load"
+    ) {
         rendered.awaitMiniHome(
             matches = { it.state is MiniHomeUiState.Viewing },
             trigger = { navigateDirectly(PlanteriorRoute.MiniHome) },

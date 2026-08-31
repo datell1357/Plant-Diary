@@ -31,8 +31,104 @@ data class MiniHomeRetryObservation(
     val revision: Long? = null,
     val outcome: String? = null,
     val result: MiniHomeSaveResult? = null,
+    val resultDetails: MiniHomeSaveResultDetails? = result?.toRetryResultDetails(),
     val failure: Throwable? = null,
 )
+
+sealed interface MiniHomeSaveResultDetails {
+    data class Saved(val layoutId: String, val revision: Long) : MiniHomeSaveResultDetails
+
+    data class Conflict(
+        val authoritativeLayoutId: String,
+        val authoritativeRevision: Long,
+        val plantCount: Int,
+        val decorationCount: Int,
+    ) : MiniHomeSaveResultDetails
+
+    data class Failed(
+        val failure: MiniHomeSaveFailure,
+        val hasDiscardHandle: Boolean,
+    ) : MiniHomeSaveResultDetails
+
+    data class RequiresCorrection(
+        val failure: MiniHomeSaveFailure,
+        val details: String?,
+        val hasDiscardHandle: Boolean,
+    ) : MiniHomeSaveResultDetails
+
+    data class RequiresReconciliation(
+        val failure: MiniHomeSaveFailure,
+        val hasDiscardHandle: Boolean,
+    ) : MiniHomeSaveResultDetails
+
+    data class Reconciled(
+        val failure: MiniHomeSaveFailure,
+        val authoritativeLayoutId: String,
+        val authoritativeRevision: Long,
+        val correctedDraftLayoutId: String,
+        val correctedDraftRevision: Long,
+        val plantCount: Int,
+        val decorationCount: Int,
+        val removedTargets: Int,
+    ) : MiniHomeSaveResultDetails
+
+    data class PendingChanged(
+        val currentOperationPresent: Boolean,
+        val operationId: String?,
+        val expectedRevision: Long?,
+        val layoutId: String?,
+        val layoutRevision: Long?,
+        val state: MiniHomePendingState?,
+        val failure: MiniHomeSaveFailure?,
+        val failureDetails: String?,
+        val hasDiscardHandle: Boolean,
+    ) : MiniHomeSaveResultDetails
+
+    data object Forbidden : MiniHomeSaveResultDetails
+}
+
+private fun MiniHomeSaveResult.toRetryResultDetails(): MiniHomeSaveResultDetails =
+    when (this) {
+        is MiniHomeSaveResult.Saved ->
+            MiniHomeSaveResultDetails.Saved(layout.id.value, layout.revision.value)
+        is MiniHomeSaveResult.Conflict ->
+            MiniHomeSaveResultDetails.Conflict(
+                authoritativeLayoutId = authoritative.id.value,
+                authoritativeRevision = authoritative.revision.value,
+                plantCount = plants.size,
+                decorationCount = decorations.size,
+            )
+        is MiniHomeSaveResult.Failed ->
+            MiniHomeSaveResultDetails.Failed(failure, discardHandle != null)
+        is MiniHomeSaveResult.RequiresCorrection ->
+            MiniHomeSaveResultDetails.RequiresCorrection(failure, details, discardHandle != null)
+        is MiniHomeSaveResult.RequiresReconciliation ->
+            MiniHomeSaveResultDetails.RequiresReconciliation(failure, discardHandle != null)
+        is MiniHomeSaveResult.Reconciled ->
+            MiniHomeSaveResultDetails.Reconciled(
+                failure = failure,
+                authoritativeLayoutId = authoritative.id.value,
+                authoritativeRevision = authoritative.revision.value,
+                correctedDraftLayoutId = correctedDraft.id.value,
+                correctedDraftRevision = correctedDraft.revision.value,
+                plantCount = plants.size,
+                decorationCount = decorations.size,
+                removedTargets = removedTargets,
+            )
+        is MiniHomeSaveResult.PendingChanged ->
+            MiniHomeSaveResultDetails.PendingChanged(
+                currentOperationPresent = current != null,
+                operationId = current?.operationId?.value,
+                expectedRevision = current?.expectedRevision?.value,
+                layoutId = current?.layout?.id?.value,
+                layoutRevision = current?.layout?.revision?.value,
+                state = current?.state,
+                failure = current?.failure,
+                failureDetails = current?.failureDetails,
+                hasDiscardHandle = current?.discardHandle != null,
+            )
+        MiniHomeSaveResult.Forbidden -> MiniHomeSaveResultDetails.Forbidden
+    }
 
 fun interface MiniHomeRetrySink {
     fun observe(observation: MiniHomeRetryObservation)

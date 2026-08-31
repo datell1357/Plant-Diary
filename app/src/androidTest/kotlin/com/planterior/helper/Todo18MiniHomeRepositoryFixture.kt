@@ -1,8 +1,5 @@
 package com.planterior.helper
 
-import com.planterior.helper.core.data.AuthoritativeInventory
-import com.planterior.helper.core.data.INVENTORY_CONTRACT_VERSION
-import com.planterior.helper.core.data.authoritativeInventorySnapshotHash
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.OperationId
@@ -30,7 +27,6 @@ internal class Todo18MiniHomeRepositoryFixture(
     private val scenario: Todo18Scenario,
     private val loadDiagnostics: Todo18MiniHomeLoadDiagnosticRecorder,
 ) : MiniHomeRemoteDataSource {
-    private var generation = 1L
     private var committedOperationId: OperationId? = null
     private var committedExpectedRevision: Revision? = null
     private var committedPayloadHash: String? = null
@@ -47,11 +43,11 @@ internal class Todo18MiniHomeRepositoryFixture(
     override fun activeAccount(): AccountId = scenario.accountId
 
     override suspend fun load(accountId: AccountId): RemoteMiniHomeSnapshot {
-        loadDiagnostics.recordCurrent(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
+        loadDiagnostics.recordCurrentIfActive(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
         require(accountId == scenario.accountId)
         val loaded = snapshot()
         scenario.emit("mini-home-loaded", accountId.value)
-        loadDiagnostics.recordCurrent(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
+        loadDiagnostics.recordCurrentIfActive(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
         return loaded
     }
 
@@ -88,7 +84,7 @@ internal class Todo18MiniHomeRepositoryFixture(
     private fun apply(request: MiniHomeSaveRequest): RemoteMiniHomeSaveResult {
         val revision = request.expectedRevision.next()
         layout = request.layout.copy(revision = revision, updatedAt = scenario.now())
-        generation += 1
+        scenario.inventoryFixtureState.advanceForMiniHomeSave()
         committedOperationId = request.operationId
         committedExpectedRevision = request.expectedRevision
         committedPayloadHash = todo18MiniHomePayloadHash(request)
@@ -96,8 +92,9 @@ internal class Todo18MiniHomeRepositoryFixture(
         return RemoteMiniHomeSaveResult.Applied(revision)
     }
 
-    private fun snapshot(): RemoteMiniHomeSnapshot =
-        RemoteMiniHomeSnapshot(
+    private fun snapshot(): RemoteMiniHomeSnapshot {
+        val inventory = scenario.inventoryFixtureState.authoritativeInventory()
+        return RemoteMiniHomeSnapshot(
             accountId = scenario.accountId,
             layout = layout,
             plants =
@@ -108,34 +105,15 @@ internal class Todo18MiniHomeRepositoryFixture(
             committedOperationId = committedOperationId,
             committedExpectedRevision = committedExpectedRevision,
             committedPayloadHash = committedPayloadHash,
-            cacheGeneration = generation,
+            cacheGeneration = inventory.generation,
             cacheOperationId = committedOperationId?.value,
             cachePayloadHash = committedPayloadHash,
             authoritativeAtEpochMillis = scenario.now().toEpochMilli(),
-            authoritativeInventory = emptyInventory(),
-            snapshotToken = generation.toString(16).padStart(64, '0'),
-            snapshotGeneration = generation,
+            authoritativeInventory = inventory,
+            snapshotToken = scenario.inventoryFixtureState.snapshotToken(),
+            snapshotGeneration = inventory.generation,
         )
-
-    private fun emptyInventory(): AuthoritativeInventory =
-        AuthoritativeInventory(
-            contractVersion = INVENTORY_CONTRACT_VERSION,
-            accountId = scenario.accountId,
-            catalog = emptyList(),
-            owned = emptyList(),
-            registeredPlantCount = scenario.plants.size,
-            loadedAtEpochMillis = scenario.now().toEpochMilli(),
-            partial = false,
-            generation = generation,
-            snapshotHash =
-                authoritativeInventorySnapshotHash(
-                    scenario.accountId,
-                    emptyList(),
-                    emptyList(),
-                    registeredPlantCount = scenario.plants.size,
-                    partial = false,
-                ),
-        )
+    }
 }
 
 private fun todo18MiniHomePayloadHash(request: MiniHomeSaveRequest): String {

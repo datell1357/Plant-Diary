@@ -55,6 +55,17 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         }
     }
 
+    suspend fun recordCurrentIfActive(diagnostic: Todo18MiniHomeLoadDiagnostic): Boolean {
+        val job = coroutineContext[Job] ?: return false
+        val load = synchronized(lock) { activeLoads[job]?.peekLast() } ?: return false
+        if (diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered) {
+            load.recordPublicationRead()
+        } else {
+            load.record(diagnostic)
+        }
+        return true
+    }
+
     suspend fun recordCurrentPublicationRead(
         diagnostic: Todo18MiniHomeLoadDiagnostic,
         ordinal: Long,

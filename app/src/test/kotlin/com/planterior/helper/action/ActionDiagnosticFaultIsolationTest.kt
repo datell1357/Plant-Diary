@@ -138,8 +138,12 @@ class ActionDiagnosticFaultIsolationTest {
         }
         val rawStates = mutableListOf<MiniHomeUiState>()
         val routeReady = AtomicBoolean(false)
+        val savingObserved = AtomicBoolean(false)
+        val terminalSaveObserved = AtomicBoolean(false)
         val routeIdlingResource = ActionPathIdlingResource(routeReady::get)
+        val terminalSaveIdlingResource = ActionPathIdlingResource(terminalSaveObserved::get)
         var routeIdlingRegistered = false
+        var terminalSaveIdlingRegistered = false
         try {
             compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
             compose.setContent {
@@ -151,6 +155,13 @@ class ActionDiagnosticFaultIsolationTest {
                         onRawStateObserved = { state ->
                             rawStates += state
                             if (state is MiniHomeUiState.Viewing) routeReady.set(true)
+                            if (state is MiniHomeUiState.Editing) {
+                                if (state.saveState is MiniHomeSaveState.Saving) {
+                                    savingObserved.set(true)
+                                } else if (savingObserved.get()) {
+                                    terminalSaveObserved.set(true)
+                                }
+                            }
                         },
                     )
                 }
@@ -162,8 +173,24 @@ class ActionDiagnosticFaultIsolationTest {
             compose.onNodeWithTag(MiniHomeTestTags.EDIT).performClick()
             compose.onNodeWithTag(MiniHomeTestTags.plant(plantId)).performClick()
             compose.onNodeWithTag(MiniHomeTestTags.SAVE).performClick()
+            compose.registerIdlingResource(terminalSaveIdlingResource)
+            terminalSaveIdlingRegistered = true
             compose.waitForIdle()
 
+            val savingIndex = rawStates.indexOfFirst {
+                it is MiniHomeUiState.Editing && it.saveState is MiniHomeSaveState.Saving
+            }
+            val terminalIndex =
+                rawStates
+                    .withIndex()
+                    .firstOrNull { (index, state) ->
+                        index > savingIndex &&
+                            state is MiniHomeUiState.Editing &&
+                            state.saveState !is MiniHomeSaveState.Saving
+                    }
+                    ?.index ?: -1
+            assertTrue("raw Saving was not observed", savingIndex >= 0)
+            assertTrue("raw terminal state did not follow Saving", terminalIndex > savingIndex)
             val saveState = (rawStates.last() as MiniHomeUiState.Editing).saveState
             when (mode) {
                 Todo18MiniHomeSaveMode.REVISION_CONFLICT ->
@@ -189,6 +216,9 @@ class ActionDiagnosticFaultIsolationTest {
                 observations.mapNotNull { it.operationId }.toSet(),
             )
         } finally {
+            if (terminalSaveIdlingRegistered) {
+                compose.unregisterIdlingResource(terminalSaveIdlingResource)
+            }
             if (routeIdlingRegistered) compose.unregisterIdlingResource(routeIdlingResource)
             boundary.close()
             diagnostic.close()

@@ -5,17 +5,27 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
+import com.planterior.helper.core.data.AuthoritativeCatalogItem
 import com.planterior.helper.core.data.AuthoritativeInventory
 import com.planterior.helper.core.data.AuthoritativeInventoryAvailability
+import com.planterior.helper.core.data.AuthoritativeInventoryCondition
 import com.planterior.helper.core.data.AuthoritativeMiniHomeLayoutRead
 import com.planterior.helper.core.data.AuthoritativeMiniHomeSnapshotReader
+import com.planterior.helper.core.data.AuthoritativeOwnedCatalogSnapshot
+import com.planterior.helper.core.data.AuthoritativeOwnedItem
 import com.planterior.helper.core.data.InconsistentInventoryException
+import com.planterior.helper.core.data.authoritativeInventorySnapshotHash
 import com.planterior.helper.core.data.cacheWrite
 import com.planterior.helper.core.data.verifiedAuthoritativeInventoryOrNull
+import com.planterior.helper.core.database.AuthoritativeInventoryCacheWrite
 import com.planterior.helper.core.database.AuthoritativeMiniHomeCacheWrite
+import com.planterior.helper.core.database.CachedInventoryState
 import com.planterior.helper.core.database.CachedMiniHomeEntity
 import com.planterior.helper.core.database.CachedMiniHomeLayoutState
 import com.planterior.helper.core.database.CachedMiniHomePlacementEntity
+import com.planterior.helper.core.database.CachedMiniHomeSnapshotState
+import com.planterior.helper.core.database.CachedOwnedItemEntity
+import com.planterior.helper.core.database.CachedShopItemEntity
 import com.planterior.helper.core.database.InventoryCacheApplyResult
 import com.planterior.helper.core.database.MiniHomeCacheApplyResult
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkKind
@@ -24,6 +34,8 @@ import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PersistedOperationDiscardResult
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.CatalogMediaIdentity
+import com.planterior.helper.core.model.ItemCategory
 import com.planterior.helper.core.model.ItemId
 import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.OperationId
@@ -100,7 +112,11 @@ private sealed interface CoherentMiniHomeCacheApply {
     data object Conflict : CoherentMiniHomeCacheApply
 }
 
-private class CoherentMiniHomeCacheConflict : RuntimeException()
+private class CoherentMiniHomeCacheConflict(
+    val category: MiniHomeCacheConflictCategory,
+    val predicate: MiniHomeCacheConflictPredicate,
+    val operands: Map<String, String?>,
+) : RuntimeException()
 
 private data class MiniHomePublicationToken(
     val accountId: AccountId,
@@ -543,7 +559,7 @@ class FirebaseMiniHomeRepository(
         ) {
             return MiniHomeSaveResult.Forbidden
         }
-        val applied = cache(request.accountId, snapshot)
+        val applied = cache(request.accountId, snapshot, OperationId(operation.operationId))
         if (applied is CoherentMiniHomeCacheApply.Conflict) {
             return MiniHomeSaveResult.RequiresReconciliation(
                 MiniHomeSaveFailure.INCONSISTENT_RECEIPT,
@@ -801,7 +817,7 @@ class FirebaseMiniHomeRepository(
         ) {
             return MiniHomeSaveResult.Forbidden
         }
-        val applied = cache(request.accountId, snapshot)
+        val applied = cache(request.accountId, snapshot, OperationId(operation.operationId))
         if (applied is CoherentMiniHomeCacheApply.Conflict) {
             return MiniHomeSaveResult.Failed(
                 MiniHomeSaveFailure.INCONSISTENT_RECEIPT,
@@ -893,6 +909,7 @@ class FirebaseMiniHomeRepository(
     private suspend fun cache(
         account: AccountId,
         snapshot: RemoteMiniHomeSnapshot,
+        operationId: OperationId? = null,
     ): CoherentMiniHomeCacheApply {
         require(snapshot.accountId == account)
         val layout = snapshot.layout
@@ -943,39 +960,815 @@ class FirebaseMiniHomeRepository(
             }
         return try {
             database.withTransaction {
+                val beforeLayout = database.cacheDao().currentMiniHomeCache(account.value)
                 val layoutApplied = database.cacheDao().applyAuthoritativeMiniHome(layoutWrite)
                 if (layoutApplied is MiniHomeCacheApplyResult.Conflict) {
-                    throw CoherentMiniHomeCacheConflict()
+                    val conflict = layoutConflict(layoutWrite, layoutApplied.current)
+                    MiniHomeCacheConflictDiagnostics.observe(
+                        cacheObservation(
+                            MiniHomeCacheDiagnosticStage.LAYOUT_APPLY,
+                            account,
+                            operationId,
+                            MiniHomeCacheDiagnosticOutcome.CONFLICT,
+                            MiniHomeCacheConflictCategory.LAYOUT_APPLY,
+                            conflict.first,
+                            cacheWatermarks(beforeLayout, layoutApplied.current, layoutWrite) +
+                                conflict.second,
+                        )
+                    )
+                    throw CoherentMiniHomeCacheConflict(
+                        MiniHomeCacheConflictCategory.LAYOUT_APPLY,
+                        conflict.first,
+                        cacheWatermarks(beforeLayout, layoutApplied.current, layoutWrite) +
+                            conflict.second,
+                    )
                 }
+                MiniHomeCacheConflictDiagnostics.observe(
+                    cacheObservation(
+                        MiniHomeCacheDiagnosticStage.LAYOUT_APPLY,
+                        account,
+                        operationId,
+                        layoutApplied.diagnosticOutcome(),
+                        operands =
+                            layoutSuccessOperands(beforeLayout, layoutApplied.current, layoutWrite),
+                    )
+                )
                 val authoritative = snapshot.authoritativeInventory
                 require(authoritative.accountId == account)
+                val inventoryWrite =
+                    authoritative.cacheWrite(
+                        snapshot.snapshotToken,
+                        snapshot.snapshotGeneration,
+                    )
+                val beforeInventory = database.cacheDao().currentInventoryCache(account.value)
                 val inventoryApplied =
-                    database
-                        .cacheDao()
-                        .applyAuthoritativeInventory(
-                            authoritative.cacheWrite(
-                                snapshot.snapshotToken,
-                                snapshot.snapshotGeneration,
-                            )
-                        )
+                    database.cacheDao().applyAuthoritativeInventory(inventoryWrite)
                 if (inventoryApplied is InventoryCacheApplyResult.Conflict) {
-                    throw CoherentMiniHomeCacheConflict()
+                    val conflict = inventoryConflict(inventoryWrite, inventoryApplied.current)
+                    val operands =
+                        inventoryWatermarks(
+                            beforeInventory,
+                            inventoryApplied.current,
+                            inventoryWrite,
+                        ) + conflict.second
+                    MiniHomeCacheConflictDiagnostics.observe(
+                        cacheObservation(
+                            MiniHomeCacheDiagnosticStage.INVENTORY_APPLY,
+                            account,
+                            operationId,
+                            MiniHomeCacheDiagnosticOutcome.CONFLICT,
+                            MiniHomeCacheConflictCategory.INVENTORY_APPLY,
+                            conflict.first,
+                            operands,
+                        )
+                    )
+                    throw CoherentMiniHomeCacheConflict(
+                        MiniHomeCacheConflictCategory.INVENTORY_APPLY,
+                        conflict.first,
+                        operands,
+                    )
                 }
+                MiniHomeCacheConflictDiagnostics.observe(
+                    cacheObservation(
+                        MiniHomeCacheDiagnosticStage.INVENTORY_APPLY,
+                        account,
+                        operationId,
+                        inventoryApplied.diagnosticOutcome(),
+                        operands =
+                            inventorySuccessOperands(
+                                beforeInventory,
+                                inventoryApplied.current,
+                                inventoryWrite,
+                            ),
+                    )
+                )
                 val coherent =
                     database.cacheDao().currentMiniHomeSnapshotCache(account.value)
-                        ?: throw CoherentMiniHomeCacheConflict()
-                if (!coherent.coherent) throw CoherentMiniHomeCacheConflict()
+                        ?: throw currentSnapshotConflict(account, operationId, null)
+                if (!coherent.coherent) {
+                    throw currentSnapshotConflict(account, operationId, coherent)
+                }
+                MiniHomeCacheConflictDiagnostics.observe(
+                    cacheObservation(
+                        MiniHomeCacheDiagnosticStage.CURRENT_SNAPSHOT,
+                        account,
+                        operationId,
+                        MiniHomeCacheDiagnosticOutcome.VERIFIED,
+                        operands = coherent.snapshotOperands(),
+                    )
+                )
                 val inventory =
                     coherent.inventory?.verifiedAuthoritativeInventoryOrNull(account)
-                        ?: throw CoherentMiniHomeCacheConflict()
+                        ?: throw verifiedInventoryConflict(account, operationId, coherent.inventory)
+                MiniHomeCacheConflictDiagnostics.observe(
+                    cacheObservation(
+                        MiniHomeCacheDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                        account,
+                        operationId,
+                        MiniHomeCacheDiagnosticOutcome.VERIFIED,
+                        operands = coherent.inventory.decodeOperands(account),
+                    )
+                )
                 CoherentMiniHomeCacheApply.Current(
-                    coherent.layout ?: throw CoherentMiniHomeCacheConflict(),
+                    requireNotNull(coherent.layout),
                     inventory,
                 )
             }
-        } catch (_: CoherentMiniHomeCacheConflict) {
+        } catch (conflict: CoherentMiniHomeCacheConflict) {
+            MiniHomeCacheConflictDiagnostics.observe(
+                cacheObservation(
+                    MiniHomeCacheDiagnosticStage.TERMINAL_CONFLICT,
+                    account,
+                    operationId,
+                    MiniHomeCacheDiagnosticOutcome.CONFLICT,
+                    conflict.category,
+                    conflict.predicate,
+                    conflict.operands,
+                )
+            )
             CoherentMiniHomeCacheApply.Conflict
         }
+    }
+
+    private fun cacheObservation(
+        stage: MiniHomeCacheDiagnosticStage,
+        account: AccountId,
+        operationId: OperationId?,
+        outcome: MiniHomeCacheDiagnosticOutcome,
+        category: MiniHomeCacheConflictCategory? = null,
+        predicate: MiniHomeCacheConflictPredicate? = null,
+        operands: Map<String, String?> = emptyMap(),
+    ) =
+        MiniHomeCacheDiagnosticObservation(
+            stage,
+            account,
+            operationId,
+            outcome,
+            category,
+            predicate,
+            operands,
+        )
+
+    private fun MiniHomeCacheApplyResult.diagnosticOutcome() =
+        when (this) {
+            is MiniHomeCacheApplyResult.Applied -> MiniHomeCacheDiagnosticOutcome.APPLIED
+            is MiniHomeCacheApplyResult.Ignored -> MiniHomeCacheDiagnosticOutcome.IGNORED
+            is MiniHomeCacheApplyResult.Conflict -> MiniHomeCacheDiagnosticOutcome.CONFLICT
+        }
+
+    private fun InventoryCacheApplyResult.diagnosticOutcome() =
+        when (this) {
+            is InventoryCacheApplyResult.Applied -> MiniHomeCacheDiagnosticOutcome.APPLIED
+            is InventoryCacheApplyResult.Ignored -> MiniHomeCacheDiagnosticOutcome.IGNORED
+            is InventoryCacheApplyResult.Conflict -> MiniHomeCacheDiagnosticOutcome.CONFLICT
+        }
+
+    private fun cacheWatermarks(
+        before: CachedMiniHomeLayoutState?,
+        after: CachedMiniHomeLayoutState,
+        write: AuthoritativeMiniHomeCacheWrite,
+    ): Map<String, String?> =
+        mapOf(
+            "before.generation" to before?.watermark?.generation?.toString(),
+            "before.kind" to before?.watermark?.kind?.name,
+            "before.revision" to before?.watermark?.layoutRevision?.toString(),
+            "before.operationId" to before?.watermark?.operationId,
+            "before.payloadHash" to before?.watermark?.payloadHash,
+            "before.snapshotToken" to before?.watermark?.snapshotToken,
+            "before.snapshotGeneration" to before?.watermark?.snapshotGeneration?.toString(),
+            "after.generation" to after.watermark.generation.toString(),
+            "after.kind" to after.watermark.kind.name,
+            "after.revision" to after.watermark.layoutRevision?.toString(),
+            "after.operationId" to after.watermark.operationId,
+            "after.payloadHash" to after.watermark.payloadHash,
+            "after.snapshotToken" to after.watermark.snapshotToken,
+            "after.snapshotGeneration" to after.watermark.snapshotGeneration?.toString(),
+            "candidate.generation" to write.generation.toString(),
+            "candidate.generationOrdering" to
+                generationOrdering(write.generation, after.watermark.generation),
+            "candidate.snapshotToken" to write.snapshotToken,
+            "candidate.snapshotGeneration" to write.snapshotGeneration?.toString(),
+        )
+
+    private fun layoutSuccessOperands(
+        before: CachedMiniHomeLayoutState?,
+        after: CachedMiniHomeLayoutState,
+        write: AuthoritativeMiniHomeCacheWrite,
+    ): Map<String, String?> {
+        val candidateWatermark = write.diagnosticWatermark()
+        val candidateHome = (write as? AuthoritativeMiniHomeCacheWrite.Layout)?.home
+        val candidatePlacements =
+            (write as? AuthoritativeMiniHomeCacheWrite.Layout)?.placements.orEmpty()
+        return layoutStateOperands("before", before) +
+            layoutStateOperands("after", after) +
+            layoutStateOperands(
+                "candidate",
+                candidateWatermark,
+                candidateHome,
+                candidatePlacements,
+            ) +
+            mapOf(
+                "candidate.generationOrdering" to
+                    generationOrdering(write.generation, before?.watermark?.generation ?: 0)
+            )
+    }
+
+    private fun layoutStateOperands(
+        prefix: String,
+        state: CachedMiniHomeLayoutState?,
+    ): Map<String, String?> =
+        if (state == null) {
+            layoutStateOperands(prefix, null, null, emptyList())
+        } else {
+            layoutStateOperands(prefix, state.watermark, state.home, state.placements)
+        }
+
+    private fun layoutStateOperands(
+        prefix: String,
+        watermark: com.planterior.helper.core.database.MiniHomeCacheWatermark?,
+        home: CachedMiniHomeEntity?,
+        placements: List<CachedMiniHomePlacementEntity>,
+    ): Map<String, String?> =
+        mapOf(
+            "$prefix.present" to (watermark != null).toString(),
+            "$prefix.accountId" to watermark?.accountId,
+            "$prefix.generation" to watermark?.generation?.toString(),
+            "$prefix.kind" to watermark?.kind?.name,
+            "$prefix.layoutRevision" to watermark?.layoutRevision?.toString(),
+            "$prefix.miniHomeId" to watermark?.miniHomeId,
+            "$prefix.operationId" to watermark?.operationId,
+            "$prefix.payloadHash" to watermark?.payloadHash,
+            "$prefix.tombstoneId" to watermark?.tombstoneId,
+            "$prefix.authoritativeAtEpochMillis" to
+                watermark?.authoritativeAtEpochMillis?.toString(),
+            "$prefix.verified" to watermark?.verified?.toString(),
+            "$prefix.snapshotToken" to watermark?.snapshotToken,
+            "$prefix.snapshotGeneration" to watermark?.snapshotGeneration?.toString(),
+        ) + homeOperands("$prefix.home", home) + placementOperands("$prefix.placements", placements)
+
+    private fun inventoryWatermarks(
+        before: CachedInventoryState?,
+        after: CachedInventoryState,
+        write: AuthoritativeInventoryCacheWrite,
+    ): Map<String, String?> =
+        mapOf(
+            "before.generation" to before?.watermark?.generation?.toString(),
+            "before.snapshotHash" to before?.watermark?.snapshotHash,
+            "before.registeredPlantCount" to before?.watermark?.registeredPlantCount?.toString(),
+            "before.partial" to before?.watermark?.partial?.toString(),
+            "before.snapshotToken" to before?.watermark?.snapshotToken,
+            "before.snapshotGeneration" to before?.watermark?.snapshotGeneration?.toString(),
+            "after.generation" to after.watermark.generation.toString(),
+            "after.snapshotHash" to after.watermark.snapshotHash,
+            "after.registeredPlantCount" to after.watermark.registeredPlantCount.toString(),
+            "after.partial" to after.watermark.partial.toString(),
+            "after.snapshotToken" to after.watermark.snapshotToken,
+            "after.snapshotGeneration" to after.watermark.snapshotGeneration?.toString(),
+            "candidate.generation" to write.generation.toString(),
+            "candidate.generationOrdering" to
+                generationOrdering(write.generation, after.watermark.generation),
+            "candidate.snapshotHash" to write.snapshotHash,
+            "candidate.registeredPlantCount" to write.registeredPlantCount.toString(),
+            "candidate.partial" to write.partial.toString(),
+            "candidate.snapshotToken" to write.snapshotToken,
+            "candidate.snapshotGeneration" to write.snapshotGeneration?.toString(),
+        )
+
+    private fun inventorySuccessOperands(
+        before: CachedInventoryState?,
+        after: CachedInventoryState,
+        write: AuthoritativeInventoryCacheWrite,
+    ): Map<String, String?> =
+        inventoryStateOperands("before", before) +
+            inventoryStateOperands("after", after) +
+            inventoryStateOperands("candidate", write) +
+            mapOf(
+                "candidate.generationOrdering" to
+                    generationOrdering(write.generation, before?.watermark?.generation ?: 0)
+            )
+
+    private fun inventoryStateOperands(
+        prefix: String,
+        state: CachedInventoryState?,
+    ): Map<String, String?> =
+        mapOf(
+            "$prefix.present" to (state != null).toString(),
+            "$prefix.accountId" to state?.watermark?.accountId,
+            "$prefix.generation" to state?.watermark?.generation?.toString(),
+            "$prefix.snapshotHash" to state?.watermark?.snapshotHash,
+            "$prefix.registeredPlantCount" to state?.watermark?.registeredPlantCount?.toString(),
+            "$prefix.loadedAtEpochMillis" to state?.watermark?.loadedAtEpochMillis?.toString(),
+            "$prefix.partial" to state?.watermark?.partial?.toString(),
+            "$prefix.verified" to state?.watermark?.verified?.toString(),
+            "$prefix.snapshotToken" to state?.watermark?.snapshotToken,
+            "$prefix.snapshotGeneration" to state?.watermark?.snapshotGeneration?.toString(),
+        ) +
+            catalogOperands("$prefix.catalog", state?.catalog.orEmpty()) +
+            ownedOperands("$prefix.owned", state?.owned.orEmpty())
+
+    private fun inventoryStateOperands(
+        prefix: String,
+        write: AuthoritativeInventoryCacheWrite,
+    ): Map<String, String?> =
+        mapOf(
+            "$prefix.present" to "true",
+            "$prefix.accountId" to write.accountId,
+            "$prefix.generation" to write.generation.toString(),
+            "$prefix.snapshotHash" to write.snapshotHash,
+            "$prefix.registeredPlantCount" to write.registeredPlantCount.toString(),
+            "$prefix.loadedAtEpochMillis" to write.loadedAtEpochMillis.toString(),
+            "$prefix.partial" to write.partial.toString(),
+            "$prefix.verified" to "true",
+            "$prefix.snapshotToken" to write.snapshotToken,
+            "$prefix.snapshotGeneration" to write.snapshotGeneration?.toString(),
+        ) +
+            catalogOperands("$prefix.catalog", write.catalog) +
+            ownedOperands("$prefix.owned", write.owned)
+
+    private fun generationOrdering(candidate: Long, current: Long): String =
+        when {
+            candidate < current -> "candidate-lower"
+            candidate == current -> "equal"
+            else -> "candidate-higher"
+        }
+
+    private fun layoutConflict(
+        write: AuthoritativeMiniHomeCacheWrite,
+        current: CachedMiniHomeLayoutState,
+    ): Pair<MiniHomeCacheConflictPredicate, Map<String, String?>> {
+        val candidate = write.diagnosticWatermark()
+        val candidateHome = (write as? AuthoritativeMiniHomeCacheWrite.Layout)?.home
+        val candidatePlacements =
+            (write as? AuthoritativeMiniHomeCacheWrite.Layout)?.placements.orEmpty()
+        val operands =
+            layoutWatermarkOperands(current.watermark, candidate) +
+                homeOperands("current.home", current.home) +
+                homeOperands("candidate.home", candidateHome) +
+                placementOperands("current.placements", current.placements) +
+                placementOperands("candidate.placements", candidatePlacements) +
+                mapOf(
+                    "coherence.current.token" to current.watermark.snapshotToken,
+                    "coherence.current.generation" to
+                        current.watermark.snapshotGeneration?.toString(),
+                    "coherence.candidate.token" to candidate.snapshotToken,
+                    "coherence.candidate.generation" to candidate.snapshotGeneration?.toString(),
+                )
+        return selectLayoutCacheConflictPredicate(operands) to operands
+    }
+
+    private fun AuthoritativeMiniHomeCacheWrite.diagnosticWatermark() =
+        when (this) {
+            is AuthoritativeMiniHomeCacheWrite.Layout ->
+                com.planterior.helper.core.database.MiniHomeCacheWatermark(
+                    accountId,
+                    generation,
+                    MiniHomeCacheWatermarkKind.PRESENT,
+                    home.revision,
+                    home.miniHomeId,
+                    operationId,
+                    payloadHash,
+                    null,
+                    authoritativeAtEpochMillis,
+                    true,
+                    snapshotToken,
+                    snapshotGeneration,
+                )
+            is AuthoritativeMiniHomeCacheWrite.Deletion ->
+                com.planterior.helper.core.database.MiniHomeCacheWatermark(
+                    accountId,
+                    generation,
+                    MiniHomeCacheWatermarkKind.DELETED,
+                    null,
+                    null,
+                    null,
+                    null,
+                    tombstoneId,
+                    authoritativeAtEpochMillis,
+                    true,
+                    snapshotToken,
+                    snapshotGeneration,
+                )
+        }
+
+    private fun inventoryConflict(
+        write: AuthoritativeInventoryCacheWrite,
+        current: CachedInventoryState,
+    ): Pair<MiniHomeCacheConflictPredicate, Map<String, String?>> {
+        val operands =
+            inventoryIdentityOperands(current, write) +
+                catalogOperands("current.catalog", current.catalog) +
+                catalogOperands("candidate.catalog", write.catalog) +
+                ownedOperands("current.owned", current.owned) +
+                ownedOperands("candidate.owned", write.owned)
+        return selectInventoryCacheConflictPredicate(operands) to operands
+    }
+
+    private fun layoutWatermarkOperands(
+        current: com.planterior.helper.core.database.MiniHomeCacheWatermark,
+        candidate: com.planterior.helper.core.database.MiniHomeCacheWatermark,
+    ): Map<String, String?> =
+        mapOf(
+            "watermark.current.accountId" to current.accountId,
+            "watermark.candidate.accountId" to candidate.accountId,
+            "watermark.current.generation" to current.generation.toString(),
+            "watermark.candidate.generation" to candidate.generation.toString(),
+            "watermark.generationOrdering" to
+                generationOrdering(candidate.generation, current.generation),
+            "watermark.current.kind" to current.kind.name,
+            "watermark.candidate.kind" to candidate.kind.name,
+            "watermark.current.layoutRevision" to current.layoutRevision?.toString(),
+            "watermark.candidate.layoutRevision" to candidate.layoutRevision?.toString(),
+            "watermark.current.miniHomeId" to current.miniHomeId,
+            "watermark.candidate.miniHomeId" to candidate.miniHomeId,
+            "watermark.current.operationId" to current.operationId,
+            "watermark.candidate.operationId" to candidate.operationId,
+            "watermark.current.payloadHash" to current.payloadHash,
+            "watermark.candidate.payloadHash" to candidate.payloadHash,
+            "watermark.current.tombstoneId" to current.tombstoneId,
+            "watermark.candidate.tombstoneId" to candidate.tombstoneId,
+            "watermark.current.verified" to current.verified.toString(),
+            "watermark.candidate.verified" to candidate.verified.toString(),
+        )
+
+    private fun homeOperands(
+        prefix: String,
+        home: CachedMiniHomeEntity?,
+    ): Map<String, String?> =
+        mapOf(
+            "$prefix.present" to (home != null).toString(),
+            "$prefix.accountId" to home?.accountId,
+            "$prefix.miniHomeId" to home?.miniHomeId,
+            "$prefix.name" to home?.name,
+            "$prefix.placedPlantCount" to home?.placedPlantCount?.toString(),
+            "$prefix.revision" to home?.revision?.toString(),
+            "$prefix.updatedAtEpochMillis" to home?.updatedAtEpochMillis?.toString(),
+        )
+
+    private fun placementOperands(
+        prefix: String,
+        placements: List<CachedMiniHomePlacementEntity>,
+    ): Map<String, String?> = buildMap {
+        put("$prefix.count", placements.size.toString())
+        put("$prefix.order", placements.joinToString(",") { it.placementId })
+        placements
+            .sortedWith(
+                compareBy<CachedMiniHomePlacementEntity> { it.zIndex }.thenBy { it.placementId }
+            )
+            .forEachIndexed { index, placement ->
+                val item = "$prefix.$index"
+                put("$item.accountId", placement.accountId)
+                put("$item.placementId", placement.placementId)
+                put("$item.miniHomeId", placement.miniHomeId)
+                put("$item.plantId", placement.plantId)
+                put("$item.itemId", placement.itemId)
+                put("$item.normalizedX", placement.normalizedX.toString())
+                put("$item.normalizedY", placement.normalizedY.toString())
+                put("$item.zIndex", placement.zIndex.toString())
+                put("$item.layoutRevision", placement.layoutRevision.toString())
+            }
+    }
+
+    private fun inventoryIdentityOperands(
+        current: CachedInventoryState,
+        candidate: AuthoritativeInventoryCacheWrite,
+    ): Map<String, String?> =
+        mapOf(
+            "inventory.current.accountId" to current.watermark.accountId,
+            "inventory.candidate.accountId" to candidate.accountId,
+            "inventory.current.generation" to current.watermark.generation.toString(),
+            "inventory.candidate.generation" to candidate.generation.toString(),
+            "inventory.generationOrdering" to
+                generationOrdering(candidate.generation, current.watermark.generation),
+            "inventory.current.snapshotHash" to current.watermark.snapshotHash,
+            "inventory.candidate.snapshotHash" to candidate.snapshotHash,
+            "inventory.current.registeredPlantCount" to
+                current.watermark.registeredPlantCount.toString(),
+            "inventory.candidate.registeredPlantCount" to candidate.registeredPlantCount.toString(),
+            "inventory.current.partial" to current.watermark.partial.toString(),
+            "inventory.candidate.partial" to candidate.partial.toString(),
+            "inventory.current.snapshotToken" to current.watermark.snapshotToken,
+            "inventory.candidate.snapshotToken" to candidate.snapshotToken,
+            "inventory.current.snapshotGeneration" to
+                current.watermark.snapshotGeneration?.toString(),
+            "inventory.candidate.snapshotGeneration" to candidate.snapshotGeneration?.toString(),
+        )
+
+    private fun catalogOperands(
+        prefix: String,
+        catalog: List<CachedShopItemEntity>,
+    ): Map<String, String?> = buildMap {
+        put("$prefix.count", catalog.size.toString())
+        catalog
+            .sortedBy { it.itemId }
+            .forEachIndexed { index, item ->
+                val key = "$prefix.$index"
+                put("$key.accountId", item.accountId)
+                put("$key.itemId", item.itemId)
+                put("$key.name", item.name)
+                put("$key.description", item.description)
+                put("$key.category", item.category)
+                put("$key.assetPath", item.assetPath)
+                put("$key.acquisitionCondition", item.acquisitionCondition)
+                put("$key.revision", item.revision.toString())
+                put("$key.updatedAtEpochMillis", item.updatedAtEpochMillis.toString())
+                put("$key.assetSha256", item.assetSha256)
+                put("$key.assetByteSize", item.assetByteSize.toString())
+                put("$key.assetMimeType", item.assetMimeType)
+                put("$key.assetWidth", item.assetWidth.toString())
+                put("$key.assetHeight", item.assetHeight.toString())
+                put("$key.assetMediaRevision", item.assetMediaRevision.toString())
+            }
+    }
+
+    private fun ownedOperands(
+        prefix: String,
+        owned: List<CachedOwnedItemEntity>,
+    ): Map<String, String?> = buildMap {
+        put("$prefix.count", owned.size.toString())
+        owned
+            .sortedBy { it.itemId }
+            .forEachIndexed { index, item ->
+                val key = "$prefix.$index"
+                put("$key.accountId", item.accountId)
+                put("$key.itemId", item.itemId)
+                put("$key.acquiredAtEpochMillis", item.acquiredAtEpochMillis.toString())
+                put("$key.applied", item.applied.toString())
+                put("$key.revision", item.revision.toString())
+                put("$key.availability", item.availability)
+                put("$key.nameSnapshot", item.nameSnapshot)
+                put("$key.categorySnapshot", item.categorySnapshot)
+                put("$key.assetPathSnapshot", item.assetPathSnapshot)
+                put("$key.catalogRevisionSnapshot", item.catalogRevisionSnapshot?.toString())
+                put("$key.assetSha256Snapshot", item.assetSha256Snapshot)
+                put("$key.assetByteSizeSnapshot", item.assetByteSizeSnapshot?.toString())
+                put("$key.assetMimeTypeSnapshot", item.assetMimeTypeSnapshot)
+                put("$key.assetWidthSnapshot", item.assetWidthSnapshot?.toString())
+                put("$key.assetHeightSnapshot", item.assetHeightSnapshot?.toString())
+                put("$key.assetMediaRevisionSnapshot", item.assetMediaRevisionSnapshot?.toString())
+            }
+    }
+
+    private fun currentSnapshotConflict(
+        account: AccountId,
+        operationId: OperationId?,
+        current: CachedMiniHomeSnapshotState?,
+    ): CoherentMiniHomeCacheConflict {
+        val operands = current.snapshotOperands()
+        val predicate = selectCurrentSnapshotConflictPredicate(operands)
+        MiniHomeCacheConflictDiagnostics.observe(
+            cacheObservation(
+                MiniHomeCacheDiagnosticStage.CURRENT_SNAPSHOT,
+                account,
+                operationId,
+                MiniHomeCacheDiagnosticOutcome.CONFLICT,
+                MiniHomeCacheConflictCategory.CURRENT_SNAPSHOT,
+                predicate,
+                operands,
+            )
+        )
+        return CoherentMiniHomeCacheConflict(
+            MiniHomeCacheConflictCategory.CURRENT_SNAPSHOT,
+            predicate,
+            operands,
+        )
+    }
+
+    private fun CachedMiniHomeSnapshotState?.snapshotOperands(): Map<String, String?> =
+        mapOf(
+            "snapshot.present" to (this != null).toString(),
+            "layout.present" to (this?.layout != null).toString(),
+            "inventory.present" to (this?.inventory != null).toString(),
+            "layout.accountId" to this?.layout?.watermark?.accountId,
+            "inventory.accountId" to this?.inventory?.watermark?.accountId,
+            "layout.verified" to this?.layout?.watermark?.verified?.toString(),
+            "inventory.verified" to this?.inventory?.watermark?.verified?.toString(),
+            "layout.token" to this?.layout?.watermark?.snapshotToken,
+            "inventory.token" to this?.inventory?.watermark?.snapshotToken,
+            "layout.generation" to this?.layout?.watermark?.snapshotGeneration?.toString(),
+            "inventory.generation" to this?.inventory?.watermark?.snapshotGeneration?.toString(),
+            "layout.homePresent" to (this?.layout?.home != null).toString(),
+            "layout.placementCount" to this?.layout?.placements?.size?.toString(),
+            "inventory.catalogCount" to this?.inventory?.catalog?.size?.toString(),
+            "inventory.ownedCount" to this?.inventory?.owned?.size?.toString(),
+        )
+
+    private fun verifiedInventoryConflict(
+        account: AccountId,
+        operationId: OperationId?,
+        current: CachedInventoryState?,
+    ): CoherentMiniHomeCacheConflict {
+        val operands = current.decodeOperands(account)
+        MiniHomeCacheConflictDiagnostics.observe(
+            cacheObservation(
+                MiniHomeCacheDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                account,
+                operationId,
+                MiniHomeCacheDiagnosticOutcome.CONFLICT,
+                MiniHomeCacheConflictCategory.VERIFIED_INVENTORY_DECODE,
+                MiniHomeCacheConflictPredicate.VERIFIED_INVENTORY_DECODE_FIELD,
+                operands,
+            )
+        )
+        return CoherentMiniHomeCacheConflict(
+            MiniHomeCacheConflictCategory.VERIFIED_INVENTORY_DECODE,
+            MiniHomeCacheConflictPredicate.VERIFIED_INVENTORY_DECODE_FIELD,
+            operands,
+        )
+    }
+
+    private fun CachedInventoryState?.decodeOperands(account: AccountId): Map<String, String?> =
+        buildMap {
+            val failure = decodeFailure(account)
+            put("field", failure.field)
+            put("failure.index", failure.index?.toString())
+            put("content.expectedSnapshotHash", failure.expectedSnapshotHash)
+            put("expected.account", account.value)
+            put("actual.account", this@decodeOperands?.watermark?.accountId)
+            put("verified", this@decodeOperands?.watermark?.verified?.toString())
+            put("generation", this@decodeOperands?.watermark?.generation?.toString())
+            put("snapshotHash", this@decodeOperands?.watermark?.snapshotHash)
+            put(
+                "registeredPlantCount",
+                this@decodeOperands?.watermark?.registeredPlantCount?.toString(),
+            )
+            put(
+                "loadedAtEpochMillis",
+                this@decodeOperands?.watermark?.loadedAtEpochMillis?.toString(),
+            )
+            put("partial", this@decodeOperands?.watermark?.partial?.toString())
+            put("snapshotToken", this@decodeOperands?.watermark?.snapshotToken)
+            put(
+                "snapshotGeneration",
+                this@decodeOperands?.watermark?.snapshotGeneration?.toString(),
+            )
+            putAll(catalogOperands("catalog", this@decodeOperands?.catalog.orEmpty()))
+            putAll(ownedOperands("owned", this@decodeOperands?.owned.orEmpty()))
+        }
+
+    private data class InventoryDecodeFailure(
+        val field: String?,
+        val index: Int? = null,
+        val expectedSnapshotHash: String? = null,
+    )
+
+    private fun CachedInventoryState?.decodeFailure(account: AccountId): InventoryDecodeFailure {
+        if (this == null) return InventoryDecodeFailure("inventory")
+        if (watermark.accountId != account.value) {
+            return InventoryDecodeFailure("watermark.accountId")
+        }
+        if (!watermark.verified) return InventoryDecodeFailure("watermark.verified")
+        if (watermark.generation < 1) return InventoryDecodeFailure("watermark.generation")
+        if (!watermark.snapshotHash.matches(Regex("^[a-f0-9]{64}$"))) {
+            return InventoryDecodeFailure("watermark.snapshotHash.format")
+        }
+        if (watermark.registeredPlantCount !in 0..200) {
+            return InventoryDecodeFailure("watermark.registeredPlantCount")
+        }
+        if (watermark.loadedAtEpochMillis !in 0..9_007_199_254_740_991L) {
+            return InventoryDecodeFailure("watermark.loadedAtEpochMillis")
+        }
+        if (catalog.size > 200) return InventoryDecodeFailure("catalog.count")
+        if (owned.size > 200) return InventoryDecodeFailure("owned.count")
+        val decodedCatalog = mutableListOf<AuthoritativeCatalogItem>()
+        catalog.forEachIndexed { index, entity ->
+            val decoded = runCatching { entity.diagnosticAuthoritative(account) }.getOrNull()
+            if (decoded == null) return InventoryDecodeFailure("catalog.entity", index)
+            decodedCatalog += decoded
+        }
+        val decodedOwned = mutableListOf<AuthoritativeOwnedItem>()
+        owned.forEachIndexed { index, entity ->
+            val decoded = runCatching { entity.diagnosticAuthoritative(account) }.getOrNull()
+            if (decoded == null) return InventoryDecodeFailure("owned.entity", index)
+            decodedOwned += decoded
+        }
+        val duplicateCatalogIndex = decodedCatalog.indexOfFirst { item ->
+            decodedCatalog.count { it.itemId == item.itemId } > 1
+        }
+        if (duplicateCatalogIndex >= 0) {
+            return InventoryDecodeFailure("catalog.duplicateItemId", duplicateCatalogIndex)
+        }
+        val duplicateOwnedIndex = decodedOwned.indexOfFirst { item ->
+            decodedOwned.count { it.itemId == item.itemId } > 1
+        }
+        if (duplicateOwnedIndex >= 0) {
+            return InventoryDecodeFailure("owned.duplicateItemId", duplicateOwnedIndex)
+        }
+        val catalogIds = decodedCatalog.mapTo(mutableSetOf()) { it.itemId }
+        val availabilityIndex = decodedOwned.indexOfFirst {
+            (it.availability == AuthoritativeInventoryAvailability.AVAILABLE) !=
+                (it.itemId in catalogIds)
+        }
+        if (availabilityIndex >= 0) {
+            return InventoryDecodeFailure("owned.catalogAvailability", availabilityIndex)
+        }
+        val unavailableIndex = decodedOwned.indexOfFirst {
+            !watermark.partial && it.availability == AuthoritativeInventoryAvailability.UNAVAILABLE
+        }
+        if (unavailableIndex >= 0) {
+            return InventoryDecodeFailure("partial.unavailableOwned", unavailableIndex)
+        }
+        val expectedHash =
+            authoritativeInventorySnapshotHash(
+                account,
+                decodedCatalog,
+                decodedOwned,
+                watermark.registeredPlantCount,
+                watermark.partial,
+            )
+        return if (expectedHash != watermark.snapshotHash) {
+            InventoryDecodeFailure(
+                "watermark.snapshotHash.content",
+                expectedSnapshotHash = expectedHash,
+            )
+        } else {
+            InventoryDecodeFailure(null, expectedSnapshotHash = expectedHash)
+        }
+    }
+
+    private fun CachedShopItemEntity.diagnosticAuthoritative(
+        owner: AccountId
+    ): AuthoritativeCatalogItem {
+        require(accountId == owner.value)
+        require(name.codePointCount(0, name.length) in 1..100)
+        require(description.codePointCount(0, description.length) in 1..500)
+        val typedItemId = ItemId(itemId)
+        val identity =
+            CatalogMediaIdentity(
+                assetPath,
+                assetSha256,
+                assetByteSize,
+                assetMimeType,
+                assetWidth,
+                assetHeight,
+                Revision(assetMediaRevision),
+            )
+        require(identity.path.startsWith("catalog-assets/${typedItemId.value}/"))
+        return AuthoritativeCatalogItem(
+            typedItemId,
+            name,
+            description,
+            ItemCategory.valueOf(category),
+            identity,
+            acquisitionCondition?.let { value ->
+                AuthoritativeInventoryCondition.entries.single { it.wireValue == value }
+            },
+            Revision(revision).also { require(it.value >= 1) },
+            updatedAtEpochMillis.also { require(it in 0..9_007_199_254_740_991L) },
+        )
+    }
+
+    private fun CachedOwnedItemEntity.diagnosticAuthoritative(
+        owner: AccountId
+    ): AuthoritativeOwnedItem {
+        require(accountId == owner.value)
+        val snapshotValues =
+            listOf(
+                nameSnapshot,
+                categorySnapshot,
+                assetPathSnapshot,
+                catalogRevisionSnapshot,
+                assetSha256Snapshot,
+                assetByteSizeSnapshot,
+                assetMimeTypeSnapshot,
+                assetWidthSnapshot,
+                assetHeightSnapshot,
+                assetMediaRevisionSnapshot,
+            )
+        require(snapshotValues.all { it == null } || snapshotValues.none { it == null })
+        val snapshot =
+            if (snapshotValues.all { it == null }) {
+                null
+            } else {
+                val snapshotName = requireNotNull(nameSnapshot)
+                require(snapshotName.codePointCount(0, snapshotName.length) in 1..100)
+                val identity =
+                    CatalogMediaIdentity(
+                        requireNotNull(assetPathSnapshot),
+                        requireNotNull(assetSha256Snapshot),
+                        requireNotNull(assetByteSizeSnapshot),
+                        requireNotNull(assetMimeTypeSnapshot),
+                        requireNotNull(assetWidthSnapshot),
+                        requireNotNull(assetHeightSnapshot),
+                        Revision(requireNotNull(assetMediaRevisionSnapshot)),
+                    )
+                require(identity.path.startsWith("catalog-assets/$itemId/"))
+                AuthoritativeOwnedCatalogSnapshot(
+                    snapshotName,
+                    ItemCategory.valueOf(requireNotNull(categorySnapshot)),
+                    identity,
+                    Revision(requireNotNull(catalogRevisionSnapshot)).also {
+                        require(it.value >= 1)
+                    },
+                )
+            }
+        return AuthoritativeOwnedItem(
+            ItemId(itemId),
+            acquiredAtEpochMillis.also { require(it in 0..9_007_199_254_740_991L) },
+            applied,
+            Revision(revision).also { require(it.value >= 1) },
+            AuthoritativeInventoryAvailability.valueOf(availability),
+            snapshot,
+        )
     }
 
     private fun RemoteMiniHomeSnapshot.fromCache(

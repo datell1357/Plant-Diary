@@ -102,8 +102,12 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
         )
     }
 
-    val miniHomeBarrier = events.navigateAndAwaitMiniHomeLoaded()
-    rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)
+    Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureInitialLoad(
+        "registration-mini-home-initial-load"
+    ) {
+        val miniHomeBarrier = events.navigateAndAwaitMiniHomeLoaded()
+        rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)
+    }
     compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
     compose
         .onNodeWithTag(MiniHomeTestTags.plant(PersonalPlantId(plantId)))

@@ -37,6 +37,7 @@ class ActionEntryBindingSourceContractTest {
     fun `host integration compiles the exact AndroidTest fixtures`() {
         listOf(
                 "Todo18Scenario.kt",
+                "Todo18InventoryRepositoryFixture.kt",
                 "Todo18MiniHomeRepositoryFixture.kt",
                 "Todo18PlantRepositoryFixture.kt",
             )

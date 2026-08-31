@@ -1,6 +1,8 @@
 package com.planterior.helper.diagnostic
 
 import com.planterior.helper.feature.minihome.MiniHomeRetryStage
+import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
+import com.planterior.helper.feature.minihome.MiniHomeSaveResultDetails
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -91,7 +93,7 @@ class Todo18OfflineRetryTransitionReceiptTest {
     }
 
     @Test
-    fun `retry boundary identities and generations are serialized`() {
+    fun `retry boundary semantic details and generations are serialized`() {
         val receipt =
             Todo18OfflineRetryTransitionReceipt(
                 observations = emptyList(),
@@ -107,8 +109,7 @@ class Todo18OfflineRetryTransitionReceiptTest {
                             guardDraftIdentity = true,
                             revision = REVISION,
                             outcome = "returned",
-                            resultIdentity = 99,
-                            failureIdentity = null,
+                            resultDetails = MiniHomeSaveResultDetails.Saved(LAYOUT_ID, REVISION),
                             failureClass = null,
                             failureMessage = null,
                         )
@@ -119,10 +120,147 @@ class Todo18OfflineRetryTransitionReceiptTest {
         writeTodo18OfflineRetryTransitionReceipt(file, receipt)
 
         val json = file.readText()
-        assertTrue(json.contains("todo18-offline-retry-transition-v3"))
+        assertTrue(json.contains("todo18-offline-retry-transition-v4"))
         assertTrue(json.contains("\"retryObservations\""))
         assertTrue(json.contains("\"controllerGeneration\":7"))
-        assertTrue(json.contains("\"resultIdentity\":99"))
+        assertTrue(json.contains("\"kind\":\"SAVED\""))
+        assertTrue(json.contains("\"layoutId\":\"$LAYOUT_ID\""))
+        assertTrue(json.contains("\"revision\":2"))
+        assertTrue(!json.contains("\"resultIdentity\""))
+        assertTrue(!json.contains("\"failureIdentity\""))
+    }
+
+    @Test
+    fun `non Saved repository result serializes its stable semantic fields`() {
+        val receipt =
+            Todo18OfflineRetryTransitionReceipt(
+                observations = emptyList(),
+                closed = true,
+                retryObservations =
+                    listOf(
+                        Todo18OfflineRetryBoundaryObservation(
+                            stage = MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED,
+                            operationId = OPERATION,
+                            controllerEpoch = 3L,
+                            controllerGeneration = 7L,
+                            saveGeneration = 1L,
+                            guardDraftIdentity = true,
+                            revision = null,
+                            outcome = "returned",
+                            resultDetails =
+                                MiniHomeSaveResultDetails.Failed(
+                                    MiniHomeSaveFailure.NETWORK,
+                                    hasDiscardHandle = false,
+                                ),
+                            failureClass = null,
+                            failureMessage = null,
+                        )
+                    ),
+            )
+        val file = temporaryFolder.newFile("offline-failed-result.json")
+
+        writeTodo18OfflineRetryTransitionReceipt(file, receipt)
+
+        val json = file.readText()
+        assertTrue(json.contains("\"kind\":\"FAILED\""))
+        assertTrue(json.contains("\"failure\":\"NETWORK\""))
+        assertTrue(json.contains("\"hasDiscardHandle\":false"))
+        assertTrue(!json.contains("\"resultIdentity\""))
+        assertTrue(!json.contains("\"failureIdentity\""))
+    }
+
+    @Test
+    fun `every result schema serializes stable layout and pending identities`() {
+        val details =
+            listOf(
+                MiniHomeSaveResultDetails.Saved(LAYOUT_ID, REVISION),
+                MiniHomeSaveResultDetails.Conflict("authoritative-layout", 3, 4, 5),
+                MiniHomeSaveResultDetails.Failed(
+                    MiniHomeSaveFailure.NETWORK,
+                    hasDiscardHandle = true,
+                ),
+                MiniHomeSaveResultDetails.RequiresCorrection(
+                    MiniHomeSaveFailure.INVALID_REQUEST,
+                    "field=name",
+                    hasDiscardHandle = true,
+                ),
+                MiniHomeSaveResultDetails.RequiresReconciliation(
+                    MiniHomeSaveFailure.REVISION_CONFLICT,
+                    hasDiscardHandle = true,
+                ),
+                MiniHomeSaveResultDetails.Reconciled(
+                    failure = MiniHomeSaveFailure.REVISION_CONFLICT,
+                    authoritativeLayoutId = "authoritative-layout",
+                    authoritativeRevision = 3,
+                    correctedDraftLayoutId = "corrected-layout",
+                    correctedDraftRevision = 4,
+                    plantCount = 5,
+                    decorationCount = 6,
+                    removedTargets = 7,
+                ),
+                MiniHomeSaveResultDetails.PendingChanged(
+                    currentOperationPresent = true,
+                    operationId = "current-operation",
+                    expectedRevision = 8,
+                    layoutId = "pending-layout",
+                    layoutRevision = 9,
+                    state = null,
+                    failure = MiniHomeSaveFailure.NETWORK,
+                    failureDetails = "offline",
+                    hasDiscardHandle = true,
+                ),
+                MiniHomeSaveResultDetails.PendingChanged(
+                    currentOperationPresent = false,
+                    operationId = null,
+                    expectedRevision = null,
+                    layoutId = null,
+                    layoutRevision = null,
+                    state = null,
+                    failure = null,
+                    failureDetails = null,
+                    hasDiscardHandle = false,
+                ),
+                MiniHomeSaveResultDetails.Forbidden,
+            )
+        val receipt =
+            Todo18OfflineRetryTransitionReceipt(
+                observations = emptyList(),
+                closed = true,
+                retryObservations =
+                    details.map { detail ->
+                        Todo18OfflineRetryBoundaryObservation(
+                            stage = MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED,
+                            operationId = OPERATION,
+                            controllerEpoch = 3L,
+                            controllerGeneration = 7L,
+                            saveGeneration = 2L,
+                            guardDraftIdentity = true,
+                            revision = null,
+                            outcome = "returned",
+                            resultDetails = detail,
+                            failureClass = null,
+                            failureMessage = null,
+                        )
+                    },
+            )
+        val file = temporaryFolder.newFile("offline-all-result-schemas.json")
+
+        writeTodo18OfflineRetryTransitionReceipt(file, receipt)
+
+        val json = file.readText()
+        listOf(
+                "\"layoutId\":\"$LAYOUT_ID\"",
+                "\"authoritativeLayoutId\":\"authoritative-layout\"",
+                "\"correctedDraftLayoutId\":\"corrected-layout\"",
+                "\"currentOperationPresent\":true",
+                "\"operationId\":\"current-operation\"",
+                "\"layoutId\":\"pending-layout\"",
+                "\"currentOperationPresent\":false",
+                "\"kind\":\"FORBIDDEN\"",
+            )
+            .forEach { expected ->
+                assertTrue("missing $expected in $json", json.contains(expected))
+            }
     }
 
     @Test
@@ -152,7 +290,7 @@ class Todo18OfflineRetryTransitionReceiptTest {
     }
 
     @Test
-    fun `retry boundary malformed outcome revision token generation and result identity are rejected`() {
+    fun `retry boundary malformed outcome revision token generation and semantic details are rejected`() {
         val valid = retryObservations()
         val malformed =
             listOf(
@@ -169,7 +307,13 @@ class Todo18OfflineRetryTransitionReceiptTest {
                     if (index == 4) observation.copy(outcome = "exception") else observation
                 },
                 valid.mapIndexed { index, observation ->
-                    if (index == 5) observation.copy(resultIdentity = 100) else observation
+                    if (index == 4) {
+                        observation.copy(
+                            resultDetails = MiniHomeSaveResultDetails.Saved(LAYOUT_ID, 3)
+                        )
+                    } else {
+                        observation
+                    }
                 },
             )
         malformed.forEach { retry ->
@@ -227,7 +371,7 @@ class Todo18OfflineRetryTransitionReceiptTest {
                 guardDraftIdentity = true,
                 revision = REVISION,
                 outcome = "returned",
-                resultIdentity = 99,
+                resultDetails = MiniHomeSaveResultDetails.Saved(LAYOUT_ID, REVISION),
             ),
             retryObservation(
                 MiniHomeRetryStage.SAVED_APPLY_ENTRY,
@@ -236,7 +380,7 @@ class Todo18OfflineRetryTransitionReceiptTest {
                 saveGeneration = 2L,
                 guardDraftIdentity = true,
                 revision = REVISION,
-                resultIdentity = 99,
+                resultDetails = MiniHomeSaveResultDetails.Saved(LAYOUT_ID, REVISION),
             ),
             retryObservation(
                 MiniHomeRetryStage.SET_STATE_ATTEMPTED,
@@ -270,7 +414,7 @@ class Todo18OfflineRetryTransitionReceiptTest {
         guardDraftIdentity: Boolean? = null,
         revision: Long? = null,
         outcome: String? = null,
-        resultIdentity: Int? = null,
+        resultDetails: MiniHomeSaveResultDetails? = null,
     ) =
         Todo18OfflineRetryBoundaryObservation(
             stage = stage,
@@ -281,14 +425,14 @@ class Todo18OfflineRetryTransitionReceiptTest {
             guardDraftIdentity = guardDraftIdentity,
             revision = revision,
             outcome = outcome,
-            resultIdentity = resultIdentity,
-            failureIdentity = null,
+            resultDetails = resultDetails,
             failureClass = null,
             failureMessage = null,
         )
 
     private companion object {
         const val OPERATION = "offline-operation"
+        const val LAYOUT_ID = "offline-layout"
         const val REVISION = 2L
     }
 }

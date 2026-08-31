@@ -12,6 +12,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 internal data class Todo18MiniHomeInitialLoadReceipt(
+    val scenarioName: String = "mini-home-conflict-initial-load",
     val api: Int,
     val expectedAccountId: String,
     val timeline: List<TimelineEntry>,
@@ -29,7 +30,7 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
     val terminals = input.timeline.filter { it.kind == "load-terminal" }
     val receipt = buildJsonObject {
         put("schema", "todo18-mini-home-load-diagnostic-v4")
-        put("scenario", "mini-home-conflict-initial-load")
+        put("scenario", input.scenarioName)
         put("api", input.api)
         put("expectedAccountId", input.expectedAccountId)
         put("status", if (input.problems.isEmpty()) "complete" else "failed")

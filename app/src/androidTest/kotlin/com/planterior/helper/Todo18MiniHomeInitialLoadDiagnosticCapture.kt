@@ -11,15 +11,16 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
     private val runtime: Todo18IntegratedRuntimeRule,
     private val compose: Todo18ComposeRule,
 ) {
-    fun <T> captureConflictInitialLoad(block: () -> T): T {
-        val armed = arm()
+    fun <T> captureInitialLoad(scenarioName: String, block: () -> T): T {
+        val armed = arm(scenarioName)
         return preserveTodo18PrimaryFailure(block, armed::finish)
     }
 
-    private fun arm(): ArmedCapture {
+    private fun arm(scenarioName: String): ArmedCapture {
         val timeline = Timeline()
         val sink = runtime.renderedStateSink
         return ArmedCapture(
+            scenarioName,
             timeline,
             CaptureSubscriptions(
                 boundary =
@@ -41,6 +42,7 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
     }
 
     private inner class ArmedCapture(
+        private val scenarioName: String,
         private val timeline: Timeline,
         private val subscriptions: CaptureSubscriptions,
     ) {
@@ -91,13 +93,14 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
 
             val status = if (problems.isEmpty()) "complete" else problems.joinToString()
             return Todo18DiagnosticReceiptFinalizer(
-                    receiptFile = ::receiptFile,
+                    receiptFile = { receiptFile(scenarioName) },
                     diagnosticName = "Todo18 MiniHome diagnostic",
                 )
                 .finish(primaryFailure != null, status) { receipt ->
                     writeTodo18MiniHomeInitialLoadReceipt(
                         receipt,
                         Todo18MiniHomeInitialLoadReceipt(
+                            scenarioName = scenarioName,
                             api = android.os.Build.VERSION.SDK_INT,
                             expectedAccountId = expectedAccountId,
                             timeline = snapshot,
@@ -123,12 +126,12 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
         }
     }
 
-    private fun receiptFile(): File {
+    private fun receiptFile(scenarioName: String): File {
         val directory =
             requireNotNull(compose.activity.getExternalFilesDir("todo18-e2e-journeys")).also {
                 check(it.exists() || it.mkdirs())
             }
-        return File(directory, "mini-home-conflict-initial-load-diagnostic.json")
+        return File(directory, "$scenarioName-diagnostic.json")
     }
 
     private data class CaptureSubscriptions(

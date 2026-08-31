@@ -57,6 +57,7 @@ class Todo18Scenario(val accountId: AccountId) {
     internal val zone = ZoneId.of("Asia/Seoul")
     internal val contentId = PlantContentId("species-monstera")
     internal val plants = linkedMapOf<PersonalPlantId, RemotePersonalPlant>()
+    internal val inventoryFixtureState = Todo18AuthoritativeInventoryFixtureState(this)
 
     val miniHomeSaveRequests = CopyOnWriteArrayList<MiniHomeSaveRequest>()
     var miniHomeSaveMode: Todo18MiniHomeSaveMode = Todo18MiniHomeSaveMode.APPLY

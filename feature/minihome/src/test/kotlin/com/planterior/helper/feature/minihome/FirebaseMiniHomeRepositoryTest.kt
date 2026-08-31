@@ -15,8 +15,12 @@ import com.planterior.helper.core.data.authoritativeInventorySnapshotHash
 import com.planterior.helper.core.data.cacheWrite
 import com.planterior.helper.core.data.verifiedAuthoritativeInventoryOrNull
 import com.planterior.helper.core.database.AuthoritativeMiniHomeCacheWrite
+import com.planterior.helper.core.database.CachedInventoryState
 import com.planterior.helper.core.database.CachedMiniHomeEntity
 import com.planterior.helper.core.database.CachedMiniHomePlacementEntity
+import com.planterior.helper.core.database.CachedOwnedItemEntity
+import com.planterior.helper.core.database.CachedShopItemEntity
+import com.planterior.helper.core.database.InventorySnapshotWatermarkEntity
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkEntity
 import com.planterior.helper.core.database.MiniHomeCacheWatermarkKind
 import com.planterior.helper.core.database.OperationOutboxEntity
@@ -866,6 +870,263 @@ class FirebaseMiniHomeRepositoryTest {
 
         assertSame(expected, actual)
     }
+
+    @Test
+    fun `real Room decode mutations select the exact first verifier field and restore`() = runTest {
+        val account = AccountId("account-a")
+        val remote = FakeRemote(layout(1)).apply { cacheGeneration = 1 }
+        val baselineInventory =
+            authoritativeInventory(
+                    "decode-item",
+                    "Decode item",
+                    ItemCategory.DECORATION,
+                    testMiniHomeMediaIdentity("decode-item"),
+                    generation = 2,
+                )
+                .cacheWrite(snapshotToken(2), 2)
+        database.cacheDao().applyAuthoritativeMiniHome(cacheLayoutWrite(layout(1), 2))
+        database.cacheDao().applyAuthoritativeInventory(baselineInventory)
+        val baseline = requireNotNull(database.cacheDao().currentInventoryCache(account.value))
+        val mutations =
+            linkedMapOf<String, (CachedInventoryState) -> CachedInventoryState>(
+                "watermark.snapshotHash.format" to
+                    { state ->
+                        state.copy(watermark = state.watermark.copy(snapshotHash = "bad"))
+                    },
+                "watermark.registeredPlantCount" to
+                    { state ->
+                        state.copy(watermark = state.watermark.copy(registeredPlantCount = 201))
+                    },
+                "watermark.loadedAtEpochMillis" to
+                    { state ->
+                        state.copy(watermark = state.watermark.copy(loadedAtEpochMillis = -1))
+                    },
+                "catalog.count" to
+                    { state ->
+                        state.copy(
+                            catalog =
+                                (0..200).map { index ->
+                                    val id = "decode-catalog-$index"
+                                    state.catalog
+                                        .single()
+                                        .copy(
+                                            itemId = id,
+                                            assetPath =
+                                                state.catalog
+                                                    .single()
+                                                    .assetPath
+                                                    .replace(
+                                                        "decode-item",
+                                                        id,
+                                                    ),
+                                        )
+                                }
+                        )
+                    },
+                "owned.count" to
+                    { state ->
+                        state.copy(
+                            owned =
+                                (0..200).map { index ->
+                                    state.owned.single().copy(itemId = "decode-owned-$index")
+                                }
+                        )
+                    },
+                "catalog.entity" to
+                    { state ->
+                        state.copy(catalog = listOf(state.catalog.single().copy(name = "")))
+                    },
+                "owned.entity" to
+                    { state ->
+                        state.copy(
+                            owned = listOf(state.owned.single().copy(availability = "BROKEN"))
+                        )
+                    },
+                "owned.catalogAvailability" to
+                    { state ->
+                        state.copy(owned = listOf(state.owned.single().copy(itemId = "not-public")))
+                    },
+                "partial.unavailableOwned" to
+                    { state ->
+                        state.copy(
+                            owned =
+                                listOf(
+                                    state.owned
+                                        .single()
+                                        .copy(
+                                            itemId = "not-public",
+                                            availability = "UNAVAILABLE",
+                                        )
+                                )
+                        )
+                    },
+                "watermark.snapshotHash.content" to
+                    { state ->
+                        state.copy(watermark = state.watermark.copy(snapshotHash = "b".repeat(64)))
+                    },
+            )
+
+        suspend fun replace(state: CachedInventoryState) {
+            database.withTransaction {
+                database.cacheDao().clearShopItems(account.value)
+                database.cacheDao().clearOwnedItems(account.value)
+                database.cacheDao().clearInventorySnapshotWatermark(account.value)
+                database.cacheDao().upsertShopItems(state.catalog)
+                database.cacheDao().upsertOwnedItems(state.owned)
+                database.cacheDao().upsertInventorySnapshotWatermark(state.watermark)
+            }
+        }
+
+        mutations.forEach { (expectedField, mutate) ->
+            replace(mutate(baseline))
+            val observations = mutableListOf<MiniHomeCacheDiagnosticObservation>()
+            val installation = MiniHomeCacheConflictDiagnostics.install(observations::add)
+            try {
+                FirebaseMiniHomeRepository(database, remote).load()
+            } finally {
+                installation.close()
+            }
+            val terminal = observations.single {
+                it.stage == MiniHomeCacheDiagnosticStage.TERMINAL_CONFLICT
+            }
+            assertEquals(
+                MiniHomeCacheConflictCategory.VERIFIED_INVENTORY_DECODE,
+                terminal.category,
+            )
+            assertEquals(expectedField, terminal.operands["field"])
+            replace(baseline)
+            assertEquals(baseline, database.cacheDao().currentInventoryCache(account.value))
+        }
+    }
+
+    @Test
+    fun `real Room migrated unverified layout and inventory close an applied cache receipt`() =
+        runTest {
+            val account = AccountId("account-a")
+            val legacyHome =
+                CachedMiniHomeEntity(
+                    accountId = account.value,
+                    miniHomeId = "home-a",
+                    name = "Legacy room",
+                    placedPlantCount = 1,
+                    revision = 1,
+                    updatedAtEpochMillis = 1,
+                )
+            database.cacheDao().upsertMiniHome(legacyHome)
+            database
+                .cacheDao()
+                .upsertMiniHomePlacements(
+                    listOf(
+                        CachedMiniHomePlacementEntity(
+                            accountId = account.value,
+                            placementId = "legacy-placement",
+                            miniHomeId = legacyHome.miniHomeId,
+                            plantId = "plant-a",
+                            itemId = null,
+                            normalizedX = 0.5,
+                            normalizedY = 0.5,
+                            zIndex = 0,
+                            layoutRevision = legacyHome.revision,
+                        )
+                    )
+                )
+            database
+                .cacheDao()
+                .upsertMiniHomeCacheWatermark(
+                    MiniHomeCacheWatermarkEntity(
+                        accountId = account.value,
+                        generation = 0,
+                        kind = MiniHomeCacheWatermarkKind.PRESENT.name,
+                        layoutRevision = legacyHome.revision,
+                        miniHomeId = legacyHome.miniHomeId,
+                        operationId = null,
+                        payloadHash = null,
+                        tombstoneId = null,
+                        authoritativeAtEpochMillis = legacyHome.updatedAtEpochMillis,
+                        verified = false,
+                    )
+                )
+            database
+                .cacheDao()
+                .upsertShopItems(
+                    listOf(
+                        CachedShopItemEntity(
+                            accountId = account.value,
+                            itemId = "legacy-item",
+                            name = "Legacy item",
+                            description = "Legacy description",
+                            category = "DECORATION",
+                            assetPath = "catalog-assets/legacy-item/preview.webp",
+                            acquisitionCondition = null,
+                            revision = 1,
+                            updatedAtEpochMillis = 1,
+                        )
+                    )
+                )
+            database
+                .cacheDao()
+                .upsertOwnedItems(
+                    listOf(
+                        CachedOwnedItemEntity(
+                            accountId = account.value,
+                            itemId = "legacy-item",
+                            acquiredAtEpochMillis = 1,
+                            applied = false,
+                            revision = 1,
+                        )
+                    )
+                )
+            database
+                .cacheDao()
+                .upsertInventorySnapshotWatermark(
+                    InventorySnapshotWatermarkEntity(
+                        accountId = account.value,
+                        generation = 0,
+                        snapshotHash = "0".repeat(64),
+                        registeredPlantCount = 0,
+                        loadedAtEpochMillis = 0,
+                        partial = true,
+                        verified = false,
+                    )
+                )
+            val observations = mutableListOf<MiniHomeCacheDiagnosticObservation>()
+            val installation = MiniHomeCacheConflictDiagnostics.install(observations::add)
+            val loaded =
+                try {
+                    FirebaseMiniHomeRepository(
+                            database,
+                            FakeRemote(layout(2)).apply { cacheGeneration = 2 },
+                        )
+                        .load()
+                } finally {
+                    installation.close()
+                }
+
+            assertTrue(loaded is MiniHomeLoadResult.Ready)
+            val receiptOperation = OperationId("real-room-migration-receipt")
+            val receipt =
+                MiniHomeCacheDiagnosticReceipt(
+                    accountId = account,
+                    operationId = receiptOperation,
+                    observations = observations.map { it.copy(operationId = receiptOperation) },
+                    closed = true,
+                )
+            receipt.requireComplete()
+            val layoutApply = observations.single {
+                it.stage == MiniHomeCacheDiagnosticStage.LAYOUT_APPLY
+            }
+            val inventoryApply = observations.single {
+                it.stage == MiniHomeCacheDiagnosticStage.INVENTORY_APPLY
+            }
+            assertEquals(MiniHomeCacheDiagnosticOutcome.APPLIED, layoutApply.outcome)
+            assertEquals("0", layoutApply.operands["before.generation"])
+            assertEquals(null, layoutApply.operands["before.operationId"])
+            assertEquals(null, layoutApply.operands["before.payloadHash"])
+            assertEquals(MiniHomeCacheDiagnosticOutcome.APPLIED, inventoryApply.outcome)
+            assertEquals("0", inventoryApply.operands["before.generation"])
+            assertEquals("0".repeat(64), inventoryApply.operands["before.snapshotHash"])
+            assertEquals("true", inventoryApply.operands["before.partial"])
+        }
 
     @Test
     fun `publication return runtime and assertion faults cannot change successful load`() =
