@@ -23,7 +23,7 @@ extension HomeDashboardUITests {
         }
         XCTAssertEqual(app.windows.firstMatch.frame.width, 402, accuracy: 1)
         XCTAssertEqual(roomFrame.minX, 16, accuracy: 1)
-        XCTAssertEqual(roomFrame.minY, 138, accuracy: 1)
+        XCTAssertEqual(roomFrame.minY, 146, accuracy: 1)
         XCTAssertEqual(roomFrame.width, 370, accuracy: 1)
         XCTAssertEqual(roomFrame.height, 326, accuracy: 1)
 
@@ -43,7 +43,22 @@ extension HomeDashboardUITests {
             XCTFail("the rendered room container must be measurable from pixels")
             return .null
         }
+        assertAXMiniRoomTopSpacing(in: app, roomFrame: frame)
         return frame
+    }
+
+    private func assertAXMiniRoomTopSpacing(
+        in app: XCUIApplication,
+        roomFrame: CGRect
+    ) {
+        let title = app.buttons["home.room.title"]
+        XCTAssertTrue(title.exists)
+        XCTAssertEqual(
+            roomFrame.minY - title.frame.maxY,
+            8,
+            accuracy: 1,
+            "the mini room must begin one small spacing token below its title"
+        )
     }
 
     private func roomVisualFrame(from screenshot: XCUIScreenshot) -> CGRect? {

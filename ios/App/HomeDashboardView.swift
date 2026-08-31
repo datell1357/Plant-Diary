@@ -44,6 +44,7 @@ struct HomeDashboardView: View {
                 homeHeader
                 signingInIndicator
                 miniHomeSection
+                    .padding(.top, PlanteriorSpacing.small)
                 weatherWarningBanner
                     .padding(.top, PlanteriorSpacing.large)
                 careSection
