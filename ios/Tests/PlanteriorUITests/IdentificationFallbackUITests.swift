@@ -31,6 +31,7 @@ final class IdentificationFallbackUITests: XCTestCase {
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
         app.launchEnvironment["QA_PHOTO_FIXTURE"] = "valid"
         app.launchEnvironment["QA_IDENTIFICATION_STATE"] = "failure"
+        app.launchEnvironment["QA_IDENTIFICATION_RETRY_DELAY_MS"] = "5000"
         app.launch()
 
         app.buttons["tab.camera"].tap()
@@ -41,6 +42,14 @@ final class IdentificationFallbackUITests: XCTestCase {
             app.staticTexts["identification.failed"].waitForExistence(timeout: 5)
         )
         app.buttons["identification.retry"].tap()
+        XCTAssertTrue(
+            app.staticTexts["identification.failed"].waitForNonExistence(timeout: 1)
+        )
+        XCTAssertTrue(
+            app.staticTexts["identification.pending"].waitForExistence(timeout: 1)
+        )
+        XCTAssertFalse(app.buttons["identification.retry"].exists)
+        XCTAssertFalse(app.otherElements["capture.identification-result"].exists)
         // §6.11: retry lands on the result screen, where the top match is the
         // summary card and the remaining matches are the "다른 후보" rows.
         XCTAssertTrue(

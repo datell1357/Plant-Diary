@@ -119,6 +119,7 @@ struct IdentificationFlowView: View {
                 identifier: "identification.failed"
             ) {
                 PlanteriorSecondaryButton("다시 시도") {
+                    state = .pending
                     failureRetryCount += 1
                     Task { await identifyDraft() }
                 }
@@ -175,6 +176,16 @@ struct IdentificationFlowView: View {
                 return
             default:
                 break
+            }
+            if failureRetryCount > 0,
+               let delayMilliseconds = Int(
+                   ProcessInfo.processInfo.environment[
+                       "QA_IDENTIFICATION_RETRY_DELAY_MS"
+                   ] ?? ""
+               ),
+               delayMilliseconds > 0
+            {
+                try? await Task.sleep(for: .milliseconds(delayMilliseconds))
             }
         #endif
         await coordinator.submit(draft.data)
