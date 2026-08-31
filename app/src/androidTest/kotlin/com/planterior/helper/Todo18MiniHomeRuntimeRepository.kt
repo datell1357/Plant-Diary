@@ -40,6 +40,35 @@ internal fun todo18MiniHomeRuntimeRepository(
                         readIdentity.value,
                     )
                 },
+                beforePendingRead = { accountId, pendingIdentity ->
+                    diagnostics.recordCurrent(
+                        Todo18MiniHomeLoadDiagnostic.PendingReadEntered(accountId, pendingIdentity)
+                    )
+                },
+                afterPendingRead = { accountId, pendingIdentity, outcome ->
+                    diagnostics.recordCurrent(
+                        when (outcome) {
+                            com.planterior.helper.feature.minihome.MiniHomePendingReadOutcome
+                                .Returned ->
+                                Todo18MiniHomeLoadDiagnostic.PendingReadReturned(
+                                    accountId,
+                                    pendingIdentity,
+                                )
+                            is com.planterior.helper.feature.minihome.MiniHomePendingReadOutcome.Threw ->
+                                Todo18MiniHomeLoadDiagnostic.PendingReadThrew(
+                                    accountId,
+                                    pendingIdentity,
+                                    outcome.failure,
+                                )
+                            is com.planterior.helper.feature.minihome.MiniHomePendingReadOutcome.Cancelled ->
+                                Todo18MiniHomeLoadDiagnostic.PendingReadCancelled(
+                                    accountId,
+                                    pendingIdentity,
+                                    outcome.failure,
+                                )
+                        }
+                    )
+                },
             ),
         diagnostics = diagnostics,
     )

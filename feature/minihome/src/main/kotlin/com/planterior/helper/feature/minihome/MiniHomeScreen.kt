@@ -337,7 +337,17 @@ fun MiniHomeScreen(
                                     tag = MiniHomeTestTags.SAVE_FAILURE,
                                 )
                                 Button(
-                                    onClick = { scope.launch { onSave() } },
+                                    onClick = {
+                                        MiniHomeRetryDiagnostics.observe(
+                                            MiniHomeRetryObservation(
+                                                MiniHomeRetryStage.CALLBACK_ENTRY,
+                                                state.operationId,
+                                            )
+                                        )
+                                        scope.launch {
+                                            runMiniHomeRetryCoroutine(state.operationId, onSave)
+                                        }
+                                    },
                                     modifier = Modifier.action(MiniHomeTestTags.RETRY),
                                 ) {
                                     Text("같은 배치 다시 저장")

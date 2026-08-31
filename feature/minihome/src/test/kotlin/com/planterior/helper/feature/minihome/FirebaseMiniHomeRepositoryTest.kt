@@ -505,6 +505,115 @@ class FirebaseMiniHomeRepositoryTest {
         }
 
     @Test
+    fun `pending query entry is observable before second publication read and load terminal`() =
+        runTest {
+            val pendingReadEntered = CompletableDeferred<MiniHomePendingReadIdentity>()
+            val releasePendingRead = CompletableDeferred<Unit>()
+            val pendingReadObservations =
+                mutableListOf<Pair<MiniHomePendingReadIdentity, MiniHomePendingReadOutcome>>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    beforePendingRead = { _, identity ->
+                        if (identity.queryOrdinal == 2L) {
+                            pendingReadEntered.complete(identity)
+                            releasePendingRead.await()
+                        }
+                    },
+                    afterPendingRead = { _, identity, outcome ->
+                        pendingReadObservations += identity to outcome
+                    },
+                )
+
+            val loading = async { repository.load() }
+            val pendingIdentity = pendingReadEntered.await()
+
+            assertEquals(2L, pendingIdentity.queryOrdinal)
+            assertTrue(
+                pendingReadObservations.none { (identity, _) -> identity == pendingIdentity }
+            )
+            assertFalse(loading.isCompleted)
+
+            releasePendingRead.complete(Unit)
+            val loaded = loading.await() as MiniHomeLoadResult.Ready
+
+            assertEquals(2, pendingReadObservations.size)
+            assertEquals(
+                pendingIdentity to MiniHomePendingReadOutcome.Returned,
+                pendingReadObservations.last(),
+            )
+            assertEquals(Revision(7), loaded.committed.revision)
+            assertFalse(loaded.stale)
+        }
+
+    @Test
+    fun `pending query cancellation reports the exact cancellation after a gated query`() =
+        runTest {
+            val pendingReadEntered = CompletableDeferred<MiniHomePendingReadIdentity>()
+            val releasePendingRead = CompletableDeferred<Unit>()
+            val pendingReadObservations =
+                mutableListOf<Pair<MiniHomePendingReadIdentity, MiniHomePendingReadOutcome>>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    beforePendingRead = { _, identity ->
+                        if (identity.queryOrdinal == 2L) {
+                            pendingReadEntered.complete(identity)
+                            releasePendingRead.await()
+                        }
+                    },
+                    afterPendingRead = { _, identity, outcome ->
+                        pendingReadObservations += identity to outcome
+                    },
+                )
+
+            val loading = async { repository.load() }
+            val pendingIdentity = pendingReadEntered.await()
+            val expected = CancellationException("cancel pending query")
+            loading.cancel(expected)
+            releasePendingRead.complete(Unit)
+            loading.join()
+
+            val outcome = pendingReadObservations.last { it.first == pendingIdentity }.second
+            assertTrue(outcome is MiniHomePendingReadOutcome.Cancelled)
+            assertEquals(
+                expected.message,
+                (outcome as MiniHomePendingReadOutcome.Cancelled).failure.message,
+            )
+        }
+
+    @Test
+    fun `pending query diagnostic observer faults do not alter load behavior`() = runTest {
+        val pendingReadEntered = CompletableDeferred<MiniHomePendingReadIdentity>()
+        var afterPendingReadCalls = 0
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                beforePendingRead = { _, identity ->
+                    if (identity.queryOrdinal == 2L) {
+                        pendingReadEntered.complete(identity)
+                        throw IllegalStateException("observer before failure")
+                    }
+                },
+                afterPendingRead = { _, identity, _ ->
+                    if (identity.queryOrdinal == 2L) {
+                        afterPendingReadCalls += 1
+                        throw AssertionError("observer after failure")
+                    }
+                },
+            )
+
+        val loaded = async { repository.load() }.await()
+
+        assertTrue(loaded is MiniHomeLoadResult.Ready)
+        assertEquals(1, afterPendingReadCalls)
+        assertEquals(2L, pendingReadEntered.await().queryOrdinal)
+    }
+
+    @Test
     fun `second publication read suspended by Room cancellation does not report a return`() =
         runTest {
             val secondReadEntered = CompletableDeferred<MiniHomePublicationReadIdentity>()

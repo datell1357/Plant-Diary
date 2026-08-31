@@ -69,6 +69,9 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                             readId = entry.readId,
                             diagnosticOrder = entry.diagnosticOrder,
                             cacheOutcome = entry.cacheOutcome,
+                            pendingReadLoadId = entry.pendingReadLoadId,
+                            pendingReadId = entry.pendingReadId,
+                            pendingReadOutcome = entry.pendingReadOutcome,
                         )
                     },
                 )
@@ -145,6 +148,10 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                 "cache-apply-returned",
                 "publication-read-entered",
                 "publication-read-returned",
+                "pending-read-entered",
+                "pending-read-returned",
+                "pending-read-threw",
+                "pending-read-cancelled",
                 "load-terminal",
             )
     }

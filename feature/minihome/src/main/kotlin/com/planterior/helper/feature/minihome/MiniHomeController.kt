@@ -802,10 +802,33 @@ class MiniHomeController(
                 CompletableDeferred(),
             )
         activeSave = registration
+        observeRetryBoundary(
+            MiniHomeRetryStage.REPOSITORY_SAVE_ENTRY,
+            requestToken,
+            request.operationId,
+            saveRequestGeneration,
+        )
         val result =
             try {
-                repository.save(request)
+                repository.save(request).also { savedResult ->
+                    observeRetryBoundary(
+                        MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED,
+                        requestToken,
+                        request.operationId,
+                        saveRequestGeneration,
+                        outcome = "returned",
+                        result = savedResult,
+                    )
+                }
             } catch (error: CancellationException) {
+                observeRetryBoundary(
+                    MiniHomeRetryStage.REPOSITORY_SAVE_CANCELLED,
+                    requestToken,
+                    request.operationId,
+                    saveRequestGeneration,
+                    outcome = "cancellation",
+                    failure = error,
+                )
                 registration.completion.complete(null)
                 if (isCurrent(requestToken) && saveRequestGeneration == saveGeneration) {
                     setEditing(frozen.copy(saveState = MiniHomeSaveState.Idle), requestToken)
@@ -814,12 +837,53 @@ class MiniHomeController(
                 if (activeSave === registration) activeSave = null
                 unregisterOwnerJob(tracked)
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                observeRetryBoundary(
+                    MiniHomeRetryStage.REPOSITORY_SAVE_THROWN,
+                    requestToken,
+                    request.operationId,
+                    saveRequestGeneration,
+                    outcome = "exception",
+                    failure = error,
+                )
                 MiniHomeSaveResult.Failed(MiniHomeSaveFailure.NETWORK)
+            } catch (error: Throwable) {
+                observeRetryBoundary(
+                    MiniHomeRetryStage.REPOSITORY_SAVE_THROWN,
+                    requestToken,
+                    request.operationId,
+                    saveRequestGeneration,
+                    outcome = "exception",
+                    failure = error,
+                )
+                throw error
             }
         registration.completion.complete(result)
         try {
-            if (!isCurrent(requestToken) || saveRequestGeneration != saveGeneration) return
+            if (result is MiniHomeSaveResult.Saved) {
+                observeRetryBoundary(
+                    MiniHomeRetryStage.SAVED_APPLY_ENTRY,
+                    requestToken,
+                    frozen.operationId,
+                    saveRequestGeneration,
+                    result = result,
+                )
+            }
+            if (!isCurrent(requestToken) || saveRequestGeneration != saveGeneration) {
+                if (result is MiniHomeSaveResult.Saved) {
+                    observeRetryBoundary(
+                        MiniHomeRetryStage.SAVED_APPLY_REJECTED,
+                        requestToken,
+                        frozen.operationId,
+                        saveRequestGeneration,
+                        result = result,
+                        outcome =
+                            if (!isCurrent(requestToken)) "stale-token"
+                            else "stale-save-generation",
+                    )
+                }
+                return
+            }
             if (result is MiniHomeSaveResult.PendingChanged) {
                 load(MiniHomeDiscardFeedback.STALE_HANDLE, activeOwner)
                 return
@@ -1098,6 +1162,7 @@ class MiniHomeController(
                         null,
                     ),
                 owner = confirmed.owner,
+                loadIdentity = loaded.loadIdentity,
             ),
             token.copy(draftIdentity = null, guardDraftIdentity = false),
         )
@@ -1269,10 +1334,63 @@ class MiniHomeController(
             DraftIdentity(editing.operationId, editing.lineageId, editing.discardHandle)
     }
 
+    private fun observeRetryBoundary(
+        stage: MiniHomeRetryStage,
+        token: ControllerOperationToken,
+        operationId: OperationId? = token.draftIdentity?.operationId,
+        saveGeneration: Long? = null,
+        outcome: String? = null,
+        result: MiniHomeSaveResult? = null,
+        revision: Long? = (result as? MiniHomeSaveResult.Saved)?.layout?.revision?.value,
+        failure: Throwable? = null,
+    ) {
+        MiniHomeRetryDiagnostics.observe(
+            MiniHomeRetryObservation(
+                stage = stage,
+                operationId = operationId,
+                controllerEpoch = token.controllerEpoch,
+                controllerGeneration = token.generation,
+                saveGeneration = saveGeneration,
+                guardDraftIdentity = token.guardDraftIdentity,
+                revision = revision,
+                outcome = outcome,
+                result = result,
+                failure = failure,
+            )
+        )
+    }
+
+    private fun diagnosticOperationId(
+        value: MiniHomeUiState,
+        token: ControllerOperationToken,
+    ): OperationId? =
+        token.draftIdentity?.operationId
+            ?: (value as? MiniHomeUiState.Editing)?.operationId
+            ?: (value as? MiniHomeUiState.Viewing)?.exitOutcome?.operationId
+
     private fun setState(value: MiniHomeUiState, token: ControllerOperationToken): Boolean {
-        if (!isCurrent(token)) return false
+        observeRetryBoundary(
+            MiniHomeRetryStage.SET_STATE_ATTEMPTED,
+            token,
+            diagnosticOperationId(value, token),
+        )
+        if (!isCurrent(token)) {
+            observeRetryBoundary(
+                MiniHomeRetryStage.SET_STATE_REJECTED,
+                token,
+                diagnosticOperationId(value, token),
+                outcome = "stale-token",
+            )
+            return false
+        }
         _state.value = value
         stateVersion += 1
+        observeRetryBoundary(
+            MiniHomeRetryStage.SET_STATE_APPLIED,
+            token,
+            diagnosticOperationId(value, token),
+            revision = (value as? MiniHomeUiState.Viewing)?.committed?.revision?.value,
+        )
         return true
     }
 
@@ -1415,7 +1533,14 @@ class MiniHomeController(
     }
 
     private fun MiniHomeLoadResult.Ready.viewing() =
-        MiniHomeUiState.Viewing(committed, plants, decorations, stale, owner = accountId)
+        MiniHomeUiState.Viewing(
+            committed,
+            plants,
+            decorations,
+            stale,
+            owner = accountId,
+            loadIdentity = loadIdentity,
+        )
 
     private fun MiniHomePendingSave.restored(owner: AccountId) =
         RestoredMiniHomeDraft(

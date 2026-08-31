@@ -13,6 +13,10 @@ import com.planterior.helper.diagnostic.Todo18StateSnapshot
 import com.planterior.helper.diagnostic.Todo18WaitDiagnosticRecorder
 import com.planterior.helper.diagnostic.Todo18WaitId
 import com.planterior.helper.feature.minihome.MiniHomeDiagnosticEvent
+import com.planterior.helper.feature.minihome.MiniHomeExitOutcomeKind
+import com.planterior.helper.feature.minihome.MiniHomeRetryDiagnostics
+import com.planterior.helper.feature.minihome.MiniHomeRetryObservation
+import com.planterior.helper.feature.minihome.MiniHomeRetryStage
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationDiagnosticEvent
 import com.planterior.helper.feature.registration.RegistrationUiState
@@ -54,6 +58,21 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     ) : this(Todo18WaitDiagnosticRecorder(recorderFaultInjector))
 
     override fun onMiniHomeRawState(state: MiniHomeUiState) {
+        val viewing = state as? MiniHomeUiState.Viewing
+        val outcome = viewing?.exitOutcome
+        if (viewing?.saved == true && outcome?.kind == MiniHomeExitOutcomeKind.SAVED) {
+            MiniHomeRetryDiagnostics.observe(
+                MiniHomeRetryObservation(
+                    stage = MiniHomeRetryStage.RAW_STATE_PUBLICATION,
+                    operationId = outcome.operationId,
+                    controllerEpoch = null,
+                    controllerGeneration = null,
+                    saveGeneration = null,
+                    guardDraftIdentity = false,
+                    revision = viewing.committed.revision.value,
+                )
+            )
+        }
         val event = Todo18MiniHomeStateEvent(sequence.incrementAndGet(), state)
         publishMiniHome(Todo18StateChannel.MINI_HOME_RAW, rawMiniHomeStates, event)
     }

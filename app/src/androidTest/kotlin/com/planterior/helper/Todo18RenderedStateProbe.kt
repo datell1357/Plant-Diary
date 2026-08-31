@@ -17,7 +17,7 @@ internal class Todo18RenderedStateProbe(
         val floor = sink.currentDisplayedMiniHomeState()?.sequence ?: 0L
         val observed =
             ExactEventSubscription(
-                    matches = { event -> event.sequence >= floor && matches(event) },
+                    matches = { event -> event.sequence > floor && matches(event) },
                     subscribe = { receiver ->
                         leasedRegistration(
                             receiver,
@@ -43,6 +43,33 @@ internal class Todo18RenderedStateProbe(
                     )
                 }
         return observed
+    }
+
+    fun awaitMiniHomeViewingAfterLoad(
+        barrier: Todo18MiniHomeDisplayedStateBarrier
+    ): Todo18MiniHomeStateEvent {
+        val sink = runtime.renderedStateSink
+        return ExactEventSubscription(
+                matches = { event ->
+                    barrier.accepts(event, runtime.miniHomeLoadDiagnostics.snapshot())
+                },
+                subscribe = { receiver ->
+                    leasedRegistration(
+                        receiver,
+                        sink::subscribeToDisplayedMiniHomeStates,
+                        sink::currentDisplayedMiniHomeState,
+                    )
+                },
+                diagnosticSequence = Todo18MiniHomeStateEvent::sequence,
+            )
+            .use { subscription ->
+                subscription.arm()
+                subscription.await(
+                    EVENT_TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS,
+                    "Todo18 MiniHome displayed state after load",
+                )
+            }
     }
 
     fun awaitRegistration(

@@ -41,9 +41,11 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                 "subscription.await(",
             )
         }
-        assertEquals(3, probe.countOccurrences("subscription.arm()"))
+        assertEquals(4, probe.countOccurrences("subscription.arm()"))
         assertEquals(3, probe.countOccurrences("triggerSettleAndAwait("))
         assertEquals(3, probe.countOccurrences("settle = compose::waitForIdle"))
+        assertTrue(miniHome.contains("event.sequence > floor"))
+        assertFalse(miniHome.contains("event.sequence >= floor"))
         assertTrue(probe.contains("EVENT_TIMEOUT_MILLIS = 10_000L"))
         assertFalse(probe.contains("compose.waitForIdle()"))
     }
@@ -67,6 +69,64 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
         listOf("Thread.sleep", "delay(", "poll", "retry", "timeout").forEach {
             assertFalse("Forbidden orchestration token: $it", orchestration.contains(it))
         }
+    }
+
+    @Test
+    fun `MiniHome edit waits for the exact post-load displayed barrier`() {
+        val probe =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/Todo18JourneyEventProbe.kt"
+                )
+                .readText()
+        val journey =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MajorJourneyAssertions.kt"
+                )
+                .readText()
+        val barrier =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MiniHomeDisplayedStateBarrier.kt"
+                )
+                .readText()
+        val eventStream =
+            root
+                .resolve(
+                    "app/src/debug/kotlin/com/planterior/helper/" + "Todo18PrimaryEventStream.kt"
+                )
+                .readText()
+
+        assertOrdered(
+            probe.substringAfter("fun navigateAndAwaitMiniHomeLoaded()"),
+            "currentDisplayedMiniHomeState()?.sequence",
+            "snapshot()",
+            "compose.activity.navigationController.navigate(PlanteriorRoute.MiniHome)",
+            "boundaryEvent.await(",
+            "singleOrNull {",
+            "it.loadId.value > loadIdFloor",
+            "Todo18MiniHomeDisplayedStateBarrier(",
+        )
+        assertOrdered(
+            journey,
+            "events.navigateAndAwaitMiniHomeLoaded()",
+            "rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)",
+            "onNodeWithTag(MiniHomeTestTags.EDIT)",
+        )
+        assertOrdered(
+            barrier,
+            "event.state as? MiniHomeUiState.Viewing",
+            "singleOrNull { it.loadId.value == loadIdentity.loadId }",
+            "progress.valid",
+            "event.sequence > sequenceFloor",
+            "event.loadIdentity?.value == loadIdentity.loadId",
+            "viewing.owner == loadIdentity.accountId",
+        )
+        assertTrue(eventStream.contains("val loadIdentity: MiniHomeLoadIdentity?"))
+        assertTrue(eventStream.contains("(state as? MiniHomeUiState.Viewing)?.loadIdentity"))
     }
 
     @Test

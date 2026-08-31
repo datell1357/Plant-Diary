@@ -42,6 +42,52 @@ internal class Todo18JourneyEventProbe(
         compose.waitForIdle()
     }
 
+    fun navigateAndAwaitMiniHomeLoaded(): Todo18MiniHomeDisplayedStateBarrier {
+        val sink = runtime.renderedStateSink
+        val sequenceFloor = sink.currentDisplayedMiniHomeState()?.sequence ?: 0L
+        val loadIdFloor =
+            runtime.miniHomeLoadDiagnostics.snapshot().loads.maxOfOrNull { it.loadId.value } ?: 0L
+        val boundary = boundarySubscription("mini-home-loaded")
+        val destination = routeSubscription { it == PlanteriorRoute.MiniHome }
+        val loaded: Todo18BoundaryEvent
+        boundary.use { boundaryEvent ->
+            destination.use { routeEvent ->
+                boundaryEvent.arm()
+                routeEvent.arm()
+                compose.runOnIdle {
+                    compose.activity.navigationController.navigate(PlanteriorRoute.MiniHome)
+                }
+                routeEvent.await(
+                    EVENT_TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS,
+                    "Todo18 route ${PlanteriorRoute.MiniHome}",
+                )
+                loaded =
+                    boundaryEvent.await(
+                        EVENT_TIMEOUT_MILLIS,
+                        TimeUnit.MILLISECONDS,
+                        "Todo18 boundary mini-home-loaded",
+                    )
+            }
+        }
+        compose.waitForIdle()
+        require(loaded.identity == runtime.boundary.accountId.value) {
+            "MiniHome load account identity mismatch: ${loaded.identity}"
+        }
+        val load =
+            runtime.miniHomeLoadDiagnostics.snapshot().loads.singleOrNull {
+                it.loadId.value > loadIdFloor
+            } ?: error("MiniHome load identity did not advance after mini-home-loaded")
+        return Todo18MiniHomeDisplayedStateBarrier(
+            sequenceFloor = sequenceFloor,
+            loadIdentity =
+                Todo18MiniHomeLoadIdentity(
+                    accountId = runtime.boundary.accountId,
+                    loadId = load.loadId.value,
+                ),
+        )
+    }
+
     fun navigateTo(expected: PlanteriorRoute, trigger: () -> Unit) {
         routeSubscription { it == expected }
             .use { subscription ->

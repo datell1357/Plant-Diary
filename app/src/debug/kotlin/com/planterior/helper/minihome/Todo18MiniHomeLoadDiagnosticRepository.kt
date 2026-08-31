@@ -2,6 +2,7 @@ package com.planterior.helper.minihome
 
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.minihome.MiniHomeLoadResult
+import com.planterior.helper.feature.minihome.MiniHomePendingReadIdentity
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import kotlinx.coroutines.CancellationException
 
@@ -37,6 +38,36 @@ internal sealed interface Todo18MiniHomeLoadDiagnostic {
 
     data object PublicationReadReturned : Todo18MiniHomeLoadDiagnostic {
         override val receiptStage = "publication-read-returned"
+    }
+
+    data class PendingReadEntered(
+        val accountId: AccountId,
+        val identity: MiniHomePendingReadIdentity,
+    ) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "pending-read-entered"
+    }
+
+    data class PendingReadReturned(
+        val accountId: AccountId,
+        val identity: MiniHomePendingReadIdentity,
+    ) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "pending-read-returned"
+    }
+
+    data class PendingReadThrew(
+        val accountId: AccountId,
+        val identity: MiniHomePendingReadIdentity,
+        val failure: Throwable,
+    ) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "pending-read-threw"
+    }
+
+    data class PendingReadCancelled(
+        val accountId: AccountId,
+        val identity: MiniHomePendingReadIdentity,
+        val failure: CancellationException,
+    ) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = "pending-read-cancelled"
     }
 
     sealed interface Terminal : Todo18MiniHomeLoadDiagnostic

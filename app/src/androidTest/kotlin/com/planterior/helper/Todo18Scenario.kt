@@ -42,6 +42,11 @@ data class Todo18BoundaryEvent(
     val readId: Long? = null,
     val diagnosticOrder: Long? = null,
     val cacheOutcome: String? = null,
+    val pendingReadLoadId: Long? = null,
+    val pendingReadId: Long? = null,
+    val pendingReadOutcome: String? = null,
+    val pendingReadFailureClass: String? = null,
+    val pendingReadFailureMessage: String? = null,
 )
 
 /** Shared deterministic state and event stream for the Todo18 boundary fixtures. */
@@ -101,6 +106,10 @@ class Todo18Scenario(val accountId: AccountId) {
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned -> "cache-apply-returned"
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> "publication-read-entered"
                 Todo18MiniHomeLoadDiagnostic.PublicationReadReturned -> "publication-read-returned"
+                is Todo18MiniHomeLoadDiagnostic.PendingReadEntered -> "pending-read-entered"
+                is Todo18MiniHomeLoadDiagnostic.PendingReadReturned -> "pending-read-returned"
+                is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> "pending-read-threw"
+                is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "pending-read-cancelled"
                 is Todo18MiniHomeLoadDiagnostic.Terminal -> "load-terminal"
             }
         val identity =
@@ -110,6 +119,14 @@ class Todo18Scenario(val accountId: AccountId) {
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned,
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> accountId.value
                 Todo18MiniHomeLoadDiagnostic.PublicationReadReturned -> accountId.value
+                is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ->
+                    observation.diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.PendingReadReturned ->
+                    observation.diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.PendingReadThrew ->
+                    observation.diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
+                    observation.diagnostic.accountId.value
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
                     observation.diagnostic.accountId.value
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
@@ -129,6 +146,31 @@ class Todo18Scenario(val accountId: AccountId) {
                 cacheOutcome =
                     (observation.diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheApplyReturned)
                         ?.let { if (it.current) "current" else "conflict" },
+                pendingReadLoadId = observation.pendingReadId?.loadId?.value,
+                pendingReadId = observation.pendingReadId?.queryOrdinal,
+                pendingReadOutcome =
+                    when (observation.diagnostic) {
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadReturned -> "returned"
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> "threw"
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "cancelled"
+                        else -> null
+                    },
+                pendingReadFailureClass =
+                    when (val diagnostic = observation.diagnostic) {
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadThrew ->
+                            diagnostic.failure.javaClass.name
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
+                            diagnostic.failure.javaClass.name
+                        else -> null
+                    },
+                pendingReadFailureMessage =
+                    when (val diagnostic = observation.diagnostic) {
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadThrew ->
+                            diagnostic.failure.message
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
+                            diagnostic.failure.message
+                        else -> null
+                    },
             )
         listeners.forEach { it(event) }
     }

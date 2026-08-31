@@ -102,10 +102,8 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
         )
     }
 
-    events.navigateAndAwaitBoundary(
-        route = PlanteriorRoute.MiniHome,
-        boundaryKind = "mini-home-loaded",
-    )
+    val miniHomeBarrier = events.navigateAndAwaitMiniHomeLoaded()
+    rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)
     compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
     compose
         .onNodeWithTag(MiniHomeTestTags.plant(PersonalPlantId(plantId)))

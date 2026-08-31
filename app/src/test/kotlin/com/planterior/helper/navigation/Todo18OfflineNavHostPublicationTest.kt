@@ -33,6 +33,9 @@ import com.planterior.helper.feature.minihome.MiniHomeLayout
 import com.planterior.helper.feature.minihome.MiniHomeLoadResult
 import com.planterior.helper.feature.minihome.MiniHomePlantChoice
 import com.planterior.helper.feature.minihome.MiniHomeRepository
+import com.planterior.helper.feature.minihome.MiniHomeRetryDiagnostics
+import com.planterior.helper.feature.minihome.MiniHomeRetryObservation
+import com.planterior.helper.feature.minihome.MiniHomeRetryStage
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionDiagnostics
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionObservation
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
@@ -41,6 +44,7 @@ import com.planterior.helper.feature.minihome.MiniHomeSaveRequest
 import com.planterior.helper.feature.minihome.MiniHomeSaveResult
 import com.planterior.helper.feature.minihome.MiniHomeTestTags
 import com.planterior.helper.feature.minihome.MiniHomeUiState
+import com.planterior.helper.feature.registration.RegistrationUiState
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
@@ -136,11 +140,15 @@ class Todo18OfflineNavHostPublicationTest {
         val route = mutableListOf<Todo18MiniHomeStateEvent>()
         val displayed = mutableListOf<Todo18MiniHomeStateEvent>()
         val observations = mutableListOf<MiniHomeSaveActionObservation>()
+        val retryObservations = mutableListOf<MiniHomeRetryObservation>()
         val rawSubscription = sink.subscribeToRawMiniHomeStates(raw::add)
         val routeSubscription = sink.subscribeToRouteMiniHomeStates(route::add)
         val displayedSubscription = sink.subscribeToDisplayedMiniHomeStates(displayed::add)
         val actionDiagnostic = MiniHomeSaveActionDiagnostics.install { observation ->
             observations += observation
+        }
+        val retryDiagnostic = MiniHomeRetryDiagnostics.install { observation ->
+            retryObservations += observation
         }
 
         try {
@@ -190,11 +198,88 @@ class Todo18OfflineNavHostPublicationTest {
             assertEquals(1, stages.count { it == MiniHomeSaveActionStage.COROUTINE_ENTRY })
             assertEquals(2, stages.count { it == MiniHomeSaveActionStage.CONTROLLER_ENTRY })
             assertEquals(2, stages.count { it == MiniHomeSaveActionStage.SAVING_PUBLICATION })
+
+            val retryStages =
+                retryObservations
+                    .filter { it.operationId == firstRequest.operationId }
+                    .map { it.stage }
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.CALLBACK_ENTRY })
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.COROUTINE_ENTRY })
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.COROUTINE_RETURNED })
+            assertEquals(0, retryStages.count { it == MiniHomeRetryStage.COROUTINE_THROWN })
+            assertEquals(0, retryStages.count { it == MiniHomeRetryStage.COROUTINE_CANCELLED })
+            assertEquals(2, retryStages.count { it == MiniHomeRetryStage.REPOSITORY_SAVE_ENTRY })
+            assertEquals(2, retryStages.count { it == MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED })
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.SAVED_APPLY_ENTRY })
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.SET_STATE_ATTEMPTED })
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.SET_STATE_APPLIED })
+            assertEquals(1, retryStages.count { it == MiniHomeRetryStage.RAW_STATE_PUBLICATION })
+            assertTrue(retryStages.none { it == MiniHomeRetryStage.SAVED_APPLY_REJECTED })
+            assertTrue(retryStages.none { it == MiniHomeRetryStage.SET_STATE_REJECTED })
+            val returned = retryObservations.filter {
+                it.stage == MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED &&
+                    it.operationId == firstRequest.operationId
+            }
+            assertEquals(2, returned.mapNotNull { it.result }.distinct().size)
+            assertTrue(returned.all { it.controllerEpoch != null })
+            assertTrue(returned.all { it.controllerGeneration != null })
+            assertTrue(returned.all { it.saveGeneration != null })
+            assertTrue(
+                retryStages.indexOf(MiniHomeRetryStage.SAVED_APPLY_ENTRY) <
+                    retryStages.indexOf(MiniHomeRetryStage.SET_STATE_APPLIED)
+            )
+            assertTrue(
+                retryStages.indexOf(MiniHomeRetryStage.SET_STATE_APPLIED) <
+                    retryStages.indexOf(MiniHomeRetryStage.RAW_STATE_PUBLICATION)
+            )
         } finally {
+            retryDiagnostic.close()
             actionDiagnostic.close()
             displayedSubscription.close()
             routeSubscription.close()
             rawSubscription.close()
+        }
+    }
+
+    @Test
+    fun `host exposes applied without raw when raw callback does not publish`() {
+        val sink = MissingRawSink()
+        val repository = HostOfflineRetryRepository()
+        val runtime =
+            AuthRuntimeDependencyOverrides(
+                    miniHomeRepository = repository,
+                    renderedStateSink = sink,
+                )
+                .also(Todo18DebugRuntimeDependencies::install)
+        val retryObservations = mutableListOf<MiniHomeRetryObservation>()
+        val retryDiagnostic = MiniHomeRetryDiagnostics.install(retryObservations::add)
+
+        try {
+            mount(runtime, OWNER_A) { sink }
+            compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
+            compose.waitForIdle()
+            compose
+                .onNodeWithTag(MiniHomeTestTags.plant(OFFLINE_PLANT))
+                .performScrollTo()
+                .performClick()
+            compose.waitForIdle()
+            compose.onNodeWithTag(MiniHomeTestTags.SAVE).performScrollTo().performClick()
+            compose.waitForIdle()
+            compose.onNodeWithTag(MiniHomeTestTags.RETRY).performScrollTo().performClick()
+            compose.waitForIdle()
+
+            val operation = repository.saveRequests.first().operationId
+            val observed = retryObservations.filter { it.operationId == operation }
+            assertEquals(2, repository.saveCalls)
+            assertTrue(observed.any { it.stage == MiniHomeRetryStage.SET_STATE_APPLIED })
+            assertTrue(observed.none { it.stage == MiniHomeRetryStage.RAW_STATE_PUBLICATION })
+            assertTrue(
+                sink.displayed.any {
+                    it is MiniHomeUiState.Viewing && it.committed.revision == Revision(2)
+                }
+            )
+        } finally {
+            retryDiagnostic.close()
         }
     }
 
@@ -410,6 +495,18 @@ class Todo18OfflineNavHostPublicationTest {
 
         override suspend fun abandon(handle: MiniHomeDiscardHandle): MiniHomeDiscardResult =
             MiniHomeDiscardResult.Rejected
+    }
+
+    private class MissingRawSink : RenderedStateSink {
+        val displayed = mutableListOf<MiniHomeUiState>()
+
+        override fun onMiniHomeRawState(state: MiniHomeUiState) = Unit
+
+        override fun onMiniHomeDisplayedState(state: MiniHomeUiState) {
+            displayed += state
+        }
+
+        override fun onRegistrationState(state: RegistrationUiState) = Unit
     }
 
     private fun MiniHomeUiState.isCommittedRevision(revision: Revision): Boolean =

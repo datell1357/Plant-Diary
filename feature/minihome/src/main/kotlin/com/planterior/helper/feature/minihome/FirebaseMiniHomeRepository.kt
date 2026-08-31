@@ -173,6 +173,21 @@ interface MiniHomeRemoteDataSource {
 
 @JvmInline value class MiniHomePublicationReadIdentity(val value: Long)
 
+@JvmInline value class MiniHomeLoadIdentity(val value: Long)
+
+data class MiniHomePendingReadIdentity(
+    val loadId: MiniHomeLoadIdentity,
+    val queryOrdinal: Long,
+)
+
+sealed interface MiniHomePendingReadOutcome {
+    data object Returned : MiniHomePendingReadOutcome
+
+    data class Threw(val failure: Throwable) : MiniHomePendingReadOutcome
+
+    data class Cancelled(val failure: CancellationException) : MiniHomePendingReadOutcome
+}
+
 class FirebaseMiniHomeRepository(
     private val database: PlanteriorDatabase,
     private val remote: MiniHomeRemoteDataSource,
@@ -186,6 +201,13 @@ class FirebaseMiniHomeRepository(
     private val afterPublicationRead: suspend (AccountId, MiniHomePublicationReadIdentity) -> Unit =
         { _, _ ->
         },
+    private val beforePendingRead: suspend (AccountId, MiniHomePendingReadIdentity) -> Unit =
+        { _, _ ->
+        },
+    private val afterPendingRead:
+        suspend (AccountId, MiniHomePendingReadIdentity, MiniHomePendingReadOutcome) -> Unit =
+        { _, _, _ ->
+        },
 ) : MiniHomeRepository {
     private val ownerOperations = ConcurrentHashMap<String, Mutex>()
     private val recentSaveOutcomes = ConcurrentHashMap<String, RegisteredSaveOutcome>()
@@ -196,22 +218,26 @@ class FirebaseMiniHomeRepository(
     private val currentOwnerRequest = mutableMapOf<String, Long>()
     private val lastPublished = mutableMapOf<String, MiniHomePublicationVersion>()
     private val publicationReadSequence = AtomicLong()
+    private val loadSequence = AtomicLong()
+    private val pendingReadSequence = AtomicLong()
 
     override suspend fun load(): MiniHomeLoadResult {
         val account = remote.activeAccount() ?: return MiniHomeLoadResult.Forbidden
+        val loadId = MiniHomeLoadIdentity(loadSequence.incrementAndGet())
         return withOwnerOperation(account) {
             val token =
                 beginPublication(account) ?: return@withOwnerOperation MiniHomeLoadResult.Forbidden
-            loadLocked(account, token)
+            loadLocked(account, token, loadId)
         }
     }
 
     private suspend fun loadLocked(
         account: AccountId,
         token: MiniHomePublicationToken,
+        loadId: MiniHomeLoadIdentity,
     ): MiniHomeLoadResult {
         return try {
-            val pendingBeforeLoad = activePendingOperation(account)
+            val pendingBeforeLoad = activePendingOperation(account, loadId)
             val snapshot = remote.load(account).recoverLegacyName()
             if (snapshot.accountId != account || remote.activeAccount() != account) {
                 return MiniHomeLoadResult.Forbidden
@@ -226,11 +252,12 @@ class FirebaseMiniHomeRepository(
                 stale = applied is CoherentMiniHomeCacheApply.Conflict,
                 fresh = snapshot.takeIf { applied is CoherentMiniHomeCacheApply.Current },
                 pendingBeforeLoad = pendingBeforeLoad,
+                loadId = loadId,
             )
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            publishCurrentRoomWinner(account, token, stale = true)
+            publishCurrentRoomWinner(account, token, stale = true, loadId = loadId)
         }
     }
 
@@ -688,7 +715,10 @@ class FirebaseMiniHomeRepository(
         expectedHandle: MiniHomeDiscardHandle,
     ): MiniHomeDiscardResult {
         val token = beginPublication(accountId) ?: return MiniHomeDiscardResult.OwnerMismatch
-        return when (val loaded = loadLocked(accountId, token)) {
+        return when (
+            val loaded =
+                loadLocked(accountId, token, MiniHomeLoadIdentity(loadSequence.incrementAndGet()))
+        ) {
             is MiniHomeLoadResult.Ready ->
                 when {
                     loaded.stale -> MiniHomeDiscardResult.Rejected
@@ -1025,6 +1055,7 @@ class FirebaseMiniHomeRepository(
         stale: Boolean,
         fresh: RemoteMiniHomeSnapshot? = null,
         pendingBeforeLoad: OperationOutboxEntity? = null,
+        loadId: MiniHomeLoadIdentity? = null,
     ): MiniHomeLoadResult {
         var reconciledPending: MiniHomePendingSave? = null
         var pendingWasReconciled = false
@@ -1094,10 +1125,11 @@ class FirebaseMiniHomeRepository(
                 source.fromCache(state, inventory)
             }
             if (effective != null && !pendingWasReconciled) {
-                reconciledPending = reconcilePendingOnLoad(account, effective, pendingBeforeLoad)
+                reconciledPending =
+                    reconcilePendingOnLoad(account, effective, pendingBeforeLoad, loadId)
                 pendingWasReconciled = true
             }
-            val pending = if (pendingWasReconciled) reconciledPending else pending(account)
+            val pending = if (pendingWasReconciled) reconciledPending else pending(account, loadId)
             val stable =
                 try {
                     readCoherentCachedPublication(account)
@@ -1125,6 +1157,7 @@ class FirebaseMiniHomeRepository(
                     stale,
                     pending,
                     receipt,
+                    loadIdentity = loadId,
                 )
             when (publicationDecision(token, current.version)) {
                 MiniHomePublicationDecision.PUBLISH -> return ready
@@ -1286,8 +1319,9 @@ class FirebaseMiniHomeRepository(
         account: AccountId,
         snapshot: RemoteMiniHomeSnapshot,
         pendingBeforeLoad: OperationOutboxEntity?,
+        loadId: MiniHomeLoadIdentity?,
     ): MiniHomePendingSave? {
-        var operation = pendingBeforeLoad ?: return pending(account)
+        var operation = pendingBeforeLoad ?: return pending(account, loadId)
         val decoded = decodePersistedOperation(operation)
         if (decoded is PersistedMiniHomeOperationDecode.Quarantined) {
             markReconciliationRequired(
@@ -1295,32 +1329,34 @@ class FirebaseMiniHomeRepository(
                 decoded.failure.name,
                 decoded.details,
                 snapshot,
-            ) ?: return pendingSnapshot(account)
-            return pending(account)
+            ) ?: return pendingSnapshot(account, loadId)
+            return pending(account, loadId)
         }
         decoded as PersistedMiniHomeOperationDecode.Canonical
         val restored = decoded.draft
         operation =
             ensurePayloadHash(operation, decoded.exactPayloadHash)
-                ?: return pendingSnapshot(account)
+                ?: return pendingSnapshot(account, loadId)
         if (operation.receiptMatches(snapshot, decoded, decoded.exactPayloadHash)) {
             operation =
-                persistAuthoritativeReceipt(operation, snapshot) ?: return pendingSnapshot(account)
+                persistAuthoritativeReceipt(operation, snapshot)
+                    ?: return pendingSnapshot(account, loadId)
             return when (consume(operation)) {
                 MiniHomeDiscardResult.Consumed,
                 is MiniHomeDiscardResult.Committed,
                 MiniHomeDiscardResult.Missing -> null
                 is MiniHomeDiscardResult.StaleHandle,
                 MiniHomeDiscardResult.OwnerMismatch,
-                MiniHomeDiscardResult.Rejected -> pendingSnapshot(account)
+                MiniHomeDiscardResult.Rejected -> pendingSnapshot(account, loadId)
             }
         }
         val transition =
             MiniHomeOutboxTransitionTable.transition(operation.state, operation.lastErrorCode)
-        if (transition.requiresCorrection) return pending(account)
+        if (transition.requiresCorrection) return pending(account, loadId)
         if (transition.requiresExplicitReconciliation) {
-            persistAuthoritativeReceipt(operation, snapshot) ?: return pendingSnapshot(account)
-            return pending(account)
+            persistAuthoritativeReceipt(operation, snapshot)
+                ?: return pendingSnapshot(account, loadId)
+            return pending(account, loadId)
         }
         val authoritative = snapshot.layout ?: blankLayout()
         val mismatch =
@@ -1341,7 +1377,7 @@ class FirebaseMiniHomeRepository(
                 mismatch.first.name,
                 mismatch.second,
                 snapshot,
-            ) ?: return pendingSnapshot(account)
+            ) ?: return pendingSnapshot(account, loadId)
         } else if (operation.state == PHASE_MAY_HAVE_COMMITTED) {
             compareAndSet(operation) {
                 it.copy(
@@ -1352,14 +1388,17 @@ class FirebaseMiniHomeRepository(
                     committedRevision = null,
                     committedPayloadHash = null,
                 )
-            } ?: return pendingSnapshot(account)
+            } ?: return pendingSnapshot(account, loadId)
         }
-        return pending(account)
+        return pending(account, loadId)
     }
 
-    private suspend fun activePendingOperation(account: AccountId): OperationOutboxEntity? {
+    private suspend fun activePendingOperation(
+        account: AccountId,
+        loadId: MiniHomeLoadIdentity? = null,
+    ): OperationOutboxEntity? {
         val operations =
-            database.syncDao().pending(account.value).filter { it.aggregateType == OUTBOX_TYPE }
+            pendingOperations(account, loadId).filter { it.aggregateType == OUTBOX_TYPE }
         val superseded = operations.mapNotNullTo(mutableSetOf()) { it.supersedesOperationId }
         return operations
             .filterNot { it.operationId in superseded }
@@ -1371,9 +1410,51 @@ class FirebaseMiniHomeRepository(
             )
     }
 
-    private suspend fun pending(account: AccountId): MiniHomePendingSave? {
+    private suspend fun pendingOperations(
+        account: AccountId,
+        loadId: MiniHomeLoadIdentity?,
+    ): List<OperationOutboxEntity> {
+        if (loadId == null) return database.syncDao().pending(account.value)
+        val identity =
+            MiniHomePendingReadIdentity(
+                loadId = loadId,
+                queryOrdinal = pendingReadSequence.incrementAndGet(),
+            )
+        observePendingReadDiagnostic { beforePendingRead(account, identity) }
+        return try {
+            database.syncDao().pending(account.value).also {
+                observePendingReadDiagnostic {
+                    afterPendingRead(account, identity, MiniHomePendingReadOutcome.Returned)
+                }
+            }
+        } catch (failure: Throwable) {
+            val outcome =
+                if (failure is CancellationException) {
+                    MiniHomePendingReadOutcome.Cancelled(failure)
+                } else {
+                    MiniHomePendingReadOutcome.Threw(failure)
+                }
+            observePendingReadDiagnostic { afterPendingRead(account, identity, outcome) }
+            throw failure
+        }
+    }
+
+    private suspend fun observePendingReadDiagnostic(observe: suspend () -> Unit) {
+        try {
+            observe()
+        } catch (_: AssertionError) {
+            return
+        } catch (_: Exception) {
+            return
+        }
+    }
+
+    private suspend fun pending(
+        account: AccountId,
+        loadId: MiniHomeLoadIdentity? = null,
+    ): MiniHomePendingSave? {
         repeat(MAX_PENDING_CAS_ATTEMPTS) {
-            val operation = activePendingOperation(account) ?: return null
+            val operation = activePendingOperation(account, loadId) ?: return null
             when (val decoded = decodePersistedOperation(operation)) {
                 is PersistedMiniHomeOperationDecode.Canonical -> {
                     if (
@@ -1413,11 +1494,14 @@ class FirebaseMiniHomeRepository(
                 }
             }
         }
-        return pendingSnapshot(account)
+        return pendingSnapshot(account, loadId)
     }
 
-    private suspend fun pendingSnapshot(account: AccountId): MiniHomePendingSave? {
-        val operation = activePendingOperation(account) ?: return null
+    private suspend fun pendingSnapshot(
+        account: AccountId,
+        loadId: MiniHomeLoadIdentity? = null,
+    ): MiniHomePendingSave? {
+        val operation = activePendingOperation(account, loadId) ?: return null
         return when (val decoded = decodePersistedOperation(operation)) {
             is PersistedMiniHomeOperationDecode.Canonical ->
                 operation.pending(decoded.draft, decoded.envelope)

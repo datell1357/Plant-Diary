@@ -105,6 +105,8 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                         state.observations.map(Todo18MiniHomeLoadObservation::receiptStage),
                     publicationReadIds =
                         state.observations.mapNotNull(Todo18MiniHomeLoadObservation::readId),
+                    pendingReadIds =
+                        state.observations.mapNotNull(Todo18MiniHomeLoadObservation::pendingReadId),
                 )
             }
             val latestLoad = reached.lastOrNull()?.loadId
@@ -171,7 +173,12 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                 it.diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             }
         val duplicate =
-            if (observation.readId == null) {
+            if (observation.pendingReadId != null) {
+                state.observations.any {
+                    it.pendingReadId == observation.pendingReadId &&
+                        it.receiptStage == observation.receiptStage
+                }
+            } else if (observation.readId == null) {
                 state.observations.any { it.receiptStage == observation.receiptStage }
             } else {
                 state.observations.any {
@@ -205,27 +212,42 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         when (previous) {
             null -> diagnostic == Todo18MiniHomeLoadDiagnostic.LoadEntered
             Todo18MiniHomeLoadDiagnostic.LoadEntered ->
-                diagnostic == Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered ||
+                diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered ->
                 diagnostic == Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned ->
                 diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||
                     diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
                 diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
-                diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+            is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ->
+                diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadReturned ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadThrew ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled
+            is Todo18MiniHomeLoadDiagnostic.PendingReadReturned,
+            is Todo18MiniHomeLoadDiagnostic.PendingReadThrew,
+            is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
+                diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ->
                 diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ||
                     diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ->
-                diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             is Todo18MiniHomeLoadDiagnostic.Terminal -> false
         }

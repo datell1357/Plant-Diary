@@ -21,6 +21,11 @@ internal class Timeline {
                     readId = event.readId,
                     diagnosticOrder = event.diagnosticOrder,
                     cacheOutcome = event.cacheOutcome,
+                    pendingReadLoadId = event.pendingReadLoadId,
+                    pendingReadId = event.pendingReadId,
+                    pendingReadOutcome = event.pendingReadOutcome,
+                    pendingReadFailureClass = event.pendingReadFailureClass,
+                    pendingReadFailureMessage = event.pendingReadFailureMessage,
                 )
         }
 
@@ -82,6 +87,11 @@ internal data class TimelineEntry(
     val readId: Long? = null,
     val diagnosticOrder: Long? = null,
     val cacheOutcome: String? = null,
+    val pendingReadLoadId: Long? = null,
+    val pendingReadId: Long? = null,
+    val pendingReadOutcome: String? = null,
+    val pendingReadFailureClass: String? = null,
+    val pendingReadFailureMessage: String? = null,
     val sinkSequence: Long? = null,
     val state: String? = null,
     val owner: String? = null,

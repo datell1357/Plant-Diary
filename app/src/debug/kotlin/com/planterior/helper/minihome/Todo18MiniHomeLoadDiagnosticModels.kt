@@ -1,5 +1,7 @@
 package com.planterior.helper.minihome
 
+import com.planterior.helper.feature.minihome.MiniHomePendingReadIdentity
+
 @JvmInline internal value class Todo18MiniHomeLoadId(val value: Long)
 
 internal data class Todo18MiniHomePublicationReadId(
@@ -15,6 +17,16 @@ internal data class Todo18MiniHomeLoadObservation(
 ) {
     val receiptStage: String
         get() = diagnostic.receiptStage
+
+    val pendingReadId: MiniHomePendingReadIdentity?
+        get() =
+            when (val value = diagnostic) {
+                is Todo18MiniHomeLoadDiagnostic.PendingReadEntered -> value.identity
+                is Todo18MiniHomeLoadDiagnostic.PendingReadReturned -> value.identity
+                is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> value.identity
+                is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> value.identity
+                else -> null
+            }
 }
 
 internal enum class Todo18MiniHomeLoadViolationKind(val receiptValue: String) {
@@ -38,6 +50,7 @@ internal data class Todo18MiniHomePerLoadProgress(
     val lastReachedStage: String?,
     val reachedStages: List<String>,
     val publicationReadIds: List<Todo18MiniHomePublicationReadId>,
+    val pendingReadIds: List<MiniHomePendingReadIdentity> = emptyList(),
 )
 
 internal data class Todo18MiniHomeLoadProgress(

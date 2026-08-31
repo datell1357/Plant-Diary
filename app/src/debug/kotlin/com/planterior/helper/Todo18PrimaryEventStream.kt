@@ -1,5 +1,6 @@
 package com.planterior.helper
 
+import com.planterior.helper.feature.minihome.MiniHomeLoadIdentity
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationUiState
 import com.planterior.helper.feature.shop.InventoryFeedback
@@ -10,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal data class Todo18MiniHomeStateEvent(
     val sequence: Long,
     val state: MiniHomeUiState,
+    val loadIdentity: MiniHomeLoadIdentity? = (state as? MiniHomeUiState.Viewing)?.loadIdentity,
 )
 
 internal data class Todo18RegistrationStateEvent(

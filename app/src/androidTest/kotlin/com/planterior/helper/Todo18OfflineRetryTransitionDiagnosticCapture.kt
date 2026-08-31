@@ -6,6 +6,7 @@ import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionReceipt
 import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionRecorder
 import com.planterior.helper.diagnostic.Todo18OfflineRetryTransitionStage
 import com.planterior.helper.diagnostic.writeTodo18OfflineRetryTransitionReceipt
+import com.planterior.helper.feature.minihome.MiniHomeRetryDiagnostics
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import java.io.Closeable
 import java.io.File
@@ -20,6 +21,11 @@ internal class Todo18OfflineRetryTransitionDiagnosticCapture(
     private var receipt: Todo18OfflineRetryTransitionReceipt? = null
 
     init {
+        registrations += MiniHomeRetryDiagnostics.install { observation ->
+            if (observation.operationId?.value == operationId) {
+                recorder.recordRetry(observation)
+            }
+        }
         registrations +=
             runtime.boundary
                 .subscribe { event ->

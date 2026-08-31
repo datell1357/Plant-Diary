@@ -19,6 +19,26 @@ internal fun JsonObjectBuilder.putTodo18MiniHomeLoadProgress(progress: Todo18Min
                     put("loadId", observation.loadId.value)
                     put("readId", observation.readId?.ordinal)
                     put("stage", observation.receiptStage)
+                    put("pendingReadLoadId", observation.pendingReadId?.loadId?.value)
+                    put("pendingReadId", observation.pendingReadId?.queryOrdinal)
+                    put(
+                        "pendingReadOutcome",
+                        when (observation.diagnostic) {
+                            is Todo18MiniHomeLoadDiagnostic.PendingReadReturned -> "returned"
+                            is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> "threw"
+                            is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "cancelled"
+                            else -> null
+                        },
+                    )
+                    val pendingFailure =
+                        when (val diagnostic = observation.diagnostic) {
+                            is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> diagnostic.failure
+                            is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
+                                diagnostic.failure
+                            else -> null
+                        }
+                    put("pendingReadFailureClass", pendingFailure?.javaClass?.name)
+                    put("pendingReadFailureMessage", pendingFailure?.message)
                     val cacheAccountId =
                         when (val diagnostic = observation.diagnostic) {
                             is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
@@ -47,6 +67,9 @@ internal fun JsonObjectBuilder.putTodo18MiniHomeLoadProgress(progress: Todo18Min
                     putJsonArray("reachedStages") { load.reachedStages.forEach(::add) }
                     putJsonArray("publicationReadIds") {
                         load.publicationReadIds.forEach { add(it.ordinal) }
+                    }
+                    putJsonArray("pendingReadIds") {
+                        load.pendingReadIds.forEach { add(it.queryOrdinal) }
                     }
                 }
             )

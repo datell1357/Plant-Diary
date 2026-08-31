@@ -1,6 +1,9 @@
 package com.planterior.helper.minihome
 
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.feature.minihome.MiniHomeLoadIdentity
+import com.planterior.helper.feature.minihome.MiniHomePendingReadIdentity
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -138,19 +141,202 @@ class Todo18MiniHomeLoadReceiptReducerTest {
         assertTrue("load-diagnostic-malformed" in problems)
     }
 
-    private fun completeFixture(): Fixture {
+    @Test
+    fun `pending read terminal outcomes preserve query identity`() {
+        listOf(
+                Todo18MiniHomeLoadDiagnostic.PendingReadReturned(
+                    AccountId(ACCOUNT),
+                    pendingReadIdentity(),
+                ),
+                Todo18MiniHomeLoadDiagnostic.PendingReadThrew(
+                    AccountId(ACCOUNT),
+                    pendingReadIdentity(),
+                    IllegalStateException("pending query failed"),
+                ),
+                Todo18MiniHomeLoadDiagnostic.PendingReadCancelled(
+                    AccountId(ACCOUNT),
+                    pendingReadIdentity(),
+                    CancellationException("pending query cancelled"),
+                ),
+            )
+            .forEach { terminal ->
+                val recorder = Todo18MiniHomeLoadDiagnosticRecorder {}
+                val load = recorder.startLoad()
+                load.record(Todo18MiniHomeLoadDiagnostic.LoadEntered)
+                load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
+                load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
+                load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(AccountId(ACCOUNT)))
+                load.record(
+                    Todo18MiniHomeLoadDiagnostic.CacheApplyReturned(AccountId(ACCOUNT), true)
+                )
+                val firstReadId = load.recordPublicationRead()
+                recorder.record(
+                    load.id,
+                    Todo18MiniHomeLoadDiagnostic.PublicationReadReturned,
+                    firstReadId,
+                )
+                load.record(
+                    Todo18MiniHomeLoadDiagnostic.PendingReadEntered(
+                        AccountId(ACCOUNT),
+                        pendingReadIdentity(),
+                    )
+                )
+                load.record(terminal)
+                val secondReadId = load.recordPublicationRead()
+                recorder.record(
+                    load.id,
+                    Todo18MiniHomeLoadDiagnostic.PublicationReadReturned,
+                    secondReadId,
+                )
+                load.record(Todo18MiniHomeLoadDiagnostic.Ready)
+                val progress = recorder.snapshot()
+
+                assertEquals(
+                    emptyList<String>(),
+                    Todo18MiniHomeLoadReceiptReducer.problems(
+                        ACCOUNT,
+                        progress,
+                        progress.toStages(),
+                    ),
+                )
+            }
+    }
+
+    @Test
+    fun `pending read duplicate terminal is rejected for the same query identity`() {
         val recorder = Todo18MiniHomeLoadDiagnosticRecorder {}
         val load = recorder.startLoad()
+        val identity = pendingReadIdentity()
+        load.record(Todo18MiniHomeLoadDiagnostic.LoadEntered)
+        load.record(Todo18MiniHomeLoadDiagnostic.PendingReadEntered(AccountId(ACCOUNT), identity))
+        load.record(Todo18MiniHomeLoadDiagnostic.PendingReadReturned(AccountId(ACCOUNT), identity))
+        load.record(Todo18MiniHomeLoadDiagnostic.PendingReadReturned(AccountId(ACCOUNT), identity))
+        val progress = recorder.snapshot()
+
+        val problems =
+            Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, progress, progress.toStages())
+
+        assertTrue("pending-read-identity-mismatch" in problems)
+        assertTrue(progress.progressionProblems().any { it.contains("duplicate-stage") })
+    }
+
+    @Test
+    fun `pending read is required in the publication read window`() {
+        val fixture = completeFixture()
+
+        val problems =
+            Todo18MiniHomeLoadReceiptReducer.problems(
+                ACCOUNT,
+                fixture.progress,
+                fixture.stages.filterNot { it.kind?.startsWith("pending-read-") == true },
+            )
+
+        assertTrue("pending-read-cardinality-mismatch" in problems)
+    }
+
+    @Test
+    fun `pending read outside publication read window is rejected`() {
+        val fixture = pendingReadFixture(pendingBeforeFirstPublication = true)
+
+        val problems =
+            Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, fixture.stages)
+
+        assertTrue("pending-read-order-mismatch" in problems)
+    }
+
+    @Test
+    fun `multiple pending read identities in publication read window are rejected`() {
+        val fixture = pendingReadFixture(pendingIdentityCount = 2)
+
+        val problems =
+            Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, fixture.stages)
+
+        assertTrue("pending-read-cardinality-mismatch" in problems)
+    }
+
+    @Test
+    fun `pending read terminal is required for the selected query`() {
+        val fixture = pendingReadFixture()
+        val stages = fixture.stages.filterNot { it.kind == "pending-read-returned" }
+
+        val problems = Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, stages)
+
+        assertTrue("pending-read-identity-mismatch" in problems)
+        assertTrue("pending-read-cardinality-mismatch" in problems)
+    }
+
+    @Test
+    fun `duplicate pending read terminal is rejected inside the publication read window`() {
+        val fixture = pendingReadFixture()
+        val terminalIndex = fixture.stages.indexOfFirst { it.kind == "pending-read-returned" }
+        val stages =
+            fixture.stages.toMutableList().apply {
+                add(terminalIndex + 1, this[terminalIndex])
+            }
+
+        val problems = Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, stages)
+
+        assertTrue("pending-read-identity-mismatch" in problems)
+        assertTrue("pending-read-cardinality-mismatch" in problems)
+    }
+
+    @Test
+    fun `publication read identities must increase around the selected pending query`() {
+        val fixture = pendingReadFixture()
+        val secondPublicationReadId =
+            fixture.stages.first { it.kind == "publication-read-entered" && it.readId != 1L }.readId
+        val stages =
+            fixture.stages.map { stage ->
+                if (stage.readId == secondPublicationReadId) stage.copy(readId = 0L) else stage
+            }
+
+        val problems = Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, stages)
+
+        assertTrue("pending-read-order-mismatch" in problems)
+    }
+
+    private fun completeFixture(): Fixture {
+        return pendingReadFixture()
+    }
+
+    private fun pendingReadFixture(
+        pendingBeforeFirstPublication: Boolean = false,
+        pendingIdentityCount: Int = 1,
+    ): Fixture {
+        val recorder = Todo18MiniHomeLoadDiagnosticRecorder {}
+        val load = recorder.startLoad()
+        val pendingIdentities =
+            (1..pendingIdentityCount).map { ordinal ->
+                MiniHomePendingReadIdentity(MiniHomeLoadIdentity(1L), ordinal.toLong())
+            }
         load.record(Todo18MiniHomeLoadDiagnostic.LoadEntered)
         load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
         load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
         load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(AccountId(ACCOUNT)))
         load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyReturned(AccountId(ACCOUNT), true))
-        val readId = load.recordPublicationRead()
-        recorder.record(load.id, Todo18MiniHomeLoadDiagnostic.PublicationReadReturned, readId)
+        if (pendingBeforeFirstPublication) recordPendingReads(load, pendingIdentities)
+        val firstReadId = load.recordPublicationRead()
+        recorder.record(load.id, Todo18MiniHomeLoadDiagnostic.PublicationReadReturned, firstReadId)
+        if (!pendingBeforeFirstPublication) recordPendingReads(load, pendingIdentities)
+        val secondReadId = load.recordPublicationRead()
+        recorder.record(load.id, Todo18MiniHomeLoadDiagnostic.PublicationReadReturned, secondReadId)
         load.record(Todo18MiniHomeLoadDiagnostic.Ready)
         val progress = recorder.snapshot()
         return Fixture(progress, progress.toStages())
+    }
+
+    private fun recordPendingReads(
+        load: Todo18MiniHomeLoad,
+        identities: List<MiniHomePendingReadIdentity>,
+    ) {
+        identities.forEach { identity ->
+            load.record(
+                Todo18MiniHomeLoadDiagnostic.PendingReadEntered(AccountId(ACCOUNT), identity)
+            )
+            load.record(
+                Todo18MiniHomeLoadDiagnostic.PendingReadReturned(AccountId(ACCOUNT), identity)
+            )
+        }
     }
 
     private fun Todo18MiniHomeLoadProgress.toStages(): List<Todo18MiniHomeLoadBoundaryStage> =
@@ -182,8 +368,19 @@ class Todo18MiniHomeLoadReceiptReducerTest {
                     (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheApplyReturned)?.let {
                         if (it.current) "current" else "conflict"
                     },
+                pendingReadLoadId = observation.pendingReadId?.loadId?.value,
+                pendingReadId = observation.pendingReadId?.queryOrdinal,
+                pendingReadOutcome =
+                    when (diagnostic) {
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadReturned -> "returned"
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> "threw"
+                        is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "cancelled"
+                        else -> null
+                    },
             )
         }
+
+    private fun pendingReadIdentity() = MiniHomePendingReadIdentity(MiniHomeLoadIdentity(1L), 1L)
 
     private data class Fixture(
         val progress: Todo18MiniHomeLoadProgress,

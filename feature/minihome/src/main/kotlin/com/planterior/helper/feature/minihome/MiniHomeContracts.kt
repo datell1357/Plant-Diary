@@ -207,6 +207,7 @@ sealed interface MiniHomeLoadResult {
         val stale: Boolean,
         val pending: MiniHomePendingSave?,
         val committedReceipt: MiniHomeCommittedReceipt? = null,
+        val loadIdentity: MiniHomeLoadIdentity? = null,
     ) : MiniHomeLoadResult
 
     data object Forbidden : MiniHomeLoadResult
@@ -603,6 +604,7 @@ sealed interface MiniHomeUiState {
         val saved: Boolean = false,
         val exitOutcome: MiniHomeExitOutcome? = null,
         override val owner: AccountId = AccountId.LEGACY,
+        val loadIdentity: MiniHomeLoadIdentity? = null,
     ) : MiniHomeUiState
 
     data class Editing(

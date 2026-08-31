@@ -1,5 +1,6 @@
 package com.planterior.helper.diagnostic
 
+import com.planterior.helper.feature.minihome.MiniHomeRetryStage
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -89,7 +90,112 @@ class Todo18OfflineRetryTransitionReceiptTest {
         assertTrue(!json.contains("RENDERED_SINK_DELIVERY"))
     }
 
-    private fun receipt() = Todo18OfflineRetryTransitionReceipt(observations(), true)
+    @Test
+    fun `retry boundary identities and generations are serialized`() {
+        val receipt =
+            Todo18OfflineRetryTransitionReceipt(
+                observations = emptyList(),
+                closed = true,
+                retryObservations =
+                    listOf(
+                        Todo18OfflineRetryBoundaryObservation(
+                            stage = MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED,
+                            operationId = OPERATION,
+                            controllerEpoch = 3L,
+                            controllerGeneration = 7L,
+                            saveGeneration = 2L,
+                            guardDraftIdentity = true,
+                            revision = REVISION,
+                            outcome = "returned",
+                            resultIdentity = 99,
+                            failureIdentity = null,
+                            failureClass = null,
+                            failureMessage = null,
+                        )
+                    ),
+            )
+        val file = temporaryFolder.newFile("offline-boundary.json")
+
+        writeTodo18OfflineRetryTransitionReceipt(file, receipt)
+
+        val json = file.readText()
+        assertTrue(json.contains("todo18-offline-retry-transition-v3"))
+        assertTrue(json.contains("\"retryObservations\""))
+        assertTrue(json.contains("\"controllerGeneration\":7"))
+        assertTrue(json.contains("\"resultIdentity\":99"))
+    }
+
+    @Test
+    fun `complete receipt requires every retry boundary`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            Todo18OfflineRetryTransitionReceipt(observations(), true)
+                .requireComplete(OPERATION, OPERATION, REVISION)
+        }
+    }
+
+    @Test
+    fun `retry boundary missing duplicate and out of order observations are rejected`() {
+        val valid = retryObservations()
+        val missing = valid.dropLast(1)
+        val duplicate = valid.dropLast(1) + valid[1]
+        val reordered =
+            valid.toMutableList().apply {
+                val savedApply = this[5]
+                this[5] = this[6]
+                this[6] = savedApply
+            }
+        listOf(missing, duplicate, reordered).forEach { retry ->
+            assertThrows(IllegalArgumentException::class.java) {
+                receipt(retry).requireComplete(OPERATION, OPERATION, REVISION)
+            }
+        }
+    }
+
+    @Test
+    fun `retry boundary malformed outcome revision token generation and result identity are rejected`() {
+        val valid = retryObservations()
+        val malformed =
+            listOf(
+                valid.mapIndexed { index, observation ->
+                    if (index == 0) observation.copy(operationId = "wrong") else observation
+                },
+                valid.mapIndexed { index, observation ->
+                    if (index == 5) observation.copy(revision = REVISION + 1) else observation
+                },
+                valid.mapIndexed { index, observation ->
+                    if (index == 3) observation.copy(controllerGeneration = 8L) else observation
+                },
+                valid.mapIndexed { index, observation ->
+                    if (index == 4) observation.copy(outcome = "exception") else observation
+                },
+                valid.mapIndexed { index, observation ->
+                    if (index == 5) observation.copy(resultIdentity = 100) else observation
+                },
+            )
+        malformed.forEach { retry ->
+            assertThrows(IllegalArgumentException::class.java) {
+                receipt(retry).requireComplete(OPERATION, OPERATION, REVISION)
+            }
+        }
+    }
+
+    @Test
+    fun `retry boundary rejects a non returned terminal`() {
+        val retry =
+            retryObservations().map { observation ->
+                if (observation.stage == MiniHomeRetryStage.COROUTINE_RETURNED) {
+                    observation.copy(outcome = "exception")
+                } else {
+                    observation
+                }
+            }
+        assertThrows(IllegalArgumentException::class.java) {
+            receipt(retry).requireComplete(OPERATION, OPERATION, REVISION)
+        }
+    }
+
+    private fun receipt(retry: List<Todo18OfflineRetryBoundaryObservation> = retryObservations()) =
+        Todo18OfflineRetryTransitionReceipt(observations(), true, retryObservations = retry)
 
     private fun observations() =
         Todo18OfflineRetryTransitionStage.entries.map { stage ->
@@ -101,6 +207,85 @@ class Todo18OfflineRetryTransitionReceiptTest {
                 },
             )
         }
+
+    private fun retryObservations() =
+        listOf(
+            retryObservation(MiniHomeRetryStage.CALLBACK_ENTRY),
+            retryObservation(MiniHomeRetryStage.COROUTINE_ENTRY),
+            retryObservation(
+                MiniHomeRetryStage.REPOSITORY_SAVE_ENTRY,
+                controllerEpoch = 3L,
+                controllerGeneration = 7L,
+                saveGeneration = 2L,
+                guardDraftIdentity = true,
+            ),
+            retryObservation(
+                MiniHomeRetryStage.REPOSITORY_SAVE_RETURNED,
+                controllerEpoch = 3L,
+                controllerGeneration = 7L,
+                saveGeneration = 2L,
+                guardDraftIdentity = true,
+                revision = REVISION,
+                outcome = "returned",
+                resultIdentity = 99,
+            ),
+            retryObservation(
+                MiniHomeRetryStage.SAVED_APPLY_ENTRY,
+                controllerEpoch = 3L,
+                controllerGeneration = 7L,
+                saveGeneration = 2L,
+                guardDraftIdentity = true,
+                revision = REVISION,
+                resultIdentity = 99,
+            ),
+            retryObservation(
+                MiniHomeRetryStage.SET_STATE_ATTEMPTED,
+                controllerEpoch = 3L,
+                controllerGeneration = 7L,
+                guardDraftIdentity = false,
+            ),
+            retryObservation(
+                MiniHomeRetryStage.SET_STATE_APPLIED,
+                controllerEpoch = 3L,
+                controllerGeneration = 7L,
+                guardDraftIdentity = false,
+                revision = REVISION,
+            ),
+            retryObservation(
+                MiniHomeRetryStage.RAW_STATE_PUBLICATION,
+                revision = REVISION,
+                guardDraftIdentity = false,
+            ),
+            retryObservation(
+                MiniHomeRetryStage.COROUTINE_RETURNED,
+                outcome = "returned",
+            ),
+        )
+
+    private fun retryObservation(
+        stage: MiniHomeRetryStage,
+        controllerEpoch: Long? = null,
+        controllerGeneration: Long? = null,
+        saveGeneration: Long? = null,
+        guardDraftIdentity: Boolean? = null,
+        revision: Long? = null,
+        outcome: String? = null,
+        resultIdentity: Int? = null,
+    ) =
+        Todo18OfflineRetryBoundaryObservation(
+            stage = stage,
+            operationId = OPERATION,
+            controllerEpoch = controllerEpoch,
+            controllerGeneration = controllerGeneration,
+            saveGeneration = saveGeneration,
+            guardDraftIdentity = guardDraftIdentity,
+            revision = revision,
+            outcome = outcome,
+            resultIdentity = resultIdentity,
+            failureIdentity = null,
+            failureClass = null,
+            failureMessage = null,
+        )
 
     private companion object {
         const val OPERATION = "offline-operation"
