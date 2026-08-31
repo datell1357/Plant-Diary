@@ -7,6 +7,84 @@ import Testing
 @MainActor
 struct LocalPlantCollectionStoreTests {
     @Test
+    func undoWateringCompletionRestoresPriorDateAndNotificationSchedule() throws {
+        // Given
+        let suiteName = "LocalPlantCollectionUndoTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let schedules = LocalNotificationScheduleStore(defaults: defaults)
+        let store = collectionStore(defaults: defaults, schedules: schedules)
+        let baseline = try CalendarDate.parse("2026-08-01")
+        let today = try CalendarDate.parse("2026-08-11")
+        let plantID = try PersonalPlantID.parse("local-0")
+        store.plants = [wateringDraft(lastWateredOn: baseline)]
+        store.weatherPlantIDs = [plantID]
+        let preference = try NotificationPreference(
+            enabled: true,
+            time: LocalTime.parse("09:00")
+        )
+        try schedules.reconcile(notificationRequest(
+            preference: preference,
+            plantID: plantID,
+            dueDate: today
+        ))
+        _ = try store.recordWateredToday(at: 0, today: today, intervalDays: 10)
+        #expect(store.completedPlantIDs == [plantID])
+        #expect(schedules.scheduledCount == 0)
+
+        // When
+        try store.undoWateredToday(
+            at: 0,
+            restoringLastWateredOn: baseline,
+            restoringIntervalDays: 10,
+            today: today,
+            notificationState: NotificationRuntimeState(
+                authorization: .authorized,
+                endpoint: .registered
+            )
+        )
+
+        // Then
+        #expect(store.plants[0].lastWateredOn == baseline)
+        #expect(store.completedPlantIDs.isEmpty)
+        #expect(schedules.scheduledCount == 2)
+        let restored = collectionStore(defaults: defaults, schedules: schedules)
+        #expect(restored.plants[0].lastWateredOn == baseline)
+    }
+
+    @Test
+    func undoFirstWateringRestoresMissingBaseline() throws {
+        // Given
+        let suiteName = "LocalPlantCollectionFirstUndoTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let schedules = LocalNotificationScheduleStore(defaults: defaults)
+        let store = collectionStore(defaults: defaults, schedules: schedules)
+        let today = try CalendarDate.parse("2026-08-11")
+        let plantID = try PersonalPlantID.parse("local-0")
+        store.plants = [wateringDraft(lastWateredOn: nil)]
+        store.weatherPlantIDs = [plantID]
+        _ = try store.recordWateredToday(at: 0, today: today, intervalDays: 10)
+
+        // When
+        try store.undoWateredToday(
+            at: 0,
+            restoringLastWateredOn: nil,
+            restoringIntervalDays: 10,
+            today: today,
+            notificationState: NotificationRuntimeState(
+                authorization: .authorized,
+                endpoint: .registered
+            )
+        )
+
+        // Then
+        #expect(store.plants[0].lastWateredOn == nil)
+        #expect(store.completedPlantIDs.isEmpty)
+        #expect(schedules.scheduledCount == 0)
+    }
+
+    @Test
     func homeReconciliationDoesNotRecreateCompletedWateringNotifications() throws {
         let suiteName = "LocalPlantCollectionCompletionTests-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -141,7 +219,7 @@ struct LocalPlantCollectionStoreTests {
     }
 
     private func wateringDraft(
-        lastWateredOn: CalendarDate
+        lastWateredOn: CalendarDate?
     ) -> PlantRegistrationDraft {
         PlantRegistrationDraft(
             plantID: nil,

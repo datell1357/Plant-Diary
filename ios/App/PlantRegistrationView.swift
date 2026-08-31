@@ -133,6 +133,7 @@ struct PlantRegistrationView: View {
         collection.save(
             PlantRegistrationDraft(
                 plantID: candidate?.plantID,
+                scientificName: candidate?.scientificName,
                 displayName: name.trimmingCharacters(
                     in: .whitespacesAndNewlines
                 ),

@@ -1,4 +1,5 @@
 import Foundation
+import PlanteriorData
 import PlanteriorDesignSystem
 import PlanteriorDomain
 import SwiftUI
@@ -128,36 +129,17 @@ enum PlantCarePresentation {
         return "등록한 반려식물"
     }
 
-    static let guideMetrics = [
-        PlantGuideMetric(
-            id: "water",
-            icon: "💧",
-            title: "물 주기",
-            value: "7~10일 간격",
-            hint: "겉흙이 마르면 듬뿍"
-        ),
-        PlantGuideMetric(
-            id: "light",
-            icon: "☀️",
-            title: "햇빛",
-            value: "밝은 간접광",
-            hint: "반그늘에서 가장 잘 자라요"
-        ),
-        PlantGuideMetric(
-            id: "temperature",
-            icon: "🌡️",
-            title: "온도",
-            value: "18~27°C",
-            hint: "추위에 약하니 실내에"
-        ),
-        PlantGuideMetric(
-            id: "humidity",
-            icon: "💨",
-            title: "습도",
-            value: "60% 이상",
-            hint: "분무기로 자주 분무 필요"
-        )
-    ]
+    static func species(for plant: PlantRegistrationDraft) -> String {
+        plant.scientificName ?? species(for: plant.displayName)
+    }
+
+    static func careProfile(
+        for plant: PlantRegistrationDraft
+    ) -> DomesticPlantCareProfile? {
+        DomesticPlantCareCatalog.profile(scientificName: plant.scientificName)
+    }
+
+    static let guideMetrics = DomesticPlantCareCatalog.monstera.metrics
 
     private static func stableIndex(for value: String) -> Int {
         let hash = value.utf8.reduce(UInt64(1_469_598_103_934_665_603)) {

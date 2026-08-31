@@ -15,20 +15,29 @@ extension PlantCareDetailView {
                     .accessibilityIdentifier("watering.compact-date")
             }
             Spacer(minLength: PlanteriorSpacing.small)
-            Button(action: recordWateredToday) {
-                Text(wateringFeedback == nil ? "물 주기 완료" : wateringButtonTitle)
-                    .font(PlanteriorTypography.caption.weight(.semibold))
-                    .lineLimit(1)
-                    .padding(.horizontal, PlanteriorSpacing.large)
-                    .frame(height: 32)
-                    .foregroundStyle(PlanteriorPalette.textOnAccent.color)
-                    .background(PlanteriorPalette.accent.color)
-                    .clipShape(Capsule())
+            VStack(spacing: PlanteriorSpacing.extraSmall) {
+                Button(action: recordWateredToday) {
+                    Text(wateringFeedback == nil ? "물 주기 완료" : wateringButtonTitle)
+                        .font(PlanteriorTypography.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, PlanteriorSpacing.large)
+                        .frame(height: 32)
+                        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+                        .background(PlanteriorPalette.accent.color)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: PlanteriorControl.minimumTarget)
+                .accessibilityIdentifier("watering.complete")
+                .accessibilityValue(wateringFeedback?.title ?? "기록 전")
+                if wateringUndoBaseline != nil {
+                    Button("실행 취소", action: undoWateredToday)
+                        .font(PlanteriorTypography.caption.weight(.semibold))
+                        .foregroundStyle(PlanteriorPalette.accent.color)
+                        .frame(minHeight: PlanteriorControl.minimumTarget)
+                        .accessibilityIdentifier("watering.undo")
+                }
             }
-            .buttonStyle(.plain)
-            .frame(minHeight: PlanteriorControl.minimumTarget)
-            .accessibilityIdentifier("watering.complete")
-            .accessibilityValue(wateringFeedback?.title ?? "기록 전")
         }
         .padding(.horizontal, PlanteriorSpacing.medium)
         .frame(maxWidth: .infinity, minHeight: PlantCareReferenceMetrics.wateringCardHeight)
@@ -161,6 +170,15 @@ extension PlantCareDetailView {
             wateringFeedback = .unavailableDate
             return
         }
+        guard collection.plants.indices.contains(index) else {
+            wateringFeedback = .failed
+            return
+        }
+        let current = collection.plants[index]
+        let undoBaseline = (
+            lastWateredOn: current.lastWateredOn,
+            intervalDays: current.wateringIntervalDays ?? 10
+        )
         do {
             let result = try collection.recordWateredToday(
                 at: index,
@@ -171,9 +189,35 @@ extension PlantCareDetailView {
             switch result {
             case .recorded:
                 wateringFeedback = .recorded
+                if wateringUndoBaseline == nil {
+                    wateringUndoBaseline = undoBaseline
+                }
             case .alreadyRecorded:
                 wateringFeedback = .alreadyRecorded
             }
+        } catch {
+            wateringFeedback = .failed
+        }
+    }
+
+    func undoWateredToday() {
+        guard let baseline = wateringUndoBaseline,
+              let todayCalendarDate
+        else {
+            return
+        }
+        do {
+            try collection.undoWateredToday(
+                at: index,
+                restoringLastWateredOn: baseline.lastWateredOn,
+                restoringIntervalDays: baseline.intervalDays,
+                today: todayCalendarDate,
+                notificationState: notificationState
+            )
+            lastWateredOn = baseline.lastWateredOn.flatMap(date)
+            wateringIntervalDays = baseline.intervalDays
+            wateringFeedback = nil
+            wateringUndoBaseline = nil
         } catch {
             wateringFeedback = .failed
         }
@@ -192,6 +236,7 @@ extension PlantCareDetailView {
             )
             lastWateredOn = todayDate
             wateringFeedback = nil
+            wateringUndoBaseline = nil
         } catch {
             wateringFeedback = .failed
         }

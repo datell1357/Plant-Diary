@@ -29,10 +29,73 @@ final class PlantCollectionUITests: XCTestCase {
             evaluatedWith: completeButton
         )
         waitForExpectations(timeout: 5)
-        app.swipeDown()
         XCTAssertTrue(app.staticTexts["watering.last-date"].label.contains("2026-08-11"))
         XCTAssertTrue(nextDate.label.contains("2026-08-21"))
+        let undoButton = app.buttons["watering.undo"]
+        XCTAssertTrue(undoButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(undoButton.isHittable)
+        undoButton.tap()
+        expectation(
+            for: NSPredicate(format: "value == %@", "기록 전"),
+            evaluatedWith: completeButton
+        )
+        waitForExpectations(timeout: 5)
+        XCTAssertEqual(
+            app.staticTexts["watering.compact-date"].label,
+            "2026. 08. 01 (10일 전)"
+        )
+        XCTAssertTrue(app.staticTexts["watering.last-date"].label.contains("2026-08-01"))
+        XCTAssertTrue(nextDate.label.contains("2026-08-11"))
         attachScreenshot(named: "task-11-watering-complete")
+    }
+
+    func testAlreadyRecordedWateringDoesNotOfferUndo() {
+        let accountID = "watering-already-recorded"
+        let first = XCUIApplication()
+        first.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        first.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        first.launchEnvironment["QA_ACCOUNT_ID"] = accountID
+        first.launchEnvironment["QA_COLLECTION_FIXTURE"] = "1"
+        first.launchEnvironment["QA_RESET_COLLECTION"] = "1"
+        first.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
+        first.launch()
+
+        first.buttons["tab.collection"].tap()
+        XCTAssertTrue(first.buttons["collection.row.0"].waitForExistence(timeout: 5))
+        first.buttons["collection.row.0"].tap()
+        let firstCompletion = first.buttons["watering.complete"]
+        XCTAssertTrue(firstCompletion.waitForExistence(timeout: 5))
+        firstCompletion.tap()
+        XCTAssertTrue(first.buttons["watering.undo"].waitForExistence(timeout: 5))
+        first.terminate()
+
+        let second = XCUIApplication()
+        second.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        second.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        second.launchEnvironment["QA_ACCOUNT_ID"] = accountID
+        second.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
+        second.launch()
+
+        second.buttons["tab.collection"].tap()
+        XCTAssertTrue(second.buttons["collection.row.0"].waitForExistence(timeout: 5))
+        second.buttons["collection.row.0"].tap()
+        let secondCompletion = second.buttons["watering.complete"]
+        XCTAssertTrue(secondCompletion.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            second.staticTexts["watering.compact-date"].label,
+            "2026. 08. 11 (0일 전)"
+        )
+        secondCompletion.tap()
+        expectation(
+            for: NSPredicate(format: "value == %@", "오늘 물 주기는 이미 기록했어요."),
+            evaluatedWith: secondCompletion
+        )
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(second.buttons["watering.undo"].exists)
+        XCTAssertEqual(
+            second.staticTexts["watering.compact-date"].label,
+            "2026. 08. 11 (0일 전)"
+        )
     }
 
     func testWateringMissingDateShowsSetupGuidance() {

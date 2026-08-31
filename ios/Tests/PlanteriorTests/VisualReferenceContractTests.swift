@@ -146,6 +146,10 @@ struct VisualReferenceContractTests {
         #expect(metrics.map(\.id) == ["water", "light", "temperature", "humidity"])
         #expect(metrics.map(\.icon) == ["💧", "☀️", "🌡️", "💨"])
         #expect(metrics.map(\.title) == ["물 주기", "햇빛", "온도", "습도"])
-        #expect(metrics.map(\.value) == ["7~10일 간격", "밝은 간접광", "18~27°C", "60% 이상"])
+        #expect(
+            metrics.map(\.value) == [
+                "봄~가을 촉촉하게", "800~10,000 Lux", "16~20°C", "70% 이상"
+            ]
+        )
     }
 }

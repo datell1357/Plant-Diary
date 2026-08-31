@@ -67,6 +67,10 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         let memoCard = app.otherElements["plant.detail.memo.card"]
         assertPlantDetailChromeAndHeroMatchReference(in: app)
         XCTAssertTrue(guide.exists)
+        XCTAssertEqual(
+            guide.value as? String,
+            "출처: 농촌진흥청 실내정원용 식물, 공공데이터 15059042"
+        )
         XCTAssertTrue(watering.exists)
         let topOffset: CGFloat = app.frame.height == 874 ? 0 : -15
         XCTAssertEqual(watering.frame.minX, 16, accuracy: 0.5)

@@ -18,6 +18,11 @@ struct PlantCareDetailView: View {
     @State var lastWateredOn: Date?
     @State var wateringIntervalDays = 10
     @State var wateringFeedback: WateringFeedback?
+    @State var wateringUndoBaseline: (
+        lastWateredOn: CalendarDate?,
+        intervalDays: Int
+    )?
+    @State var notificationState = NotificationRuntimeState.initial
     @State var weatherAlertsEnabled = true
     @State var showsDeleteConfirmation = false
     @State var saveError: String?
@@ -77,7 +82,10 @@ struct PlantCareDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .tint(PlanteriorPalette.accent.color)
-        .task { loadPlant() }
+        .task {
+            loadPlant()
+            notificationState = await NotificationRuntimeState.current()
+        }
         .confirmationDialog(
             "이 식물을 삭제할까요?",
             isPresented: $showsDeleteConfirmation
@@ -115,7 +123,8 @@ struct PlantCareDetailView: View {
                 .foregroundStyle(PlanteriorPalette.textPrimary.color)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("plant.detail.title")
-            let species = PlantCarePresentation.species(for: trimmedNickname)
+            let species = plant.map(PlantCarePresentation.species(for:))
+                ?? PlantCarePresentation.species(for: trimmedNickname)
             Text(KoreanTypography.atomic(species))
                 .font(PlanteriorTypography.supporting.italic())
                 .accessibilityLabel(species)
@@ -128,47 +137,6 @@ struct PlantCareDetailView: View {
         }
     }
 
-    private var guideSection: some View {
-        VStack(alignment: .leading, spacing: PlanteriorSpacing.large) {
-            Text("식물 가이드 및 관리 기준")
-                .font(PlanteriorTypography.sectionTitle)
-            LazyVGrid(columns: guideColumns, spacing: PlanteriorSpacing.small) {
-                ForEach(PlantCarePresentation.guideMetrics) { metric in
-                    PlanteriorCard {
-                        VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                            HStack(spacing: PlanteriorSpacing.extraSmall) {
-                                Text(metric.icon)
-                                    .font(PlantCareReferenceMetrics.guideGlyphFont)
-                                    .accessibilityHidden(true)
-                                Text(metric.title)
-                                    .font(
-                                        PlanteriorTypography.caption.weight(.semibold)
-                                    )
-                                    .foregroundStyle(PlanteriorPalette.textPrimary.color)
-                            }
-                            Text(metric.value)
-                                .font(PlanteriorTypography.cardTitle)
-                            Text(metric.hint)
-                                .font(PlanteriorTypography.microLabel)
-                                .foregroundStyle(
-                                    PlanteriorPalette.textAccessibleCaption.color
-                                )
-                        }
-                        .padding(.vertical, -PlanteriorSpacing.extraSmall)
-                    }
-                }
-            }
-        }
-        .frame(
-            minHeight: dynamicTypeSize.isAccessibilitySize
-                ? nil
-                : PlantCareReferenceMetrics.guideMinimumHeight,
-            alignment: .top
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("plant.detail.guide")
-    }
-
     private var deleteAction: some View {
         Button("식물 삭제", role: .destructive) {
             showsDeleteConfirmation = true
@@ -176,17 +144,6 @@ struct PlantCareDetailView: View {
         .frame(maxWidth: .infinity)
         .frame(minHeight: PlanteriorControl.minimumTarget)
         .accessibilityIdentifier("plant.detail.delete")
-    }
-
-    private var guideColumns: [GridItem] {
-        let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
-        return Array(
-            repeating: GridItem(
-                .flexible(),
-                spacing: PlantCareReferenceMetrics.guideGridSpacing
-            ),
-            count: count
-        )
     }
 
     private var detailMetadata: String {

@@ -37,6 +37,7 @@ public protocol PlantIdentificationService: Sendable {
 
 public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
     public let plantID: PlantContentID?
+    public let scientificName: String?
     public let displayName: String
     public let representativePhoto: Data?
     public let lastWateredOn: CalendarDate?
@@ -47,6 +48,7 @@ public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
 
     public init(
         plantID: PlantContentID?,
+        scientificName: String? = nil,
         displayName: String,
         representativePhoto: Data?,
         lastWateredOn: CalendarDate?,
@@ -56,6 +58,7 @@ public struct PlantRegistrationDraft: Codable, Equatable, Sendable {
         privateMemo: String? = nil
     ) {
         self.plantID = plantID
+        self.scientificName = scientificName
         self.displayName = displayName
         self.representativePhoto = representativePhoto
         self.lastWateredOn = lastWateredOn

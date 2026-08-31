@@ -46,10 +46,14 @@ extension LocalPlantCollectionStore {
                 installCareVariantsQAFixture()
                 return
             }
+            let monsteraScientificName = ProcessInfo.processInfo.environment[
+                "QA_COLLECTION_SCIENTIFIC_NAME"
+            ] ?? "Monstera deliciosa"
             plants = [
                 qaDraft(
                     id: "local-0",
                     name: "몬스테라",
+                    scientificName: monsteraScientificName,
                     lastWateredOn: try? CalendarDate.parse("2026-08-01")
                 ),
                 qaDraft(id: "local-1", name: "스킨답서스", lastWateredOn: nil)
@@ -167,12 +171,15 @@ extension LocalPlantCollectionStore {
     private func qaDraft(
         id: String,
         name: String,
+        scientificName: String? = nil,
         lastWateredOn: CalendarDate?,
         wateringIntervalDays: Int = 10,
         privateMemo: String? = nil
     ) -> PlantRegistrationDraft {
         PlantRegistrationDraft(
             plantID: try? PlantContentID.parse(id),
+            scientificName: scientificName
+                ?? (name == "몬스테라" ? "Monstera deliciosa" : nil),
             displayName: name,
             representativePhoto: nil,
             lastWateredOn: lastWateredOn,

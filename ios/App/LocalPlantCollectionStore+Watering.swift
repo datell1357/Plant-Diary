@@ -88,6 +88,7 @@ extension LocalPlantCollectionStore {
         let current = plants[index]
         plants[index] = PlantRegistrationDraft(
             plantID: current.plantID,
+            scientificName: current.scientificName,
             displayName: current.displayName,
             representativePhoto: current.representativePhoto,
             lastWateredOn: today,
@@ -99,6 +100,45 @@ extension LocalPlantCollectionStore {
         notificationSchedules.cancel(for: plantID)
         persist()
         return result
+    }
+
+    func undoWateredToday(
+        at index: Int,
+        restoringLastWateredOn lastWateredOn: CalendarDate?,
+        restoringIntervalDays intervalDays: Int,
+        today: CalendarDate,
+        notificationState: NotificationRuntimeState
+    ) throws {
+        guard plants.indices.contains(index) else {
+            throw WateringScheduleError.scheduleUnavailable
+        }
+        let plantID = try personalPlantID(at: index)
+        if let lastWateredOn {
+            var coordinator = WateringScheduleCoordinator(today: today)
+            try coordinator.setSchedule(
+                plantID: plantID,
+                lastWateredDate: lastWateredOn,
+                intervalDays: intervalDays
+            )
+        }
+        let current = plants[index]
+        plants[index] = PlantRegistrationDraft(
+            plantID: current.plantID,
+            scientificName: current.scientificName,
+            displayName: current.displayName,
+            representativePhoto: current.representativePhoto,
+            lastWateredOn: lastWateredOn,
+            wateringIntervalDays: intervalDays,
+            registrationMethod: current.registrationMethod,
+            location: current.location,
+            privateMemo: current.privateMemo
+        )
+        unmarkWateringCompleted(for: plantID)
+        persist()
+        try reconcileWateringNotifications(
+            today: today,
+            notificationState: notificationState
+        )
     }
 
     func setWateringBaseline(
@@ -118,6 +158,7 @@ extension LocalPlantCollectionStore {
         let current = plants[index]
         plants[index] = PlantRegistrationDraft(
             plantID: current.plantID,
+            scientificName: current.scientificName,
             displayName: current.displayName,
             representativePhoto: current.representativePhoto,
             lastWateredOn: today,
@@ -134,5 +175,42 @@ extension LocalPlantCollectionStore {
             throw WateringScheduleError.scheduleUnavailable
         }
         return plantID
+    }
+
+    private func reconcileWateringNotifications(
+        today: CalendarDate,
+        notificationState: NotificationRuntimeState
+    ) throws {
+        guard let global = LocalNotificationPreferenceStore.shared.global else {
+            return
+        }
+        var dueDates: [PersonalPlantID: CalendarDate] = [:]
+        for (index, plant) in plants.enumerated() {
+            guard let plantID = try? personalPlantID(at: index) else {
+                continue
+            }
+            switch wateringStatus(
+                at: index,
+                lastWateredOn: plant.lastWateredOn,
+                today: today,
+                intervalDays: wateringIntervalDays(at: index)
+            ) {
+            case let .overdue(nextDate),
+                 let .due(nextDate),
+                 let .upcoming(nextDate):
+                dueDates[plantID] = nextDate
+            case .unavailable:
+                break
+            }
+        }
+        try notificationSchedules.reconcile(NotificationScheduleRequest(
+            authorization: notificationState.authorization,
+            endpoint: notificationState.endpoint,
+            global: global,
+            perPlant: LocalNotificationPreferenceStore.shared.overrides,
+            dueDates: dueDates,
+            completedPlantIDs: completedPlantIDs,
+            existingDeduplicationKeys: []
+        ))
     }
 }

@@ -62,6 +62,10 @@ final class LocalPlantCollectionStore: ObservableObject {
         completedPlantIDs.insert(plantID)
     }
 
+    func unmarkWateringCompleted(for plantID: PersonalPlantID) {
+        completedPlantIDs.remove(plantID)
+    }
+
     private func restore() {
         plants = []
         weatherPlantIDs = []
@@ -145,6 +149,7 @@ final class LocalPlantCollectionStore: ObservableObject {
         let current = plants[index]
         plants[index] = PlantRegistrationDraft(
             plantID: current.plantID,
+            scientificName: current.scientificName,
             displayName: edits.displayName,
             representativePhoto: current.representativePhoto,
             lastWateredOn: edits.lastWateredOn,
