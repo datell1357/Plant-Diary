@@ -27,6 +27,14 @@ internal class Timeline {
                     pendingReadOutcome = event.pendingReadOutcome,
                     pendingReadFailureClass = event.pendingReadFailureClass,
                     pendingReadFailureMessage = event.pendingReadFailureMessage,
+                    operationId = event.operationId,
+                    cacheTransactionResult = event.cacheTransactionResult,
+                    cacheTransactionFailureClass = event.cacheTransactionFailureClass,
+                    cacheTransactionFailureMessage = event.cacheTransactionFailureMessage,
+                    publicationReadTerminalOutcome = event.publicationReadTerminalOutcome,
+                    publicationReadTerminalFailureClass = event.publicationReadTerminalFailureClass,
+                    publicationReadTerminalFailureMessage =
+                        event.publicationReadTerminalFailureMessage,
                 )
         }
 
@@ -94,6 +102,13 @@ internal data class TimelineEntry(
     val pendingReadOutcome: String? = null,
     val pendingReadFailureClass: String? = null,
     val pendingReadFailureMessage: String? = null,
+    val operationId: String? = null,
+    val cacheTransactionResult: String? = null,
+    val cacheTransactionFailureClass: String? = null,
+    val cacheTransactionFailureMessage: String? = null,
+    val publicationReadTerminalOutcome: String? = null,
+    val publicationReadTerminalFailureClass: String? = null,
+    val publicationReadTerminalFailureMessage: String? = null,
     val sinkSequence: Long? = null,
     val state: String? = null,
     val owner: String? = null,

@@ -1,10 +1,16 @@
 package com.planterior.helper.minihome
 
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.OperationId
+import com.planterior.helper.feature.minihome.MiniHomeCacheTransactionDiagnosticObservation
+import com.planterior.helper.feature.minihome.MiniHomeCacheTransactionDiagnosticStage
+import com.planterior.helper.feature.minihome.MiniHomeCacheTransactionResult
 import com.planterior.helper.feature.minihome.MiniHomeLoadIdentity
 import com.planterior.helper.feature.minihome.MiniHomePendingReadIdentity
+import com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -295,6 +301,129 @@ class Todo18MiniHomeLoadReceiptReducerTest {
         assertTrue("pending-read-order-mismatch" in problems)
     }
 
+    @Test
+    fun `cache transaction trace and publication terminal preserve typed identity`() {
+        val fixture = transactionFixture()
+
+        assertEquals(
+            emptyList<String>(),
+            Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, fixture.stages),
+        )
+
+        val missingTerminal = fixture.stages.filterNot { it.kind == "cache-transaction-returned" }
+        assertTrue(
+            "missing-cache-transaction-terminal" in
+                Todo18MiniHomeLoadReceiptReducer.problems(
+                    ACCOUNT,
+                    fixture.progress,
+                    missingTerminal,
+                )
+        )
+
+        val wrongPublicationIdentity =
+            fixture.stages.map { stage ->
+                if (stage.kind == "publication-read-terminal-returned") {
+                    stage.copy(readId = 99L)
+                } else {
+                    stage
+                }
+            }
+        assertTrue(
+            "missing-publication-read-terminal" in
+                Todo18MiniHomeLoadReceiptReducer.problems(
+                    ACCOUNT,
+                    fixture.progress,
+                    wrongPublicationIdentity,
+                )
+        )
+
+        val duplicatePublicationTerminal =
+            fixture.stages.toMutableList().apply {
+                val terminal = first { it.kind == "publication-read-terminal-returned" }
+                add(indexOf(terminal) + 1, terminal)
+            }
+        assertTrue(
+            "publication-read-terminal-cardinality-mismatch" in
+                Todo18MiniHomeLoadReceiptReducer.problems(
+                    ACCOUNT,
+                    fixture.progress,
+                    duplicatePublicationTerminal,
+                )
+        )
+
+        val coercedCacheResult =
+            fixture.stages.map { stage ->
+                if (stage.kind == "cache-transaction-returned") {
+                    stage.copy(cacheTransactionResult = "conflict-ish")
+                } else {
+                    stage
+                }
+            }
+        assertTrue(
+            "load-diagnostic-malformed" in
+                Todo18MiniHomeLoadReceiptReducer.problems(
+                    ACCOUNT,
+                    fixture.progress,
+                    coercedCacheResult,
+                )
+        )
+    }
+
+    @Test
+    fun `cache transaction cardinality is evaluated per load`() {
+        val fixture = transactionFixture()
+        val extraTransaction =
+            fixture.stages
+                .filter { it.kind?.startsWith("cache-") == true && it.operationId != null }
+                .map { stage ->
+                    stage.copy(
+                        loadId = 2L,
+                        diagnosticOrder = requireNotNull(stage.diagnosticOrder) + 100L,
+                    )
+                }
+
+        val problems =
+            Todo18MiniHomeLoadReceiptReducer.problems(
+                ACCOUNT,
+                fixture.progress,
+                fixture.stages + extraTransaction,
+            )
+
+        assertFalse("cache-transaction-entry-cardinality-mismatch" in problems)
+        assertFalse("cache-transaction-terminal-cardinality-mismatch" in problems)
+    }
+
+    @Test
+    fun `publication terminal must follow its entry and precede legacy return`() {
+        val fixture = transactionFixture()
+        val unmatched =
+            fixture.stages.map { stage ->
+                if (stage.kind == "publication-read-terminal-returned" && stage.readId == 2L) {
+                    stage.copy(readId = 99L)
+                } else {
+                    stage
+                }
+            }
+        assertTrue(
+            "publication-read-terminal-entry-mismatch" in
+                Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, unmatched)
+        )
+
+        val reordered = fixture.stages.toMutableList()
+        val terminalIndex = reordered.indexOfFirst {
+            it.kind == "publication-read-terminal-returned" && it.readId == 2L
+        }
+        val terminal = reordered.removeAt(terminalIndex)
+        val entryIndex = reordered.indexOfFirst {
+            it.kind == "publication-read-entered" && it.readId == 2L
+        }
+        reordered.add(entryIndex, terminal)
+        assertTrue(
+            "publication-read-terminal-order-mismatch" in
+                Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, reordered)
+        )
+    }
+
     private fun completeFixture(): Fixture {
         return pendingReadFixture()
     }
@@ -320,6 +449,81 @@ class Todo18MiniHomeLoadReceiptReducerTest {
         if (!pendingBeforeFirstPublication) recordPendingReads(load, pendingIdentities)
         val secondReadId = load.recordPublicationRead()
         recorder.record(load.id, Todo18MiniHomeLoadDiagnostic.PublicationReadReturned, secondReadId)
+        load.record(Todo18MiniHomeLoadDiagnostic.Ready)
+        val progress = recorder.snapshot()
+        return Fixture(progress, progress.toStages())
+    }
+
+    private fun transactionFixture(): Fixture {
+        val recorder = Todo18MiniHomeLoadDiagnosticRecorder {}
+        recorder.expectCacheTransactionTrace()
+        recorder.expectPublicationReadTerminal()
+        val load = recorder.startLoad()
+        load.record(Todo18MiniHomeLoadDiagnostic.LoadEntered)
+        load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
+        load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
+        load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(AccountId(ACCOUNT)))
+        listOf(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                MiniHomeCacheTransactionDiagnosticStage.LAYOUT_APPLY,
+                MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
+                MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
+                MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+            )
+            .forEach { stage ->
+                recorder.record(
+                    load.id,
+                    Todo18MiniHomeLoadDiagnostic.CacheTransaction(
+                        MiniHomeCacheTransactionDiagnosticObservation(
+                            stage,
+                            AccountId(ACCOUNT),
+                            OperationId("transaction-op"),
+                        )
+                    ),
+                    null,
+                )
+            }
+        recorder.record(
+            load.id,
+            Todo18MiniHomeLoadDiagnostic.CacheTransaction(
+                MiniHomeCacheTransactionDiagnosticObservation(
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
+                    AccountId(ACCOUNT),
+                    OperationId("transaction-op"),
+                    result = MiniHomeCacheTransactionResult.CURRENT,
+                )
+            ),
+            null,
+        )
+        load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyReturned(AccountId(ACCOUNT), true))
+        repeat(2) { index ->
+            val readId = load.recordPublicationRead()
+            recorder.record(
+                load.id,
+                Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal(
+                    AccountId(ACCOUNT),
+                    index + 1L,
+                    MiniHomePublicationReadTerminalOutcome.Returned,
+                ),
+                readId,
+            )
+            recorder.record(load.id, Todo18MiniHomeLoadDiagnostic.PublicationReadReturned, readId)
+            if (index == 0) {
+                load.record(
+                    Todo18MiniHomeLoadDiagnostic.PendingReadEntered(
+                        AccountId(ACCOUNT),
+                        pendingReadIdentity(),
+                    )
+                )
+                load.record(
+                    Todo18MiniHomeLoadDiagnostic.PendingReadReturned(
+                        AccountId(ACCOUNT),
+                        pendingReadIdentity(),
+                    )
+                )
+            }
+        }
         load.record(Todo18MiniHomeLoadDiagnostic.Ready)
         val progress = recorder.snapshot()
         return Fixture(progress, progress.toStages())
@@ -377,6 +581,39 @@ class Todo18MiniHomeLoadReceiptReducerTest {
                         is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "cancelled"
                         else -> null
                     },
+                operationId =
+                    (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                        ?.observation
+                        ?.operationId
+                        ?.value,
+                cacheTransactionResult =
+                    (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                        ?.observation
+                        ?.result
+                        ?.name
+                        ?.lowercase(),
+                cacheTransactionFailureClass =
+                    (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                        ?.observation
+                        ?.failure
+                        ?.javaClass
+                        ?.name,
+                cacheTransactionFailureMessage =
+                    (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                        ?.observation
+                        ?.failure
+                        ?.message,
+                publicationReadTerminalOutcome =
+                    (diagnostic as? Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal)?.let {
+                        terminal ->
+                        when (terminal.outcome) {
+                            MiniHomePublicationReadTerminalOutcome.Returned -> "returned"
+                            is MiniHomePublicationReadTerminalOutcome.Threw -> "threw"
+                            is MiniHomePublicationReadTerminalOutcome.Cancelled -> "cancelled"
+                        }
+                    },
+                publicationReadTerminalFailureClass = null,
+                publicationReadTerminalFailureMessage = null,
             )
         }
 

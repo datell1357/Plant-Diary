@@ -11,8 +11,10 @@ internal fun todo18MiniHomeRuntimeRepository(
     database: PlanteriorDatabase,
     boundary: Todo18Scenario,
     diagnostics: Todo18MiniHomeLoadDiagnosticRecorder,
-): MiniHomeRepository =
-    Todo18MiniHomeLoadDiagnosticRepository(
+): MiniHomeRepository {
+    diagnostics.expectCacheTransactionTrace()
+    diagnostics.expectPublicationReadTerminal()
+    return Todo18MiniHomeLoadDiagnosticRepository(
         delegate =
             FirebaseMiniHomeRepository(
                 database,
@@ -40,6 +42,17 @@ internal fun todo18MiniHomeRuntimeRepository(
                         readIdentity.value,
                     )
                 },
+                onCacheTransactionDiagnostic = { observation ->
+                    diagnostics.recordCurrentCacheTransactionIfActive(observation)
+                },
+                onPublicationReadTerminal = { accountId, readIdentity, outcome ->
+                    diagnostics.recordCurrentPublicationReadTerminalIfActive(
+                        accountId,
+                        readIdentity.value,
+                        outcome,
+                    )
+                },
+                onDiagnosticFailure = { failure -> diagnostics.recordDiagnosticFailure(failure) },
                 beforePendingRead = { accountId, pendingIdentity ->
                     diagnostics.recordCurrent(
                         Todo18MiniHomeLoadDiagnostic.PendingReadEntered(accountId, pendingIdentity)
@@ -72,3 +85,4 @@ internal fun todo18MiniHomeRuntimeRepository(
             ),
         diagnostics = diagnostics,
     )
+}

@@ -7,6 +7,7 @@ import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
 import com.planterior.helper.core.model.RegistrationMethod
 import com.planterior.helper.feature.collection.RemotePersonalPlant
+import com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionDiagnostics
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionObservation
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
@@ -47,6 +48,13 @@ data class Todo18BoundaryEvent(
     val pendingReadOutcome: String? = null,
     val pendingReadFailureClass: String? = null,
     val pendingReadFailureMessage: String? = null,
+    val operationId: String? = null,
+    val cacheTransactionResult: String? = null,
+    val cacheTransactionFailureClass: String? = null,
+    val cacheTransactionFailureMessage: String? = null,
+    val publicationReadTerminalOutcome: String? = null,
+    val publicationReadTerminalFailureClass: String? = null,
+    val publicationReadTerminalFailureMessage: String? = null,
 )
 
 /** Shared deterministic state and event stream for the Todo18 boundary fixtures. */
@@ -98,15 +106,35 @@ class Todo18Scenario(val accountId: AccountId) {
     }
 
     internal fun emitMiniHomeLoadDiagnostic(observation: Todo18MiniHomeLoadObservation) {
+        val diagnostic = observation.diagnostic
+        val cacheTransaction =
+            (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)?.observation
+        val publicationTerminal =
+            diagnostic as? Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal
+        val publicationOutcome = publicationTerminal?.outcome
+        val publicationFailure =
+            when (publicationOutcome) {
+                is MiniHomePublicationReadTerminalOutcome.Threw -> publicationOutcome.failure
+                is MiniHomePublicationReadTerminalOutcome.Cancelled -> publicationOutcome.failure
+                else -> null
+            }
+        val pendingFailure =
+            when (diagnostic) {
+                is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> diagnostic.failure
+                is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> diagnostic.failure
+                else -> null
+            }
         val kind =
-            when (observation.diagnostic) {
+            when (diagnostic) {
                 Todo18MiniHomeLoadDiagnostic.LoadEntered -> "load-entered"
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered -> "remote-load-entered"
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned -> "remote-load-returned"
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered -> "cache-apply-entered"
                 is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned -> "cache-apply-returned"
+                is Todo18MiniHomeLoadDiagnostic.CacheTransaction -> diagnostic.receiptStage
                 Todo18MiniHomeLoadDiagnostic.PublicationReadEntered -> "publication-read-entered"
                 Todo18MiniHomeLoadDiagnostic.PublicationReadReturned -> "publication-read-returned"
+                is Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal -> diagnostic.receiptStage
                 is Todo18MiniHomeLoadDiagnostic.PendingReadEntered -> "pending-read-entered"
                 is Todo18MiniHomeLoadDiagnostic.PendingReadReturned -> "pending-read-returned"
                 is Todo18MiniHomeLoadDiagnostic.PendingReadThrew -> "pending-read-threw"
@@ -114,7 +142,7 @@ class Todo18Scenario(val accountId: AccountId) {
                 is Todo18MiniHomeLoadDiagnostic.Terminal -> "load-terminal"
             }
         val identity =
-            when (observation.diagnostic) {
+            when (diagnostic) {
                 Todo18MiniHomeLoadDiagnostic.LoadEntered,
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered,
                 Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned,
@@ -128,10 +156,12 @@ class Todo18Scenario(val accountId: AccountId) {
                     observation.diagnostic.accountId.value
                 is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
                     observation.diagnostic.accountId.value
-                is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
-                    observation.diagnostic.accountId.value
-                is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
-                    observation.diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered -> diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned -> diagnostic.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.CacheTransaction ->
+                    cacheTransaction!!.accountId.value
+                is Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal ->
+                    diagnostic.accountId.value
                 Todo18MiniHomeLoadDiagnostic.Ready -> "Ready"
                 Todo18MiniHomeLoadDiagnostic.Forbidden -> "Forbidden"
                 Todo18MiniHomeLoadDiagnostic.Failed -> "Failed"
@@ -142,7 +172,7 @@ class Todo18Scenario(val accountId: AccountId) {
                 kind = kind,
                 identity = identity,
                 loadId = observation.loadId.value,
-                readId = observation.readId?.ordinal,
+                readId = publicationTerminal?.readIdentity ?: observation.readId?.ordinal,
                 diagnosticOrder = observation.order,
                 cacheOutcome =
                     (observation.diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheApplyReturned)
@@ -156,22 +186,21 @@ class Todo18Scenario(val accountId: AccountId) {
                         is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "cancelled"
                         else -> null
                     },
-                pendingReadFailureClass =
-                    when (val diagnostic = observation.diagnostic) {
-                        is Todo18MiniHomeLoadDiagnostic.PendingReadThrew ->
-                            diagnostic.failure.javaClass.name
-                        is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
-                            diagnostic.failure.javaClass.name
-                        else -> null
+                pendingReadFailureClass = pendingFailure?.javaClass?.name,
+                pendingReadFailureMessage = pendingFailure?.message,
+                operationId = cacheTransaction?.operationId?.value,
+                cacheTransactionResult = cacheTransaction?.result?.name?.lowercase(),
+                cacheTransactionFailureClass = cacheTransaction?.failure?.javaClass?.name,
+                cacheTransactionFailureMessage = cacheTransaction?.failure?.message,
+                publicationReadTerminalOutcome =
+                    when (publicationOutcome) {
+                        MiniHomePublicationReadTerminalOutcome.Returned -> "returned"
+                        is MiniHomePublicationReadTerminalOutcome.Threw -> "threw"
+                        is MiniHomePublicationReadTerminalOutcome.Cancelled -> "cancelled"
+                        null -> null
                     },
-                pendingReadFailureMessage =
-                    when (val diagnostic = observation.diagnostic) {
-                        is Todo18MiniHomeLoadDiagnostic.PendingReadThrew ->
-                            diagnostic.failure.message
-                        is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled ->
-                            diagnostic.failure.message
-                        else -> null
-                    },
+                publicationReadTerminalFailureClass = publicationFailure?.javaClass?.name,
+                publicationReadTerminalFailureMessage = publicationFailure?.message,
             )
         listeners.forEach { it(event) }
     }

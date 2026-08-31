@@ -10,6 +10,13 @@ internal data class Todo18MiniHomeLoadBoundaryStage(
     val pendingReadLoadId: Long? = null,
     val pendingReadId: Long? = null,
     val pendingReadOutcome: String? = null,
+    val operationId: String? = null,
+    val cacheTransactionResult: String? = null,
+    val cacheTransactionFailureClass: String? = null,
+    val cacheTransactionFailureMessage: String? = null,
+    val publicationReadTerminalOutcome: String? = null,
+    val publicationReadTerminalFailureClass: String? = null,
+    val publicationReadTerminalFailureMessage: String? = null,
 )
 
 internal object Todo18MiniHomeLoadReceiptReducer {
@@ -23,6 +30,14 @@ internal object Todo18MiniHomeLoadReceiptReducer {
     private const val PENDING_READ_CANCELLED = "pending-read-cancelled"
     private const val PENDING_READ_CARDINALITY_MISMATCH = "pending-read-cardinality-mismatch"
     private const val PENDING_READ_ORDER_MISMATCH = "pending-read-order-mismatch"
+    private const val CACHE_TRANSACTION_CALL_ENTERED = "cache-transaction-call-entered"
+    private const val CACHE_TRANSACTION_BODY_ENTERED = "cache-transaction-body-entered"
+    private const val CACHE_TRANSACTION_RETURNED = "cache-transaction-returned"
+    private const val CACHE_TRANSACTION_THREW = "cache-transaction-threw"
+    private const val CACHE_TRANSACTION_CANCELLED = "cache-transaction-cancelled"
+    private const val PUBLICATION_READ_TERMINAL_RETURNED = "publication-read-terminal-returned"
+    private const val PUBLICATION_READ_TERMINAL_THREW = "publication-read-terminal-threw"
+    private const val PUBLICATION_READ_TERMINAL_CANCELLED = "publication-read-terminal-cancelled"
     private val pendingReadKinds =
         setOf(
             PENDING_READ_ENTERED,
@@ -43,6 +58,27 @@ internal object Todo18MiniHomeLoadReceiptReducer {
         )
     private val terminalIdentities = setOf("Ready", "Forbidden", "Failed", "Cancelled")
     private val cacheOutcomes = setOf("current", "conflict")
+    private val cacheTransactionKinds =
+        setOf(
+            CACHE_TRANSACTION_CALL_ENTERED,
+            CACHE_TRANSACTION_BODY_ENTERED,
+            "cache-layout-apply",
+            "cache-inventory-apply",
+            "cache-current-snapshot",
+            "cache-verified-inventory-decode",
+            "cache-terminal-conflict",
+            CACHE_TRANSACTION_RETURNED,
+            CACHE_TRANSACTION_THREW,
+            CACHE_TRANSACTION_CANCELLED,
+        )
+    private val cacheTransactionTerminalKinds =
+        setOf(CACHE_TRANSACTION_RETURNED, CACHE_TRANSACTION_THREW, CACHE_TRANSACTION_CANCELLED)
+    private val publicationReadTerminalKinds =
+        setOf(
+            PUBLICATION_READ_TERMINAL_RETURNED,
+            PUBLICATION_READ_TERMINAL_THREW,
+            PUBLICATION_READ_TERMINAL_CANCELLED,
+        )
 
     fun problems(
         expectedAccountId: String,
@@ -53,10 +89,114 @@ internal object Todo18MiniHomeLoadReceiptReducer {
         requiredKinds.forEach { kind ->
             if (stages.none { it.kind == kind }) problems += "missing-$kind"
         }
+        if (progress.cacheTransactionTraceExpected) {
+            val transactions = stages.filter { it.kind in cacheTransactionKinds }
+            if (transactions.isEmpty()) {
+                problems += "missing-$CACHE_TRANSACTION_CALL_ENTERED"
+                problems += "missing-$CACHE_TRANSACTION_BODY_ENTERED"
+                problems += "missing-cache-transaction-terminal"
+            }
+            transactions
+                .groupBy { it.loadId }
+                .values
+                .forEach { transaction ->
+                    if (transaction.none { it.kind == CACHE_TRANSACTION_CALL_ENTERED }) {
+                        problems += "missing-$CACHE_TRANSACTION_CALL_ENTERED"
+                    }
+                    if (transaction.none { it.kind == CACHE_TRANSACTION_BODY_ENTERED }) {
+                        problems += "missing-$CACHE_TRANSACTION_BODY_ENTERED"
+                    }
+                    val terminals = transaction.filter { it.kind in cacheTransactionTerminalKinds }
+                    if (terminals.isEmpty()) problems += "missing-cache-transaction-terminal"
+                    if (terminals.size > 1) {
+                        problems += "cache-transaction-terminal-cardinality-mismatch"
+                    }
+                    if (
+                        transaction.count { it.kind == CACHE_TRANSACTION_CALL_ENTERED } > 1 ||
+                            transaction.count { it.kind == CACHE_TRANSACTION_BODY_ENTERED } > 1
+                    ) {
+                        problems += "cache-transaction-entry-cardinality-mismatch"
+                    }
+                    val firstCall = transaction.indexOfFirst {
+                        it.kind == CACHE_TRANSACTION_CALL_ENTERED
+                    }
+                    val firstBody = transaction.indexOfFirst {
+                        it.kind == CACHE_TRANSACTION_BODY_ENTERED
+                    }
+                    if (firstCall >= 0 && firstBody >= 0 && firstBody <= firstCall) {
+                        problems += "cache-transaction-entry-order-mismatch"
+                    }
+                    if (transaction.mapNotNull { it.operationId }.distinct().size > 1) {
+                        problems += "cache-transaction-operation-identity-mismatch"
+                    }
+                    terminals.singleOrNull()?.let { terminal ->
+                        when (terminal.kind) {
+                            CACHE_TRANSACTION_RETURNED -> {
+                                if (terminal.cacheTransactionResult !in cacheOutcomes) {
+                                    problems += "cache-transaction-result-mismatch"
+                                }
+                            }
+                            CACHE_TRANSACTION_THREW,
+                            CACHE_TRANSACTION_CANCELLED -> {
+                                if (terminal.cacheTransactionFailureClass == null) {
+                                    problems += "cache-transaction-failure-missing"
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+        if (progress.publicationReadTerminalExpected) {
+            stages
+                .filter { it.kind == PUBLICATION_READ_ENTERED }
+                .forEach { entered ->
+                    val terminalCount = stages.count {
+                        it.kind in publicationReadTerminalKinds &&
+                            it.loadId == entered.loadId &&
+                            it.readId == entered.readId
+                    }
+                    when (terminalCount) {
+                        0 -> problems += "missing-publication-read-terminal"
+                        1 -> Unit
+                        else -> problems += "publication-read-terminal-cardinality-mismatch"
+                    }
+                }
+            stages
+                .filter { it.kind in publicationReadTerminalKinds }
+                .forEach { terminal ->
+                    val entered = stages.filter {
+                        it.kind == PUBLICATION_READ_ENTERED &&
+                            it.loadId == terminal.loadId &&
+                            it.readId == terminal.readId
+                    }
+                    if (entered.size != 1) {
+                        problems += "publication-read-terminal-entry-mismatch"
+                    } else if (stages.indexOf(terminal) <= stages.indexOf(entered.single())) {
+                        problems += "publication-read-terminal-order-mismatch"
+                    }
+                    val returned = stages.filter {
+                        it.kind == PUBLICATION_READ_RETURNED &&
+                            it.loadId == terminal.loadId &&
+                            it.readId == terminal.readId
+                    }
+                    if (terminal.kind == PUBLICATION_READ_TERMINAL_RETURNED) {
+                        if (returned.size != 1) {
+                            problems += "publication-read-terminal-return-mismatch"
+                        } else if (stages.indexOf(returned.single()) <= stages.indexOf(terminal)) {
+                            problems += "publication-read-terminal-order-mismatch"
+                        }
+                    } else if (returned.isNotEmpty()) {
+                        problems += "publication-read-terminal-return-mismatch"
+                    }
+                }
+        }
         if (
             stages.any { stage ->
-                stage.kind in (requiredKinds - LOAD_TERMINAL + pendingReadKinds) &&
-                    stage.identity != expectedAccountId
+                stage.kind in
+                    (requiredKinds - LOAD_TERMINAL +
+                        pendingReadKinds +
+                        cacheTransactionKinds +
+                        publicationReadTerminalKinds) && stage.identity != expectedAccountId
             }
         ) {
             problems += "load-stage-account-mismatch"
@@ -67,8 +207,10 @@ internal object Todo18MiniHomeLoadReceiptReducer {
                     stage.identity == null ||
                     stage.loadId == null ||
                     stage.diagnosticOrder == null ||
-                    (stage.kind in publicationReadKinds && stage.readId == null) ||
-                    (stage.kind !in publicationReadKinds && stage.readId != null) ||
+                    (stage.kind in (publicationReadKinds + publicationReadTerminalKinds) &&
+                        stage.readId == null) ||
+                    (stage.kind !in (publicationReadKinds + publicationReadTerminalKinds) &&
+                        stage.readId != null) ||
                     (stage.kind == CACHE_APPLY_RETURNED && stage.cacheOutcome !in cacheOutcomes) ||
                     (stage.kind != CACHE_APPLY_RETURNED && stage.cacheOutcome != null) ||
                     (stage.kind in pendingReadKinds &&
@@ -82,7 +224,36 @@ internal object Todo18MiniHomeLoadReceiptReducer {
                         stage.pendingReadOutcome != "returned") ||
                     (stage.kind == PENDING_READ_THREW && stage.pendingReadOutcome != "threw") ||
                     (stage.kind == PENDING_READ_CANCELLED &&
-                        stage.pendingReadOutcome != "cancelled")
+                        stage.pendingReadOutcome != "cancelled") ||
+                    (stage.kind !in cacheTransactionKinds && stage.operationId != null) ||
+                    (stage.kind !in cacheTransactionKinds &&
+                        (stage.cacheTransactionResult != null ||
+                            stage.cacheTransactionFailureClass != null ||
+                            stage.cacheTransactionFailureMessage != null)) ||
+                    (stage.kind in setOf(CACHE_TRANSACTION_RETURNED, "cache-terminal-conflict") &&
+                        stage.cacheTransactionResult !in cacheOutcomes) ||
+                    (stage.kind !in setOf(CACHE_TRANSACTION_RETURNED, "cache-terminal-conflict") &&
+                        stage.cacheTransactionResult != null) ||
+                    (stage.kind !in setOf(CACHE_TRANSACTION_THREW, CACHE_TRANSACTION_CANCELLED) &&
+                        (stage.cacheTransactionFailureClass != null ||
+                            stage.cacheTransactionFailureMessage != null)) ||
+                    (stage.kind in setOf(CACHE_TRANSACTION_THREW, CACHE_TRANSACTION_CANCELLED) &&
+                        stage.cacheTransactionFailureClass == null) ||
+                    (stage.kind !in publicationReadTerminalKinds &&
+                        (stage.publicationReadTerminalOutcome != null ||
+                            stage.publicationReadTerminalFailureClass != null ||
+                            stage.publicationReadTerminalFailureMessage != null)) ||
+                    (stage.kind == PUBLICATION_READ_TERMINAL_RETURNED &&
+                        stage.publicationReadTerminalOutcome != "returned") ||
+                    (stage.kind == PUBLICATION_READ_TERMINAL_THREW &&
+                        stage.publicationReadTerminalOutcome != "threw") ||
+                    (stage.kind == PUBLICATION_READ_TERMINAL_CANCELLED &&
+                        stage.publicationReadTerminalOutcome != "cancelled") ||
+                    (stage.kind in
+                        setOf(
+                            PUBLICATION_READ_TERMINAL_THREW,
+                            PUBLICATION_READ_TERMINAL_CANCELLED,
+                        ) && stage.publicationReadTerminalFailureClass == null)
             }
         ) {
             problems += "load-diagnostic-malformed"
@@ -90,8 +261,18 @@ internal object Todo18MiniHomeLoadReceiptReducer {
         val reads =
             stages.filter { it.kind in publicationReadKinds }.groupBy { it.loadId to it.readId }
         if (
-            reads.values.any { read ->
-                read.map { it.kind } != listOf(PUBLICATION_READ_ENTERED, PUBLICATION_READ_RETURNED)
+            reads.any { (identity, read) ->
+                val terminal = stages.singleOrNull {
+                    it.kind in publicationReadTerminalKinds &&
+                        it.loadId == identity.first &&
+                        it.readId == identity.second
+                }
+                read.map { it.kind } !=
+                    when (terminal?.kind) {
+                        PUBLICATION_READ_TERMINAL_THREW,
+                        PUBLICATION_READ_TERMINAL_CANCELLED -> listOf(PUBLICATION_READ_ENTERED)
+                        else -> listOf(PUBLICATION_READ_ENTERED, PUBLICATION_READ_RETURNED)
+                    }
             }
         ) {
             problems += "publication-read-identity-mismatch"
@@ -253,6 +434,63 @@ internal object Todo18MiniHomeLoadReceiptReducer {
                     is Todo18MiniHomeLoadDiagnostic.PendingReadCancelled -> "cancelled"
                     is Todo18MiniHomeLoadDiagnostic.PendingReadEntered -> null
                     else -> null
+                },
+            operationId =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                    ?.observation
+                    ?.operationId
+                    ?.value,
+            cacheTransactionResult =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                    ?.observation
+                    ?.result
+                    ?.name
+                    ?.lowercase(),
+            cacheTransactionFailureClass =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                    ?.observation
+                    ?.failure
+                    ?.javaClass
+                    ?.name,
+            cacheTransactionFailureMessage =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction)
+                    ?.observation
+                    ?.failure
+                    ?.message,
+            publicationReadTerminalOutcome =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal)?.let {
+                    terminal ->
+                    when (terminal.outcome) {
+                        com.planterior.helper.feature.minihome
+                            .MiniHomePublicationReadTerminalOutcome
+                            .Returned -> "returned"
+                        is com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome.Threw ->
+                            "threw"
+                        is com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome.Cancelled ->
+                            "cancelled"
+                    }
+                },
+            publicationReadTerminalFailureClass =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal)?.let {
+                    terminal ->
+                    when (val outcome = terminal.outcome) {
+                        is com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome.Threw ->
+                            outcome.failure.javaClass.name
+                        is com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome.Cancelled ->
+                            outcome.failure.javaClass.name
+                        else -> null
+                    }
+                },
+            publicationReadTerminalFailureMessage =
+                (diagnostic as? Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal)?.let {
+                    terminal ->
+                    when (val outcome = terminal.outcome) {
+                        is com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome.Threw ->
+                            outcome.failure.message
+                        is com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome.Cancelled ->
+                            outcome.failure.message
+                        else -> null
+                    }
                 },
         )
     }

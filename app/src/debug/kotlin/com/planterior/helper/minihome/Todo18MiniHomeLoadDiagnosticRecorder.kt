@@ -1,5 +1,8 @@
 package com.planterior.helper.minihome
 
+import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.feature.minihome.MiniHomeCacheTransactionDiagnosticObservation
+import com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome
 import java.util.ArrayDeque
 import java.util.IdentityHashMap
 import kotlin.coroutines.coroutineContext
@@ -37,6 +40,8 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
     private val activeLoads = IdentityHashMap<Job, ArrayDeque<Todo18MiniHomeLoad>>()
     private val failures = mutableListOf<String>()
     private val violations = mutableListOf<Todo18MiniHomeLoadProgressionViolation>()
+    private var cacheTransactionTraceExpected = false
+    private var publicationReadTerminalExpected = false
 
     fun startLoad(): Todo18MiniHomeLoad =
         synchronized(lock) {
@@ -84,6 +89,66 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         }
     }
 
+    suspend fun recordCurrentCacheTransaction(
+        observation: MiniHomeCacheTransactionDiagnosticObservation
+    ) = recordCurrent(Todo18MiniHomeLoadDiagnostic.CacheTransaction(observation))
+
+    suspend fun recordCurrentCacheTransactionIfActive(
+        observation: MiniHomeCacheTransactionDiagnosticObservation
+    ): Boolean = recordCurrentIfActive(Todo18MiniHomeLoadDiagnostic.CacheTransaction(observation))
+
+    suspend fun recordCurrentPublicationReadTerminal(
+        accountId: AccountId,
+        readIdentity: Long,
+        outcome: MiniHomePublicationReadTerminalOutcome,
+    ) {
+        val job = checkNotNull(coroutineContext[Job])
+        val load = synchronized(lock) { checkNotNull(activeLoads[job]?.peekLast()) }
+        record(
+            load.id,
+            Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal(
+                accountId,
+                readIdentity,
+                outcome,
+            ),
+            Todo18MiniHomePublicationReadId(load.id, readIdentity),
+        )
+    }
+
+    suspend fun recordCurrentPublicationReadTerminalIfActive(
+        accountId: AccountId,
+        readIdentity: Long,
+        outcome: MiniHomePublicationReadTerminalOutcome,
+    ): Boolean {
+        val job = coroutineContext[Job] ?: return false
+        val load = synchronized(lock) { activeLoads[job]?.peekLast() } ?: return false
+        record(
+            load.id,
+            Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal(
+                accountId,
+                readIdentity,
+                outcome,
+            ),
+            Todo18MiniHomePublicationReadId(load.id, readIdentity),
+        )
+        return true
+    }
+
+    internal fun expectCacheTransactionTrace() =
+        synchronized(lock) {
+            cacheTransactionTraceExpected = true
+        }
+
+    internal fun expectPublicationReadTerminal() =
+        synchronized(lock) {
+            publicationReadTerminalExpected = true
+        }
+
+    internal fun recordDiagnosticFailure(failure: Throwable) =
+        synchronized(lock) {
+            failures += "injected-observer:${failure.javaClass.name}"
+        }
+
     suspend fun <T> withLoad(load: Todo18MiniHomeLoad, block: suspend () -> T): T {
         val job = checkNotNull(coroutineContext[Job])
         synchronized(lock) { activeLoads.getOrPut(job, ::ArrayDeque).addLast(load) }
@@ -129,6 +194,8 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                 progressionViolations = violations.toList(),
                 observations = reached.toList(),
                 loads = perLoad,
+                cacheTransactionTraceExpected = cacheTransactionTraceExpected,
+                publicationReadTerminalExpected = publicationReadTerminalExpected,
             )
         }
 
@@ -235,8 +302,68 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                     diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             is Todo18MiniHomeLoadDiagnostic.CacheApplyEntered ->
-                diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ||
+                diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+            is Todo18MiniHomeLoadDiagnostic.CacheTransaction ->
+                when (previous.receiptStage) {
+                    "cache-transaction-call-entered" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage == "cache-transaction-body-entered"
+                    "cache-transaction-body-entered" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
+                                    "cache-layout-apply",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                    "cache-terminal-conflict",
+                                )
+                    "cache-layout-apply" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
+                                    "cache-inventory-apply",
+                                    "cache-terminal-conflict",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                )
+                    "cache-inventory-apply" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
+                                    "cache-current-snapshot",
+                                    "cache-terminal-conflict",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                )
+                    "cache-current-snapshot" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
+                                    "cache-verified-inventory-decode",
+                                    "cache-terminal-conflict",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                )
+                    "cache-verified-inventory-decode" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
+                                    "cache-transaction-returned",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                )
+                    "cache-terminal-conflict" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage == "cache-transaction-returned"
+                    "cache-transaction-returned" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned
+                    "cache-transaction-threw",
+                    "cache-transaction-cancelled" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+                    else -> false
+                }
             is Todo18MiniHomeLoadDiagnostic.CacheApplyReturned ->
                 diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||
                     diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
@@ -253,8 +380,12 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                     diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ->
-                diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ||
+                diagnostic is Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal ||
+                    diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ||
                     diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
+                    diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
+            is Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal ->
+                diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ||
                     diagnostic is Todo18MiniHomeLoadDiagnostic.Terminal
             Todo18MiniHomeLoadDiagnostic.PublicationReadReturned ->
                 diagnostic is Todo18MiniHomeLoadDiagnostic.PendingReadEntered ||

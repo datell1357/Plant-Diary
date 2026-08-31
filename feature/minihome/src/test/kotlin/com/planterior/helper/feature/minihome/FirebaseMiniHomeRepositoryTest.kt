@@ -38,6 +38,8 @@ import com.planterior.helper.core.model.PlacementId
 import com.planterior.helper.core.model.Revision
 import java.io.IOException
 import java.time.Instant
+import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -449,6 +451,9 @@ class FirebaseMiniHomeRepositoryTest {
                 CompletableDeferred<Pair<AccountId, MiniHomePublicationReadIdentity>>()
             val cacheEntered = CompletableDeferred<AccountId>()
             val cacheReturned = CompletableDeferred<Pair<AccountId, Boolean>>()
+            val cacheTransactionEntered = CompletableDeferred<Unit>()
+            val cacheTransactionObservations =
+                ConcurrentLinkedQueue<MiniHomeCacheTransactionDiagnosticObservation>()
             val repository =
                 FirebaseMiniHomeRepository(
                     database,
@@ -463,6 +468,15 @@ class FirebaseMiniHomeRepositoryTest {
                     },
                     afterPublicationRead = { accountId, readIdentity ->
                         publicationReturned.complete(accountId to readIdentity)
+                    },
+                    onCacheTransactionDiagnostic = { observation ->
+                        cacheTransactionObservations.add(observation)
+                        if (
+                            observation.stage ==
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED
+                        ) {
+                            cacheTransactionEntered.complete(Unit)
+                        }
                     },
                 )
             val transactionHeld = CompletableDeferred<Unit>()
@@ -487,6 +501,11 @@ class FirebaseMiniHomeRepositoryTest {
                 loadDispatcherDrained.await()
 
                 assertEquals(AccountId("account-a"), cacheEntered.await())
+                cacheTransactionEntered.await()
+                assertEquals(
+                    listOf(MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED),
+                    cacheTransactionObservations.map { it.stage },
+                )
                 assertFalse(transaction.isCompleted)
                 assertFalse(loading.isCompleted)
                 assertFalse(cacheReturned.isCompleted)
@@ -505,6 +524,22 @@ class FirebaseMiniHomeRepositoryTest {
                 assertEquals(AccountId("account-a"), loaded.accountId)
                 assertEquals(Revision(7), loaded.committed.revision)
                 assertFalse(loaded.stale)
+                assertEquals(
+                    listOf(
+                        MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+                        MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                        MiniHomeCacheTransactionDiagnosticStage.LAYOUT_APPLY,
+                        MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
+                        MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
+                        MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                        MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
+                    ),
+                    cacheTransactionObservations.map { it.stage },
+                )
+                assertEquals(
+                    MiniHomeCacheTransactionResult.CURRENT,
+                    cacheTransactionObservations.last().result,
+                )
             }
         }
 
@@ -624,6 +659,7 @@ class FirebaseMiniHomeRepositoryTest {
             val releaseSecondReadCallback = CompletableDeferred<Unit>()
             val firstReadReturned = CompletableDeferred<MiniHomePublicationReadIdentity>()
             val secondReadReturned = CompletableDeferred<MiniHomePublicationReadIdentity>()
+            val secondReadTerminal = CompletableDeferred<MiniHomePublicationReadTerminalOutcome>()
             val repository =
                 FirebaseMiniHomeRepository(
                     database,
@@ -639,6 +675,9 @@ class FirebaseMiniHomeRepositoryTest {
                             1L -> firstReadReturned.complete(readIdentity)
                             2L -> secondReadReturned.complete(readIdentity)
                         }
+                    },
+                    onPublicationReadTerminal = { _, readIdentity, outcome ->
+                        if (readIdentity.value == 2L) secondReadTerminal.complete(outcome)
                     },
                 )
             val transactionHeld = CompletableDeferred<Unit>()
@@ -688,6 +727,12 @@ class FirebaseMiniHomeRepositoryTest {
                     assertEquals(expected.javaClass, actual.javaClass)
                     assertEquals(expected.message, actual.message)
                     assertFalse(secondReadReturned.isCompleted)
+                    val terminal = secondReadTerminal.await()
+                    assertTrue(terminal is MiniHomePublicationReadTerminalOutcome.Cancelled)
+                    assertSame(
+                        completion.await(),
+                        (terminal as MiniHomePublicationReadTerminalOutcome.Cancelled).failure,
+                    )
                 } finally {
                     releaseTransaction.complete(Unit)
                     transaction.await()
@@ -776,6 +821,188 @@ class FirebaseMiniHomeRepositoryTest {
         assertEquals(Revision(7), loaded.committed.revision)
         assertFalse(loaded.stale)
     }
+
+    @Test
+    fun `injected transaction observer faults cannot change successful load`() = runTest {
+        val failures = mutableListOf<Throwable>()
+        val injected =
+            ArrayDeque<Throwable>().apply {
+                add(IllegalStateException("trace runtime"))
+                add(AssertionError("trace assertion"))
+                add(CancellationException("trace cancelled"))
+            }
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                onCacheTransactionDiagnostic = {
+                    if (injected.isNotEmpty()) throw injected.removeFirst()
+                },
+                onDiagnosticFailure = { failures += it },
+            )
+
+        val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+        assertEquals(Revision(7), loaded.committed.revision)
+        assertFalse(loaded.stale)
+        assertEquals(
+            listOf(
+                IllegalStateException::class.java,
+                AssertionError::class.java,
+                CancellationException::class.java,
+            ),
+            failures.map { it.javaClass },
+        )
+    }
+
+    @Test
+    fun `cache transaction cancellation terminal preserves the exact delegate failure`() = runTest {
+        val expected = CancellationException("cache transaction cancellation")
+        val observations = mutableListOf<MiniHomeCacheTransactionDiagnosticObservation>()
+        val installation = MiniHomeCacheConflictDiagnostics.install { throw expected }
+        try {
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    onCacheTransactionDiagnostic = observations::add,
+                )
+
+            val actual =
+                try {
+                    repository.load()
+                    throw AssertionError("Expected cancellation")
+                } catch (failure: CancellationException) {
+                    failure
+                }
+
+            assertEquals(expected.message, actual.message)
+        } finally {
+            installation.close()
+        }
+
+        assertEquals(
+            listOf(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CANCELLED,
+            ),
+            observations.map { it.stage },
+        )
+        assertSame(expected, observations.last().failure)
+    }
+
+    @Test
+    fun `injected publication observer faults cannot change legacy result`() = runTest {
+        val legacyReturns = mutableListOf<MiniHomePublicationReadIdentity>()
+        val failures = mutableListOf<Throwable>()
+        val injected =
+            ArrayDeque<Throwable>().apply {
+                add(IllegalStateException("publication runtime"))
+                add(CancellationException("publication trace cancelled"))
+            }
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                afterPublicationRead = { _, readIdentity -> legacyReturns += readIdentity },
+                onPublicationReadTerminal = { _, _, _ ->
+                    throw injected.removeFirst()
+                },
+                onDiagnosticFailure = { failures += it },
+            )
+
+        val loaded = repository.load() as MiniHomeLoadResult.Ready
+
+        assertEquals(Revision(7), loaded.committed.revision)
+        assertEquals(
+            listOf(MiniHomePublicationReadIdentity(1), MiniHomePublicationReadIdentity(2)),
+            legacyReturns,
+        )
+        assertEquals(2, failures.size)
+        assertEquals(IllegalStateException::class.java, failures[0].javaClass)
+        assertEquals(CancellationException::class.java, failures[1].javaClass)
+    }
+
+    @Test
+    fun `cache load exposes transaction body and terminal separately from outer cache callback`() =
+        runTest {
+            val observations = mutableListOf<String>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    beforeCacheApply = { observations += "legacy-cache-entered" },
+                    afterCacheApply = { _, current ->
+                        observations +=
+                            "legacy-cache-returned:${if (current) "CURRENT" else "CONFLICT"}"
+                    },
+                    onCacheTransactionDiagnostic = { observation ->
+                        observations +=
+                            when (observation.stage) {
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                                MiniHomeCacheTransactionDiagnosticStage.LAYOUT_APPLY,
+                                MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
+                                MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
+                                MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                                MiniHomeCacheTransactionDiagnosticStage.TERMINAL_CONFLICT,
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_THREW,
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CANCELLED ->
+                                    "${observation.stage.receiptStage}:${observation.accountId.value}:${observation.operationId?.value}"
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED ->
+                                    "${observation.stage.receiptStage}:${observation.accountId.value}:${observation.operationId?.value}:${observation.result}"
+                            }
+                    },
+                )
+
+            repository.load()
+
+            assertEquals(
+                listOf(
+                    "legacy-cache-entered",
+                    "cache-transaction-call-entered:account-a:null",
+                    "cache-transaction-body-entered:account-a:null",
+                    "cache-layout-apply:account-a:null",
+                    "cache-inventory-apply:account-a:null",
+                    "cache-current-snapshot:account-a:null",
+                    "cache-verified-inventory-decode:account-a:null",
+                    "cache-transaction-returned:account-a:null:CURRENT",
+                    "legacy-cache-returned:CURRENT",
+                ),
+                observations,
+            )
+        }
+
+    @Test
+    fun `publication read exposes an exact terminal separately from legacy returned callback`() =
+        runTest {
+            val observations = mutableListOf<String>()
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(7)).apply { cacheGeneration = 7 },
+                    afterPublicationRead = { account, readId ->
+                        observations += "legacy-returned:${account.value}:${readId.value}"
+                    },
+                    onPublicationReadTerminal = { account, readId, outcome ->
+                        observations +=
+                            "publication-read-terminal-${outcome::class.simpleName?.lowercase()}:${account.value}:${readId.value}"
+                    },
+                )
+
+            repository.load()
+
+            assertEquals(
+                listOf(
+                    "publication-read-terminal-returned:account-a:1",
+                    "legacy-returned:account-a:1",
+                    "publication-read-terminal-returned:account-a:2",
+                    "legacy-returned:account-a:2",
+                ),
+                observations,
+            )
+        }
 
     @Test
     fun `tagged shared Room writer holds the second publication read until its terminal`() =
@@ -980,9 +1207,16 @@ class FirebaseMiniHomeRepositoryTest {
         mutations.forEach { (expectedField, mutate) ->
             replace(mutate(baseline))
             val observations = mutableListOf<MiniHomeCacheDiagnosticObservation>()
+            val transactionObservations =
+                mutableListOf<MiniHomeCacheTransactionDiagnosticObservation>()
             val installation = MiniHomeCacheConflictDiagnostics.install(observations::add)
             try {
-                FirebaseMiniHomeRepository(database, remote).load()
+                FirebaseMiniHomeRepository(
+                        database,
+                        remote,
+                        onCacheTransactionDiagnostic = transactionObservations::add,
+                    )
+                    .load()
             } finally {
                 installation.close()
             }
@@ -994,6 +1228,17 @@ class FirebaseMiniHomeRepositoryTest {
                 terminal.category,
             )
             assertEquals(expectedField, terminal.operands["field"])
+            val transactionConflict = transactionObservations.single {
+                it.stage == MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE
+            }
+            assertEquals(
+                MiniHomeCacheDiagnosticOutcome.CONFLICT,
+                transactionConflict.cacheObservation?.outcome,
+            )
+            assertEquals(
+                expectedField,
+                transactionConflict.cacheObservation?.operands?.get("field"),
+            )
             replace(baseline)
             assertEquals(baseline, database.cacheDao().currentInventoryCache(account.value))
         }
@@ -1539,6 +1784,7 @@ class FirebaseMiniHomeRepositoryTest {
     @Test
     fun `same inventory generation conflict rolls back newer layout and returns coherent cache`() =
         runTest {
+            val transactionStages = mutableListOf<MiniHomeCacheTransactionDiagnosticObservation>()
             val remote =
                 FakeRemote(layout(3)).apply {
                     authoritativeInventory =
@@ -1550,8 +1796,14 @@ class FirebaseMiniHomeRepositoryTest {
                             generation = 2,
                         )
                 }
-            val repository = FirebaseMiniHomeRepository(database, remote)
+            val repository =
+                FirebaseMiniHomeRepository(
+                    database,
+                    remote,
+                    onCacheTransactionDiagnostic = transactionStages::add,
+                )
             repository.load()
+            transactionStages.clear()
             remote.layout = layout(4).copy(name = "찢어진 새 배치")
             remote.cacheGeneration = 4
             remote.authoritativeInventory =
@@ -1570,6 +1822,21 @@ class FirebaseMiniHomeRepositoryTest {
             assertEquals("저장된 방", recovered.committed.name)
             assertEquals(listOf("stable-background"), recovered.decorations.map { it.id.value })
             assertEquals(3L, database.cacheDao().miniHome("account-a")?.revision)
+            assertEquals(
+                listOf(
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                    MiniHomeCacheTransactionDiagnosticStage.LAYOUT_APPLY,
+                    MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
+                    MiniHomeCacheTransactionDiagnosticStage.TERMINAL_CONFLICT,
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
+                ),
+                transactionStages.map { it.stage },
+            )
+            assertEquals(
+                MiniHomeCacheTransactionResult.CONFLICT,
+                transactionStages.last().result,
+            )
         }
 
     @Test

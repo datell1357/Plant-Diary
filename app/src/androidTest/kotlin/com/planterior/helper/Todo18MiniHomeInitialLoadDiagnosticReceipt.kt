@@ -84,6 +84,19 @@ internal fun writeTodo18MiniHomeInitialLoadReceipt(
                         put("pendingReadOutcome", entry.pendingReadOutcome)
                         put("pendingReadFailureClass", entry.pendingReadFailureClass)
                         put("pendingReadFailureMessage", entry.pendingReadFailureMessage)
+                        put("operationId", entry.operationId)
+                        put("cacheTransactionResult", entry.cacheTransactionResult)
+                        put("cacheTransactionFailureClass", entry.cacheTransactionFailureClass)
+                        put("cacheTransactionFailureMessage", entry.cacheTransactionFailureMessage)
+                        put("publicationReadTerminalOutcome", entry.publicationReadTerminalOutcome)
+                        put(
+                            "publicationReadTerminalFailureClass",
+                            entry.publicationReadTerminalFailureClass,
+                        )
+                        put(
+                            "publicationReadTerminalFailureMessage",
+                            entry.publicationReadTerminalFailureMessage,
+                        )
                         put("sinkSequence", entry.sinkSequence)
                         putTodo18MiniHomeRenderedState(entry.renderedState())
                         put("transactionOwner", entry.transactionOwner)

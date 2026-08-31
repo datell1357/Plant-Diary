@@ -1,5 +1,6 @@
 package com.planterior.helper.minihome
 
+import com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -10,6 +11,8 @@ internal fun JsonObjectBuilder.putTodo18MiniHomeLoadProgress(progress: Todo18Min
     put("valid", progress.valid)
     put("activeStage", progress.activeStage)
     put("lastReachedStage", progress.lastReachedStage)
+    put("cacheTransactionTraceExpected", progress.cacheTransactionTraceExpected)
+    put("publicationReadTerminalExpected", progress.publicationReadTerminalExpected)
     putJsonArray("reachedStages") { progress.reachedStages.forEach(::add) }
     putJsonArray("observations") {
         progress.observations.forEach { observation ->
@@ -52,6 +55,61 @@ internal fun JsonObjectBuilder.putTodo18MiniHomeLoadProgress(progress: Todo18Min
                         "cacheOutcome",
                         (observation.diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheApplyReturned)
                             ?.let { if (it.current) "current" else "conflict" },
+                    )
+                    val cacheTransaction =
+                        observation.diagnostic as? Todo18MiniHomeLoadDiagnostic.CacheTransaction
+                    put(
+                        "cacheTransactionResult",
+                        cacheTransaction?.observation?.result?.name?.lowercase(),
+                    )
+                    put(
+                        "cacheTransactionOperationId",
+                        cacheTransaction?.observation?.operationId?.value,
+                    )
+                    put(
+                        "cacheTransactionFailureClass",
+                        cacheTransaction?.observation?.failure?.javaClass?.name,
+                    )
+                    put(
+                        "cacheTransactionFailureMessage",
+                        cacheTransaction?.observation?.failure?.message,
+                    )
+                    val publicationTerminal =
+                        observation.diagnostic
+                            as? Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal
+                    put(
+                        "publicationReadTerminalOutcome",
+                        publicationTerminal?.let {
+                            when (it.outcome) {
+                                MiniHomePublicationReadTerminalOutcome.Returned -> "returned"
+                                is MiniHomePublicationReadTerminalOutcome.Threw -> "threw"
+                                is MiniHomePublicationReadTerminalOutcome.Cancelled -> "cancelled"
+                            }
+                        },
+                    )
+                    put(
+                        "publicationReadTerminalFailureClass",
+                        publicationTerminal?.let {
+                            when (val outcome = it.outcome) {
+                                is MiniHomePublicationReadTerminalOutcome.Threw ->
+                                    outcome.failure.javaClass.name
+                                is MiniHomePublicationReadTerminalOutcome.Cancelled ->
+                                    outcome.failure.javaClass.name
+                                else -> null
+                            }
+                        },
+                    )
+                    put(
+                        "publicationReadTerminalFailureMessage",
+                        publicationTerminal?.let {
+                            when (val outcome = it.outcome) {
+                                is MiniHomePublicationReadTerminalOutcome.Threw ->
+                                    outcome.failure.message
+                                is MiniHomePublicationReadTerminalOutcome.Cancelled ->
+                                    outcome.failure.message
+                                else -> null
+                            }
+                        },
                     )
                 }
             )

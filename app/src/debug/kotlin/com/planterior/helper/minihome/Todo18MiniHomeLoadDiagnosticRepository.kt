@@ -1,8 +1,10 @@
 package com.planterior.helper.minihome
 
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.feature.minihome.MiniHomeCacheTransactionDiagnosticObservation
 import com.planterior.helper.feature.minihome.MiniHomeLoadResult
 import com.planterior.helper.feature.minihome.MiniHomePendingReadIdentity
+import com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome
 import com.planterior.helper.feature.minihome.MiniHomeRepository
 import kotlinx.coroutines.CancellationException
 
@@ -32,12 +34,32 @@ internal sealed interface Todo18MiniHomeLoadDiagnostic {
         override val receiptStage = "cache-apply-returned"
     }
 
+    data class CacheTransaction(val observation: MiniHomeCacheTransactionDiagnosticObservation) :
+        Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage = observation.stage.receiptStage
+    }
+
     data object PublicationReadEntered : Todo18MiniHomeLoadDiagnostic {
         override val receiptStage = "publication-read-entered"
     }
 
     data object PublicationReadReturned : Todo18MiniHomeLoadDiagnostic {
         override val receiptStage = "publication-read-returned"
+    }
+
+    data class PublicationReadTerminal(
+        val accountId: AccountId,
+        val readIdentity: Long,
+        val outcome: MiniHomePublicationReadTerminalOutcome,
+    ) : Todo18MiniHomeLoadDiagnostic {
+        override val receiptStage =
+            when (outcome) {
+                MiniHomePublicationReadTerminalOutcome.Returned ->
+                    "publication-read-terminal-returned"
+                is MiniHomePublicationReadTerminalOutcome.Threw -> "publication-read-terminal-threw"
+                is MiniHomePublicationReadTerminalOutcome.Cancelled ->
+                    "publication-read-terminal-cancelled"
+            }
     }
 
     data class PendingReadEntered(

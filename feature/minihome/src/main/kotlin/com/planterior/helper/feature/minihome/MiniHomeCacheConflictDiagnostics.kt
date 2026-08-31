@@ -1948,6 +1948,42 @@ fun interface MiniHomeCacheDiagnosticSink {
     fun observe(observation: MiniHomeCacheDiagnosticObservation)
 }
 
+enum class MiniHomeCacheTransactionDiagnosticStage(val receiptStage: String) {
+    TRANSACTION_CALL_ENTERED("cache-transaction-call-entered"),
+    TRANSACTION_BODY_ENTERED("cache-transaction-body-entered"),
+    LAYOUT_APPLY("cache-layout-apply"),
+    INVENTORY_APPLY("cache-inventory-apply"),
+    CURRENT_SNAPSHOT("cache-current-snapshot"),
+    VERIFIED_INVENTORY_DECODE("cache-verified-inventory-decode"),
+    TERMINAL_CONFLICT("cache-terminal-conflict"),
+    TRANSACTION_RETURNED("cache-transaction-returned"),
+    TRANSACTION_THREW("cache-transaction-threw"),
+    TRANSACTION_CANCELLED("cache-transaction-cancelled"),
+}
+
+enum class MiniHomeCacheTransactionResult {
+    CURRENT,
+    CONFLICT,
+}
+
+data class MiniHomeCacheTransactionDiagnosticObservation(
+    val stage: MiniHomeCacheTransactionDiagnosticStage,
+    val accountId: AccountId,
+    val operationId: OperationId?,
+    val result: MiniHomeCacheTransactionResult? = null,
+    val failure: Throwable? = null,
+    val cacheObservation: MiniHomeCacheDiagnosticObservation? = null,
+)
+
+sealed interface MiniHomePublicationReadTerminalOutcome {
+    data object Returned : MiniHomePublicationReadTerminalOutcome
+
+    data class Threw(val failure: Throwable) : MiniHomePublicationReadTerminalOutcome
+
+    data class Cancelled(val failure: CancellationException) :
+        MiniHomePublicationReadTerminalOutcome
+}
+
 object MiniHomeCacheConflictDiagnostics {
     private data class Installation(val token: Any, val sink: MiniHomeCacheDiagnosticSink)
 

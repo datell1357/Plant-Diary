@@ -53,6 +53,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -224,6 +226,18 @@ class FirebaseMiniHomeRepository(
         suspend (AccountId, MiniHomePendingReadIdentity, MiniHomePendingReadOutcome) -> Unit =
         { _, _, _ ->
         },
+    private val onCacheTransactionDiagnostic:
+        suspend (MiniHomeCacheTransactionDiagnosticObservation) -> Unit =
+        {},
+    private val onPublicationReadTerminal:
+        suspend (
+            AccountId,
+            MiniHomePublicationReadIdentity,
+            MiniHomePublicationReadTerminalOutcome,
+        ) -> Unit =
+        { _, _, _ ->
+        },
+    private val onDiagnosticFailure: suspend (Throwable) -> Unit = {},
 ) : MiniHomeRepository {
     private val ownerOperations = ConcurrentHashMap<String, Mutex>()
     private val recentSaveOutcomes = ConcurrentHashMap<String, RegisteredSaveOutcome>()
@@ -297,6 +311,53 @@ class FirebaseMiniHomeRepository(
             throw error
         } catch (_: AssertionError) {} catch (_: Exception) {}
     }
+
+    private suspend fun observeInjectedDiagnostic(observe: suspend () -> Unit) {
+        try {
+            observe()
+        } catch (failure: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw failure
+            reportInjectedDiagnosticFailure(failure)
+        } catch (failure: AssertionError) {
+            reportInjectedDiagnosticFailure(failure)
+        } catch (failure: Exception) {
+            reportInjectedDiagnosticFailure(failure)
+        }
+    }
+
+    private suspend fun reportInjectedDiagnosticFailure(failure: Throwable) {
+        try {
+            onDiagnosticFailure(failure)
+        } catch (observerFailure: CancellationException) {
+            if (!currentCoroutineContext().isActive) throw observerFailure
+        } catch (_: AssertionError) {} catch (_: Exception) {}
+    }
+
+    private suspend fun notifyCacheTransactionDiagnostic(
+        stage: MiniHomeCacheTransactionDiagnosticStage,
+        account: AccountId,
+        operationId: OperationId?,
+        result: MiniHomeCacheTransactionResult? = null,
+        failure: Throwable? = null,
+        cacheObservation: MiniHomeCacheDiagnosticObservation? = null,
+    ) = observeInjectedDiagnostic {
+        onCacheTransactionDiagnostic(
+            MiniHomeCacheTransactionDiagnosticObservation(
+                stage = stage,
+                accountId = account,
+                operationId = operationId,
+                result = result,
+                failure = failure,
+                cacheObservation = cacheObservation,
+            )
+        )
+    }
+
+    private suspend fun notifyPublicationReadTerminal(
+        account: AccountId,
+        readIdentity: MiniHomePublicationReadIdentity,
+        outcome: MiniHomePublicationReadTerminalOutcome,
+    ) = observeInjectedDiagnostic { onPublicationReadTerminal(account, readIdentity, outcome) }
 
     override suspend fun save(request: MiniHomeSaveRequest): MiniHomeSaveResult =
         withOwnerOperation(request.accountId) { saveLocked(request) }
@@ -958,13 +1019,23 @@ class FirebaseMiniHomeRepository(
                     snapshot.snapshotGeneration,
                 )
             }
+        notifyCacheTransactionDiagnostic(
+            MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+            account,
+            operationId,
+        )
         return try {
-            database.withTransaction {
+            val applied = database.withTransaction {
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                    account,
+                    operationId,
+                )
                 val beforeLayout = database.cacheDao().currentMiniHomeCache(account.value)
                 val layoutApplied = database.cacheDao().applyAuthoritativeMiniHome(layoutWrite)
                 if (layoutApplied is MiniHomeCacheApplyResult.Conflict) {
                     val conflict = layoutConflict(layoutWrite, layoutApplied.current)
-                    MiniHomeCacheConflictDiagnostics.observe(
+                    val observation =
                         cacheObservation(
                             MiniHomeCacheDiagnosticStage.LAYOUT_APPLY,
                             account,
@@ -975,6 +1046,12 @@ class FirebaseMiniHomeRepository(
                             cacheWatermarks(beforeLayout, layoutApplied.current, layoutWrite) +
                                 conflict.second,
                         )
+                    MiniHomeCacheConflictDiagnostics.observe(observation)
+                    notifyCacheTransactionDiagnostic(
+                        MiniHomeCacheTransactionDiagnosticStage.LAYOUT_APPLY,
+                        account,
+                        operationId,
+                        cacheObservation = observation,
                     )
                     throw CoherentMiniHomeCacheConflict(
                         MiniHomeCacheConflictCategory.LAYOUT_APPLY,
@@ -983,7 +1060,7 @@ class FirebaseMiniHomeRepository(
                             conflict.second,
                     )
                 }
-                MiniHomeCacheConflictDiagnostics.observe(
+                val layoutObservation =
                     cacheObservation(
                         MiniHomeCacheDiagnosticStage.LAYOUT_APPLY,
                         account,
@@ -992,6 +1069,12 @@ class FirebaseMiniHomeRepository(
                         operands =
                             layoutSuccessOperands(beforeLayout, layoutApplied.current, layoutWrite),
                     )
+                MiniHomeCacheConflictDiagnostics.observe(layoutObservation)
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.LAYOUT_APPLY,
+                    account,
+                    operationId,
+                    cacheObservation = layoutObservation,
                 )
                 val authoritative = snapshot.authoritativeInventory
                 require(authoritative.accountId == account)
@@ -1011,7 +1094,7 @@ class FirebaseMiniHomeRepository(
                             inventoryApplied.current,
                             inventoryWrite,
                         ) + conflict.second
-                    MiniHomeCacheConflictDiagnostics.observe(
+                    val observation =
                         cacheObservation(
                             MiniHomeCacheDiagnosticStage.INVENTORY_APPLY,
                             account,
@@ -1021,6 +1104,12 @@ class FirebaseMiniHomeRepository(
                             conflict.first,
                             operands,
                         )
+                    MiniHomeCacheConflictDiagnostics.observe(observation)
+                    notifyCacheTransactionDiagnostic(
+                        MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
+                        account,
+                        operationId,
+                        cacheObservation = observation,
                     )
                     throw CoherentMiniHomeCacheConflict(
                         MiniHomeCacheConflictCategory.INVENTORY_APPLY,
@@ -1028,7 +1117,7 @@ class FirebaseMiniHomeRepository(
                         operands,
                     )
                 }
-                MiniHomeCacheConflictDiagnostics.observe(
+                val inventoryObservation =
                     cacheObservation(
                         MiniHomeCacheDiagnosticStage.INVENTORY_APPLY,
                         account,
@@ -1041,6 +1130,12 @@ class FirebaseMiniHomeRepository(
                                 inventoryWrite,
                             ),
                     )
+                MiniHomeCacheConflictDiagnostics.observe(inventoryObservation)
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
+                    account,
+                    operationId,
+                    cacheObservation = inventoryObservation,
                 )
                 val coherent =
                     database.cacheDao().currentMiniHomeSnapshotCache(account.value)
@@ -1048,7 +1143,7 @@ class FirebaseMiniHomeRepository(
                 if (!coherent.coherent) {
                     throw currentSnapshotConflict(account, operationId, coherent)
                 }
-                MiniHomeCacheConflictDiagnostics.observe(
+                val snapshotObservation =
                     cacheObservation(
                         MiniHomeCacheDiagnosticStage.CURRENT_SNAPSHOT,
                         account,
@@ -1056,11 +1151,17 @@ class FirebaseMiniHomeRepository(
                         MiniHomeCacheDiagnosticOutcome.VERIFIED,
                         operands = coherent.snapshotOperands(),
                     )
+                MiniHomeCacheConflictDiagnostics.observe(snapshotObservation)
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
+                    account,
+                    operationId,
+                    cacheObservation = snapshotObservation,
                 )
                 val inventory =
                     coherent.inventory?.verifiedAuthoritativeInventoryOrNull(account)
                         ?: throw verifiedInventoryConflict(account, operationId, coherent.inventory)
-                MiniHomeCacheConflictDiagnostics.observe(
+                val inventoryDecodeObservation =
                     cacheObservation(
                         MiniHomeCacheDiagnosticStage.VERIFIED_INVENTORY_DECODE,
                         account,
@@ -1068,14 +1169,27 @@ class FirebaseMiniHomeRepository(
                         MiniHomeCacheDiagnosticOutcome.VERIFIED,
                         operands = coherent.inventory.decodeOperands(account),
                     )
+                MiniHomeCacheConflictDiagnostics.observe(inventoryDecodeObservation)
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                    account,
+                    operationId,
+                    cacheObservation = inventoryDecodeObservation,
                 )
                 CoherentMiniHomeCacheApply.Current(
                     requireNotNull(coherent.layout),
                     inventory,
                 )
             }
+            notifyCacheTransactionDiagnostic(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
+                account,
+                operationId,
+                result = MiniHomeCacheTransactionResult.CURRENT,
+            )
+            applied
         } catch (conflict: CoherentMiniHomeCacheConflict) {
-            MiniHomeCacheConflictDiagnostics.observe(
+            val observation =
                 cacheObservation(
                     MiniHomeCacheDiagnosticStage.TERMINAL_CONFLICT,
                     account,
@@ -1085,8 +1199,40 @@ class FirebaseMiniHomeRepository(
                     conflict.predicate,
                     conflict.operands,
                 )
+            MiniHomeCacheConflictDiagnostics.observe(observation)
+            notifyCacheTransactionDiagnostic(
+                MiniHomeCacheTransactionDiagnosticStage.TERMINAL_CONFLICT,
+                account,
+                operationId,
+                result = MiniHomeCacheTransactionResult.CONFLICT,
+                cacheObservation = observation,
+            )
+            notifyCacheTransactionDiagnostic(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
+                account,
+                operationId,
+                result = MiniHomeCacheTransactionResult.CONFLICT,
             )
             CoherentMiniHomeCacheApply.Conflict
+        } catch (failure: CancellationException) {
+            val originalFailure = failure.cause as? CancellationException ?: failure
+            withContext(NonCancellable) {
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CANCELLED,
+                    account,
+                    operationId,
+                    failure = originalFailure,
+                )
+            }
+            throw failure
+        } catch (failure: Exception) {
+            notifyCacheTransactionDiagnostic(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_THREW,
+                account,
+                operationId,
+                failure = failure,
+            )
+            throw failure
         }
     }
 
@@ -1508,14 +1654,14 @@ class FirebaseMiniHomeRepository(
             }
     }
 
-    private fun currentSnapshotConflict(
+    private suspend fun currentSnapshotConflict(
         account: AccountId,
         operationId: OperationId?,
         current: CachedMiniHomeSnapshotState?,
     ): CoherentMiniHomeCacheConflict {
         val operands = current.snapshotOperands()
         val predicate = selectCurrentSnapshotConflictPredicate(operands)
-        MiniHomeCacheConflictDiagnostics.observe(
+        val observation =
             cacheObservation(
                 MiniHomeCacheDiagnosticStage.CURRENT_SNAPSHOT,
                 account,
@@ -1525,6 +1671,12 @@ class FirebaseMiniHomeRepository(
                 predicate,
                 operands,
             )
+        MiniHomeCacheConflictDiagnostics.observe(observation)
+        notifyCacheTransactionDiagnostic(
+            MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
+            account,
+            operationId,
+            cacheObservation = observation,
         )
         return CoherentMiniHomeCacheConflict(
             MiniHomeCacheConflictCategory.CURRENT_SNAPSHOT,
@@ -1552,13 +1704,13 @@ class FirebaseMiniHomeRepository(
             "inventory.ownedCount" to this?.inventory?.owned?.size?.toString(),
         )
 
-    private fun verifiedInventoryConflict(
+    private suspend fun verifiedInventoryConflict(
         account: AccountId,
         operationId: OperationId?,
         current: CachedInventoryState?,
     ): CoherentMiniHomeCacheConflict {
         val operands = current.decodeOperands(account)
-        MiniHomeCacheConflictDiagnostics.observe(
+        val observation =
             cacheObservation(
                 MiniHomeCacheDiagnosticStage.VERIFIED_INVENTORY_DECODE,
                 account,
@@ -1568,6 +1720,12 @@ class FirebaseMiniHomeRepository(
                 MiniHomeCacheConflictPredicate.VERIFIED_INVENTORY_DECODE_FIELD,
                 operands,
             )
+        MiniHomeCacheConflictDiagnostics.observe(observation)
+        notifyCacheTransactionDiagnostic(
+            MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+            account,
+            operationId,
+            cacheObservation = observation,
         )
         return CoherentMiniHomeCacheConflict(
             MiniHomeCacheConflictCategory.VERIFIED_INVENTORY_DECODE,
@@ -1971,10 +2129,39 @@ class FirebaseMiniHomeRepository(
         val readIdentity =
             MiniHomePublicationReadIdentity(publicationReadSequence.incrementAndGet())
         observePublicationRead { beforePublicationRead(account, readIdentity) }
-        val raw = database.withTransaction {
-            database.cacheDao().currentMiniHomeSnapshotCache(account.value) to
-                database.cacheDao().plants(account.value)
-        }
+        val raw =
+            try {
+                database
+                    .withTransaction {
+                        database.cacheDao().currentMiniHomeSnapshotCache(account.value) to
+                            database.cacheDao().plants(account.value)
+                    }
+                    .also {
+                        notifyPublicationReadTerminal(
+                            account,
+                            readIdentity,
+                            MiniHomePublicationReadTerminalOutcome.Returned,
+                        )
+                    }
+            } catch (failure: Exception) {
+                if (failure is CancellationException) {
+                    val terminalFailure = failure.cause as? CancellationException ?: failure
+                    withContext(NonCancellable) {
+                        notifyPublicationReadTerminal(
+                            account,
+                            readIdentity,
+                            MiniHomePublicationReadTerminalOutcome.Cancelled(terminalFailure),
+                        )
+                    }
+                    throw failure
+                }
+                notifyPublicationReadTerminal(
+                    account,
+                    readIdentity,
+                    MiniHomePublicationReadTerminalOutcome.Threw(failure),
+                )
+                throw failure
+            }
         notifyPublicationReadReturned(account, readIdentity)
         val snapshotState = raw.first
         val incoherentSnapshot = snapshotState?.coherent == false

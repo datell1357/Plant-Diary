@@ -78,6 +78,10 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "remote-load-entered",
             "remote-load-returned",
             "publication-read-entered",
+            "cache-transaction-call-entered",
+            "cache-transaction-body-entered",
+            "cache-transaction-returned",
+            "publication-read-terminal-returned",
             "put(\"valid\", progress.valid)",
             "activeStage",
             "lastReachedStage",
@@ -114,6 +118,20 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "runtime.boundary.subscribe",
             "subscribeToRawMiniHomeStates",
             "subscribeToDisplayedMiniHomeStates",
+        )
+        assertCode(
+            assertions,
+            "captureInitialLoad(",
+            "\"offline-mini-home-initial-load\"",
+            "Todo18TransitionDiagnosticCapture(",
+            "navigateDirectly(PlanteriorRoute.MiniHome)",
+        )
+        assertOrdered(
+            assertions,
+            "Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureInitialLoad(",
+            "\"offline-mini-home-initial-load\"",
+            "Todo18TransitionDiagnosticCapture(",
+            "navigateDirectly(PlanteriorRoute.MiniHome)",
         )
         assertCode(
             assertions,
@@ -199,6 +217,10 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "Todo18MiniHomeLoadDiagnostic.PublicationReadEntered",
             "afterPublicationRead =",
             "Todo18MiniHomeLoadDiagnostic.PublicationReadReturned",
+            "onCacheTransactionDiagnostic =",
+            "diagnostics.recordCurrentCacheTransactionIfActive(",
+            "onPublicationReadTerminal =",
+            "diagnostics.recordCurrentPublicationReadTerminalIfActive(",
             "Todo18MiniHomeLoadDiagnosticRepository(",
             "diagnostics = diagnostics",
         )
@@ -207,6 +229,10 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "beforeCacheApply: suspend (AccountId) -> Unit = {}",
             "afterCacheApply: suspend (AccountId, Boolean) -> Unit = { _, _ -> }",
             "observeCacheDiagnostic",
+            "notifyCacheTransactionDiagnostic",
+            "notifyPublicationReadTerminal",
+            "private suspend fun currentSnapshotConflict(",
+            "private suspend fun verifiedInventoryConflict(",
             "catch (error: CancellationException)",
             "catch (_: AssertionError)",
             "catch (_: Exception)",

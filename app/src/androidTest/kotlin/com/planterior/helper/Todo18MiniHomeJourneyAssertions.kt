@@ -20,23 +20,27 @@ import org.junit.Assert.assertNotNull
 internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPersistedOperation() {
     val plantId = runtime.boundary.seedPlant()
     runtime.boundary.miniHomeSaveMode = Todo18MiniHomeSaveMode.OFFLINE_ONCE
-    Todo18TransitionDiagnosticCapture(
-            runtime,
-            compose,
-            Todo18WaitId.OFFLINE_INITIAL_VIEWING,
-        )
-        .run(
-            wait = { observer ->
-                rendered.awaitMiniHome(
-                    matches = { it.state is MiniHomeUiState.Viewing },
-                    trigger = { navigateDirectly(PlanteriorRoute.MiniHome) },
-                    observer = observer,
-                )
-            },
-            uiPostcondition = {
-                compose.onNodeWithTag(MiniHomeTestTags.EDIT).assertIsDisplayed()
-            },
-        )
+    Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureInitialLoad(
+        "offline-mini-home-initial-load"
+    ) {
+        Todo18TransitionDiagnosticCapture(
+                runtime,
+                compose,
+                Todo18WaitId.OFFLINE_INITIAL_VIEWING,
+            )
+            .run(
+                wait = { observer ->
+                    rendered.awaitMiniHome(
+                        matches = { it.state is MiniHomeUiState.Viewing },
+                        trigger = { navigateDirectly(PlanteriorRoute.MiniHome) },
+                        observer = observer,
+                    )
+                },
+                uiPostcondition = {
+                    compose.onNodeWithTag(MiniHomeTestTags.EDIT).assertIsDisplayed()
+                },
+            )
+    }
     Todo18TransitionDiagnosticCapture(
             runtime,
             compose,

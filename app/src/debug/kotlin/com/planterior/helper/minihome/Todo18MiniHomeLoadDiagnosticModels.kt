@@ -61,6 +61,8 @@ internal data class Todo18MiniHomeLoadProgress(
     val progressionViolations: List<Todo18MiniHomeLoadProgressionViolation> = emptyList(),
     val observations: List<Todo18MiniHomeLoadObservation> = emptyList(),
     val loads: List<Todo18MiniHomePerLoadProgress> = emptyList(),
+    val cacheTransactionTraceExpected: Boolean = false,
+    val publicationReadTerminalExpected: Boolean = false,
 ) {
     val valid: Boolean
         get() = progressionViolations.isEmpty()
