@@ -67,11 +67,12 @@ struct AppShellView: View {
                 auth.pendingLogout = false
             }
         }
-        .transaction {
-            $0.animation = effectiveReduceMotion
+        .animation(
+            effectiveReduceMotion
                 ? nil
-                : .easeInOut(duration: PlanteriorMotion.duration(reduceMotion: false))
-        }
+                : .easeInOut(duration: PlanteriorMotion.duration(reduceMotion: false)),
+            value: showsLogin
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(effectiveReduceMotion ? "app.shell.reduce-motion" : "app.shell")
         .onOpenURL {

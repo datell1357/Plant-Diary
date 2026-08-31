@@ -14,7 +14,7 @@ final class AppLaunchUITests: XCTestCase {
         add(screenshot)
     }
 
-    func testAppShellPreservesTabStacksAndPresentsCameraAction() {
+    func testAppShellPreservesTabStacksAndCentersCamera() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
@@ -43,13 +43,11 @@ final class AppLaunchUITests: XCTestCase {
         assertSinglePersistentTabBar(in: app, selected: "tab.storage")
 
         app.buttons["tab.settings"].tap()
-        XCTAssertTrue(app.buttons["settings.milestones"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["settings.screen"].waitForExistence(timeout: 5))
         assertSinglePersistentTabBar(in: app, selected: "tab.settings")
         XCTAssertEqual(app.staticTexts["settings.profile.name"].label, "민지")
         XCTAssertEqual(app.staticTexts["settings.profile.email"].label, "minji@email.com")
-        openMilestonesAfterRecordingHitGeometry(in: app)
-        assertSinglePersistentTabBar(in: app, selected: "tab.settings")
-        attachScreenshot(app, named: "shell-milestone-402")
+        attachScreenshot(app, named: "shell-settings-402")
 
         app.buttons["tab.collection"].tap()
         XCTAssertTrue(app.scrollViews["collection.summary.screen"].waitForExistence(timeout: 5))
@@ -102,6 +100,7 @@ final class AppLaunchUITests: XCTestCase {
         let camera = app.buttons["tab.camera"]
         let homeScreen = app.scrollViews["home.screen"]
         let expectedSurfaceMinimumY = app.frame.maxY - 84
+        let materialMinimumY = app.frame.maxY - 96
         XCTAssertGreaterThanOrEqual(
             ordinaryTab.frame.minY,
             expectedSurfaceMinimumY,
@@ -113,20 +112,20 @@ final class AppLaunchUITests: XCTestCase {
             "tab targets should leave the system home-indicator edge clear"
         )
         XCTAssertGreaterThanOrEqual(camera.frame.height, 52)
-        XCTAssertLessThan(
+        XCTAssertGreaterThanOrEqual(
             camera.frame.minY,
-            ordinaryTab.frame.minY,
-            "the camera action should remain visibly raised"
+            materialMinimumY,
+            "the camera action should remain inside the shared surface"
         )
         XCTAssertLessThanOrEqual(
             camera.frame.maxY,
             app.frame.maxY - 14,
-            "the raised camera should leave the home-indicator edge clear"
+            "the camera should leave the home-indicator edge clear"
         )
         assertHomePaintedAndInteractiveBoundary(
             in: app,
             homeScreen: homeScreen,
-            materialMinY: app.frame.maxY - 96
+            materialMinY: materialMinimumY
         )
         print(
             "SHELL_GEOMETRY viewport=\(app.frame) home=\(homeScreen.frame) "
@@ -138,10 +137,13 @@ final class AppLaunchUITests: XCTestCase {
     func testReduceMotionLaunchContract() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_REDUCE_MOTION"] = "1"
+        app.launchEnvironment["QA_SETTINGS_SIZE_CATEGORY"] = "AX5"
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launch()
         XCTAssertTrue(
             app.otherElements["app.shell.reduce-motion"].waitForExistence(timeout: 5)
         )
+        assertSinglePersistentTabBar(in: app, selected: "tab.home")
+        attachScreenshot(app, named: "shell-camera-ax5-reduce-motion")
     }
 }

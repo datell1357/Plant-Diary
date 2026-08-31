@@ -55,7 +55,15 @@ extension XCTestCase {
         }
         if let camera = tabs["tab.camera"] {
             XCTAssertEqual(camera.frame.height, 52, accuracy: 0.5, file: file, line: line)
-            XCTAssertLessThan(camera.frame.minY, materialMinY + 8, file: file, line: line)
+            XCTAssertEqual(
+                camera.frame.midX,
+                app.frame.midX,
+                accuracy: 1,
+                "camera action must be horizontally centered in the tab bar",
+                file: file,
+                line: line
+            )
+            XCTAssertGreaterThanOrEqual(camera.frame.minY, materialMinY, file: file, line: line)
             XCTAssertLessThanOrEqual(
                 camera.frame.maxY,
                 materialMinY + materialHeight,

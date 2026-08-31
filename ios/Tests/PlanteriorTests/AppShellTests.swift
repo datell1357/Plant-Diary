@@ -4,6 +4,19 @@ import Testing
 
 struct AppShellTests {
     @Test
+    func shellAnimationIsScopedToLoginVisibilityInsteadOfTabSelection() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("App/AppShellView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(!source.contains(".transaction {"))
+        #expect(source.contains("value: showsLogin"))
+    }
+
+    @Test
     func preservesIndependentTabStacks() {
         var navigation = AppNavigationState()
 

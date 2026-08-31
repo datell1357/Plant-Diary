@@ -11,7 +11,6 @@ enum AppTabBarMetrics {
     static let minimumTarget = PlanteriorControl.minimumTarget
     static let cameraDiameter = PlanteriorControl.cameraDiameter
     static let cameraGlyphSize: CGFloat = 26
-    static let cameraRaise: CGFloat = 10
     static let hairlineWidth = PlanteriorControl.hairline
     static let surface = PlanteriorPalette.surface
     static let hairline = PlanteriorPalette.border
@@ -87,7 +86,6 @@ struct AppTabBar: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .offset(y: -AppTabBarMetrics.cameraRaise)
         .frame(
             maxWidth: .infinity,
             minHeight: AppTabBarMetrics.minimumTarget

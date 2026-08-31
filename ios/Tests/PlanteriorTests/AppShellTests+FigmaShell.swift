@@ -72,7 +72,6 @@ extension AppShellTests {
         #expect(AppTabBarMetrics.iconLabelSpacing == PlanteriorSpacing.extraSmall)
         #expect(AppTabBarMetrics.horizontalPadding == PlanteriorSpacing.small)
         #expect(AppTabBarMetrics.hairlineWidth == PlanteriorControl.hairline)
-        #expect(AppTabBarMetrics.cameraRaise == 10)
         #expect(AppTabBarMetrics.surface == PlanteriorPalette.surface)
         #expect(AppTabBarMetrics.hairline == PlanteriorPalette.border)
         #expect(AppTabBarMetrics.activeTint == PlanteriorPalette.accent)
