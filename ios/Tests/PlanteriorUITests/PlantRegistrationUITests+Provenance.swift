@@ -155,7 +155,7 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
     private func guideSource(in app: XCUIApplication) -> XCUIElement {
         let source = app.descendants(matching: .any)["plant.detail.guide-source"]
         XCTAssertTrue(source.waitForExistence(timeout: 5))
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             guard !source.isHittable else { break }
             app.scrollViews["plant.detail.screen"].swipeUp()
         }

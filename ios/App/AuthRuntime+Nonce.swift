@@ -145,11 +145,15 @@ extension AuthRuntime {
 
     func completeDeletionSignOut() async -> DeletionSessionCleanupResult {
         let firebaseSignedOut: Bool
-        do {
-            try Auth.auth().signOut()
+        if FirebaseConfiguration.isAvailable {
+            do {
+                try Auth.auth().signOut()
+                firebaseSignedOut = true
+            } catch {
+                firebaseSignedOut = Auth.auth().currentUser == nil
+            }
+        } else {
             firebaseSignedOut = true
-        } catch {
-            firebaseSignedOut = Auth.auth().currentUser == nil
         }
         GIDSignIn.sharedInstance.signOut()
         let cleanup = await sessions.logoutAfterRemoteSignOut(

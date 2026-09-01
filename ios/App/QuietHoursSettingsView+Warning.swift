@@ -73,10 +73,21 @@ struct SettingsWarningCard: View {
     )
 
     var body: some View {
-        HStack(
-            alignment: .top,
-            spacing: SettingsReferenceMetrics.warningContentSpacing
-        ) {
+        Text(
+            isAccessibilityCategory
+                ? Self.localizedCopy
+                : Self.referenceVisualCopy
+        )
+        .font(SettingsReferenceMetrics.warningTypography)
+        .foregroundStyle(PlanteriorPalette.warningText.color)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(
+            .leading,
+            SettingsReferenceMetrics.warningIconWidth
+                + SettingsReferenceMetrics.warningContentSpacing
+        )
+        .overlay(alignment: .topLeading) {
             Image(systemName: "lightbulb")
                 .font(SettingsReferenceMetrics.warningIconTypography)
                 .foregroundStyle(PlanteriorPalette.warning.color)
@@ -84,17 +95,8 @@ struct SettingsWarningCard: View {
                     width: SettingsReferenceMetrics.warningIconWidth,
                     height: PlanteriorSpacing.extraLarge
                 )
-            Text(
-                isAccessibilityCategory
-                    ? Self.localizedCopy
-                    : Self.referenceVisualCopy
-            )
-            .font(SettingsReferenceMetrics.warningTypography)
-            .foregroundStyle(PlanteriorPalette.warning.color)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityHidden(true)
         }
-        .accessibilityHidden(true)
         .padding(SettingsReferenceMetrics.warningContentInset)
         .frame(
             maxWidth: .infinity,
@@ -105,10 +107,8 @@ struct SettingsWarningCard: View {
             alignment: .leading
         )
         .background { warningBackground }
-        .accessibilityRepresentation {
-            Text(Self.accessibilityCopy)
-                .accessibilityIdentifier("quiet-hours.warning")
-        }
+        .accessibilityLabel(Self.localizedCopy)
+        .accessibilityIdentifier("quiet-hours.warning")
     }
 
     private var warningBackground: some View {

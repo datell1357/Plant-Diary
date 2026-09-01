@@ -53,11 +53,24 @@ extension HomeDashboardUITests {
     ) {
         let title = app.buttons["home.room.title"]
         XCTAssertTrue(title.exists)
+        let login = app.buttons["home.login.link"]
+        let precedingControl: XCUIElement
+        if login.exists {
+            XCTAssertEqual(
+                login.frame.minY - title.frame.maxY,
+                8,
+                accuracy: 1,
+                "the signed-out action must follow the title by one small spacing token"
+            )
+            precedingControl = login
+        } else {
+            precedingControl = title
+        }
         XCTAssertEqual(
-            roomFrame.minY - title.frame.maxY,
+            roomFrame.minY - precedingControl.frame.maxY,
             8,
             accuracy: 1,
-            "the mini room must begin one small spacing token below its title"
+            "the mini room must begin one small spacing token below the title track"
         )
     }
 

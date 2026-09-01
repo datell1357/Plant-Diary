@@ -1,5 +1,5 @@
-import Testing
 @testable import Planterior
+import Testing
 
 struct PlantSymptomEducationCatalogTests {
     @Test

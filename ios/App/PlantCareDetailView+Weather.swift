@@ -98,7 +98,7 @@ struct PlantSymptomRemedyView: View {
     }
 
     private func symptomCard(_ item: PlantSymptomGuidance, index: Int) -> some View {
-        return VStack(alignment: .leading, spacing: PlanteriorSpacing.none) {
+        VStack(alignment: .leading, spacing: PlanteriorSpacing.none) {
             Button {
                 expandedIndex = expandedIndex == index ? nil : index
             } label: {

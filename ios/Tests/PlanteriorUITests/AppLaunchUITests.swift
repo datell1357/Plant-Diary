@@ -2,6 +2,13 @@ import XCTest
 
 @MainActor
 final class AppLaunchUITests: XCTestCase {
+    private let ordinaryRootSurfaces = [
+        "home.screen",
+        "collection.screen",
+        "storage.screen",
+        "settings.screen"
+    ]
+
     func testCaptureRenderedShell() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -89,6 +96,25 @@ final class AppLaunchUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["home.screen"].waitForExistence(timeout: 5))
     }
 
+    func testOrdinaryTabsReplaceTheVisibleRootSurface() {
+        let app = XCUIApplication()
+        app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
+        app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launch()
+
+        assertOnlyRootSurface("home.screen", in: app)
+
+        for transition in [
+            (tab: "tab.collection", root: "collection.screen"),
+            (tab: "tab.storage", root: "storage.screen"),
+            (tab: "tab.settings", root: "settings.screen"),
+            (tab: "tab.home", root: "home.screen")
+        ] {
+            app.buttons[transition.tab].tap()
+            assertOnlyRootSurface(transition.root, in: app)
+        }
+    }
+
     func testEveryPrimaryNavigationControlIsReachable() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -146,5 +172,27 @@ final class AppLaunchUITests: XCTestCase {
         )
         assertSinglePersistentTabBar(in: app, selected: "tab.home")
         attachScreenshot(app, named: "shell-camera-ax5-reduce-motion")
+    }
+
+    private func assertOnlyRootSurface(
+        _ expectedIdentifier: String,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            app.scrollViews[expectedIdentifier].waitForExistence(timeout: 5),
+            file: file,
+            line: line
+        )
+        for identifier in ordinaryRootSurfaces {
+            XCTAssertEqual(
+                app.scrollViews.matching(identifier: identifier).count,
+                identifier == expectedIdentifier ? 1 : 0,
+                "expected only \(expectedIdentifier), found \(identifier)",
+                file: file,
+                line: line
+            )
+        }
     }
 }

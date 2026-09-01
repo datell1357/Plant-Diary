@@ -27,6 +27,11 @@ final class OperationalAccessibilityUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         assertOneSelectedSettingsTab(in: app)
+        scrollAboveTabMaterial(
+            app.staticTexts["시간 범위 설정"],
+            in: app.scrollViews["quiet-hours.screen"],
+            of: app
+        )
         try audit(app)
     }
 

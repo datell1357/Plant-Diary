@@ -115,8 +115,8 @@ struct LocalPlantCollectionStoreTests {
         schedules.mount(accountID: "account-a")
         let store = collectionStore(defaults: defaults, schedules: schedules)
         let plantID = try PersonalPlantID.parse("local-0")
-        store.plants = [
-            wateringDraft(lastWateredOn: try CalendarDate.parse("2026-08-01"))
+        store.plants = try [
+            wateringDraft(lastWateredOn: CalendarDate.parse("2026-08-01"))
         ]
         store.weatherPlantIDs = [plantID]
         try schedules.reconcile(notificationRequest(
