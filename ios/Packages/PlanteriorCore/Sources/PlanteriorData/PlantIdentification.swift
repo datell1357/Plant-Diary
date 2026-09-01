@@ -160,6 +160,7 @@ public actor PlantIdentificationCoordinator {
         }
         draft = PlantRegistrationDraft(
             plantID: selectedCandidate.plantID,
+            scientificName: selectedCandidate.scientificName,
             displayName: "",
             representativePhoto: image,
             lastWateredOn: nil,

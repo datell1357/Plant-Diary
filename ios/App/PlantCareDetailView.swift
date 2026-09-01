@@ -39,6 +39,7 @@ struct PlantCareDetailView: View {
                         hero
                         guideSection
                             .padding(.top, PlanteriorSpacing.extraSmall)
+                        guideSourceLink
                         compactWateringCard
                             .padding(
                                 .top,

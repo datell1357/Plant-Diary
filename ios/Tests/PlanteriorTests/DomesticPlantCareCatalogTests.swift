@@ -28,6 +28,39 @@ struct DomesticPlantCareCatalogTests {
         #expect(profile.metrics.map(\.id) == ["water", "light", "temperature", "humidity"])
     }
 
+    @Test(arguments: [
+        "Monstera deliciosa",
+        "Monstera deliciosa Liebm.",
+        "  MONSTERA   DELICIOSA  ",
+        "Monstera\u{00A0}deliciosa",
+        "몬스테라"
+    ])
+    func matchesOnlyCuratedAliasesAfterCanonicalNormalization(
+        scientificName: String
+    ) {
+        #expect(
+            DomesticPlantCareCatalog.profile(scientificName: scientificName)?.scientificName
+                == "Monstera deliciosa"
+        )
+    }
+
+    @Test
+    func findsCuratedMonsteraOptionForKoreanManualSearch() {
+        #expect(
+            DomesticPlantCareCatalog.manualOptions(matching: "  몬스테라  ")
+                .map(\.scientificName) == ["Monstera deliciosa"]
+        )
+    }
+
+    @Test
+    func doesNotMatchScientificNameWithMissingInternalWhitespace() {
+        #expect(
+            DomesticPlantCareCatalog.profile(
+                scientificName: "Monsteradeliciosa"
+            ) == nil
+        )
+    }
+
     @Test
     func unsupportedSpeciesDoesNotReceiveInventedCareGuidance() {
         #expect(

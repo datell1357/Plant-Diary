@@ -64,10 +64,10 @@ extension PlantCollectionFigmaUITests {
         )
         let topOffset: CGFloat = app.frame.height == 874 ? 0 : -15
         XCTAssertEqual(memoCard.frame.minX, 16, accuracy: 0.5)
-        XCTAssertEqual(memoCard.frame.minY, 662.667 + topOffset, accuracy: 0.5)
+        XCTAssertEqual(memoCard.frame.minY, 688.667 + topOffset, accuracy: 0.5)
         XCTAssertEqual(memoCard.frame.width, app.frame.width - 32, accuracy: 0.5)
         XCTAssertEqual(memoCard.frame.height, 112.333, accuracy: 0.1)
-        XCTAssertEqual(memoCard.frame.maxY, 775 + topOffset, accuracy: 0.1)
+        XCTAssertEqual(memoCard.frame.maxY, 801.333 + topOffset, accuracy: 0.1)
         XCTAssertEqual(memoBody.frame.minX, 28, accuracy: 0.5)
         XCTAssertEqual(
             memoBody.frame.width,

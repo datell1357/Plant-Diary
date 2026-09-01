@@ -57,7 +57,24 @@ extension PlantCareDetailView {
         }
     }
 
-    private var careProfile: DomesticPlantCareProfile? {
+    var guideSourceLink: some View {
+        Group {
+            if let careProfile {
+                Link(destination: careProfile.sourceURL) {
+                    Label(
+                        "출처: \(careProfile.sourceName) · 공공데이터 \(careProfile.datasetID)",
+                        systemImage: "arrow.up.right.square"
+                    )
+                    .font(PlanteriorTypography.caption)
+                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                }
+                .accessibilityIdentifier("plant.detail.guide-source")
+                .accessibilityHint("공공데이터 상세 페이지 열기")
+            }
+        }
+    }
+
+    var careProfile: DomesticPlantCareProfile? {
         plant.flatMap(PlantCarePresentation.careProfile(for:))
     }
 

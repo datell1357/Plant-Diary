@@ -42,6 +42,9 @@ struct PlantIdentificationTests {
         await coordinator.confirmSelection()
         #expect(await coordinator.hasDraft)
         #expect(await coordinator.hasPersonalPlant == false)
+        #expect(
+            await coordinator.draft?.scientificName == "Plantus species 1"
+        )
     }
 
     @Test

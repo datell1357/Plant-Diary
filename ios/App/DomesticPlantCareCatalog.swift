@@ -14,6 +14,18 @@ enum DomesticPlantCareCatalog {
         return profiles[normalized(scientificName)]
     }
 
+    static func manualOptions(
+        matching search: String
+    ) -> [DomesticPlantCareProfile] {
+        let query = normalized(search)
+        guard !query.isEmpty else { return [] }
+        return manualProfiles.filter { profile in
+            curatedAliases[profile.scientificName, default: []].contains {
+                normalized($0).contains(query)
+            }
+        }
+    }
+
     static let monstera = DomesticPlantCareProfile(
         scientificName: "Monstera deliciosa",
         metrics: [
@@ -51,12 +63,33 @@ enum DomesticPlantCareCatalog {
         datasetID: "15059042"
     )
 
-    private static let profiles = [
-        normalized(monstera.scientificName): monstera,
-        normalized("Monstera deliciosa Liebm."): monstera
+    private static let manualProfiles = [monstera]
+
+    private static let curatedAliases = [
+        monstera.scientificName: [
+            monstera.scientificName,
+            "Monstera deliciosa Liebm.",
+            "몬스테라",
+            "몬스테라 델리시오사"
+        ]
     ]
 
+    private static let profiles = Dictionary(
+        uniqueKeysWithValues: curatedAliases.flatMap { scientificName, aliases in
+            aliases.map { (normalized($0), profile(for: scientificName)) }
+        }
+    )
+
+    private static func profile(for scientificName: String) -> DomesticPlantCareProfile {
+        precondition(scientificName == monstera.scientificName)
+        return monstera
+    }
+
     private static func normalized(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        value
+            .precomposedStringWithCanonicalMapping
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .lowercased()
     }
 }

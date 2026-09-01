@@ -18,6 +18,7 @@ struct PlantRegistrationView: View {
     @State private var showsDuplicate = false
     @State private var existingRoute: DuplicatePlantRoute?
     @State private var editedIdentification = false
+    @State private var selectedManualScientificName: String?
 
     init(
         method: RegistrationMethod = .manual,
@@ -36,6 +37,16 @@ struct PlantRegistrationView: View {
         Form {
             TextField("공개 식물 검색", text: $speciesSearch)
                 .accessibilityIdentifier("registration.search")
+                .onChange(of: speciesSearch) { _, _ in
+                    selectedManualScientificName = nil
+                }
+            if method == .manual, !manualCareOptions.isEmpty {
+                Section("공공데이터 식물 선택") {
+                    ForEach(manualCareOptions, id: \.scientificName) { profile in
+                        manualCareOption(profile)
+                    }
+                }
+            }
             TextField("식물 이름", text: $name)
                 .accessibilityIdentifier("registration.name")
                 .onChange(of: name) {
@@ -133,7 +144,8 @@ struct PlantRegistrationView: View {
         collection.save(
             PlantRegistrationDraft(
                 plantID: candidate?.plantID,
-                scientificName: candidate?.scientificName,
+                scientificName: candidate?.scientificName
+                    ?? selectedManualScientificName,
                 displayName: name.trimmingCharacters(
                     in: .whitespacesAndNewlines
                 ),
@@ -161,6 +173,39 @@ struct PlantRegistrationView: View {
 
     private var calendarDate: CalendarDate? {
         try? plantCalendar.calendarDate(from: lastWatered)
+    }
+
+    private var manualCareOptions: [DomesticPlantCareProfile] {
+        DomesticPlantCareCatalog.manualOptions(matching: speciesSearch)
+    }
+
+    private func manualCareOption(
+        _ profile: DomesticPlantCareProfile
+    ) -> some View {
+        Button {
+            selectedManualScientificName = profile.scientificName
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                    Text("몬스테라")
+                    Text(profile.scientificName)
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                }
+                Spacer()
+                if selectedManualScientificName == profile.scientificName {
+                    Label("선택됨", systemImage: "checkmark.circle.fill")
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.accent.color)
+                }
+            }
+        }
+        .accessibilityIdentifier("registration.care-option.monstera-deliciosa")
+        .accessibilityValue(
+            selectedManualScientificName == profile.scientificName
+                ? "선택됨"
+                : "선택되지 않음"
+        )
     }
 }
 
