@@ -27,7 +27,6 @@ struct AppTabRootView: View {
             InventoryView()
         } else if tab == .settings {
             SettingsView(
-                openMilestones: openDetail,
                 returnFromRoot: returnFromSettingsRoot
             )
         } else {

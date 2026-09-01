@@ -2,10 +2,8 @@ import PlanteriorData
 import PlanteriorDesignSystem
 import PlanteriorDomain
 import SwiftUI
-import UserNotifications
 
 struct SettingsView: View {
-    let openMilestones: () -> Void
     let returnFromRoot: (() -> Void)?
     @Environment(\.dismiss) var dismiss
     @Environment(\.openURL) var openURL
@@ -20,12 +18,11 @@ struct SettingsView: View {
     @State var showsQuietHours = false
     @State var showsRegionSettings = false
     @State var wateringEnabled = true
+    @State var notificationAuthorizationRequest: NotificationAuthorizationRequestContext?
 
     init(
-        openMilestones: @escaping () -> Void,
         returnFromRoot: (() -> Void)? = nil
     ) {
-        self.openMilestones = openMilestones
         self.returnFromRoot = returnFromRoot
     }
 
@@ -77,11 +74,7 @@ struct SettingsView: View {
             mountPresentedAccount()
             weather.reloadAlertPreferences()
             reloadPresentedValues()
-            let settings = await UNUserNotificationCenter.current()
-                .notificationSettings()
-            notificationStatus = Self.notificationText(
-                settings.authorizationStatus
-            )
+            await reloadNotificationAuthorization()
         }
         .onChange(of: wateringEnabled) { _, enabled in
             let time = LocalNotificationPreferenceStore.shared.global?.time
@@ -94,8 +87,10 @@ struct SettingsView: View {
             }
         }
         .onChange(of: auth.accountID?.rawValue) {
+            notificationAuthorizationRequest = nil
             mountPresentedAccount()
             reloadPresentedValues()
+            Task { await reloadNotificationAuthorization() }
         }
         .fullScreenCover(isPresented: $showsRegionSettings) {
             NavigationStack {
@@ -126,6 +121,73 @@ struct SettingsView: View {
             LocalNotificationPreferenceStore.shared.quietHours
         )
         regionName = Self.fullRegionName(weather.manualRegionCode)
+    }
+
+    func setWateringNotificationsEnabled(_ enabled: Bool) {
+        guard enabled else {
+            wateringEnabled = false
+            return
+        }
+        guard notificationAuthorizationRequest == nil else { return }
+        let request = NotificationAuthorizationRequestContext(
+            accountID: accountScopeID
+        )
+        notificationAuthorizationRequest = request
+        Task {
+            let authorization = await NotificationRuntimeState
+                .requestAuthorizationIfNeeded()
+            guard NotificationAuthorizationRequestContext.shouldApply(
+                responseFor: request,
+                currentRequest: notificationAuthorizationRequest,
+                accountID: accountScopeID
+            ) else {
+                return
+            }
+            applyNotificationAuthorization(authorization)
+            wateringEnabled = authorization == .authorized
+            notificationAuthorizationRequest = nil
+        }
+    }
+
+    func setWeatherNotificationsEnabled(_ enabled: Bool) {
+        guard enabled else {
+            weather.setGlobalAlertsEnabled(false)
+            return
+        }
+        guard notificationAuthorizationRequest == nil else { return }
+        let request = NotificationAuthorizationRequestContext(
+            accountID: accountScopeID
+        )
+        notificationAuthorizationRequest = request
+        Task {
+            let authorization = await NotificationRuntimeState
+                .requestAuthorizationIfNeeded()
+            guard NotificationAuthorizationRequestContext.shouldApply(
+                responseFor: request,
+                currentRequest: notificationAuthorizationRequest,
+                accountID: accountScopeID
+            ) else {
+                return
+            }
+            applyNotificationAuthorization(authorization)
+            weather.setGlobalAlertsEnabled(authorization == .authorized)
+            notificationAuthorizationRequest = nil
+        }
+    }
+
+    func applyNotificationAuthorization(
+        _ authorization: NotificationAuthorizationState
+    ) {
+        notificationStatus = Self.notificationText(authorization)
+    }
+
+    func reloadNotificationAuthorization() async {
+        let state = await NotificationRuntimeState.current()
+        applyNotificationAuthorization(state.authorization)
+    }
+
+    var notificationAuthorizationRequestInFlight: Bool {
+        notificationAuthorizationRequest != nil
     }
 
     func mountPresentedAccount() {
@@ -163,12 +225,13 @@ struct SettingsView: View {
         }
     }
 
-    static func notificationText(_ status: UNAuthorizationStatus) -> String {
+    static func notificationText(
+        _ status: NotificationAuthorizationState
+    ) -> String {
         switch status {
-        case .authorized, .provisional, .ephemeral: "허용됨"
+        case .authorized: "허용됨"
         case .denied: "허용 안 됨"
         case .notDetermined: "확인 필요"
-        @unknown default: "확인 필요"
         }
     }
 }

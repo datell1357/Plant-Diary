@@ -47,6 +47,7 @@ final class AppLaunchUITests: XCTestCase {
         assertSinglePersistentTabBar(in: app, selected: "tab.settings")
         XCTAssertEqual(app.staticTexts["settings.profile.name"].label, "민지")
         XCTAssertEqual(app.staticTexts["settings.profile.email"].label, "minji@email.com")
+        assertMilestonesHidden(in: app)
         attachScreenshot(app, named: "shell-settings-402")
 
         app.buttons["tab.collection"].tap()

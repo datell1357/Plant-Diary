@@ -10,19 +10,24 @@ extension SettingsView {
             toggleRow(
                 "물 주기 알림",
                 icon: .system("drop"),
-                isOn: $wateringEnabled,
+                isOn: Binding(
+                    get: { wateringEnabled },
+                    set: { setWateringNotificationsEnabled($0) }
+                ),
                 id: "settings.alerts.watering-enabled"
             )
+            .disabled(notificationAuthorizationRequestInFlight)
             rowDivider
             toggleRow(
                 "날씨 알림",
                 icon: .system("cloud.sun"),
                 isOn: Binding(
                     get: { weather.globalAlertsEnabled },
-                    set: { weather.setGlobalAlertsEnabled($0) }
+                    set: { setWeatherNotificationsEnabled($0) }
                 ),
                 id: "settings.alerts.weather-enabled"
             )
+            .disabled(notificationAuthorizationRequestInFlight)
             rowDivider
             Button {
                 showsQuietHours = true
@@ -98,13 +103,6 @@ extension SettingsView {
 
     var operationalGroup: some View {
         settingsGroup("기타 설정") {
-            actionRow(
-                "꾸미기 마일스톤",
-                icon: .system("trophy"),
-                id: "settings.milestones",
-                action: openMilestones
-            )
-            rowDivider
             permissionRow(
                 "카메라",
                 value: Self.cameraText,

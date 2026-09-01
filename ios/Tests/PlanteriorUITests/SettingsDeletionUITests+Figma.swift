@@ -20,6 +20,8 @@ extension SettingsDeletionUITests {
         XCTAssertTrue(app.staticTexts["앱 버전"].isHittable)
         XCTAssertTrue(app.staticTexts["v1.0.0"].exists)
         XCTAssertTrue(app.buttons["auth.logout"].isHittable)
+        XCTAssertFalse(app.buttons["settings.milestones"].exists)
+        XCTAssertFalse(app.staticTexts["꾸미기 마일스톤"].exists)
 
         assertReferenceRootAnatomy(in: app)
         attachScreenshot(named: "settings-402x874-light")
@@ -41,6 +43,120 @@ extension SettingsDeletionUITests {
         attachScreenshot(named: "quiet-hours-402x874-light")
 
         assertQuietHoursPersistence(in: app)
+    }
+
+    func testEnablingWateringAlertsRequestsNotificationAuthorization() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
+        app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "authorized"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        let watering = app.switches["settings.alerts.watering-enabled"]
+        assertSwitch(watering, reachesValue: "1")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "0")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "1")
+
+        let status = app.staticTexts
+            .matching(identifier: "settings.permission.notifications")
+            .matching(NSPredicate(format: "label == '허용됨'"))
+            .firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+    }
+
+    func testOpeningSettingsDoesNotRequestOrClearAlertPreferences() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
+        app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "authorized"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        XCTAssertTrue(
+            notificationStatus("확인 필요", in: app).waitForExistence(timeout: 5)
+        )
+        assertSwitch(
+            app.switches["settings.alerts.watering-enabled"],
+            reachesValue: "1"
+        )
+        assertSwitch(
+            app.switches["settings.alerts.weather-enabled"],
+            reachesValue: "1"
+        )
+    }
+
+    func testDisablingWateringAlertsDoesNotRequestNotificationAuthorization() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
+        app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "authorized"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        let watering = app.switches["settings.alerts.watering-enabled"]
+        XCTAssertTrue(
+            notificationStatus("확인 필요", in: app).waitForExistence(timeout: 5)
+        )
+        assertSwitch(watering, reachesValue: "1")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "0")
+        XCTAssertTrue(
+            notificationStatus("확인 필요", in: app).waitForExistence(timeout: 5)
+        )
+    }
+
+    func testAlreadyAuthorizedWateringAlertEnablesImmediately() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "authorized"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        let watering = app.switches["settings.alerts.watering-enabled"]
+        assertSwitch(watering, reachesValue: "1")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "0")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "1")
+        XCTAssertTrue(
+            notificationStatus("허용됨", in: app).waitForExistence(timeout: 5)
+        )
+    }
+
+    func testDeniedNotificationAuthorizationKeepsWeatherAlertsOff() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
+        app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "denied"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        let weather = app.switches["settings.alerts.weather-enabled"]
+        assertSwitch(weather, reachesValue: "1")
+        weather.tap()
+        assertSwitch(weather, reachesValue: "0")
+        weather.tap()
+        assertSwitch(weather, reachesValue: "0")
+
+        let status = app.staticTexts
+            .matching(identifier: "settings.permission.notifications")
+            .matching(NSPredicate(format: "label == '허용 안 됨'"))
+            .firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+    }
+
+    func testFailedNotificationAuthorizationKeepsWeatherAlertsOff() {
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
+        app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "failed"
+        app.launch()
+        openFigmaSettings(in: app)
+
+        let weather = app.switches["settings.alerts.weather-enabled"]
+        assertSwitch(weather, reachesValue: "1")
+        weather.tap()
+        assertSwitch(weather, reachesValue: "0")
+        XCTAssertTrue(
+            notificationStatus("확인 필요", in: app).waitForExistence(timeout: 5)
+        )
     }
 
     func testHomeNotificationAffordanceOpensQuietHours() {
@@ -114,5 +230,29 @@ extension SettingsDeletionUITests {
         )
         XCTAssertFalse(app.staticTexts["민지"].exists)
         XCTAssertFalse(app.staticTexts["minji@email.com"].exists)
+    }
+
+    private func assertSwitch(
+        _ element: XCUIElement,
+        reachesValue value: String
+    ) {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", value),
+            object: element
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: 5),
+            .completed
+        )
+    }
+
+    private func notificationStatus(
+        _ label: String,
+        in app: XCUIApplication
+    ) -> XCUIElement {
+        app.staticTexts
+            .matching(identifier: "settings.permission.notifications")
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
     }
 }
