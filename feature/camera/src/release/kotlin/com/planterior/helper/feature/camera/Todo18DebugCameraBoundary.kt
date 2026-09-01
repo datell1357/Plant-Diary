@@ -4,4 +4,7 @@ internal fun todo18DebugCameraPermission(actual: CameraPermission): CameraPermis
 
 internal fun todo18DebugPhotoPickerUri(): String? = null
 
-internal fun todo18DebugPhotoPreparationFinished(uri: String, accepted: Boolean) = Unit
+internal suspend fun todo18DebugObservePhotoPreparation(
+    uri: String,
+    prepareAndApply: suspend () -> Boolean,
+): Boolean = prepareAndApply()

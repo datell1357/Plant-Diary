@@ -111,6 +111,82 @@ class Todo18IntegratedJourneySourceContractTest {
     }
 
     @Test
+    fun `malformedPhotoDebugSeamIsTypedAndDeterministic`() {
+        val cameraDebug = source(DEBUG_CAMERA_OVERRIDE)
+        val cameraRelease = source(RELEASE_CAMERA_OVERRIDE)
+        val route =
+            source(
+                "feature/camera/src/main/kotlin/com/planterior/helper/feature/camera/CameraRoute.kt"
+            )
+        val probe =
+            source("app/src/androidTest/kotlin/com/planterior/helper/Todo18JourneyEventProbe.kt")
+        val assertion =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18CameraJourneyAssertions.kt"
+            )
+        val runtime =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18IntegratedRuntimeRule.kt"
+            )
+
+        assertCode(
+            cameraDebug,
+            "sealed interface Todo18DebugPhotoPreparationTerminal",
+            "data class Returned(val accepted: Boolean)",
+            "data class Thrown(val failure: Throwable)",
+            "data class Cancelled(val cancellation: java.util.concurrent.CancellationException)",
+            "data class Todo18DebugPhotoPreparationEvent(",
+            "val uri: String,",
+            "val terminal: Todo18DebugPhotoPreparationTerminal,",
+            "internal suspend fun todo18DebugObservePhotoPreparation(",
+            "Todo18DebugCameraBoundary.observePhotoPreparation(",
+        )
+        assertCode(
+            cameraRelease,
+            "internal suspend fun todo18DebugObservePhotoPreparation(",
+            "prepareAndApply()",
+        )
+
+        val debugBranch =
+            route
+                .substringAfter("CameraCommand.LaunchPhotoPicker")
+                .substringBefore("CameraCommand.OpenAppSettings")
+        val preparePosition = debugBranch.indexOf("withContext(Dispatchers.IO)")
+        val foldPosition = debugBranch.indexOf("result.fold(")
+        val seamPosition = debugBranch.indexOf("todo18DebugObservePhotoPreparation(")
+        assertTrue("Missing real IO preparation", preparePosition >= 0)
+        assertTrue("Missing unchanged result fold", foldPosition >= 0)
+        assertTrue("Missing typed debug seam", seamPosition >= 0)
+        assertTrue(
+            "Typed seam must enclose the existing preparation and fold",
+            seamPosition < preparePosition && preparePosition < foldPosition,
+        )
+        assertCode(
+            debugBranch,
+            "preparer.prepare(debugUri, PhotoSource.Picker)",
+            "result.isSuccess",
+            "controller::photoPrepared",
+            "controller.photoRejected(it.photoError())",
+        )
+
+        assertCode(
+            probe,
+            "when (val terminal = event.terminal)",
+            "Todo18DebugPhotoPreparationTerminal.Returned -> !terminal.accepted",
+            "Todo18DebugPhotoPreparationTerminal.Thrown -> true",
+            "Todo18DebugPhotoPreparationTerminal.Cancelled -> true",
+        )
+        assertCode(
+            assertion,
+            "event.terminal",
+            "Todo18DebugPhotoPreparationTerminal.Returned",
+            "accepted == false",
+        )
+        assertCode(runtime, "Uri.fromFile", "exists().not()")
+        assertFalse(runtime.contains("content://todo18.invalid/missing-photo"))
+    }
+
+    @Test
     fun `split harness preserves journey behavior and exact event synchronization`() {
         val sources = todo18AndroidTestSources()
         val allCode = sources.values.joinToString("\n")
@@ -159,7 +235,9 @@ class Todo18IntegratedJourneySourceContractTest {
             sources.getValue("Todo18CameraJourneyAssertions.kt"),
             "denyCameraPermission()",
             "awaitRejectedPhoto",
-            "!event.accepted",
+            "event.terminal is Todo18DebugPhotoPreparationTerminal.Returned",
+            "val terminal = event.terminal as Todo18DebugPhotoPreparationTerminal.Returned",
+            "terminal.accepted == false",
         )
         assertCode(
             sources.getValue("Todo18ShareJourneyAssertions.kt"),

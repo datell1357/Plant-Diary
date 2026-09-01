@@ -141,18 +141,17 @@ fun CameraRoute(
                     holder.controller?.let { controller ->
                         controller.captureStarted()
                         scope.launch {
-                            val result =
-                                withContext(Dispatchers.IO) {
-                                    preparer.prepare(debugUri, PhotoSource.Picker)
-                                }
-                            result.fold(
-                                onSuccess = controller::photoPrepared,
-                                onFailure = { controller.photoRejected(it.photoError()) },
-                            )
-                            todo18DebugPhotoPreparationFinished(
-                                debugUri,
-                                result.isSuccess,
-                            )
+                            todo18DebugObservePhotoPreparation(debugUri) {
+                                val result =
+                                    withContext(Dispatchers.IO) {
+                                        preparer.prepare(debugUri, PhotoSource.Picker)
+                                    }
+                                result.fold(
+                                    onSuccess = controller::photoPrepared,
+                                    onFailure = { controller.photoRejected(it.photoError()) },
+                                )
+                                result.isSuccess
+                            }
                         }
                     }
                 }

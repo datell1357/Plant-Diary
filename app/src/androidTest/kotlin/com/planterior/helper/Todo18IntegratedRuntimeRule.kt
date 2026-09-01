@@ -1,5 +1,6 @@
 package com.planterior.helper
 
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.planterior.helper.auth.AuthRuntimeDependencyOverrides
 import com.planterior.helper.auth.Todo18DebugRuntimeDependencies
@@ -24,6 +25,7 @@ import com.planterior.helper.inventory.Todo18InventorySettlementObservation
 import com.planterior.helper.inventory.Todo18InventorySettlementStage
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
 import com.planterior.helper.registration.Todo18RegistrationCommitDiagnosticRepository
+import java.io.File
 import org.junit.rules.ExternalResource
 
 /** Installs production Room repositories with deterministic fakes only at remote/OS boundaries. */
@@ -188,7 +190,11 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
     }
 
     fun returnMalformedPickerUri() {
-        Todo18DebugCameraBoundary.installPickerUri("content://todo18.invalid/missing-photo")
+        val missingPhoto = File(application.cacheDir, "todo18/missing-photo.jpg")
+        check(missingPhoto.exists().not()) {
+            "Deterministic malformed-photo target unexpectedly exists: ${missingPhoto.absolutePath}"
+        }
+        Todo18DebugCameraBoundary.installPickerUri(Uri.fromFile(missingPhoto).toString())
     }
 
     companion object {

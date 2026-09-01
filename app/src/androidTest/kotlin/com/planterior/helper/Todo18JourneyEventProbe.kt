@@ -5,6 +5,7 @@ import androidx.navigation.NavController
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import com.planterior.helper.feature.camera.Todo18DebugCameraBoundary
 import com.planterior.helper.feature.camera.Todo18DebugPhotoPreparationEvent
+import com.planterior.helper.feature.camera.Todo18DebugPhotoPreparationTerminal
 import com.planterior.helper.navigation.PlanteriorRoute
 import com.planterior.helper.navigation.toPlanteriorRoute
 import java.io.Closeable
@@ -157,7 +158,13 @@ internal class Todo18JourneyEventProbe(
 
     private fun cameraPreparationSubscription() =
         ExactEventSubscription<Todo18DebugPhotoPreparationEvent>(
-            matches = { !it.accepted },
+            matches = { event ->
+                when (val terminal = event.terminal) {
+                    is Todo18DebugPhotoPreparationTerminal.Returned -> !terminal.accepted
+                    is Todo18DebugPhotoPreparationTerminal.Thrown -> true
+                    is Todo18DebugPhotoPreparationTerminal.Cancelled -> true
+                }
+            },
             subscribe = { receiver ->
                 lateinit var closeable: Closeable
                 LeasedExactEventRegistration(
