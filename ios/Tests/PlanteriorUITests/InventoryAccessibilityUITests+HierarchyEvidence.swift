@@ -9,10 +9,12 @@ extension InventoryAccessibilityUITests {
         app.launch()
         openStorage(in: app)
 
-        let filters = ["all", "background", "furniture", "decoration"].map {
+        let filters = ["all", "wall", "floor", "furniture", "decoration"].map {
             app.buttons["storage.category.\($0)"]
         }
         assertWarehouseAX5Filters(filters)
+        XCTAssertTrue(filters[0].isSelected)
+        attachScreenshot(named: "storage-warehouse-ax5-room-filters")
 
         let count = app.staticTexts["storage.count"]
         let cardIdentifiers = [
@@ -25,7 +27,8 @@ extension InventoryAccessibilityUITests {
             in: app,
             isExactly: [
                 "storage.category.all",
-                "storage.category.background",
+                "storage.category.wall",
+                "storage.category.floor",
                 "storage.category.furniture",
                 "storage.category.decoration",
                 "storage.count"
@@ -47,7 +50,14 @@ extension InventoryAccessibilityUITests {
                 80 - filterWidthTolerance,
                 "AX5 filter width must paint its complete Korean caption"
             )
+            XCTAssertGreaterThanOrEqual(filter.frame.minX, 16)
+            XCTAssertLessThanOrEqual(filter.frame.maxX, 386)
+            XCTAssertGreaterThanOrEqual(filter.frame.height, 44)
         }
+        XCTAssertEqual(filters[0].frame.minY, filters[1].frame.minY, accuracy: 1)
+        XCTAssertEqual(filters[2].frame.minY, filters[3].frame.minY, accuracy: 1)
+        XCTAssertGreaterThan(filters[2].frame.minY, filters[0].frame.maxY)
+        XCTAssertGreaterThan(filters[4].frame.minY, filters[2].frame.maxY)
     }
 
     private func assertWarehouseAX5Cards(

@@ -8,6 +8,7 @@ extension InventoryUITests {
         openStorage(in: app)
 
         assertWarehouseHeader(in: app)
+        assertWarehouseRoomFilters(in: app)
         let ownedItems = [
             "item-mini-shelf", "item-small-rug", "item-window-frame",
             "item-flower-stand", "item-lamp", "item-wall-art",
@@ -18,6 +19,50 @@ extension InventoryUITests {
         assertWarehouseGeometry(in: app)
         attachScreenshot(named: "storage-warehouse-402x874")
         assertWarehouseScrollableItems(ownedItems, in: app)
+    }
+
+    private func assertWarehouseRoomFilters(in app: XCUIApplication) {
+        let filters = ["all", "wall", "floor", "furniture", "decoration"].map {
+            app.buttons["storage.category.\($0)"]
+        }
+        XCTAssertEqual(filters.map(\.label), ["전체", "벽지", "바닥", "가구", "장식"])
+        XCTAssertTrue(filters[0].isSelected)
+        for filter in filters {
+            XCTAssertEqual(filter.frame.width, filters[0].frame.width, accuracy: 1)
+            XCTAssertGreaterThanOrEqual(filter.frame.minX, 16)
+            XCTAssertLessThanOrEqual(filter.frame.maxX, app.frame.maxX - 16)
+        }
+        XCTAssertGreaterThanOrEqual(filters[0].frame.width, 56)
+        for (leading, trailing) in zip(filters, filters.dropFirst()) {
+            XCTAssertLessThanOrEqual(leading.frame.maxX, trailing.frame.minX)
+        }
+
+        let expectedItems = [
+            ["item-mini-shelf", "item-small-rug", "item-window-frame",
+             "item-flower-stand", "item-lamp", "item-wall-art", "item-chair",
+             "item-cushion", "item-book-cart", "item-plant-rack",
+             "item-round-mat", "item-cozy-rug"],
+            ["item-window-frame", "item-wall-art"],
+            ["item-small-rug", "item-round-mat", "item-cozy-rug"],
+            ["item-mini-shelf", "item-flower-stand", "item-chair",
+             "item-book-cart", "item-plant-rack"],
+            ["item-lamp", "item-cushion"]
+        ]
+        for (filter, itemIDs) in zip(filters, expectedItems) {
+            filter.tap()
+            XCTAssertTrue(filter.isSelected)
+            XCTAssertEqual(app.staticTexts["storage.count"].label, "보유 아이템 \(itemIDs.count)개")
+            XCTAssertEqual(
+                app.buttons.allElementsBoundByIndex
+                    .map(\.identifier)
+                    .filter { $0.hasPrefix("storage.row.") },
+                itemIDs.prefix(8).map { "storage.row.\($0)" }
+            )
+        }
+
+        filters[0].tap()
+        XCTAssertTrue(filters[0].isSelected)
+        XCTAssertEqual(app.staticTexts["storage.count"].label, "보유 아이템 12개")
     }
 
     func testReduceMotionWarehouseEvidence() {

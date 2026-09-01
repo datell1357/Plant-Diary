@@ -17,6 +17,7 @@ extension InventoryView {
             Button {
                 mode = mode == .warehouse ? .shop : .warehouse
                 category = nil
+                warehouseCategory = nil
                 seasonalOnly = false
                 visibleItemLimit = Self.initialVisibleItemLimit
             } label: {

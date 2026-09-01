@@ -13,6 +13,7 @@ struct InventoryView: View {
     @StateObject var progression: MilestoneRepository
     @State var mode: InventoryMode
     @State var category: ItemCategory?
+    @State var warehouseCategory: InventoryRoomFilter?
     @State var seasonalOnly = false
     @State var sortDescending: Bool
     @State var visibleItemLimit: Int

@@ -70,7 +70,10 @@ extension InventoryView {
         let ownedIDs = Set(repository.ownedItems.map(\.itemID))
         return repository.catalog.filter {
             ownedIDs.contains($0.id) &&
-                (category == nil || $0.category == category)
+                (
+                    warehouseCategory == nil ||
+                        warehouseCategory?.includes($0) == true
+                )
         }
     }
 
