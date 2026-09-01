@@ -53,6 +53,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         key = "notifications.\(mountedAccountID).scheduled"
         restore()
         enqueueRemoval(prefixes: prefixes)
+        enqueueReconciliation()
     }
 
     func reconcile(_ request: NotificationScheduleRequest) throws {

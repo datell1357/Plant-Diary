@@ -75,15 +75,11 @@ enum DomesticPlantCareCatalog {
     ]
 
     private static let profiles = Dictionary(
-        uniqueKeysWithValues: curatedAliases.flatMap { scientificName, aliases in
-            aliases.map { (normalized($0), profile(for: scientificName)) }
-        }
+        uniqueKeysWithValues: curatedAliases[
+            monstera.scientificName,
+            default: []
+        ].map { (normalized($0), monstera) }
     )
-
-    private static func profile(for scientificName: String) -> DomesticPlantCareProfile {
-        precondition(scientificName == monstera.scientificName)
-        return monstera
-    }
 
     private static func normalized(_ value: String) -> String {
         value

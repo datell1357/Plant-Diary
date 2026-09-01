@@ -47,9 +47,6 @@ xcodebuild \
   -destination "$destination" \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$result_bundle" \
-  -retry-tests-on-failure \
-  -test-iterations 3 \
-  -test-repetition-relaunch-enabled YES \
   "PLAN_FIREBASE_PLIST_PATH=$firebase_plist_path" \
   test-without-building
 
