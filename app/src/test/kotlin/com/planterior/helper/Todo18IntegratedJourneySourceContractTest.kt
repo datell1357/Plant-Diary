@@ -293,6 +293,42 @@ class Todo18IntegratedJourneySourceContractTest {
     }
 
     @Test
+    fun `Registration link expiry assertion scrolls into the viewport before requiring display`() {
+        val journey =
+            source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MajorJourneyAssertions.kt"
+            )
+        val expiry =
+            journey
+                .substringAfter(
+                    "compose.onNodeWithTag(MiniHomeShareTestTags.LINK_URL).assertIsDisplayed()"
+                )
+                .substringBefore("events.navigateAndAwaitBoundary(")
+        val tokens =
+            listOf(
+                "MiniHomeShareTestTags.LINK_EXPIRY",
+                ".performScrollTo()",
+                ".assertIsDisplayed()",
+            )
+        val positions = tokens.map(expiry::indexOf)
+
+        tokens.zip(positions).forEach { (token, position) ->
+            assertTrue("Missing ordered expiry code token: $token", position >= 0)
+        }
+        assertTrue(
+            "Expiry assertion must scroll before its unchanged displayed assertion",
+            positions == positions.sorted(),
+        )
+        assertTrue(
+            "Expiry assertion must keep the exact node chain",
+            expiry.contains(
+                "compose.onNodeWithTag(MiniHomeShareTestTags.LINK_EXPIRY)" +
+                    ".performScrollTo().assertIsDisplayed()"
+            ),
+        )
+    }
+
+    @Test
     fun `inventory acquire waits for exact authoritative cache settlement`() {
         val runtime =
             source(

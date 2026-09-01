@@ -141,7 +141,7 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
     }
     compose.waitForIdle()
     compose.onNodeWithTag(MiniHomeShareTestTags.LINK_URL).assertIsDisplayed()
-    compose.onNodeWithTag(MiniHomeShareTestTags.LINK_EXPIRY).assertIsDisplayed()
+    compose.onNodeWithTag(MiniHomeShareTestTags.LINK_EXPIRY).performScrollTo().assertIsDisplayed()
 
     events.navigateAndAwaitBoundary(
         route = PlanteriorRoute.Weather,
