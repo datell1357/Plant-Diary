@@ -1,6 +1,30 @@
 import Foundation
 import PlanteriorData
 import PlanteriorDomain
+import UserNotifications
+
+@MainActor
+protocol LocalNotificationCenterScheduling: AnyObject {
+    func pendingRequests() async -> [UNNotificationRequest]
+    func add(_ request: UNNotificationRequest) async throws
+    func removePendingRequests(withIdentifiers identifiers: [String]) async
+}
+
+private final class SystemLocalNotificationCenter: LocalNotificationCenterScheduling {
+    private let center = UNUserNotificationCenter.current()
+
+    func pendingRequests() async -> [UNNotificationRequest] {
+        await center.pendingNotificationRequests()
+    }
+
+    func add(_ request: UNNotificationRequest) async throws {
+        try await center.add(request)
+    }
+
+    func removePendingRequests(withIdentifiers identifiers: [String]) async {
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+}
 
 @MainActor
 final class LocalNotificationScheduleStore: @unchecked Sendable {
@@ -16,29 +40,42 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
 
     private let defaults: UserDefaults
     private let quietHours: () -> QuietHoursPreference
+    private let notificationCenter: any LocalNotificationCenterScheduling
     private var key: String
+    private var accountID = "signed-out"
     private var schedules: [StoredSchedule] = []
+    private var pendingOperation: Task<Void, Error>?
 
     init(
         defaults: UserDefaults = .standard,
         key: String = "notifications.signed-out.scheduled",
         quietHours: @escaping () -> QuietHoursPreference = {
             LocalNotificationPreferenceStore.shared.quietHours
-        }
+        },
+        notificationCenter: any LocalNotificationCenterScheduling =
+            SystemLocalNotificationCenter()
     ) {
         self.defaults = defaults
         self.key = key
         self.quietHours = quietHours
+        self.notificationCenter = notificationCenter
         restore()
     }
 
     var scheduledCount: Int {
-        schedules.count
+        deliverySchedules.count
     }
 
     func mount(accountID: String?) {
-        key = "notifications.\(accountID ?? "signed-out").scheduled"
+        let mountedAccountID = accountID ?? "signed-out"
+        guard self.accountID != mountedAccountID else {
+            return
+        }
+        let prefixes = [ownedPrefix, Self.ownedPrefix(accountID: mountedAccountID)]
+        self.accountID = mountedAccountID
+        key = "notifications.\(mountedAccountID).scheduled"
         restore()
+        enqueueRemoval(prefixes: prefixes)
     }
 
     func reconcile(_ request: NotificationScheduleRequest) throws {
@@ -51,10 +88,8 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
             completedPlantIDs: request.completedPlantIDs,
             existingDeduplicationKeys: []
         )
-        let quietHours = quietHours()
         schedules = try NotificationCoordinator()
-            .schedules(normalizedRequest)
-            .filter { !quietHours.contains($0.time) }
+            .localSchedules(normalizedRequest)
             .map {
                 StoredSchedule(
                     plantID: $0.plantID.rawValue,
@@ -65,11 +100,25 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
                 )
             }
         persist()
+        enqueueReconciliation()
     }
 
     func cancel(for plantID: PersonalPlantID) {
         schedules.removeAll { $0.plantID == plantID.rawValue }
         persist()
+        enqueueReconciliation()
+    }
+
+    func suspendDeliveryForCurrentAccount() {
+        enqueueRemoval(prefixes: [ownedPrefix])
+    }
+
+    func refreshDeliveryForCurrentAccount() {
+        enqueueReconciliation()
+    }
+
+    func waitForPendingOperations() async throws {
+        try await pendingOperation?.value
     }
 
     private func restore() {
@@ -87,5 +136,94 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
             return
         }
         defaults.set(data, forKey: key)
+    }
+
+    private var ownedPrefix: String {
+        Self.ownedPrefix(accountID: accountID)
+    }
+
+    private var deliverySchedules: [StoredSchedule] {
+        let quietHours = quietHours()
+        return schedules.filter {
+            guard let time = try? LocalTime.parse($0.time) else {
+                return false
+            }
+            return !quietHours.contains(time)
+        }
+    }
+
+    private static func ownedPrefix(accountID: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(
+            CharacterSet(charactersIn: "-_")
+        )
+        let account = accountID.addingPercentEncoding(
+            withAllowedCharacters: allowed
+        ) ?? accountID
+        return "planterior.watering.\(account)."
+    }
+
+    private func enqueueReconciliation() {
+        let prefix = ownedPrefix
+        let requests = deliverySchedules.map(notificationRequest)
+        let center = notificationCenter
+        let previous = pendingOperation
+        pendingOperation = Task {
+            _ = await previous?.result
+            let pending = await center.pendingRequests()
+            let owned = pending
+                .map(\.identifier)
+                .filter { $0.hasPrefix(prefix) }
+            await center.removePendingRequests(withIdentifiers: owned)
+            for request in requests {
+                try await center.add(request)
+            }
+        }
+    }
+
+    private func enqueueRemoval(prefixes: [String]) {
+        let center = notificationCenter
+        let previous = pendingOperation
+        pendingOperation = Task {
+            _ = await previous?.result
+            let pending = await center.pendingRequests()
+            let owned = pending
+                .map(\.identifier)
+                .filter { identifier in
+                    prefixes.contains { identifier.hasPrefix($0) }
+                }
+            await center.removePendingRequests(withIdentifiers: owned)
+        }
+    }
+
+    private func notificationRequest(
+        _ schedule: StoredSchedule
+    ) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = "물 주기 알림"
+        content.body = "식물의 물 주기 일정을 확인해 주세요."
+        content.sound = .default
+        content.userInfo = [
+            "route": "plant-care",
+            "accountID": accountID,
+            "plantID": schedule.plantID,
+            "care": "watering"
+        ]
+        let date = schedule.date.split(separator: "-").compactMap { Int($0) }
+        let time = schedule.time.split(separator: ":").compactMap { Int($0) }
+        let trigger = UNCalendarNotificationTrigger(
+            dateMatching: DateComponents(
+                year: date[0],
+                month: date[1],
+                day: date[2],
+                hour: time[0],
+                minute: time[1]
+            ),
+            repeats: false
+        )
+        return UNNotificationRequest(
+            identifier: "\(ownedPrefix)\(schedule.plantID).\(schedule.kind)",
+            content: content,
+            trigger: trigger
+        )
     }
 }

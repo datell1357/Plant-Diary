@@ -86,6 +86,21 @@ public struct NotificationCoordinator: Sendable {
         else {
             return []
         }
+        return try plannedSchedules(request)
+    }
+
+    public func localSchedules(
+        _ request: NotificationScheduleRequest
+    ) throws -> [PlannedNotification] {
+        guard request.authorization == .authorized else {
+            return []
+        }
+        return try plannedSchedules(request)
+    }
+
+    private func plannedSchedules(
+        _ request: NotificationScheduleRequest
+    ) throws -> [PlannedNotification] {
         return try request.dueDates
             .sorted { $0.key.rawValue < $1.key.rawValue }
             .filter { !request.completedPlantIDs.contains($0.key) }

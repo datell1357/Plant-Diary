@@ -95,6 +95,29 @@ struct NotificationCoordinatorTests {
     }
 
     @Test
+    func localSchedulingRequiresAuthorizationButNotServerRegistration() throws {
+        let plantID = try PersonalPlantID.parse("plant-a")
+        let dueDate = try CalendarDate.parse("2026-08-11")
+        let time = try LocalTime.parse("09:00")
+        let coordinator = NotificationCoordinator()
+        let request = NotificationScheduleRequest(
+            authorization: .authorized,
+            endpoint: .unavailable,
+            global: NotificationPreference(enabled: true, time: time),
+            perPlant: [:],
+            dueDates: [plantID: dueDate],
+            completedPlantIDs: [],
+            existingDeduplicationKeys: []
+        )
+
+        let local = try coordinator.localSchedules(request)
+        let server = try coordinator.schedules(request)
+
+        #expect(local.map(\.kind) == [.dueDay, .nextDay])
+        #expect(server.isEmpty)
+    }
+
+    @Test
     func perPlantEnabledOverrideSupersedesDisabledGlobalDefault() throws {
         let plantID = try PersonalPlantID.parse("plant-a")
         let dueDate = try CalendarDate.parse("2026-08-11")

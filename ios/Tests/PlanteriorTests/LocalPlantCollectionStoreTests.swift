@@ -3,16 +3,22 @@ import Foundation
 import PlanteriorData
 import PlanteriorDomain
 import Testing
+import UserNotifications
 
 @MainActor
 struct LocalPlantCollectionStoreTests {
     @Test
-    func undoWateringCompletionRestoresPriorDateAndNotificationSchedule() throws {
+    func undoWateringCompletionRestoresPriorDateAndNotificationSchedule() async throws {
         // Given
         let suiteName = "LocalPlantCollectionUndoTests-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
-        let schedules = LocalNotificationScheduleStore(defaults: defaults)
+        let center = LocalNotificationCenterFake()
+        let schedules = LocalNotificationScheduleStore(
+            defaults: defaults,
+            notificationCenter: center
+        )
+        schedules.mount(accountID: "account-a")
         let store = collectionStore(defaults: defaults, schedules: schedules)
         let baseline = try CalendarDate.parse("2026-08-01")
         let today = try CalendarDate.parse("2026-08-11")
@@ -28,9 +34,13 @@ struct LocalPlantCollectionStoreTests {
             plantID: plantID,
             dueDate: today
         ))
+        try await schedules.waitForPendingOperations()
+        #expect(center.requests.count == 2)
         _ = try store.recordWateredToday(at: 0, today: today, intervalDays: 10)
+        try await schedules.waitForPendingOperations()
         #expect(store.completedPlantIDs == [plantID])
         #expect(schedules.scheduledCount == 0)
+        #expect(center.requests.isEmpty)
 
         // When
         try store.undoWateredToday(
@@ -43,11 +53,13 @@ struct LocalPlantCollectionStoreTests {
                 endpoint: .registered
             )
         )
+        try await schedules.waitForPendingOperations()
 
         // Then
         #expect(store.plants[0].lastWateredOn == baseline)
         #expect(store.completedPlantIDs.isEmpty)
         #expect(schedules.scheduledCount == 2)
+        #expect(center.requests.count == 2)
         let restored = collectionStore(defaults: defaults, schedules: schedules)
         #expect(restored.plants[0].lastWateredOn == baseline)
     }
@@ -82,6 +94,48 @@ struct LocalPlantCollectionStoreTests {
         #expect(store.plants[0].lastWateredOn == nil)
         #expect(store.completedPlantIDs.isEmpty)
         #expect(schedules.scheduledCount == 0)
+    }
+
+    @Test
+    func deletingPlantCancelsItsPendingRequestsAndPreservesUnrelatedRequests() async throws {
+        // Given
+        let suiteName = "LocalPlantCollectionDeletionNotificationTests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let unrelated = UNNotificationRequest(
+            identifier: "unrelated.pending",
+            content: UNMutableNotificationContent(),
+            trigger: nil
+        )
+        let center = LocalNotificationCenterFake(requests: [unrelated])
+        let schedules = LocalNotificationScheduleStore(
+            defaults: defaults,
+            notificationCenter: center
+        )
+        schedules.mount(accountID: "account-a")
+        let store = collectionStore(defaults: defaults, schedules: schedules)
+        let plantID = try PersonalPlantID.parse("local-0")
+        store.plants = [
+            wateringDraft(lastWateredOn: try CalendarDate.parse("2026-08-01"))
+        ]
+        store.weatherPlantIDs = [plantID]
+        try schedules.reconcile(notificationRequest(
+            preference: NotificationPreference(
+                enabled: true,
+                time: LocalTime.parse("09:00")
+            ),
+            plantID: plantID,
+            dueDate: CalendarDate.parse("2026-08-11")
+        ))
+        try await schedules.waitForPendingOperations()
+        #expect(center.requests.count == 3)
+
+        // When
+        store.remove(at: 0)
+        try await schedules.waitForPendingOperations()
+
+        // Then
+        #expect(center.requests.map(\.identifier) == ["unrelated.pending"])
     }
 
     @Test

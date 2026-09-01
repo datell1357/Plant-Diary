@@ -84,6 +84,13 @@ struct SettingsView: View {
                     enabled: enabled,
                     time: time
                 )
+                if enabled {
+                    LocalNotificationScheduleStore.shared
+                        .refreshDeliveryForCurrentAccount()
+                } else {
+                    LocalNotificationScheduleStore.shared
+                        .suspendDeliveryForCurrentAccount()
+                }
             }
         }
         .onChange(of: auth.accountID?.rawValue) {

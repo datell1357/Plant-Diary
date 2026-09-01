@@ -128,6 +128,8 @@ struct QuietHoursSettingsView: View {
             start: start,
             end: end
         )
+        LocalNotificationScheduleStore.shared
+            .refreshDeliveryForCurrentAccount()
         onSaved()
         dismiss()
     }
