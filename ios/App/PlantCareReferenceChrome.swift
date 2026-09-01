@@ -118,6 +118,7 @@ private struct PlantCareLeadingTopBar<Leading: View, Trailing: View>: View {
             )
             .foregroundStyle(PlanteriorPalette.textPrimary.color)
             .lineLimit(1)
+            .minimumScaleFactor(0.55)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier(titleIdentifier)
     }

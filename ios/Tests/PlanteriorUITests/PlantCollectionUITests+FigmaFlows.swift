@@ -89,17 +89,18 @@ extension PlantCollectionFigmaUITests {
             28,
             accuracy: 0.5
         )
-        for index in 0 ..< 4 {
+        for index in 0 ..< 3 {
             XCTAssertTrue(app.buttons["remedy.symptom.\(index)"].exists)
         }
         XCTAssertEqual(app.buttons["remedy.symptom.0"].value as? String, "펼쳐짐")
+        XCTAssertTrue(app.staticTexts["remedy.disclaimer"].exists)
         XCTAssertTrue(app.staticTexts["remedy.cause.0"].exists)
         let firstAction = app.staticTexts["remedy.action.0"]
         XCTAssertTrue(firstAction.exists)
         XCTAssertEqual(
             firstAction.label,
-            "물 주기 간격을 대폭 늘려 화분의 속흙까지 완전히 건조시키고 "
-                + "배수 상태를 확인하세요. 필요시 영양제를 보충합니다."
+            "겉흙뿐 아니라 화분 안쪽의 습기를 확인하고, 밝은 간접광인지 살펴보세요. "
+                + "변화를 날짜와 함께 기록해 관찰하세요."
         )
         let firstCard = app.otherElements["remedy.card.0"]
         XCTAssertTrue(firstCard.frame.contains(firstAction.frame))
@@ -119,7 +120,7 @@ extension PlantCollectionFigmaUITests {
         app.buttons["remedy.symptom.1"].tap()
         let secondCause = app.staticTexts["remedy.cause.1"]
         XCTAssertTrue(secondCause.waitForExistence(timeout: 5))
-        XCTAssertTrue(secondCause.label.contains("나타날 수 있어요."))
+        XCTAssertTrue(secondCause.label.contains("보일 수 있어요."))
         XCTAssertTrue(app.staticTexts["remedy.action.1"].exists)
 
         let detailReturned = XCTNSPredicateExpectation(

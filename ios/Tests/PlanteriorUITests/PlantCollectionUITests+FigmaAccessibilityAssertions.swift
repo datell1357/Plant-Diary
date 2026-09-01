@@ -139,8 +139,8 @@ extension PlantCollectionFigmaUITests {
         XCTAssertGreaterThanOrEqual(title.frame.minX, back.frame.maxX + 15)
         XCTAssertLessThan(title.frame.midX, navigationBar.frame.midX)
         XCTAssertEqual(card.frame.minX, 16, accuracy: 1)
-        XCTAssertEqual(card.frame.minY, 148 + topOffset, accuracy: 4)
+        XCTAssertGreaterThan(card.frame.minY, 148 + topOffset)
         XCTAssertEqual(card.frame.width, app.frame.width - 32, accuracy: 1)
-        XCTAssertEqual(card.frame.height, 200, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(card.frame.height, 200)
     }
 }

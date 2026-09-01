@@ -92,10 +92,10 @@ extension PlantCollectionFigmaUITests {
             ("top-bar", app.otherElements["remedy.top-bar"]),
             ("back", app.buttons["remedy.back"]),
             ("context", app.staticTexts["remedy.context"]),
+            ("disclaimer", app.staticTexts["remedy.disclaimer"]),
             ("card.0", app.otherElements["remedy.card.0"]),
             ("card.1", app.otherElements["remedy.card.1"]),
-            ("card.2", app.otherElements["remedy.card.2"]),
-            ("card.3", app.otherElements["remedy.card.3"])
+            ("card.2", app.otherElements["remedy.card.2"])
         ])
     }
 

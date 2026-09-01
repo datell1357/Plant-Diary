@@ -131,6 +131,35 @@ struct LocalPlantCollectionIdentityTests {
     }
 
     @Test
+    func healthNotesSurviveFreshStoreAndAccountAReturnWithoutLeakingToAccountB() throws {
+        let (defaults, store) = try makeStore()
+        store.mount(accountID: "account-a")
+        store.save(draft(named: "A의 몬스테라"))
+        store.addHealthNote("A의 건강 기록", at: 0)
+
+        let remounted = LocalPlantCollectionStore(
+            defaults: defaults,
+            notificationSchedules: LocalNotificationScheduleStore(defaults: defaults)
+        )
+        remounted.mount(accountID: "account-a")
+        #expect(remounted.healthNotes(at: 0) == ["A의 건강 기록"])
+
+        remounted.mount(accountID: "account-b")
+        #expect(remounted.plants.isEmpty)
+        #expect(remounted.healthNotesByPlantID.isEmpty)
+
+        remounted.mount(accountID: "account-a")
+        #expect(remounted.healthNotes(at: 0) == ["A의 건강 기록"])
+
+        let freshStore = LocalPlantCollectionStore(
+            defaults: defaults,
+            notificationSchedules: LocalNotificationScheduleStore(defaults: defaults)
+        )
+        freshStore.mount(accountID: "account-a")
+        #expect(freshStore.healthNotes(at: 0) == ["A의 건강 기록"])
+    }
+
+    @Test
     func collectionSummaryIsDerivedFromWateringModels() throws {
         let (_, store) = try makeStore()
         store.plants = [

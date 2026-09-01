@@ -72,7 +72,7 @@ extension PlantCareDetailView {
         NavigationLink {
             PlantSymptomRemedyView(
                 displayName: trimmedNickname,
-                hasWateringBaseline: lastWateredOn != nil
+                scientificName: plant?.scientificName
             )
         } label: {
             HStack(spacing: PlanteriorSpacing.medium) {

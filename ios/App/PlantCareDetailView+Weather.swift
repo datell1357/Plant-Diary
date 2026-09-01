@@ -35,37 +35,14 @@ extension PlantCareDetailView {
 
 struct PlantSymptomRemedyView: View {
     let displayName: String
-    let hasWateringBaseline: Bool
+    let scientificName: String?
     @Environment(\.dismiss) var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var expandedIndex: Int? = 0
 
-    private let guidance = [
-        SymptomGuidance(
-            icon: "🍂",
-            title: "잎이 노랗게 변해요",
-            cause: "과습 또는 영양 부족",
-            action: "물 주기 간격을 대폭 늘려 화분의 속흙까지 완전히 건조시키고 배수 상태를 확인하세요. 필요시 영양제를 보충합니다."
-        ),
-        SymptomGuidance(
-            icon: "🥀",
-            title: "잎이 힘없이 축 처져요",
-            cause: "수분이 부족하거나 뿌리가 오래 젖어 있을 때 나타날\u{00A0}수\u{00A0}있어요.",
-            action: "겉흙과 속흙의 수분을 확인하고 식물 상태에 맞춰 물 주기 일정을 조정하세요."
-        ),
-        SymptomGuidance(
-            icon: "🟤",
-            title: "잎에 갈색 반점이 생겨요",
-            cause: "강한 빛, 통풍 부족 또는 잎에 오래 남은 물방울이 원인일 수 있어요.",
-            action: "밝은 간접광과 통풍을 확보하고 손상 부위가 번지는지 며칠간 관찰하세요."
-        ),
-        SymptomGuidance(
-            icon: "🐛",
-            title: "벌레가 기어다녀요",
-            cause: "잎 뒷면이나 줄기 주변에 해충이 머물고 있을 수 있어요.",
-            action: "다른 식물과 잠시 분리하고 잎 양면을 확인한 뒤 식물용 방제 제품의 사용법을 따르세요."
-        )
-    ]
+    private var education: PlantSymptomEducation? {
+        PlantSymptomEducationCatalog.education(scientificName: scientificName)
+    }
 
     var body: some View {
         VStack(spacing: PlanteriorSpacing.none) {
@@ -87,8 +64,21 @@ struct PlantSymptomRemedyView: View {
                         }
                         .accessibilityIdentifier("remedy.context")
                         .padding(.leading, PlanteriorSpacing.small)
-                    VStack(spacing: PlanteriorSpacing.medium) {
-                        ForEach(guidance.indices, id: \.self) { symptomCard($0) }
+                    Text(PlantSymptomEducationCatalog.disclaimer)
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                        .accessibilityIdentifier("remedy.disclaimer")
+                    if let education {
+                        VStack(spacing: PlanteriorSpacing.medium) {
+                            ForEach(education.items.indices, id: \.self) { index in
+                                symptomCard(education.items[index], index: index)
+                            }
+                        }
+                    } else {
+                        Text("이 식물의 종 정보에 맞는 증상 교육을 아직 준비하지 못했어요.")
+                            .font(PlanteriorTypography.supporting)
+                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                            .accessibilityIdentifier("remedy.unavailable")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,8 +97,7 @@ struct PlantSymptomRemedyView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func symptomCard(_ index: Int) -> some View {
-        let item = guidance[index]
+    private func symptomCard(_ item: PlantSymptomGuidance, index: Int) -> some View {
         return VStack(alignment: .leading, spacing: PlanteriorSpacing.none) {
             Button {
                 expandedIndex = expandedIndex == index ? nil : index
@@ -160,38 +149,31 @@ struct PlantSymptomRemedyView: View {
         .remedyCardAccessibility(index: index)
     }
 
-    private func guidanceBody(_ item: SymptomGuidance, index: Int) -> some View {
+    private func guidanceBody(_ item: PlantSymptomGuidance, index: Int) -> some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-            Text("⚠️ 원인")
+            Text("⚠️ 가능한 원인")
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .foregroundStyle(PlanteriorPalette.warningText.color)
                 .accessibilityIdentifier("remedy.cause-heading.\(index)")
-            Text(item.cause)
+            Text(item.possibleCause)
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .accessibilityIdentifier("remedy.cause.\(index)")
-            Text("✨ 대처 방법")
+            Text("✨ 초기 확인 방법")
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .foregroundStyle(PlanteriorPalette.accent.color)
                 .padding(.top, PlanteriorSpacing.extraSmall)
             Text(KoreanTypography.binding(
-                item.action,
+                item.initialResponse,
                 phrases: PlantCareKoreanPhrases.remedy
             ))
             .font(PlanteriorTypography.supporting)
             .foregroundStyle(PlanteriorPalette.textSecondary.color)
             .padding(.trailing, PlanteriorSpacing.extraLarge)
-            .accessibilityLabel(item.action)
+            .accessibilityLabel(item.initialResponse)
             .accessibilityIdentifier("remedy.action.\(index)")
         }
     }
-}
-
-private struct SymptomGuidance {
-    let icon: String
-    let title: String
-    let cause: String
-    let action: String
 }
 
 extension Notification.Name {
