@@ -1,8 +1,6 @@
 import PlanteriorDesignSystem
 import SwiftUI
 
-/// Collection detail chrome follows the 402x874 Figma canvas while the
-/// reference simulator reports an 18pt taller top safe area.
 enum PlantCareReferenceMetrics {
     static let topSafeAreaCorrection: CGFloat = -18
     static let heroTopInset: CGFloat = 8

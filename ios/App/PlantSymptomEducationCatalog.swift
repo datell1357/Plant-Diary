@@ -13,7 +13,9 @@ struct PlantSymptomGuidance: Equatable {
 }
 
 enum PlantSymptomEducationCatalog {
-    static let disclaimer = "이 내용은 가능한 원인과 초기 확인 방법을 안내하는 교육 자료이며, 확정 진단이 아닙니다. 증상이 악화되거나 긴급한 상태라면 식물 전문가에게 상담하세요."
+    static let disclaimer =
+        "이 내용은 가능한 원인과 초기 확인 방법을 안내하는 교육 자료이며, 확정 진단이 아닙니다. "
+            + "증상이 악화되거나 긴급한 상태라면 식물 전문가에게 상담하세요."
 
     static func education(scientificName: String?) -> PlantSymptomEducation? {
         guard let scientificName, monsteraAliases.contains(normalized(scientificName)) else {

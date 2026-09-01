@@ -4,29 +4,6 @@ import PlanteriorDomain
 import UserNotifications
 
 @MainActor
-protocol LocalNotificationCenterScheduling: AnyObject {
-    func pendingRequests() async -> [UNNotificationRequest]
-    func add(_ request: UNNotificationRequest) async throws
-    func removePendingRequests(withIdentifiers identifiers: [String]) async
-}
-
-private final class SystemLocalNotificationCenter: LocalNotificationCenterScheduling {
-    private let center = UNUserNotificationCenter.current()
-
-    func pendingRequests() async -> [UNNotificationRequest] {
-        await center.pendingNotificationRequests()
-    }
-
-    func add(_ request: UNNotificationRequest) async throws {
-        try await center.add(request)
-    }
-
-    func removePendingRequests(withIdentifiers identifiers: [String]) async {
-        center.removePendingNotificationRequests(withIdentifiers: identifiers)
-    }
-}
-
-@MainActor
 final class LocalNotificationScheduleStore: @unchecked Sendable {
     static let shared = LocalNotificationScheduleStore()
 
@@ -145,21 +122,13 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     private var deliverySchedules: [StoredSchedule] {
         let quietHours = quietHours()
         return schedules.filter {
-            guard let time = try? LocalTime.parse($0.time) else {
+            guard let time = try? LocalTime.parse($0.time),
+                  (try? CalendarDate.parse($0.date)) != nil
+            else {
                 return false
             }
             return !quietHours.contains(time)
         }
-    }
-
-    private static func ownedPrefix(accountID: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(
-            CharacterSet(charactersIn: "-_")
-        )
-        let account = accountID.addingPercentEncoding(
-            withAllowedCharacters: allowed
-        ) ?? accountID
-        return "planterior.watering.\(account)."
     }
 
     private func enqueueReconciliation() {

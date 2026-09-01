@@ -2,7 +2,7 @@ import Foundation
 @testable import Planterior
 import Testing
 
-struct NotificationAuthorizationRequestContextTests {
+struct NotificationRequestContextTests {
     @Test
     func responseForOldAccountDoesNotMatchAfterRemount() {
         let request = NotificationAuthorizationRequestContext(accountID: "account-a")

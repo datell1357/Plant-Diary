@@ -8,7 +8,7 @@ struct PlantRegistrationView: View {
     let candidate: IdentificationCandidate?
     let onRegistered: (() -> Void)?
     @ObservedObject private var collection = LocalPlantCollectionStore.shared
-    @State private var speciesSearch: String
+    @State var speciesSearch: String
     @State private var name: String
     @State private var lastWatered = Date()
     @State private var usesLastWateredDate = false
@@ -18,7 +18,7 @@ struct PlantRegistrationView: View {
     @State private var showsDuplicate = false
     @State private var existingRoute: DuplicatePlantRoute?
     @State private var editedIdentification = false
-    @State private var selectedManualScientificName: String?
+    @State var selectedManualScientificName: String?
 
     init(
         method: RegistrationMethod = .manual,
@@ -173,47 +173,6 @@ struct PlantRegistrationView: View {
 
     private var calendarDate: CalendarDate? {
         try? plantCalendar.calendarDate(from: lastWatered)
-    }
-
-    private var manualCareOptions: [DomesticPlantCareProfile] {
-        DomesticPlantCareCatalog.manualOptions(matching: speciesSearch)
-    }
-
-    private func manualCareOption(
-        _ profile: DomesticPlantCareProfile
-    ) -> some View {
-        Button {
-            selectedManualScientificName = profile.scientificName
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-                    Text("몬스테라")
-                    Text(profile.scientificName)
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                }
-                Spacer()
-                if selectedManualScientificName == profile.scientificName {
-                    Label("선택됨", systemImage: "checkmark.circle.fill")
-                        .font(PlanteriorTypography.caption)
-                        .foregroundStyle(PlanteriorPalette.accent.color)
-                }
-            }
-        }
-        .accessibilityIdentifier("registration.care-option.monstera-deliciosa")
-        .accessibilityValue(
-            selectedManualScientificName == profile.scientificName
-                ? "선택됨"
-                : "선택되지 않음"
-        )
-    }
-}
-
-private struct DuplicatePlantRoute: Identifiable, Hashable {
-    let target: PlantRouteTarget
-
-    var id: String {
-        target.rawValue
     }
 }
 

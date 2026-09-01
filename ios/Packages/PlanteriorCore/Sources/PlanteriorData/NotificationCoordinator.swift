@@ -101,7 +101,7 @@ public struct NotificationCoordinator: Sendable {
     private func plannedSchedules(
         _ request: NotificationScheduleRequest
     ) throws -> [PlannedNotification] {
-        return try request.dueDates
+        try request.dueDates
             .sorted { $0.key.rawValue < $1.key.rawValue }
             .filter { !request.completedPlantIDs.contains($0.key) }
             .flatMap { entry -> [PlannedNotification] in
@@ -185,29 +185,5 @@ public struct NotificationCoordinator: Sendable {
         return try CalendarDate.parse(
             String(format: "%04d-%02d-%02d", year, month, day)
         )
-    }
-}
-
-public enum NotificationRouteResolution: Equatable, Sendable {
-    case plant(PersonalPlantID)
-    case requiresAuthentication
-    case unavailable
-}
-
-public struct NotificationRouter: Sendable {
-    public init() {}
-
-    public func resolve(
-        plantID: PersonalPlantID,
-        authenticated: Bool,
-        targetAvailable: Bool
-    ) -> NotificationRouteResolution {
-        guard authenticated else {
-            return .requiresAuthentication
-        }
-        guard targetAvailable else {
-            return .unavailable
-        }
-        return .plant(plantID)
     }
 }

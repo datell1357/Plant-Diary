@@ -53,24 +53,44 @@ extension XCTestCase {
                 line: line
             )
         }
-        if let camera = tabs["tab.camera"] {
-            XCTAssertEqual(camera.frame.height, 52, accuracy: 0.5, file: file, line: line)
-            XCTAssertEqual(
-                camera.frame.midX,
-                app.frame.midX,
-                accuracy: 1,
-                "camera action must be horizontally centered in the tab bar",
-                file: file,
-                line: line
-            )
-            XCTAssertGreaterThanOrEqual(camera.frame.minY, materialMinY, file: file, line: line)
-            XCTAssertLessThanOrEqual(
-                camera.frame.maxY,
-                materialMinY + materialHeight,
-                file: file,
-                line: line
-            )
-        }
+        assertPersistentCameraTab(
+            tabs["tab.camera"],
+            in: app,
+            materialYRange: materialMinY ... materialMinY + materialHeight,
+            file: file,
+            line: line
+        )
+    }
+
+    private func assertPersistentCameraTab(
+        _ camera: XCUIElement?,
+        in app: XCUIApplication,
+        materialYRange: ClosedRange<CGFloat>,
+        file: StaticString,
+        line: UInt
+    ) {
+        guard let camera else { return }
+        XCTAssertEqual(camera.frame.height, 52, accuracy: 0.5, file: file, line: line)
+        XCTAssertEqual(
+            camera.frame.midX,
+            app.frame.midX,
+            accuracy: 1,
+            "camera action must be horizontally centered in the tab bar",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            camera.frame.minY,
+            materialYRange.lowerBound,
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            camera.frame.maxY,
+            materialYRange.upperBound,
+            file: file,
+            line: line
+        )
     }
 
     func assertNoPersistentAppTabBar(

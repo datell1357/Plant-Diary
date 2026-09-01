@@ -11,35 +11,38 @@ struct InventoryRoomFilterTests {
 
     @Test
     func bundledAndQAWarehouseItemsMatchExactlyOneRoomFilter() throws {
-        let expectedFilters: [(String, ItemCategory, InventoryRoomFilter)] = [
-            ("item-mini-shelf", .furniture, .furniture),
-            ("item-small-rug", .decoration, .floor),
-            ("item-window-frame", .decoration, .wall),
-            ("item-flower-stand", .furniture, .furniture),
-            ("item-lamp", .decoration, .decoration),
-            ("item-wall-art", .decoration, .wall),
-            ("item-chair", .furniture, .furniture),
-            ("item-cushion", .decoration, .decoration),
-            ("item-book-cart", .furniture, .furniture),
-            ("item-plant-rack", .furniture, .furniture),
-            ("item-round-mat", .decoration, .floor),
-            ("item-cozy-rug", .furniture, .floor),
-            ("item-vintage-lamp", .decoration, .decoration),
-            ("item-green-wall", .background, .wall),
-            ("item-succulent-pot", .decoration, .decoration),
-            ("item-christmas-tree", .decoration, .decoration),
-            ("item-autumn-frame", .decoration, .wall)
+        let expectedFilters: [ExpectedFilter] = [
+            .init(id: "item-mini-shelf", category: .furniture, filter: .furniture),
+            .init(id: "item-small-rug", category: .decoration, filter: .floor),
+            .init(id: "item-window-frame", category: .decoration, filter: .wall),
+            .init(id: "item-flower-stand", category: .furniture, filter: .furniture),
+            .init(id: "item-lamp", category: .decoration, filter: .decoration),
+            .init(id: "item-wall-art", category: .decoration, filter: .wall),
+            .init(id: "item-chair", category: .furniture, filter: .furniture),
+            .init(id: "item-cushion", category: .decoration, filter: .decoration),
+            .init(id: "item-book-cart", category: .furniture, filter: .furniture),
+            .init(id: "item-plant-rack", category: .furniture, filter: .furniture),
+            .init(id: "item-round-mat", category: .decoration, filter: .floor),
+            .init(id: "item-cozy-rug", category: .furniture, filter: .floor),
+            .init(id: "item-vintage-lamp", category: .decoration, filter: .decoration),
+            .init(id: "item-green-wall", category: .background, filter: .wall),
+            .init(id: "item-succulent-pot", category: .decoration, filter: .decoration),
+            .init(id: "item-christmas-tree", category: .decoration, filter: .decoration),
+            .init(id: "item-autumn-frame", category: .decoration, filter: .wall)
         ]
-        let coveredIDs = Set(expectedFilters.map(\.0))
+        let coveredIDs = Set(expectedFilters.map(\.id))
         #expect(
-            Set(InventoryCatalog.items().map { $0.id.rawValue })
+            Set(InventoryCatalog.items().map(\.id.rawValue))
                 .isSubset(of: coveredIDs)
         )
 
-        for (id, category, expectedFilter) in expectedFilters {
-            let candidate = try item(id: id, category: category)
+        for expected in expectedFilters {
+            let candidate = try item(id: expected.id, category: expected.category)
             let matches = InventoryRoomFilter.allCases.filter { $0.includes(candidate) }
-            #expect(matches == [expectedFilter], "\(id) must match exactly \(expectedFilter)")
+            #expect(
+                matches == [expected.filter],
+                "\(expected.id) must match exactly \(expected.filter)"
+            )
         }
     }
 
@@ -60,14 +63,20 @@ struct InventoryRoomFilterTests {
     }
 
     private func item(id: String, category: ItemCategory) throws -> ShopItem {
-        ShopItem(
-            id: try ItemID.parse(id),
+        try ShopItem(
+            id: ItemID.parse(id),
             name: id,
             category: category,
             assetPath: "items/\(id).png",
             acquisitionCondition: nil,
             publicationState: .public,
-            revision: try Revision.parse(1)
+            revision: Revision.parse(1)
         )
+    }
+
+    private struct ExpectedFilter {
+        let id: String
+        let category: ItemCategory
+        let filter: InventoryRoomFilter
     }
 }
