@@ -17,6 +17,7 @@ import com.planterior.helper.core.database.CachedPlantEntity
 import com.planterior.helper.core.database.OperationOutboxEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlant
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
@@ -63,12 +64,72 @@ interface RegistrationRemoteDataSource {
     ): PersonalPlant
 }
 
+enum class RegistrationPersistenceDiagnosticStage {
+    COMMITTED_READ_ENTERED,
+    COMMITTED_READ_RETURNED,
+    COMMITTED_READ_THREW,
+    COMMITTED_READ_CANCELLED,
+    CACHE_UPSERT_ENTERED,
+    CACHE_UPSERT_RETURNED,
+    CACHE_UPSERT_THREW,
+    CACHE_UPSERT_CANCELLED,
+    OUTBOX_REMOVE_ENTERED,
+    OUTBOX_REMOVE_RETURNED,
+    OUTBOX_REMOVE_THREW,
+    OUTBOX_REMOVE_CANCELLED,
+    COMPLETED_RETURNED,
+}
+
+sealed interface RegistrationPersistenceDiagnosticTerminal {
+    data class Returned(val value: Any? = null) : RegistrationPersistenceDiagnosticTerminal
+
+    data class Threw(val failure: Throwable) : RegistrationPersistenceDiagnosticTerminal
+
+    data class Cancelled(val failure: CancellationException) :
+        RegistrationPersistenceDiagnosticTerminal
+}
+
+data class RegistrationPersistenceDiagnosticObservation(
+    val stage: RegistrationPersistenceDiagnosticStage,
+    val accountId: AccountId,
+    val operationId: OperationId,
+    val plantId: PersonalPlantId,
+    val terminal: RegistrationPersistenceDiagnosticTerminal? = null,
+)
+
 class FirebaseRegistrationRepository(
     private val database: PlanteriorDatabase,
     private val remote: RegistrationRemoteDataSource,
     private val gateway: RemoteMutationGateway,
     private val now: () -> Instant = Instant::now,
+    private val onPersistenceDiagnostic: (RegistrationPersistenceDiagnosticObservation) -> Unit =
+        {},
+    private val onDiagnosticFailure: (Throwable) -> Unit = {},
+    private val cacheUpsert: suspend (CachedPlantEntity) -> Unit = { entity ->
+        database.cacheDao().upsertPlant(entity)
+    },
+    private val outboxRemove: suspend (AccountId, OperationId) -> Unit = { accountId, operationId ->
+        database.syncDao().remove(accountId.value, operationId.value)
+    },
 ) : RegistrationRepository {
+    constructor(
+        database: PlanteriorDatabase,
+        remote: RegistrationRemoteDataSource,
+        gateway: RemoteMutationGateway,
+        now: () -> Instant,
+    ) : this(
+        database,
+        remote,
+        gateway,
+        now,
+        {},
+        {},
+        { entity -> database.cacheDao().upsertPlant(entity) },
+        { accountId, operationId ->
+            database.syncDao().remove(accountId.value, operationId.value)
+        },
+    )
+
     override suspend fun session(): RegistrationSession {
         val account = remote.activeAccount()
         return RegistrationSession(account, remote.accountZone(account))
@@ -109,6 +170,24 @@ class FirebaseRegistrationRepository(
             mediaReference != null -> RegistrationCheckpoint.PhotoStored(mediaReference)
             else -> checkpoint
         }
+    }
+
+    private fun observePersistence(observation: RegistrationPersistenceDiagnosticObservation) {
+        try {
+            onPersistenceDiagnostic(observation)
+        } catch (failure: AssertionError) {
+            reportDiagnosticFailure(failure)
+        } catch (failure: CancellationException) {
+            reportDiagnosticFailure(failure)
+        } catch (failure: Exception) {
+            reportDiagnosticFailure(failure)
+        }
+    }
+
+    private fun reportDiagnosticFailure(failure: Throwable) {
+        try {
+            onDiagnosticFailure(failure)
+        } catch (_: AssertionError) {} catch (_: Exception) {}
     }
 
     override suspend fun register(
@@ -274,55 +353,169 @@ class FirebaseRegistrationRepository(
                 }
             }
         val committedCheckpoint = RegistrationCheckpoint.PlantCommitted(revision, mediaReference)
+        observePersistence(
+            RegistrationPersistenceDiagnosticObservation(
+                stage = RegistrationPersistenceDiagnosticStage.COMMITTED_READ_ENTERED,
+                accountId = submission.accountId,
+                operationId = submission.operationId,
+                plantId = submission.plantId,
+            )
+        )
         val plant =
             try {
-                remote.readCommitted(submission, revision, mediaReference)
+                remote.readCommitted(submission, revision, mediaReference).also {
+                    observePersistence(
+                        RegistrationPersistenceDiagnosticObservation(
+                            stage = RegistrationPersistenceDiagnosticStage.COMMITTED_READ_RETURNED,
+                            accountId = submission.accountId,
+                            operationId = submission.operationId,
+                            plantId = submission.plantId,
+                            terminal = RegistrationPersistenceDiagnosticTerminal.Returned(it),
+                        )
+                    )
+                }
             } catch (error: CancellationException) {
+                observePersistence(
+                    RegistrationPersistenceDiagnosticObservation(
+                        stage = RegistrationPersistenceDiagnosticStage.COMMITTED_READ_CANCELLED,
+                        accountId = submission.accountId,
+                        operationId = submission.operationId,
+                        plantId = submission.plantId,
+                        terminal = RegistrationPersistenceDiagnosticTerminal.Cancelled(error),
+                    )
+                )
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                observePersistence(
+                    RegistrationPersistenceDiagnosticObservation(
+                        stage = RegistrationPersistenceDiagnosticStage.COMMITTED_READ_THREW,
+                        accountId = submission.accountId,
+                        operationId = submission.operationId,
+                        plantId = submission.plantId,
+                        terminal = RegistrationPersistenceDiagnosticTerminal.Threw(error),
+                    )
+                )
                 return RegistrationAttempt.Failed(
                     RegistrationFailure.INCONSISTENT_RECEIPT,
                     committedCheckpoint,
                 )
             }
+        observePersistence(
+            RegistrationPersistenceDiagnosticObservation(
+                stage = RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_ENTERED,
+                accountId = submission.accountId,
+                operationId = submission.operationId,
+                plantId = submission.plantId,
+            )
+        )
         try {
-            database
-                .cacheDao()
-                .upsertPlant(
-                    CachedPlantEntity(
-                        accountId = submission.accountId.value,
-                        plantId = plant.id.value,
-                        displayName = plant.displayName,
-                        representativePhotoPath = plant.representativePhotoPath,
-                        revision = plant.revision.value,
-                        updatedAtEpochMillis = plant.updatedAt.toEpochMilli(),
-                        contentId = plant.contentId?.value,
-                        registrationMethod = plant.registrationMethod.name,
-                        location = plant.location,
-                        note = plant.note,
-                        lastWateredDate = plant.lastWateredDate?.toString(),
-                        detailsComplete = true,
-                    )
+            cacheUpsert(
+                CachedPlantEntity(
+                    accountId = submission.accountId.value,
+                    plantId = plant.id.value,
+                    displayName = plant.displayName,
+                    representativePhotoPath = plant.representativePhotoPath,
+                    revision = plant.revision.value,
+                    updatedAtEpochMillis = plant.updatedAt.toEpochMilli(),
+                    contentId = plant.contentId?.value,
+                    registrationMethod = plant.registrationMethod.name,
+                    location = plant.location,
+                    note = plant.note,
+                    lastWateredDate = plant.lastWateredDate?.toString(),
+                    detailsComplete = true,
                 )
+            )
+            observePersistence(
+                RegistrationPersistenceDiagnosticObservation(
+                    stage = RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_RETURNED,
+                    accountId = submission.accountId,
+                    operationId = submission.operationId,
+                    plantId = submission.plantId,
+                    terminal = RegistrationPersistenceDiagnosticTerminal.Returned(),
+                )
+            )
         } catch (error: CancellationException) {
+            observePersistence(
+                RegistrationPersistenceDiagnosticObservation(
+                    stage = RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_CANCELLED,
+                    accountId = submission.accountId,
+                    operationId = submission.operationId,
+                    plantId = submission.plantId,
+                    terminal = RegistrationPersistenceDiagnosticTerminal.Cancelled(error),
+                )
+            )
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            observePersistence(
+                RegistrationPersistenceDiagnosticObservation(
+                    stage = RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_THREW,
+                    accountId = submission.accountId,
+                    operationId = submission.operationId,
+                    plantId = submission.plantId,
+                    terminal = RegistrationPersistenceDiagnosticTerminal.Threw(error),
+                )
+            )
             return RegistrationAttempt.Failed(
                 RegistrationFailure.CACHE_WRITE_FAILED,
                 committedCheckpoint,
             )
         }
+        observePersistence(
+            RegistrationPersistenceDiagnosticObservation(
+                stage = RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_ENTERED,
+                accountId = submission.accountId,
+                operationId = submission.operationId,
+                plantId = submission.plantId,
+            )
+        )
         try {
-            database.syncDao().remove(submission.accountId.value, submission.operationId.value)
+            outboxRemove(submission.accountId, submission.operationId)
+            observePersistence(
+                RegistrationPersistenceDiagnosticObservation(
+                    stage = RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_RETURNED,
+                    accountId = submission.accountId,
+                    operationId = submission.operationId,
+                    plantId = submission.plantId,
+                    terminal = RegistrationPersistenceDiagnosticTerminal.Returned(),
+                )
+            )
         } catch (error: CancellationException) {
+            observePersistence(
+                RegistrationPersistenceDiagnosticObservation(
+                    stage = RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_CANCELLED,
+                    accountId = submission.accountId,
+                    operationId = submission.operationId,
+                    plantId = submission.plantId,
+                    terminal = RegistrationPersistenceDiagnosticTerminal.Cancelled(error),
+                )
+            )
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            observePersistence(
+                RegistrationPersistenceDiagnosticObservation(
+                    stage = RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_THREW,
+                    accountId = submission.accountId,
+                    operationId = submission.operationId,
+                    plantId = submission.plantId,
+                    terminal = RegistrationPersistenceDiagnosticTerminal.Threw(error),
+                )
+            )
             return RegistrationAttempt.Failed(
                 RegistrationFailure.DATABASE_UNAVAILABLE,
                 committedCheckpoint,
             )
         }
-        return RegistrationAttempt.Completed(plant)
+        val completed = RegistrationAttempt.Completed(plant)
+        observePersistence(
+            RegistrationPersistenceDiagnosticObservation(
+                stage = RegistrationPersistenceDiagnosticStage.COMPLETED_RETURNED,
+                accountId = submission.accountId,
+                operationId = submission.operationId,
+                plantId = submission.plantId,
+                terminal = RegistrationPersistenceDiagnosticTerminal.Returned(completed),
+            )
+        )
+        return completed
     }
 }
 

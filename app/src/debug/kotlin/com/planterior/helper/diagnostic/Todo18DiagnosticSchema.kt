@@ -1,5 +1,6 @@
 package com.planterior.helper.diagnostic
 
+import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.core.model.OperationId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
@@ -100,6 +101,19 @@ enum class Todo18PipelineEventKind {
     REGISTRATION_REPOSITORY_FAILED,
     REGISTRATION_REPOSITORY_CANCELLED,
     REMOTE_COMMIT,
+    REGISTRATION_COMMITTED_READ_ENTERED,
+    REGISTRATION_COMMITTED_READ_RETURNED,
+    REGISTRATION_COMMITTED_READ_THREW,
+    REGISTRATION_COMMITTED_READ_CANCELLED,
+    REGISTRATION_CACHE_UPSERT_ENTERED,
+    REGISTRATION_CACHE_UPSERT_RETURNED,
+    REGISTRATION_CACHE_UPSERT_THREW,
+    REGISTRATION_CACHE_UPSERT_CANCELLED,
+    REGISTRATION_OUTBOX_REMOVE_ENTERED,
+    REGISTRATION_OUTBOX_REMOVE_RETURNED,
+    REGISTRATION_OUTBOX_REMOVE_THREW,
+    REGISTRATION_OUTBOX_REMOVE_CANCELLED,
+    REGISTRATION_COMPLETED_RETURNED,
     REGISTRATION_COMPLETED_PUBLICATION,
     REGISTRATION_NAVIGATION_ENQUEUED,
     REGISTRATION_NAVIGATION_DISPATCHED,
@@ -116,9 +130,11 @@ data class Todo18PipelineEvent(
     val afterState: Todo18StateKind? = null,
     val registrationPlantId: PersonalPlantId? = null,
     val registrationOperationId: OperationId? = null,
+    val registrationAccountId: AccountId? = null,
     val repositoryIdentity: Int? = null,
     val navigationIdentity: String? = null,
     val runtimeBinding: Todo18RuntimeBinding? = null,
+    val elapsedNanos: Long? = null,
 )
 
 data class Todo18RuntimeBinding(

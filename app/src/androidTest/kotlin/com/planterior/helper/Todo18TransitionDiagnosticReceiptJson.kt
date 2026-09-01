@@ -98,9 +98,11 @@ private fun Todo18PipelineEvent.toJson() =
         .put("afterState", afterState?.name.jsonValue())
         .put("registrationPlantId", registrationPlantId?.value.jsonValue())
         .put("registrationOperationId", registrationOperationId?.value.jsonValue())
+        .put("registrationAccountId", registrationAccountId?.value.jsonValue())
         .put("repositoryIdentity", repositoryIdentity.jsonValue())
         .put("navigationIdentity", navigationIdentity.jsonValue())
         .put("runtimeBinding", runtimeBinding?.toJson().jsonValue())
+        .put("elapsedNanos", elapsedNanos.jsonValue())
 
 private fun Todo18RuntimeBinding.toJson() =
     JSONObject()

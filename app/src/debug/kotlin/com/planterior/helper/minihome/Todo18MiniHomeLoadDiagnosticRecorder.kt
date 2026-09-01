@@ -3,10 +3,10 @@ package com.planterior.helper.minihome
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.minihome.MiniHomeCacheTransactionDiagnosticObservation
 import com.planterior.helper.feature.minihome.MiniHomePublicationReadTerminalOutcome
-import java.util.ArrayDeque
-import java.util.IdentityHashMap
+import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 
 internal class Todo18MiniHomeLoad(
     val id: Todo18MiniHomeLoadId,
@@ -33,11 +33,16 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         var nextReadOrdinal: Long = 1L,
     )
 
+    private sealed class LoadOutcome<out T> {
+        data class Returned<T>(val value: T) : LoadOutcome<T>()
+
+        data class Failed(val failure: Throwable) : LoadOutcome<Nothing>()
+    }
+
     private val lock = Any()
     private var nextLoadId = 1L
     private val reached = mutableListOf<Todo18MiniHomeLoadObservation>()
     private val loads = linkedMapOf<Todo18MiniHomeLoadId, LoadState>()
-    private val activeLoads = IdentityHashMap<Job, ArrayDeque<Todo18MiniHomeLoad>>()
     private val failures = mutableListOf<String>()
     private val violations = mutableListOf<Todo18MiniHomeLoadProgressionViolation>()
     private var cacheTransactionTraceExpected = false
@@ -51,8 +56,7 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         }
 
     suspend fun recordCurrent(diagnostic: Todo18MiniHomeLoadDiagnostic) {
-        val job = checkNotNull(coroutineContext[Job])
-        val load = synchronized(lock) { checkNotNull(activeLoads[job]?.peekLast()) }
+        val load = checkNotNull(currentLoad(coroutineContext))
         if (diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered) {
             load.recordPublicationRead()
         } else {
@@ -61,8 +65,7 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
     }
 
     suspend fun recordCurrentIfActive(diagnostic: Todo18MiniHomeLoadDiagnostic): Boolean {
-        val job = coroutineContext[Job] ?: return false
-        val load = synchronized(lock) { activeLoads[job]?.peekLast() } ?: return false
+        val load = currentLoad(coroutineContext) ?: return false
         if (diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered) {
             load.recordPublicationRead()
         } else {
@@ -79,8 +82,7 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
             diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered ||
                 diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadReturned
         )
-        val job = checkNotNull(coroutineContext[Job])
-        val load = synchronized(lock) { checkNotNull(activeLoads[job]?.peekLast()) }
+        val load = checkNotNull(currentLoad(coroutineContext))
         val readId = Todo18MiniHomePublicationReadId(load.id, ordinal)
         if (diagnostic == Todo18MiniHomeLoadDiagnostic.PublicationReadEntered) {
             load.recordPublicationRead(readId)
@@ -102,8 +104,7 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         readIdentity: Long,
         outcome: MiniHomePublicationReadTerminalOutcome,
     ) {
-        val job = checkNotNull(coroutineContext[Job])
-        val load = synchronized(lock) { checkNotNull(activeLoads[job]?.peekLast()) }
+        val load = checkNotNull(currentLoad(coroutineContext))
         record(
             load.id,
             Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal(
@@ -120,8 +121,7 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         readIdentity: Long,
         outcome: MiniHomePublicationReadTerminalOutcome,
     ): Boolean {
-        val job = coroutineContext[Job] ?: return false
-        val load = synchronized(lock) { activeLoads[job]?.peekLast() } ?: return false
+        val load = currentLoad(coroutineContext) ?: return false
         record(
             load.id,
             Todo18MiniHomeLoadDiagnostic.PublicationReadTerminal(
@@ -150,17 +150,33 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
         }
 
     suspend fun <T> withLoad(load: Todo18MiniHomeLoad, block: suspend () -> T): T {
-        val job = checkNotNull(coroutineContext[Job])
-        synchronized(lock) { activeLoads.getOrPut(job, ::ArrayDeque).addLast(load) }
-        return try {
-            block()
-        } finally {
-            synchronized(lock) {
-                val stack = activeLoads.getValue(job)
-                check(stack.removeLast() === load)
-                if (stack.isEmpty()) activeLoads.remove(job)
+        val outcome =
+            withContext(LoadContext(this, load)) {
+                try {
+                    LoadOutcome.Returned(block())
+                } catch (failure: CancellationException) {
+                    LoadOutcome.Failed(failure)
+                } catch (failure: Throwable) {
+                    LoadOutcome.Failed(failure)
+                }
             }
+        return when (outcome) {
+            is LoadOutcome.Returned -> outcome.value
+            is LoadOutcome.Failed -> throw outcome.failure
         }
+    }
+
+    private fun currentLoad(context: CoroutineContext): Todo18MiniHomeLoad? =
+        context[LoadContext]?.takeIf { it.owner === this }?.load
+
+    private class LoadContext(
+        val owner: Todo18MiniHomeLoadDiagnosticRecorder,
+        val load: Todo18MiniHomeLoad,
+    ) : CoroutineContext.Element {
+        override val key: CoroutineContext.Key<*>
+            get() = Key
+
+        companion object Key : CoroutineContext.Key<LoadContext>
     }
 
     fun snapshot(): Todo18MiniHomeLoadProgress =

@@ -19,6 +19,8 @@ import com.planterior.helper.feature.minihome.MiniHomeRetryObservation
 import com.planterior.helper.feature.minihome.MiniHomeRetryStage
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationDiagnosticEvent
+import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticObservation
+import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticStage
 import com.planterior.helper.feature.registration.RegistrationUiState
 import com.planterior.helper.feature.shop.InventoryFeedback
 import com.planterior.helper.feature.shop.InventoryUiState
@@ -203,6 +205,48 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
             repositoryIdentity = event.repositoryIdentity.value,
         )
     }
+
+    fun onRegistrationPersistenceDiagnostic(
+        observation: RegistrationPersistenceDiagnosticObservation
+    ) {
+        recorder.recordPipeline(
+            kind = observation.stage.toPipelineEventKind(),
+            registrationAccountId = observation.accountId,
+            registrationOperationId = observation.operationId,
+            registrationPlantId = observation.plantId,
+        )
+    }
+
+    private fun RegistrationPersistenceDiagnosticStage.toPipelineEventKind():
+        Todo18PipelineEventKind =
+        when (this) {
+            RegistrationPersistenceDiagnosticStage.COMMITTED_READ_ENTERED ->
+                Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_ENTERED
+            RegistrationPersistenceDiagnosticStage.COMMITTED_READ_RETURNED ->
+                Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_RETURNED
+            RegistrationPersistenceDiagnosticStage.COMMITTED_READ_THREW ->
+                Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_THREW
+            RegistrationPersistenceDiagnosticStage.COMMITTED_READ_CANCELLED ->
+                Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_CANCELLED
+            RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_ENTERED ->
+                Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_ENTERED
+            RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_RETURNED ->
+                Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED
+            RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_THREW ->
+                Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_THREW
+            RegistrationPersistenceDiagnosticStage.CACHE_UPSERT_CANCELLED ->
+                Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_CANCELLED
+            RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_ENTERED ->
+                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_ENTERED
+            RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_RETURNED ->
+                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_RETURNED
+            RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_THREW ->
+                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_THREW
+            RegistrationPersistenceDiagnosticStage.OUTBOX_REMOVE_CANCELLED ->
+                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_CANCELLED
+            RegistrationPersistenceDiagnosticStage.COMPLETED_RETURNED ->
+                Todo18PipelineEventKind.REGISTRATION_COMPLETED_RETURNED
+        }
 
     fun currentRawMiniHomeState(): Todo18MiniHomeStateEvent? = rawMiniHomeStates.current()
 

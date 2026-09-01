@@ -9,12 +9,15 @@ import com.planterior.helper.feature.registration.RegistrationAttempt
 import com.planterior.helper.feature.registration.RegistrationCheckpoint
 import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationFailure
+import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticObservation
+import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticStage
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationSession
 import java.time.ZoneId
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Todo18RegistrationCommitDiagnosticRepositoryTest {
@@ -61,6 +64,64 @@ class Todo18RegistrationCommitDiagnosticRepositoryTest {
 
         // Then
         assertSame(failed, actual)
+    }
+
+    @Test
+    fun `rendered sink records persistence stages with exact identity and elapsed order`() {
+        val sink = com.planterior.helper.Todo18RenderedStateSink()
+        val capture =
+            sink.startDiagnosticCapture(
+                com.planterior.helper.diagnostic.Todo18WaitId.REGISTRATION_COMMIT
+            )
+        val account = AccountId("owner")
+        val operation = com.planterior.helper.core.model.OperationId("operation")
+        val plant = PersonalPlantId("plant")
+        RegistrationPersistenceDiagnosticStage.values().forEach { stage ->
+            sink.onRegistrationPersistenceDiagnostic(
+                RegistrationPersistenceDiagnosticObservation(stage, account, operation, plant)
+            )
+        }
+
+        val events = capture.snapshot().pipeline
+        assertEquals(
+            listOf(
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_COMMITTED_READ_ENTERED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_COMMITTED_READ_RETURNED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_COMMITTED_READ_THREW,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_COMMITTED_READ_CANCELLED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_CACHE_UPSERT_ENTERED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_CACHE_UPSERT_RETURNED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_CACHE_UPSERT_THREW,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_CACHE_UPSERT_CANCELLED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_OUTBOX_REMOVE_ENTERED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_OUTBOX_REMOVE_RETURNED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_OUTBOX_REMOVE_THREW,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_OUTBOX_REMOVE_CANCELLED,
+                com.planterior.helper.diagnostic.Todo18PipelineEventKind
+                    .REGISTRATION_COMPLETED_RETURNED,
+            ),
+            events.map { it.kind },
+        )
+        assertTrue(events.all { it.registrationAccountId == account })
+        assertTrue(events.all { it.registrationOperationId == operation })
+        assertTrue(events.all { it.registrationPlantId == plant })
+        assertEquals(
+            events.mapNotNull { it.elapsedNanos },
+            events.mapNotNull { it.elapsedNanos }.sorted(),
+        )
+        capture.close()
     }
 
     private fun submission() =

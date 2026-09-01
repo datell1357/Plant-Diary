@@ -29,6 +29,11 @@ class Todo18RegistrationCommitDiagnosticSourceContractTest {
                 "app/src/debug/kotlin/com/planterior/helper/registration/" +
                     "Todo18RegistrationCommitDiagnosticRepository.kt"
             )
+        val receiptJson =
+            root.resolve(
+                "app/src/androidTest/kotlin/com/planterior/helper/" +
+                    "Todo18TransitionDiagnosticReceiptJson.kt"
+            )
 
         // When / Then
         assertTrue(
@@ -62,6 +67,11 @@ class Todo18RegistrationCommitDiagnosticSourceContractTest {
             "REGISTRATION_NAVIGATION_ENQUEUED",
             "REGISTRATION_NAVIGATION_DISPATCHED",
             "REGISTRATION_NAVIGATION_DESTINATION",
+            "onRegistrationPersistenceDiagnostic",
+            "REGISTRATION_COMMITTED_READ_ENTERED",
+            "REGISTRATION_CACHE_UPSERT_ENTERED",
+            "REGISTRATION_OUTBOX_REMOVE_ENTERED",
+            "REGISTRATION_COMPLETED_RETURNED",
             "detach",
             "drain",
         )
@@ -72,6 +82,18 @@ class Todo18RegistrationCommitDiagnosticSourceContractTest {
             "COMMIT_VALIDATION_REJECTED",
             "COMMIT_REMOTE_COMMIT_MISSED",
             "COMMIT_NAVIGATION_DESTINATION_MISSED",
+        )
+        assertCode(
+            schema.readText(),
+            "registrationAccountId: AccountId? = null",
+            "elapsedNanos: Long? = null",
+            "REGISTRATION_COMMITTED_READ_ENTERED",
+            "REGISTRATION_COMPLETED_RETURNED",
+        )
+        assertCode(
+            receiptJson.readText(),
+            "registrationAccountId?.value.jsonValue()",
+            "elapsedNanos.jsonValue()",
         )
     }
 

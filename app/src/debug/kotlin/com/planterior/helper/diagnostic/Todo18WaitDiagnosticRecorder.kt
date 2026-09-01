@@ -31,6 +31,7 @@ internal class Todo18WaitDiagnosticRecorder(
         afterState: Todo18StateKind? = null,
         registrationPlantId: com.planterior.helper.core.model.PersonalPlantId? = null,
         registrationOperationId: com.planterior.helper.core.model.OperationId? = null,
+        registrationAccountId: com.planterior.helper.core.model.AccountId? = null,
         repositoryIdentity: Int? = null,
         navigationIdentity: String? = null,
         runtimeBinding: Todo18RuntimeBinding? = null,
@@ -47,9 +48,11 @@ internal class Todo18WaitDiagnosticRecorder(
                     afterState = afterState,
                     registrationPlantId = registrationPlantId,
                     registrationOperationId = registrationOperationId,
+                    registrationAccountId = registrationAccountId,
                     repositoryIdentity = repositoryIdentity,
                     navigationIdentity = navigationIdentity,
                     runtimeBinding = runtimeBinding,
+                    elapsedNanos = capture.elapsedNanos(),
                 )
         }
     }
@@ -149,6 +152,7 @@ internal class Todo18WaitDiagnosticRecorder(
                 afterState: Todo18StateKind?,
                 registrationPlantId: com.planterior.helper.core.model.PersonalPlantId?,
                 registrationOperationId: com.planterior.helper.core.model.OperationId?,
+                registrationAccountId: com.planterior.helper.core.model.AccountId?,
                 repositoryIdentity: Int?,
                 navigationIdentity: String?,
             ) =
@@ -161,6 +165,7 @@ internal class Todo18WaitDiagnosticRecorder(
                     afterState,
                     registrationPlantId,
                     registrationOperationId,
+                    registrationAccountId,
                     repositoryIdentity,
                     navigationIdentity,
                 )
@@ -197,6 +202,11 @@ internal class Todo18WaitDiagnosticRecorder(
             closed = closed,
         )
 
+    private fun CaptureState.elapsedNanos(): Long {
+        lastElapsedNanos = maxOf(lastElapsedNanos, System.nanoTime() - startedAtNanos)
+        return lastElapsedNanos
+    }
+
     private class CaptureState(
         val waitId: Todo18WaitId,
         val freshness: Todo18CaptureFreshness,
@@ -204,6 +214,8 @@ internal class Todo18WaitDiagnosticRecorder(
         val stateDispatches: MutableList<Todo18StateDispatchRecord> = mutableListOf(),
         val exactEvents: MutableList<Todo18ExactEventObservation> = mutableListOf(),
         val failures: MutableList<Todo18DiagnosticFailure> = mutableListOf(),
+        val startedAtNanos: Long = System.nanoTime(),
+        var lastElapsedNanos: Long = 0L,
         var closed: Boolean = false,
     )
 
@@ -231,6 +243,7 @@ interface Todo18DiagnosticCapture : AutoCloseable {
         afterState: Todo18StateKind? = null,
         registrationPlantId: com.planterior.helper.core.model.PersonalPlantId? = null,
         registrationOperationId: com.planterior.helper.core.model.OperationId? = null,
+        registrationAccountId: com.planterior.helper.core.model.AccountId? = null,
         repositoryIdentity: Int? = null,
         navigationIdentity: String? = null,
     ) {

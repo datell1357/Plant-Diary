@@ -253,11 +253,19 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
         assertCode(
             recorder,
             "suspend fun recordCurrent(diagnostic",
-            "checkNotNull(activeLoads[job]?.peekLast())",
+            "withContext(LoadContext(this, load))",
+            "context[LoadContext]?.takeIf { it.owner === this }?.load",
             "suspend fun recordCurrentIfActive(diagnostic",
-            "activeLoads[job]?.peekLast() } ?: return false",
+            "currentLoad(coroutineContext) ?: return false",
             "return true",
         )
+        assertFalse(recorder.contains("activeLoads"))
+        assertFalse(recorder.contains("Job"))
+        assertFalse(recorder.contains("unwrapCoroutineRecoveredCancellation"))
+        assertFalse(recorder.contains("_COROUTINE."))
+        assertFalse(recorder.contains("stackTrace"))
+        assertFalse(recorder.contains("cause as? CancellationException"))
+        assertFalse(recorder.contains("Job.isActive"))
         assertFalse(releaseOverrides.contains("Todo18MiniHomeLoadDiagnosticRepository"))
         assertFalse(runtimeRule.contains("InMemoryMiniHomeRepository"))
     }

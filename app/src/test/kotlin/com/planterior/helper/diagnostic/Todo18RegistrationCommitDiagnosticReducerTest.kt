@@ -126,6 +126,118 @@ class Todo18RegistrationCommitDiagnosticReducerTest {
         assertEquals(EXPECTED_TRANSITION_OBSERVED, actual)
     }
 
+    @Test
+    fun `registration persistence sequence accepts exact identities and elapsed order`() {
+        val receipt = validCommitReceipt().withPersistenceSuccess()
+
+        assertEquals(EXPECTED_TRANSITION_OBSERVED, Todo18DiagnosticReducer.classify(receipt))
+        assertEquals(
+            listOf(
+                Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_ENTERED,
+                Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_RETURNED,
+                Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_ENTERED,
+                Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED,
+                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_ENTERED,
+                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_RETURNED,
+                Todo18PipelineEventKind.REGISTRATION_COMPLETED_RETURNED,
+            ),
+            receipt.pipeline
+                .filter { it.registrationAccountId != null }
+                .map(Todo18PipelineEvent::kind),
+        )
+    }
+
+    @Test
+    fun `registration persistence rejects missing duplicate misordered and wrong identity`() {
+        val receipt = validCommitReceipt().withPersistenceSuccess()
+        val missing =
+            receipt.copy(
+                pipeline =
+                    receipt.pipeline.filterNot {
+                        it.kind == Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED
+                    }
+            )
+        val duplicate =
+            receipt.copy(
+                pipeline =
+                    receipt.pipeline +
+                        receipt.pipeline.first {
+                            it.kind == Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_RETURNED
+                        }
+            )
+        val misordered =
+            receipt.copy(
+                pipeline =
+                    receipt.pipeline.map { event ->
+                        when (event.kind) {
+                            Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_ENTERED ->
+                                event.copy(
+                                    kind =
+                                        Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED
+                                )
+                            Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED ->
+                                event.copy(
+                                    kind = Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_ENTERED
+                                )
+                            else -> event
+                        }
+                    }
+            )
+        val wrongIdentity =
+            receipt.copy(
+                pipeline =
+                    receipt.pipeline.map { event ->
+                        if (
+                            event.kind ==
+                                Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_RETURNED
+                        ) {
+                            event.copy(
+                                registrationAccountId =
+                                    com.planterior.helper.core.model.AccountId("other")
+                            )
+                        } else event
+                    }
+            )
+
+        listOf(missing, duplicate, misordered, wrongIdentity).forEach {
+            assertEquals(INVALID_CAPTURE, Todo18DiagnosticReducer.classify(it))
+        }
+    }
+
+    @Test
+    fun `registration persistence rejects orphan completed and entered without terminal`() {
+        val complete = validCommitReceipt().withPersistenceSuccess()
+        val orphanCompleted =
+            complete.copy(
+                pipeline =
+                    complete.pipeline
+                        .filterNot { event ->
+                            event.registrationAccountId != null &&
+                                event.kind !=
+                                    Todo18PipelineEventKind.REGISTRATION_COMPLETED_RETURNED
+                        }
+                        .mapIndexed { index, event -> event.copy(ordinal = index + 1L) }
+            )
+        val enteredWithoutTerminal =
+            complete.copy(
+                pipeline =
+                    complete.pipeline
+                        .filterNot { event ->
+                            event.kind in
+                                setOf(
+                                    Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED,
+                                    Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_ENTERED,
+                                    Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_RETURNED,
+                                    Todo18PipelineEventKind.REGISTRATION_COMPLETED_RETURNED,
+                                )
+                        }
+                        .mapIndexed { index, event -> event.copy(ordinal = index + 1L) }
+            )
+
+        assertEquals(INVALID_CAPTURE, Todo18DiagnosticReducer.classify(orphanCompleted))
+        assertEquals(INVALID_CAPTURE, Todo18DiagnosticReducer.classify(enteredWithoutTerminal))
+    }
+
     private fun validCommitReceipt(): Todo18DiagnosticReceipt =
         Todo18DiagnosticReceiptFixtures.valid(Todo18WaitId.REGISTRATION_COMMIT)
             .copy(
@@ -185,6 +297,46 @@ class Todo18RegistrationCommitDiagnosticReducerTest {
                         event.copy(ordinal = index + 1L)
                     }
         )
+
+    private fun Todo18DiagnosticReceipt.withPersistenceSuccess(): Todo18DiagnosticReceipt {
+        val account = com.planterior.helper.core.model.AccountId("account")
+        val operation = com.planterior.helper.core.model.OperationId("operation")
+        val plant = com.planterior.helper.core.model.PersonalPlantId("plant")
+        val persistence =
+            listOf(
+                    Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_ENTERED,
+                    Todo18PipelineEventKind.REGISTRATION_COMMITTED_READ_RETURNED,
+                    Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_ENTERED,
+                    Todo18PipelineEventKind.REGISTRATION_CACHE_UPSERT_RETURNED,
+                    Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_ENTERED,
+                    Todo18PipelineEventKind.REGISTRATION_OUTBOX_REMOVE_RETURNED,
+                    Todo18PipelineEventKind.REGISTRATION_COMPLETED_RETURNED,
+                )
+                .mapIndexed { index, kind ->
+                    Todo18PipelineEvent(
+                        ordinal = 0,
+                        kind = kind,
+                        registrationAccountId = account,
+                        registrationOperationId = operation,
+                        registrationPlantId = plant,
+                        elapsedNanos = index.toLong(),
+                    )
+                }
+        return copy(
+            pipeline =
+                pipeline
+                    .flatMap { event ->
+                        if (
+                            event.kind == Todo18PipelineEventKind.REGISTRATION_REPOSITORY_COMPLETED
+                        ) {
+                            persistence + event
+                        } else {
+                            listOf(event)
+                        }
+                    }
+                    .mapIndexed { index, event -> event.copy(ordinal = index + 1L) }
+        )
+    }
 
     private fun Todo18DiagnosticReceipt.replace(
         original: Todo18PipelineEventKind,

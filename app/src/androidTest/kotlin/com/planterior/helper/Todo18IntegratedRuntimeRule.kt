@@ -1,12 +1,6 @@
 package com.planterior.helper
 
-import android.app.Activity
-import android.app.Application
-import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
-import androidx.test.runner.lifecycle.Stage
 import com.planterior.helper.auth.AuthRuntimeDependencyOverrides
 import com.planterior.helper.auth.Todo18DebugRuntimeDependencies
 import com.planterior.helper.auth.todo18DebugRuntimeDependencyOverrides
@@ -30,8 +24,6 @@ import com.planterior.helper.inventory.Todo18InventorySettlementObservation
 import com.planterior.helper.inventory.Todo18InventorySettlementStage
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
 import com.planterior.helper.registration.Todo18RegistrationCommitDiagnosticRepository
-import java.util.Collections
-import java.util.IdentityHashMap
 import org.junit.rules.ExternalResource
 
 /** Installs production Room repositories with deterministic fakes only at remote/OS boundaries. */
@@ -76,51 +68,18 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
     internal val previousTeardownComplete: Boolean
         get() = priorActivityCount == 0 && !priorOverridePresent
 
+    private val activityTracker = Todo18IntegratedRuntimeActivityTracker()
+
     internal val activityCreateCount: Int
-        get() = synchronized(lifecycleLock) { createdActivities }
+        get() = activityTracker.activityCreateCount
 
     internal val activityDestroyCount: Int
-        get() = synchronized(lifecycleLock) { destroyedActivities }
+        get() = activityTracker.activityDestroyCount
 
     internal val activityActiveCount: Int
-        get() = synchronized(lifecycleLock) { activeMainActivities.size }
+        get() = activityTracker.activityActiveCount
 
-    private val lifecycleLock = Any()
-    private var createdActivities = 0
-    private var destroyedActivities = 0
-    private val activeMainActivities =
-        Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
     private lateinit var application: PlanteriorApplication
-    private val activityCallbacks =
-        object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-                if (activity is MainActivity) {
-                    synchronized(lifecycleLock) {
-                        createdActivities += 1
-                        activeMainActivities += activity
-                    }
-                }
-            }
-
-            override fun onActivityDestroyed(activity: Activity) {
-                if (activity is MainActivity) {
-                    synchronized(lifecycleLock) {
-                        destroyedActivities += 1
-                        activeMainActivities -= activity
-                    }
-                }
-            }
-
-            override fun onActivityStarted(activity: Activity) = Unit
-
-            override fun onActivityResumed(activity: Activity) = Unit
-
-            override fun onActivityPaused(activity: Activity) = Unit
-
-            override fun onActivityStopped(activity: Activity) = Unit
-
-            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
-        }
 
     override fun before() {
         actionDiagnostics.install()
@@ -128,10 +87,10 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             attachTodo18RoomTransactionOwnerListener(roomTransactionOwners::record)
         try {
             priorOverridePresent = todo18DebugRuntimeDependencyOverrides() != null
-            priorActivityCount = currentMainActivityCount()
+            priorActivityCount = activityTracker.currentMainActivityCount()
             if (priorOverridePresent) Todo18DebugRuntimeDependencies.clear()
             application = ApplicationProvider.getApplicationContext()
-            application.registerActivityLifecycleCallbacks(activityCallbacks)
+            application.registerActivityLifecycleCallbacks(activityTracker.activityCallbacks)
             val shared = requireNotNull(application.repositoryRuntimeOrNull())
             database = shared.database
             database.clearAllTables()
@@ -141,9 +100,16 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             renderedStateSink.observeInventoryDiagnostics(inventorySettlementDiagnostics::record)
 
             val plants = Todo18PlantRepositoryFixture(boundary)
+            val callback = renderedStateSink::onRegistrationPersistenceDiagnostic
             val registration =
                 Todo18RegistrationCommitDiagnosticRepository(
-                    FirebaseRegistrationRepository(database, plants, plants, boundary::now),
+                    FirebaseRegistrationRepository(
+                        database,
+                        plants,
+                        plants,
+                        boundary::now,
+                        callback,
+                    ),
                     renderedStateSink::onRegistrationCommitRepositoryEvent,
                 )
             val collection = FirebaseCollectionRepository(database, plants, plants, boundary::now)
@@ -203,7 +169,7 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
     override fun after() {
         try {
             if (::application.isInitialized) {
-                application.unregisterActivityLifecycleCallbacks(activityCallbacks)
+                application.unregisterActivityLifecycleCallbacks(activityTracker.activityCallbacks)
             }
             Todo18DebugCameraBoundary.clear()
             Todo18DebugRuntimeDependencies.clear()
@@ -216,24 +182,6 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
     }
 
     internal fun actionListenerCount(): Int = actionDiagnostics.listenerCount()
-
-    private fun currentMainActivityCount(): Int {
-        var count = -1
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val monitor = ActivityLifecycleMonitorRegistry.getInstance()
-            val active = Collections.newSetFromMap(IdentityHashMap<MainActivity, Boolean>())
-            Stage.values()
-                .filterNot { it == Stage.DESTROYED }
-                .forEach { stage ->
-                    monitor
-                        .getActivitiesInStage(stage)
-                        .filterIsInstance<MainActivity>()
-                        .forEach(active::add)
-                }
-            count = active.size
-        }
-        return count
-    }
 
     fun denyCameraPermission() {
         Todo18DebugCameraBoundary.installPermission(CameraPermission.Denied(permanently = true))
