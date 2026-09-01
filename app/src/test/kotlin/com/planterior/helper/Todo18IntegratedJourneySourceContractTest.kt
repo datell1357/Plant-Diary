@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.name
 import kotlin.io.path.readText
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -80,6 +81,32 @@ class Todo18IntegratedJourneySourceContractTest {
             "currentDebugRegistrationState",
             "subscribeToDebugRegistrationStates",
             "observeDebugRegistrationState",
+        )
+    }
+
+    @Test
+    fun `API37 Todo18 startup grants local network permission before MainActivity`() {
+        val expectedRules =
+            listOf(
+                "Api37LocalNetworkPermissionRule()",
+                "DebugHomeSessionRule(",
+                "Todo18IntegratedRuntimeRule()",
+                "createAndroidComposeRule<MainActivity>()",
+            )
+        val expectedIdentificationRules =
+            listOf(
+                "Api37LocalNetworkPermissionRule()",
+                "DebugHomeSessionRule(",
+                "createAndroidComposeRule<MainActivity>()",
+            )
+
+        assertTodo18StartupRuleOrder(
+            "Todo18IntegratedJourneyMainActivityTest.kt",
+            expectedRules,
+        )
+        assertTodo18StartupRuleOrder(
+            "Todo18IdentificationFailureJourneyTest.kt",
+            expectedIdentificationRules,
         )
     }
 
@@ -586,6 +613,31 @@ class Todo18IntegratedJourneySourceContractTest {
 
     private fun assertCode(code: String, vararg tokens: String) {
         tokens.forEach { assertTrue("Missing code token: $it", code.contains(it)) }
+    }
+
+    private fun assertTodo18StartupRuleOrder(fileName: String, expectedRules: List<String>) {
+        val code = source("app/src/androidTest/kotlin/com/planterior/helper/$fileName")
+        val declaredOrders =
+            Regex("""@get:Rule\(order = (\d+)\)""")
+                .findAll(code)
+                .map { it.groupValues[1].toInt() }
+                .toList()
+        assertEquals(
+            "$fileName must declare consecutive startup rule orders",
+            expectedRules.indices.toList(),
+            declaredOrders,
+        )
+
+        val positions = expectedRules.map { token ->
+            val position = code.indexOf(token)
+            assertTrue("$fileName is missing startup rule token: $token", position >= 0)
+            position
+        }
+        assertEquals(
+            "$fileName must preserve startup rule relative order",
+            positions.sorted(),
+            positions,
+        )
     }
 
     private fun assertFunction(code: String, name: String) {

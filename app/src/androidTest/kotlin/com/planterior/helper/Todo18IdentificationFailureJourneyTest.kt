@@ -30,9 +30,11 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class Todo18IdentificationFailureJourneyTest {
-    @get:Rule(order = 0) val signedInSession = DebugHomeSessionRule(SESSION_SIGNED_IN, ACCOUNT_ID)
+    @get:Rule(order = 0) val localNetworkPermission = Api37LocalNetworkPermissionRule()
 
-    @get:Rule(order = 1) val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule(order = 1) val signedInSession = DebugHomeSessionRule(SESSION_SIGNED_IN, ACCOUNT_ID)
+
+    @get:Rule(order = 2) val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
     fun identification429ShowsRecoverableCjkFallback() =
