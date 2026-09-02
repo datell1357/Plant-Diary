@@ -17,12 +17,10 @@ extension HomeDashboardView {
                         Text(store.globalNotificationTime)
                     }
                     notificationEndpointText
-                    if notificationState.endpoint == .registered {
-                        Text("예정 알림 \(store.plannedNotificationCount)건")
-                            .accessibilityIdentifier(
-                                "home.notification.scheduled"
-                            )
-                    }
+                    Text("예정 알림 \(store.plannedNotificationCount)건")
+                        .accessibilityIdentifier(
+                            "home.notification.scheduled"
+                        )
                 }
             }
         }
@@ -39,8 +37,8 @@ extension HomeDashboardView {
                 alignment: .leading,
                 spacing: HomeReferenceMetrics.notificationDetailSpacing
             ) {
-                Text("알림 꺼짐")
-                Text("돌봄 기능 유지")
+                Text("알림 설정 필요")
+                Text("물 주기 알림 설정은 유지돼요")
             }
             .accessibilityIdentifier("home.notification.denied")
         case .authorized:

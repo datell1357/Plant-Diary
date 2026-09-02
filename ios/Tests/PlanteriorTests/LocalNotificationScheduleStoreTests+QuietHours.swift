@@ -52,7 +52,7 @@ extension LocalNotificationScheduleStoreTests {
         XCTAssertEqual(center.requests.count, 2)
     }
 
-    func testEnabledOvernightQuietHoursSuppressDeliveryInsideInterval() throws {
+    func testEnabledOvernightQuietHoursSuppressDeliveryInsideInterval() async throws {
         let quietHours = try QuietHoursPreference(
             enabled: true,
             start: LocalTime.parse("22:00"),
@@ -64,14 +64,17 @@ extension LocalNotificationScheduleStoreTests {
         )
 
         try store.reconcile(request(time: "22:00"))
+        try await store.waitForPendingOperations()
         XCTAssertEqual(store.scheduledCount, 0)
         try store.reconcile(request(time: "06:59"))
+        try await store.waitForPendingOperations()
         XCTAssertEqual(store.scheduledCount, 0)
         try store.reconcile(request(time: "07:00"))
+        try await store.waitForPendingOperations()
         XCTAssertEqual(store.scheduledCount, 2)
     }
 
-    func testDisabledQuietHoursDoNotSuppressDelivery() throws {
+    func testDisabledQuietHoursDoNotSuppressDelivery() async throws {
         let quietHours = try QuietHoursPreference(
             enabled: false,
             start: LocalTime.parse("22:00"),
@@ -80,6 +83,7 @@ extension LocalNotificationScheduleStoreTests {
         let store = try makeStore(key: "disabled", quietHours: quietHours)
 
         try store.reconcile(request(time: "23:00"))
+        try await store.waitForPendingOperations()
 
         XCTAssertEqual(store.scheduledCount, 2)
     }

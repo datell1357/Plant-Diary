@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import UserNotifications
 
@@ -26,12 +27,8 @@ final class SystemLocalNotificationCenter: LocalNotificationCenterScheduling {
 
 extension LocalNotificationScheduleStore {
     static func ownedPrefix(accountID: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(
-            CharacterSet(charactersIn: "-_")
-        )
-        let account = accountID.addingPercentEncoding(
-            withAllowedCharacters: allowed
-        ) ?? accountID
-        return "planterior.watering.\(account)."
+        let digest = SHA256.hash(data: Data(accountID.utf8))
+        let scope = digest.map { String(format: "%02x", $0) }.joined()
+        return "planterior.local.watering.\(scope)."
     }
 }

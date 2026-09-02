@@ -18,15 +18,21 @@ struct LocalPlantCollectionScheduleTests {
             trigger: nil
         )
         let center = LocalNotificationCenterFake(requests: [unrelated])
+        let quietHours = try QuietHoursPreference(
+            enabled: false,
+            start: LocalTime.parse("22:00"),
+            end: LocalTime.parse("07:00")
+        )
         let schedules = LocalNotificationScheduleStore(
             defaults: defaults,
+            quietHours: { quietHours },
             notificationCenter: center
         )
         schedules.mount(accountID: "account-a")
         let store = collectionStore(defaults: defaults, schedules: schedules)
         let plantID = try PersonalPlantID.parse("local-0")
         store.plants = try [
-            wateringDraft(lastWateredOn: CalendarDate.parse("2026-08-01"))
+            wateringDraft(lastWateredOn: CalendarDate.parse("2099-08-01"))
         ]
         store.weatherPlantIDs = [plantID]
         try schedules.reconcile(notificationRequest(
@@ -35,7 +41,7 @@ struct LocalPlantCollectionScheduleTests {
                 time: LocalTime.parse("09:00")
             ),
             plantID: plantID,
-            dueDate: CalendarDate.parse("2026-08-11")
+            dueDate: CalendarDate.parse("2099-08-11")
         ))
         try await schedules.waitForPendingOperations()
         #expect(center.requests.count == 3)
@@ -47,15 +53,25 @@ struct LocalPlantCollectionScheduleTests {
     }
 
     @Test
-    func homeReconciliationDoesNotRecreateCompletedWateringNotifications() throws {
+    func homeReconciliationDoesNotRecreateCompletedWateringNotifications() async throws {
         let suiteName = "LocalPlantCollectionCompletionTests-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
-        let schedules = LocalNotificationScheduleStore(defaults: defaults)
+        let center = LocalNotificationCenterFake()
+        let quietHours = try QuietHoursPreference(
+            enabled: false,
+            start: LocalTime.parse("22:00"),
+            end: LocalTime.parse("07:00")
+        )
+        let schedules = LocalNotificationScheduleStore(
+            defaults: defaults,
+            quietHours: { quietHours },
+            notificationCenter: center
+        )
         let store = collectionStore(defaults: defaults, schedules: schedules)
         schedules.mount(accountID: "account-a")
         store.mount(accountID: "account-a")
-        let baseline = try CalendarDate.parse("2026-08-01")
+        let baseline = try CalendarDate.parse("2099-08-01")
         store.plants = [wateringDraft(lastWateredOn: baseline)]
         let plantID = try PersonalPlantID.parse("local-0")
         store.weatherPlantIDs = [plantID]
@@ -63,7 +79,7 @@ struct LocalPlantCollectionScheduleTests {
             enabled: true,
             time: LocalTime.parse("09:00")
         )
-        let today = try CalendarDate.parse("2026-08-11")
+        let today = try CalendarDate.parse("2099-08-11")
 
         try schedules.reconcile(notificationRequest(
             preference: preference,
@@ -77,26 +93,32 @@ struct LocalPlantCollectionScheduleTests {
         )
         store.mount(accountID: "account-a")
         #expect(store.completedPlantIDs == [plantID])
-        let nextDueDate = try CalendarDate.parse("2026-08-21")
+        let nextDueDate = try CalendarDate.parse("2099-08-21")
         try schedules.reconcile(notificationRequest(
             preference: preference,
             plantID: plantID,
             dueDate: nextDueDate,
             completedPlantIDs: store.completedPlantIDs
         ))
+        try await schedules.waitForPendingOperations()
         #expect(schedules.scheduledCount == 0)
 
         store.mount(accountID: "account-b")
+        schedules.mount(accountID: "account-b")
         #expect(store.completedPlantIDs.isEmpty)
         let remounted = collectionStore(defaults: defaults, schedules: schedules)
         remounted.mount(accountID: "account-a")
+        schedules.mount(accountID: "account-a")
+        #expect(remounted.completedPlantIDs.isEmpty)
         try schedules.reconcile(notificationRequest(
             preference: preference,
             plantID: plantID,
             dueDate: nextDueDate,
             completedPlantIDs: remounted.completedPlantIDs
         ))
+        try await schedules.waitForPendingOperations()
         #expect(schedules.scheduledCount == 2)
+        #expect(center.requests.count == 2)
     }
 
     private func collectionStore(

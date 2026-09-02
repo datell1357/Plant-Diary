@@ -18,8 +18,8 @@ struct LocalPlantCollectionWateringTests {
         )
         schedules.mount(accountID: "account-a")
         let store = collectionStore(defaults: defaults, schedules: schedules)
-        let baseline = try CalendarDate.parse("2026-08-01")
-        let today = try CalendarDate.parse("2026-08-11")
+        let baseline = try CalendarDate.parse("2099-08-01")
+        let today = try CalendarDate.parse("2099-08-11")
         let plantID = try PersonalPlantID.parse("local-0")
         store.plants = [wateringDraft(lastWateredOn: baseline)]
         store.weatherPlantIDs = [plantID]

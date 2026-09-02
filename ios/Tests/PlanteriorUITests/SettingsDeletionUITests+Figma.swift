@@ -138,24 +138,50 @@ extension SettingsDeletionUITests {
 
         let status = app.staticTexts
             .matching(identifier: "settings.permission.notifications")
-            .matching(NSPredicate(format: "label == '허용 안 됨'"))
+            .matching(NSPredicate(format: "label == '설정에서 허용 필요'"))
             .firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 5))
     }
 
-    func testFailedNotificationAuthorizationKeepsWeatherAlertsOff() {
+    func testDeniedNotificationAuthorizationKeepsWateringIntentOnAndShowsSettingsStatus() {
+        // Given
+        let app = figmaSettingsApp()
+        app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
+        app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "denied"
+        app.launch()
+        openFigmaSettings(in: app)
+        let watering = app.switches["settings.alerts.watering-enabled"]
+        assertSwitch(watering, reachesValue: "1")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "0")
+
+        // When
+        watering.tap()
+
+        // Then
+        assertSwitch(watering, reachesValue: "1")
+        XCTAssertTrue(
+            notificationStatus("설정에서 허용 필요", in: app)
+                .waitForExistence(timeout: 5)
+        )
+    }
+
+    func testFailedNotificationAuthorizationKeepsWateringIntentOnAndShowsSettingsStatus() {
         let app = figmaSettingsApp()
         app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "notDetermined"
         app.launchEnvironment["QA_NOTIFICATION_REQUEST_RESULT"] = "failed"
         app.launch()
         openFigmaSettings(in: app)
 
-        let weather = app.switches["settings.alerts.weather-enabled"]
-        assertSwitch(weather, reachesValue: "1")
-        weather.tap()
-        assertSwitch(weather, reachesValue: "0")
+        let watering = app.switches["settings.alerts.watering-enabled"]
+        assertSwitch(watering, reachesValue: "1")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "0")
+        watering.tap()
+        assertSwitch(watering, reachesValue: "1")
         XCTAssertTrue(
-            notificationStatus("확인 필요", in: app).waitForExistence(timeout: 5)
+            notificationStatus("설정에서 허용 필요", in: app)
+                .waitForExistence(timeout: 5)
         )
     }
 

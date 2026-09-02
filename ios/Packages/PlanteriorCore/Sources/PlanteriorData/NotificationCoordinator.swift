@@ -90,12 +90,30 @@ public struct NotificationCoordinator: Sendable {
     }
 
     public func localSchedules(
-        _ request: NotificationScheduleRequest
+        _ request: NotificationScheduleRequest,
+        now: Date = Date(),
+        calendar: Calendar = .current
     ) throws -> [PlannedNotification] {
         guard request.authorization == .authorized else {
             return []
         }
         return try plannedSchedules(request)
+            .compactMap { schedule -> (Date, PlannedNotification)? in
+                guard let triggerDate = scheduledDate(
+                    schedule,
+                    calendar: calendar
+                ), triggerDate > now else {
+                    return nil
+                }
+                return (triggerDate, schedule)
+            }
+            .sorted { lhs, rhs in
+                lhs.0 == rhs.0
+                    ? lhs.1.deduplicationKey < rhs.1.deduplicationKey
+                    : lhs.0 < rhs.0
+            }
+            .prefix(60)
+            .map(\.1)
     }
 
     private func plannedSchedules(
@@ -185,5 +203,29 @@ public struct NotificationCoordinator: Sendable {
         return try CalendarDate.parse(
             String(format: "%04d-%02d-%02d", year, month, day)
         )
+    }
+
+    private func scheduledDate(
+        _ schedule: PlannedNotification,
+        calendar: Calendar
+    ) -> Date? {
+        let date = schedule.date.rawValue
+            .split(separator: "-")
+            .compactMap { Int($0) }
+        let time = schedule.time.rawValue
+            .split(separator: ":")
+            .compactMap { Int($0) }
+        guard date.count == 3, time.count >= 2 else {
+            return nil
+        }
+        return calendar.date(from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: date[0],
+            month: date[1],
+            day: date[2],
+            hour: time[0],
+            minute: time[1]
+        ))
     }
 }

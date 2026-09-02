@@ -20,8 +20,10 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     private let notificationCenter: any LocalNotificationCenterScheduling
     private var key: String
     private var accountID = "signed-out"
+    private var authorization: NotificationAuthorizationState = .notDetermined
     private var schedules: [StoredSchedule] = []
-    private var pendingOperation: Task<Void, Error>?
+    private var pendingOperation: Task<Void, Never>?
+    private(set) var scheduledCount = 0
 
     init(
         defaults: UserDefaults = .standard,
@@ -39,26 +41,22 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         restore()
     }
 
-    var scheduledCount: Int {
-        deliverySchedules.count
-    }
-
     func mount(accountID: String?) {
         let mountedAccountID = accountID ?? "signed-out"
         guard self.accountID != mountedAccountID else {
             return
         }
-        let prefixes = [ownedPrefix, Self.ownedPrefix(accountID: mountedAccountID)]
+        let previousPrefix = ownedPrefix
         self.accountID = mountedAccountID
         key = "notifications.\(mountedAccountID).scheduled"
         restore()
-        enqueueRemoval(prefixes: prefixes)
+        enqueueRemoval(prefixes: [previousPrefix])
         enqueueReconciliation()
     }
 
     func reconcile(_ request: NotificationScheduleRequest) throws {
-        let normalizedRequest = NotificationScheduleRequest(
-            authorization: request.authorization,
+        let planningRequest = NotificationScheduleRequest(
+            authorization: .authorized,
             endpoint: request.endpoint,
             global: request.global,
             perPlant: request.perPlant,
@@ -66,8 +64,9 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
             completedPlantIDs: request.completedPlantIDs,
             existingDeduplicationKeys: []
         )
+        authorization = request.authorization
         schedules = try NotificationCoordinator()
-            .localSchedules(normalizedRequest)
+            .localSchedules(planningRequest)
             .map {
                 StoredSchedule(
                     plantID: $0.plantID.rawValue,
@@ -95,8 +94,13 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         enqueueReconciliation()
     }
 
+    func updateAuthorization(_ authorization: NotificationAuthorizationState) {
+        self.authorization = authorization
+        enqueueReconciliation()
+    }
+
     func waitForPendingOperations() async throws {
-        try await pendingOperation?.value
+        await pendingOperation?.value
     }
 
     private func restore() {
@@ -121,6 +125,9 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     }
 
     private var deliverySchedules: [StoredSchedule] {
+        guard authorization == .authorized else {
+            return []
+        }
         let quietHours = quietHours()
         return schedules.filter {
             guard let time = try? LocalTime.parse($0.time),
@@ -138,15 +145,41 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         let center = notificationCenter
         let previous = pendingOperation
         pendingOperation = Task {
-            _ = await previous?.result
+            await previous?.value
             let pending = await center.pendingRequests()
-            let owned = pending
+            let desiredByID = Dictionary(
+                uniqueKeysWithValues: requests.map { ($0.identifier, $0) }
+            )
+            let owned = pending.filter { $0.identifier.hasPrefix(prefix) }
+            let stale = owned
                 .map(\.identifier)
-                .filter { $0.hasPrefix(prefix) }
-            await center.removePendingRequests(withIdentifiers: owned)
-            for request in requests {
-                try await center.add(request)
+                .filter { desiredByID[$0] == nil }
+            if !stale.isEmpty {
+                await center.removePendingRequests(withIdentifiers: stale)
             }
+            let pendingByID = Dictionary(
+                uniqueKeysWithValues: owned.map { ($0.identifier, $0) }
+            )
+            for request in requests where !Self.matches(
+                pendingByID[request.identifier],
+                request
+            ) {
+                try? await center.add(request)
+            }
+            let reconciled = await center.pendingRequests()
+            guard prefix == ownedPrefix else {
+                return
+            }
+            scheduledCount = reconciled.filter { pending in
+                guard let desired = desiredByID[pending.identifier] else {
+                    return false
+                }
+                return Self.matches(pending, desired)
+            }.count
+            NotificationCenter.default.post(
+                name: .localNotificationScheduleDidChange,
+                object: nil
+            )
         }
     }
 
@@ -154,7 +187,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         let center = notificationCenter
         let previous = pendingOperation
         pendingOperation = Task {
-            _ = await previous?.result
+            await previous?.value
             let pending = await center.pendingRequests()
             let owned = pending
                 .map(\.identifier)
@@ -162,6 +195,13 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
                     prefixes.contains { identifier.hasPrefix($0) }
                 }
             await center.removePendingRequests(withIdentifiers: owned)
+            if prefixes.contains(ownedPrefix) {
+                scheduledCount = 0
+                NotificationCenter.default.post(
+                    name: .localNotificationScheduleDidChange,
+                    object: nil
+                )
+            }
         }
     }
 
@@ -170,18 +210,18 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     ) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = "물 주기 알림"
-        content.body = "식물의 물 주기 일정을 확인해 주세요."
+        content.body = "오늘 물 주기 일정이 있어요."
         content.sound = .default
         content.userInfo = [
             "route": "plant-care",
-            "accountID": accountID,
-            "plantID": schedule.plantID,
-            "care": "watering"
+            "plantID": schedule.plantID
         ]
         let date = schedule.date.split(separator: "-").compactMap { Int($0) }
         let time = schedule.time.split(separator: ":").compactMap { Int($0) }
         let trigger = UNCalendarNotificationTrigger(
             dateMatching: DateComponents(
+                calendar: .current,
+                timeZone: .current,
                 year: date[0],
                 month: date[1],
                 day: date[2],
@@ -191,9 +231,33 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
             repeats: false
         )
         return UNNotificationRequest(
-            identifier: "\(ownedPrefix)\(schedule.plantID).\(schedule.kind)",
+            identifier: "\(ownedPrefix)\(schedule.deduplicationKey)",
             content: content,
             trigger: trigger
         )
     }
+
+    private static func matches(
+        _ pending: UNNotificationRequest?,
+        _ desired: UNNotificationRequest
+    ) -> Bool {
+        guard let pending,
+              let pendingTrigger = pending.trigger as? UNCalendarNotificationTrigger,
+              let desiredTrigger = desired.trigger as? UNCalendarNotificationTrigger
+        else {
+            return false
+        }
+        return pending.content.title == desired.content.title
+            && pending.content.body == desired.content.body
+            && NSDictionary(dictionary: pending.content.userInfo).isEqual(
+                to: desired.content.userInfo
+            )
+            && pendingTrigger.dateComponents == desiredTrigger.dateComponents
+    }
+}
+
+extension Notification.Name {
+    static let localNotificationScheduleDidChange = Notification.Name(
+        "planterior.localNotificationScheduleDidChange"
+    )
 }

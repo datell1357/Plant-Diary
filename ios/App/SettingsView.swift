@@ -99,6 +99,13 @@ struct SettingsView: View {
             reloadPresentedValues()
             Task { await reloadNotificationAuthorization() }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .localNotificationAuthorizationDidChange
+            )
+        ) { _ in
+            Task { await reloadNotificationAuthorization() }
+        }
         .fullScreenCover(isPresented: $showsRegionSettings) {
             NavigationStack {
                 RegionSettingsView(

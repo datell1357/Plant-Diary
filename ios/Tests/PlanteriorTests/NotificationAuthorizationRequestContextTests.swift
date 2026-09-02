@@ -1,6 +1,7 @@
 import Foundation
 @testable import Planterior
 import Testing
+import UserNotifications
 
 struct NotificationRequestContextTests {
     @Test
@@ -29,5 +30,13 @@ struct NotificationRequestContextTests {
             )
 
         #expect(matchesCurrentAccount)
+    }
+
+    @Test
+    func provisionalAuthorizationAllowsLocalDelivery() {
+        #expect(
+            NotificationRuntimeState.authorizationState(.provisional)
+                == .authorized
+        )
     }
 }

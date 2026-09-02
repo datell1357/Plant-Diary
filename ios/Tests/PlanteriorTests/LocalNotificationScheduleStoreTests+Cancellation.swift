@@ -48,7 +48,10 @@ extension LocalNotificationScheduleStoreTests {
         )
         let center = LocalNotificationCenterFake(requests: [
             Self.request(identifier: "unrelated.pending"),
-            Self.request(identifier: "planterior.watering.account-a.stale")
+            Self.request(
+                identifier: LocalNotificationScheduleStore
+                    .ownedPrefix(accountID: "account-a") + "stale"
+            )
         ])
         let store = LocalNotificationScheduleStore(
             defaults: defaults,

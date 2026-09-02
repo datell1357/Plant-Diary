@@ -16,7 +16,9 @@ extension LocalNotificationScheduleStoreTests {
         try store.reconcile(request(time: "09:00"))
         try await store.waitForPendingOperations()
         XCTAssertTrue(center.requests.allSatisfy {
-            $0.identifier.contains("account-a")
+            $0.identifier.hasPrefix(
+                LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a")
+            )
         })
 
         store.mount(accountID: "account-b")

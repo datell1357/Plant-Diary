@@ -121,6 +121,23 @@ struct HomeDashboardView: View {
                 plants: collection.weatherPlantIDs
             )
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .localNotificationScheduleDidChange
+            )
+        ) { _ in
+            store.refreshPlannedNotificationCount()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .localNotificationAuthorizationDidChange
+            )
+        ) { _ in
+            Task {
+                notificationState = await NotificationRuntimeState.current()
+                reload()
+            }
+        }
         .fullScreenCover(isPresented: $showsRegionSettings) {
             NavigationStack {
                 RegionSettingsView(

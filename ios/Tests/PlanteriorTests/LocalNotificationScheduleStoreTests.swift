@@ -20,13 +20,28 @@ final class LocalNotificationScheduleStoreTests: XCTestCase {
         // Then
         let requests = center.requests
         XCTAssertEqual(requests.count, 2)
-        XCTAssertTrue(requests.allSatisfy { $0.identifier.contains("account-a") })
+        let prefix = "planterior.local.watering."
+            + "fc164f8250803ea8d41834f1de85821035d27d3747e83610789e0f8e5313b9c3."
+        XCTAssertEqual(
+            Set(requests.map(\.identifier)),
+            [
+                "\(prefix)plant-a|2099-08-11|due",
+                "\(prefix)plant-a|2099-08-12|next"
+            ]
+        )
         XCTAssertEqual(Set(requests.map(\.identifier)).count, 2)
         XCTAssertTrue(requests.allSatisfy {
             $0.content.userInfo["route"] as? String == "plant-care"
-                && $0.content.userInfo["accountID"] as? String == "account-a"
                 && $0.content.userInfo["plantID"] as? String == "plant-a"
-                && $0.content.userInfo["care"] as? String == "watering"
+                && Set($0.content.userInfo.keys) == ["route", "plantID"]
+                && $0.content.title == "물 주기 알림"
+                && $0.content.body == "오늘 물 주기 일정이 있어요."
+        })
+        XCTAssertTrue(requests.allSatisfy {
+            guard let trigger = $0.trigger as? UNCalendarNotificationTrigger else {
+                return false
+            }
+            return trigger.dateComponents.timeZone == .current
         })
     }
 
@@ -80,7 +95,8 @@ final class LocalNotificationScheduleStoreTests: XCTestCase {
         // Given
         let center = LocalNotificationCenterFake(requests: [
             Self.request(identifier: "unrelated.weather"),
-            Self.request(identifier: "planterior.watering.account-a.stale")
+            Self.request(identifier: LocalNotificationScheduleStore
+                .ownedPrefix(accountID: "account-a") + "stale")
         ])
         let store = try makeStore(key: "owned", center: center)
         store.mount(accountID: "account-a")
@@ -92,8 +108,31 @@ final class LocalNotificationScheduleStoreTests: XCTestCase {
         // Then
         let identifiers = Set(center.requests.map(\.identifier))
         XCTAssertTrue(identifiers.contains("unrelated.weather"))
-        XCTAssertFalse(identifiers.contains("planterior.watering.account-a.stale"))
-        XCTAssertEqual(identifiers.filter { $0.contains("planterior.watering.account-a") }.count, 2)
+        XCTAssertFalse(identifiers.contains(
+            LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a")
+                + "stale"
+        ))
+        XCTAssertEqual(identifiers.filter {
+            $0.hasPrefix(LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a"))
+        }.count, 2)
+    }
+
+    func testUnchangedReconcilePerformsNoRemoveOrAddOperations() async throws {
+        // Given
+        let center = LocalNotificationCenterFake()
+        let store = try makeStore(key: "diff", center: center)
+        store.mount(accountID: "account-a")
+        try store.reconcile(request(time: "09:00"))
+        try await store.waitForPendingOperations()
+        center.resetOperations()
+
+        // When
+        try store.reconcile(request(time: "09:00"))
+        try await store.waitForPendingOperations()
+
+        // Then
+        XCTAssertTrue(center.removedIdentifiers.isEmpty)
+        XCTAssertTrue(center.addedIdentifiers.isEmpty)
     }
 
     func testAccountRemountRemovesPriorAccountWithoutCollidingWithNewAccount() async throws {
@@ -112,9 +151,69 @@ final class LocalNotificationScheduleStoreTests: XCTestCase {
 
         // Then
         let accountBIdentifiers = Set(center.requests.map(\.identifier))
-        XCTAssertTrue(accountAIdentifiers.allSatisfy { $0.contains("account-a") })
-        XCTAssertTrue(accountBIdentifiers.allSatisfy { $0.contains("account-b") })
+        XCTAssertTrue(accountAIdentifiers.allSatisfy {
+            $0.hasPrefix(LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a"))
+        })
+        XCTAssertTrue(accountBIdentifiers.allSatisfy {
+            $0.hasPrefix(LocalNotificationScheduleStore.ownedPrefix(accountID: "account-b"))
+        })
         XCTAssertTrue(accountAIdentifiers.isDisjoint(with: accountBIdentifiers))
+    }
+
+    func testLogoutRemovesPriorAccountRequestsAndPreservesUnrelatedRequests() async throws {
+        let center = LocalNotificationCenterFake(requests: [
+            Self.request(identifier: "unrelated.weather")
+        ])
+        let store = try makeStore(key: "logout", center: center)
+        store.mount(accountID: "account-a")
+        try store.reconcile(request(time: "09:00"))
+        try await store.waitForPendingOperations()
+
+        store.mount(accountID: "account-b")
+        try store.reconcile(request(time: "09:00"))
+        try await store.waitForPendingOperations()
+        store.mount(accountID: nil)
+        try await store.waitForPendingOperations()
+
+        XCTAssertEqual(center.requests.map(\.identifier), ["unrelated.weather"])
+        XCTAssertEqual(store.scheduledCount, 0)
+    }
+
+    func testScheduledCountIncludesOnlySuccessfullyPendingRequests() async throws {
+        let prefix = LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a")
+        let center = LocalNotificationCenterFake(
+            failingIdentifiers: ["\(prefix)plant-a|2099-08-12|next"]
+        )
+        let store = try makeStore(key: "partial-failure", center: center)
+        store.mount(accountID: "account-a")
+
+        try store.reconcile(request(time: "09:00"))
+        try await store.waitForPendingOperations()
+
+        XCTAssertEqual(center.requests.count, 1)
+        XCTAssertEqual(store.scheduledCount, 1)
+    }
+
+    func testFailedReplacementDoesNotCountExistingSameIdentifierWithStalePayload() async throws {
+        let prefix = LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a")
+        let identifier = "\(prefix)plant-a|2099-08-11|due"
+        let center = LocalNotificationCenterFake(
+            failingIdentifiers: [identifier]
+        )
+        let store = try makeStore(key: "failed-replacement", center: center)
+        store.mount(accountID: "account-a")
+        try await store.waitForPendingOperations()
+        center.seed(Self.request(identifier: identifier))
+
+        try store.reconcile(request(time: "09:00"))
+        try await store.waitForPendingOperations()
+
+        XCTAssertEqual(center.requests.count, 2)
+        XCTAssertEqual(store.scheduledCount, 1)
+        XCTAssertEqual(
+            center.requests.first { $0.identifier == identifier }?.content.title,
+            ""
+        )
     }
 
     func makeStore(
@@ -153,7 +252,7 @@ final class LocalNotificationScheduleStoreTests: XCTestCase {
             perPlant: [:],
             dueDates: [
                 PersonalPlantID.parse("plant-a"):
-                    CalendarDate.parse("2026-08-11")
+                    CalendarDate.parse("2099-08-11")
             ],
             completedPlantIDs: [],
             existingDeduplicationKeys: []
@@ -172,9 +271,16 @@ final class LocalNotificationScheduleStoreTests: XCTestCase {
 @MainActor
 final class LocalNotificationCenterFake: LocalNotificationCenterScheduling {
     private(set) var requests: [UNNotificationRequest]
+    private(set) var addedIdentifiers: [String] = []
+    private(set) var removedIdentifiers: [String] = []
+    private let failingIdentifiers: Set<String>
 
-    init(requests: [UNNotificationRequest] = []) {
+    init(
+        requests: [UNNotificationRequest] = [],
+        failingIdentifiers: Set<String> = []
+    ) {
         self.requests = requests
+        self.failingIdentifiers = failingIdentifiers
     }
 
     func pendingRequests() async -> [UNNotificationRequest] {
@@ -182,11 +288,29 @@ final class LocalNotificationCenterFake: LocalNotificationCenterScheduling {
     }
 
     func add(_ request: UNNotificationRequest) async throws {
+        addedIdentifiers.append(request.identifier)
+        guard !failingIdentifiers.contains(request.identifier) else {
+            throw LocalNotificationCenterFakeError.rejected
+        }
         requests.removeAll { $0.identifier == request.identifier }
         requests.append(request)
     }
 
     func removePendingRequests(withIdentifiers identifiers: [String]) async {
+        removedIdentifiers.append(contentsOf: identifiers)
         requests.removeAll { identifiers.contains($0.identifier) }
     }
+
+    func resetOperations() {
+        addedIdentifiers = []
+        removedIdentifiers = []
+    }
+
+    func seed(_ request: UNNotificationRequest) {
+        requests.append(request)
+    }
+}
+
+private enum LocalNotificationCenterFakeError: Error {
+    case rejected
 }

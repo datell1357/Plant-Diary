@@ -16,6 +16,11 @@ final class HomeDashboardStore: ObservableObject {
     private var plantIDs: [PersonalPlantID] = []
     private var completedPlantIDs: Set<PersonalPlantID> = []
 
+    func refreshPlannedNotificationCount() {
+        plannedNotificationCount = LocalNotificationScheduleStore.shared
+            .scheduledCount
+    }
+
     func updatePlantIDs(_ plantIDs: [PersonalPlantID]) {
         self.plantIDs = plantIDs
     }

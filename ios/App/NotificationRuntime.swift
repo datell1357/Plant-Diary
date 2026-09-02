@@ -98,7 +98,7 @@ struct NotificationRuntimeState {
         }
     }
 
-    private static func authorizationState(
+    static func authorizationState(
         _ status: UNAuthorizationStatus
     ) -> NotificationAuthorizationState {
         switch status {

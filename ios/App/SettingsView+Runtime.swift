@@ -18,6 +18,7 @@ extension SettingsView {
             return
         }
         guard notificationAuthorizationRequest == nil else { return }
+        wateringEnabled = true
         let request = NotificationAuthorizationRequestContext(
             accountID: accountScopeID
         )
@@ -32,8 +33,10 @@ extension SettingsView {
             ) else {
                 return
             }
-            applyNotificationAuthorization(authorization)
-            wateringEnabled = authorization == .authorized
+            applyNotificationAuthorization(
+                authorization,
+                requestAttempted: true
+            )
             notificationAuthorizationRequest = nil
         }
     }
@@ -65,9 +68,13 @@ extension SettingsView {
     }
 
     func applyNotificationAuthorization(
-        _ authorization: NotificationAuthorizationState
+        _ authorization: NotificationAuthorizationState,
+        requestAttempted: Bool = false
     ) {
-        notificationStatus = Self.notificationText(authorization)
+        LocalNotificationScheduleStore.shared.updateAuthorization(authorization)
+        notificationStatus = requestAttempted && authorization != .authorized
+            ? "설정에서 허용 필요"
+            : Self.notificationText(authorization)
     }
 
     func reloadNotificationAuthorization() async {
@@ -119,7 +126,7 @@ extension SettingsView {
     ) -> String {
         switch status {
         case .authorized: "허용됨"
-        case .denied: "허용 안 됨"
+        case .denied: "설정에서 허용 필요"
         case .notDetermined: "확인 필요"
         }
     }

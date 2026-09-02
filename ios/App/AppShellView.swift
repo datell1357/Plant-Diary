@@ -142,8 +142,20 @@ struct AppShellView: View {
             Task { await mountAccountStores() }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, miniHomeStore.accountID != nil else { return }
-            Task { await miniHomeStore.refresh() }
+            guard phase == .active else { return }
+            Task {
+                let notificationState = await NotificationRuntimeState.current()
+                LocalNotificationScheduleStore.shared.updateAuthorization(
+                    notificationState.authorization
+                )
+                NotificationCenter.default.post(
+                    name: .localNotificationAuthorizationDidChange,
+                    object: nil
+                )
+                if miniHomeStore.accountID != nil {
+                    await miniHomeStore.refresh()
+                }
+            }
         }
         .onChange(of: auth.isSignedIn) { _, isSignedIn in
             guard isSignedIn else {
@@ -188,4 +200,10 @@ struct AppShellView: View {
         reduceMotion
             || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
     }
+}
+
+extension Notification.Name {
+    static let localNotificationAuthorizationDidChange = Notification.Name(
+        "planterior.localNotificationAuthorizationDidChange"
+    )
 }
