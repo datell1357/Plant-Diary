@@ -157,6 +157,17 @@ struct LocalPlantCollectionIdentityTests {
         )
         freshStore.mount(accountID: "account-a")
         #expect(freshStore.healthNotes(at: 0) == ["A의 건강 기록"])
+
+        freshStore.remove(at: 0)
+        #expect(freshStore.plants.isEmpty)
+        #expect(freshStore.healthNotesByPlantID.isEmpty)
+
+        let afterDeletion = LocalPlantCollectionStore(
+            defaults: defaults,
+            notificationSchedules: LocalNotificationScheduleStore(defaults: defaults)
+        )
+        afterDeletion.mount(accountID: "account-a")
+        #expect(afterDeletion.healthNotesByPlantID.isEmpty)
     }
 
     func makeStore() throws -> (UserDefaults, LocalPlantCollectionStore) {

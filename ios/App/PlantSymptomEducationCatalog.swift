@@ -14,12 +14,18 @@ struct PlantSymptomGuidance: Equatable {
 
 enum PlantSymptomEducationCatalog {
     static let disclaimer =
-        "이 내용은 가능한 원인과 초기 확인 방법을 안내하는 교육 자료이며, 확정 진단이 아닙니다. "
-            + "증상이 악화되거나 긴급한 상태라면 식물 전문가에게 상담하세요."
+        "이 안내는 진단이 아니며, 관찰 가능한 가능성과 확인 순서만 제공합니다."
 
     static func education(scientificName: String?) -> PlantSymptomEducation? {
+        education(scientificName: scientificName, hasWateringBaseline: false)
+    }
+
+    static func education(
+        scientificName: String?,
+        hasWateringBaseline: Bool
+    ) -> PlantSymptomEducation {
         guard let scientificName, monsteraAliases.contains(normalized(scientificName)) else {
-            return nil
+            return genericEducation(hasWateringBaseline: hasWateringBaseline)
         }
         return monstera
     }
@@ -52,6 +58,24 @@ enum PlantSymptomEducationCatalog {
             )
         ]
     )
+
+    private static func genericEducation(
+        hasWateringBaseline: Bool
+    ) -> PlantSymptomEducation {
+        PlantSymptomEducation(
+            scientificName: "일반 관찰 안내",
+            items: [
+                PlantSymptomGuidance(
+                    icon: "🔎",
+                    title: "종 정보를 알 수 없는 식물의 관찰 안내",
+                    possibleCause: "관찰만으로 원인을 알 수 없으므로, 물·빛·통풍처럼 확인할 수 있는 환경 변화를 차례로 살펴보세요.",
+                    initialResponse: hasWateringBaseline
+                        ? "최근 물 준 날짜가 기록되어 있으니, 그 날짜와 현재 흙 안쪽의 습기를 먼저 함께 확인하세요. 이어서 빛과 통풍 변화를 관찰해 기록하세요."
+                        : "최근 물 준 날짜가 기록되어 있지 않으니, 먼저 현재 흙 안쪽의 습기와 배수 상태를 관찰해 기록하세요. 이어서 빛과 통풍 변화를 확인하세요."
+                )
+            ]
+        )
+    }
 
     private static func normalized(_ value: String) -> String {
         value

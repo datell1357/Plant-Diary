@@ -36,12 +36,16 @@ extension PlantCareDetailView {
 struct PlantSymptomRemedyView: View {
     let displayName: String
     let scientificName: String?
+    let hasWateringBaseline: Bool
     @Environment(\.dismiss) var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var expandedIndex: Int? = 0
 
-    private var education: PlantSymptomEducation? {
-        PlantSymptomEducationCatalog.education(scientificName: scientificName)
+    private var education: PlantSymptomEducation {
+        PlantSymptomEducationCatalog.education(
+            scientificName: scientificName,
+            hasWateringBaseline: hasWateringBaseline
+        )
     }
 
     var body: some View {
@@ -68,17 +72,10 @@ struct PlantSymptomRemedyView: View {
                         .font(PlanteriorTypography.caption)
                         .foregroundStyle(PlanteriorPalette.textSecondary.color)
                         .accessibilityIdentifier("remedy.disclaimer")
-                    if let education {
-                        VStack(spacing: PlanteriorSpacing.medium) {
-                            ForEach(education.items.indices, id: \.self) { index in
-                                symptomCard(education.items[index], index: index)
-                            }
+                    VStack(spacing: PlanteriorSpacing.medium) {
+                        ForEach(education.items.indices, id: \.self) { index in
+                            symptomCard(education.items[index], index: index)
                         }
-                    } else {
-                        Text("이 식물의 종 정보에 맞는 증상 교육을 아직 준비하지 못했어요.")
-                            .font(PlanteriorTypography.supporting)
-                            .foregroundStyle(PlanteriorPalette.textSecondary.color)
-                            .accessibilityIdentifier("remedy.unavailable")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,7 +148,7 @@ struct PlantSymptomRemedyView: View {
 
     private func guidanceBody(_ item: PlantSymptomGuidance, index: Int) -> some View {
         VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
-            Text("⚠️ 가능한 원인")
+            Text("가능성")
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .foregroundStyle(PlanteriorPalette.warningText.color)
                 .accessibilityIdentifier("remedy.cause-heading.\(index)")
@@ -159,10 +156,11 @@ struct PlantSymptomRemedyView: View {
                 .font(PlanteriorTypography.supporting)
                 .foregroundStyle(PlanteriorPalette.textSecondary.color)
                 .accessibilityIdentifier("remedy.cause.\(index)")
-            Text("✨ 초기 확인 방법")
+            Text("확인 순서")
                 .font(PlanteriorTypography.caption.weight(.semibold))
                 .foregroundStyle(PlanteriorPalette.accent.color)
                 .padding(.top, PlanteriorSpacing.extraSmall)
+                .accessibilityIdentifier("remedy.check-heading.\(index)")
             Text(KoreanTypography.binding(
                 item.initialResponse,
                 phrases: PlantCareKoreanPhrases.remedy
