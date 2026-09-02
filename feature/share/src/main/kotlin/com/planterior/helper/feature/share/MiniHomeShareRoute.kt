@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ fun MiniHomeShareRoute(
     photoLoader: MiniHomePhotoLoader = PlaceholderMiniHomePhotoLoader,
     authOwnership: MiniHomeAuthOwnership = MiniHomeAuthOwnership.Unmanaged,
     productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
+    onStateObserved: (MiniHomeShareUiState) -> Unit = {},
 ) {
     val context = LocalContext.current
     val model =
@@ -50,6 +52,7 @@ fun MiniHomeShareRoute(
         )
     val controller = model.controller
     val state by controller.state.collectAsState()
+    SideEffect { onStateObserved(state) }
     val scope = rememberCoroutineScope()
     val imageStore = remember(context) { MiniHomeShareImageStore(context) }
     val clipboard = remember(context) { MiniHomeShareClipboard(context) }

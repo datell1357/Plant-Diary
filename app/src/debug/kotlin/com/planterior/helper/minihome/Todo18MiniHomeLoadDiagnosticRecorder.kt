@@ -366,6 +366,23 @@ internal class Todo18MiniHomeLoadDiagnosticRecorder(
                         diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
                             diagnostic.receiptStage in
                                 setOf(
+                                    "cache-transaction-body-returned",
+                                    "cache-transaction-returned",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                )
+                    "cache-transaction-body-returned" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
+                                    "cache-transaction-scope-returned",
+                                    "cache-transaction-threw",
+                                    "cache-transaction-cancelled",
+                                )
+                    "cache-transaction-scope-returned" ->
+                        diagnostic is Todo18MiniHomeLoadDiagnostic.CacheTransaction &&
+                            diagnostic.receiptStage in
+                                setOf(
                                     "cache-transaction-returned",
                                     "cache-transaction-threw",
                                     "cache-transaction-cancelled",

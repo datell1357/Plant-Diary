@@ -11,12 +11,12 @@ plugins {
 spotless {
     kotlin {
         target("**/*.kt")
-        targetExclude("**/build/**", "**/* 2.kt", "**/* 3.kt")
+        targetExclude("**/build/**", "**/.omo/**", "**/* 2.kt", "**/* 3.kt")
         ktfmt(libs.versions.ktfmt.get()).kotlinlangStyle()
     }
     kotlinGradle {
         target("**/*.gradle.kts")
-        targetExclude("**/build/**")
+        targetExclude("**/build/**", "**/.omo/**")
         ktfmt(libs.versions.ktfmt.get()).kotlinlangStyle()
     }
     format("projectFiles") {

@@ -108,6 +108,111 @@ class Todo18RenderedStateSinkSourceContractTest {
     }
 
     @Test
+    fun `share Ready uses a fresh typed rendered event before link creation`() {
+        val root = repositoryRoot()
+        val contract =
+            root.source(
+                "app/src/main/kotlin/com/planterior/helper/auth/AuthRuntimeDependencyOverrides.kt"
+            )
+        val route =
+            root.source(
+                "feature/share/src/main/kotlin/com/planterior/helper/feature/share/" +
+                    "MiniHomeShareRoute.kt"
+            )
+        val navHost =
+            root.source("app/src/main/kotlin/com/planterior/helper/navigation/PlanteriorNavHost.kt")
+        val snapshots =
+            root.source(
+                "app/src/debug/kotlin/com/planterior/helper/Todo18RenderedStateSnapshots.kt"
+            )
+        val sink =
+            root.source("app/src/debug/kotlin/com/planterior/helper/Todo18RenderedStateSink.kt")
+        val probe =
+            root.source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18RenderedStateProbe.kt"
+            )
+        val shareJourney =
+            root.source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18ShareJourneyAssertions.kt"
+            )
+        val majorJourney =
+            root.source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18MajorJourneyAssertions.kt"
+            )
+        val controller =
+            root.source(
+                "feature/share/src/main/kotlin/com/planterior/helper/feature/share/MiniHomeShareController.kt"
+            )
+        val screen =
+            root.source(
+                "feature/share/src/main/kotlin/com/planterior/helper/feature/share/MiniHomeShareScreen.kt"
+            )
+        val readyWait =
+            probe
+                .substringAfter("fun awaitMiniHomeShareReady(")
+                .substringBefore("fun awaitRegistration(")
+
+        assertTrue(
+            "Missing default no-op share rendered-state callback",
+            Regex(
+                    """fun\s+onMiniHomeShareState\s*\(\s*state:\s*MiniHomeShareUiState\s*\)\s*""" +
+                        """(?:=\s*Unit|\{\s*\})"""
+                )
+                .containsMatchIn(contract),
+        )
+        assertTrue(
+            "Missing optional share route callback",
+            Regex("""onStateObserved\s*:\s*\(MiniHomeShareUiState\)\s*->\s*Unit\s*=\s*\{\s*\}""")
+                .containsMatchIn(route),
+        )
+        assertCode(route, "SideEffect", "onStateObserved(state)")
+        assertCode(navHost, "MiniHomeShareRoute(", "onStateObserved =", "onMiniHomeShareState")
+        assertCode(
+            snapshots,
+            "data class Todo18MiniHomeShareStateEvent",
+            "val sequence: Long",
+            "val state: MiniHomeShareUiState",
+        )
+        assertCode(
+            sink,
+            "Todo18PrimaryEventStream<Todo18MiniHomeShareStateEvent>",
+            "override fun onMiniHomeShareState",
+            "Todo18MiniHomeShareStateEvent",
+            "shareStates.publish",
+            "currentMiniHomeShareState",
+            "subscribeToMiniHomeShareStates",
+        )
+        assertCode(
+            readyWait,
+            "ExactEventSubscription",
+            "sink::subscribeToMiniHomeShareStates",
+            "sink::currentMiniHomeShareState",
+            "acceptRegistrationReplay = true",
+        )
+        assertTrue(
+            "Share wait must require a strictly newer Ready plus Idle event",
+            Regex(
+                    """event\.sequence\s*>\s*floor[\s\S]*""" +
+                        """event\.state\s+is\s+MiniHomeShareUiState\.Ready[\s\S]*""" +
+                        """event\.state\.link\s+is\s+MiniHomeShareLinkState\.Idle"""
+                )
+                .containsMatchIn(readyWait),
+        )
+        assertCode(controller, "data class Ready(", "MiniHomeShareLinkState.Idle")
+        assertOrdered(screen, "MiniHomeShareLinkState.Idle", "MiniHomeShareTestTags.LINK_CREATE")
+        listOf(shareJourney, majorJourney).forEach { journey ->
+            val shareBlock = journey.substringAfter("currentMiniHomeShareState()?.sequence")
+            assertOrdered(
+                shareBlock,
+                " ?: 0L",
+                "events.navigateAndAwaitBoundary(",
+                "awaitMiniHomeShareReady(floor)",
+                "onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE)",
+            )
+        }
+    }
+
+    @Test
     fun `registration wait matches the post selection controller state`() {
         // Given
         val harness =

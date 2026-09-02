@@ -1955,6 +1955,8 @@ enum class MiniHomeCacheTransactionDiagnosticStage(val receiptStage: String) {
     INVENTORY_APPLY("cache-inventory-apply"),
     CURRENT_SNAPSHOT("cache-current-snapshot"),
     VERIFIED_INVENTORY_DECODE("cache-verified-inventory-decode"),
+    TRANSACTION_BODY_RETURNED("cache-transaction-body-returned"),
+    TRANSACTION_SCOPE_RETURNED("cache-transaction-scope-returned"),
     TERMINAL_CONFLICT("cache-terminal-conflict"),
     TRANSACTION_RETURNED("cache-transaction-returned"),
     TRANSACTION_THREW("cache-transaction-threw"),

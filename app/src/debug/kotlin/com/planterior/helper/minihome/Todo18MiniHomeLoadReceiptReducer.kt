@@ -32,6 +32,8 @@ internal object Todo18MiniHomeLoadReceiptReducer {
     private const val PENDING_READ_ORDER_MISMATCH = "pending-read-order-mismatch"
     private const val CACHE_TRANSACTION_CALL_ENTERED = "cache-transaction-call-entered"
     private const val CACHE_TRANSACTION_BODY_ENTERED = "cache-transaction-body-entered"
+    private const val CACHE_TRANSACTION_BODY_RETURNED = "cache-transaction-body-returned"
+    private const val CACHE_TRANSACTION_SCOPE_RETURNED = "cache-transaction-scope-returned"
     private const val CACHE_TRANSACTION_RETURNED = "cache-transaction-returned"
     private const val CACHE_TRANSACTION_THREW = "cache-transaction-threw"
     private const val CACHE_TRANSACTION_CANCELLED = "cache-transaction-cancelled"
@@ -66,6 +68,8 @@ internal object Todo18MiniHomeLoadReceiptReducer {
             "cache-inventory-apply",
             "cache-current-snapshot",
             "cache-verified-inventory-decode",
+            CACHE_TRANSACTION_BODY_RETURNED,
+            CACHE_TRANSACTION_SCOPE_RETURNED,
             "cache-terminal-conflict",
             CACHE_TRANSACTION_RETURNED,
             CACHE_TRANSACTION_THREW,
@@ -130,6 +134,40 @@ internal object Todo18MiniHomeLoadReceiptReducer {
                         problems += "cache-transaction-operation-identity-mismatch"
                     }
                     terminals.singleOrNull()?.let { terminal ->
+                        val bodyReturned = transaction.filter {
+                            it.kind == CACHE_TRANSACTION_BODY_RETURNED
+                        }
+                        val scopeReturned = transaction.filter {
+                            it.kind == CACHE_TRANSACTION_SCOPE_RETURNED
+                        }
+                        val decodeIndex = transaction.indexOfFirst {
+                            it.kind == "cache-verified-inventory-decode"
+                        }
+                        val bodyReturnedIndex = transaction.indexOfFirst {
+                            it.kind == CACHE_TRANSACTION_BODY_RETURNED
+                        }
+                        val scopeReturnedIndex = transaction.indexOfFirst {
+                            it.kind == CACHE_TRANSACTION_SCOPE_RETURNED
+                        }
+                        val terminalIndex = transaction.indexOf(terminal)
+                        val current =
+                            terminal.kind == CACHE_TRANSACTION_RETURNED &&
+                                terminal.cacheTransactionResult == "current"
+                        if (current) {
+                            if (bodyReturned.size != 1 || scopeReturned.size != 1) {
+                                problems += "cache-transaction-post-decode-cardinality-mismatch"
+                            }
+                            if (
+                                decodeIndex < 0 ||
+                                    bodyReturnedIndex <= decodeIndex ||
+                                    scopeReturnedIndex <= bodyReturnedIndex ||
+                                    terminalIndex <= scopeReturnedIndex
+                            ) {
+                                problems += "cache-transaction-post-decode-order-mismatch"
+                            }
+                        } else if (bodyReturned.isNotEmpty() || scopeReturned.isNotEmpty()) {
+                            problems += "cache-transaction-post-decode-stage-forbidden"
+                        }
                         when (terminal.kind) {
                             CACHE_TRANSACTION_RETURNED -> {
                                 if (terminal.cacheTransactionResult !in cacheOutcomes) {

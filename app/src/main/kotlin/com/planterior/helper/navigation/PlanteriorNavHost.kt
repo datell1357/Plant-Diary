@@ -720,6 +720,7 @@ fun PlanteriorNavHost(
                     photoLoader =
                         miniHomePhotoLoader(collectionThumbnailLoader, catalogMediaLoader),
                     authOwnership = miniHomeAuthOwnership,
+                    onStateObserved = renderedStateSink?.let { it::onMiniHomeShareState } ?: {},
                     productEventRecorder = productEventRecorder,
                 )
             }

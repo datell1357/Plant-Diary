@@ -43,9 +43,14 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
                 "app/src/debug/kotlin/com/planterior/helper/minihome/" +
                     "Todo18MiniHomeRenderedViewingIdentity.kt"
             )
+        val transactionDiagnostics =
+            root.source(
+                "feature/minihome/src/main/kotlin/com/planterior/helper/feature/minihome/" +
+                    "MiniHomeCacheConflictDiagnostics.kt"
+            )
         val diagnosticCode =
             "$capture\n$receipt\n$progressReceipt\n$finalization\n$reducer\n" +
-                renderedViewingIdentity
+                "$renderedViewingIdentity\n$transactionDiagnostics"
         val assertions =
             root.source(
                 "app/src/androidTest/kotlin/com/planterior/helper/" +
@@ -80,6 +85,8 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "publication-read-entered",
             "cache-transaction-call-entered",
             "cache-transaction-body-entered",
+            "cache-transaction-body-returned",
+            "cache-transaction-scope-returned",
             "cache-transaction-returned",
             "publication-read-terminal-returned",
             "put(\"valid\", progress.valid)",
@@ -105,6 +112,24 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             "catch (failure: Exception)",
             "primaryFailure.addSuppressed(summary)",
             "Todo18MiniHomeLoadReceiptReducer.problems",
+        )
+        assertCode(
+            transactionDiagnostics,
+            "TRANSACTION_BODY_RETURNED(\"cache-transaction-body-returned\")",
+            "TRANSACTION_SCOPE_RETURNED(\"cache-transaction-scope-returned\")",
+        )
+        assertOrdered(
+            capture,
+            "\"cache-verified-inventory-decode\"",
+            "\"cache-transaction-body-returned\"",
+            "\"cache-transaction-scope-returned\"",
+            "\"cache-transaction-returned\"",
+        )
+        assertOrdered(
+            reducer,
+            "CACHE_TRANSACTION_BODY_RETURNED",
+            "CACHE_TRANSACTION_SCOPE_RETURNED",
+            "CACHE_TRANSACTION_RETURNED",
         )
         assertOrdered(
             capture,

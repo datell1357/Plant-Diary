@@ -37,18 +37,22 @@ import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlacementId
 import com.planterior.helper.core.model.Revision
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.io.path.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
@@ -532,6 +536,8 @@ class FirebaseMiniHomeRepositoryTest {
                         MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
                         MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
                         MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                        MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED,
+                        MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED,
                         MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
                     ),
                     cacheTransactionObservations.map { it.stage },
@@ -612,6 +618,7 @@ class FirebaseMiniHomeRepositoryTest {
             val pendingIdentity = pendingReadEntered.await()
             val expected = CancellationException("cancel pending query")
             loading.cancel(expected)
+            runCurrent()
             releasePendingRead.complete(Unit)
             loading.join()
 
@@ -946,6 +953,8 @@ class FirebaseMiniHomeRepositoryTest {
                                 MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
                                 MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
                                 MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED,
+                                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED,
                                 MiniHomeCacheTransactionDiagnosticStage.TERMINAL_CONFLICT,
                                 MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_THREW,
                                 MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CANCELLED ->
@@ -967,6 +976,8 @@ class FirebaseMiniHomeRepositoryTest {
                     "cache-inventory-apply:account-a:null",
                     "cache-current-snapshot:account-a:null",
                     "cache-verified-inventory-decode:account-a:null",
+                    "cache-transaction-body-returned:account-a:null",
+                    "cache-transaction-scope-returned:account-a:null",
                     "cache-transaction-returned:account-a:null:CURRENT",
                     "legacy-cache-returned:CURRENT",
                 ),
@@ -3908,6 +3919,66 @@ class FirebaseMiniHomeRepositoryTest {
             }
             return RemoteMiniHomeSaveResult.Duplicate(layout.revision)
         }
+    }
+
+    @Test
+    fun `post-decode transaction return stages are explicit and ordered`() {
+        val root = repositoryRoot()
+        val diagnostics =
+            root
+                .resolve(
+                    "feature/minihome/src/main/kotlin/com/planterior/helper/feature/minihome/" +
+                        "MiniHomeCacheConflictDiagnostics.kt"
+                )
+                .readText()
+        val repository =
+            root
+                .resolve(
+                    "feature/minihome/src/main/kotlin/com/planterior/helper/feature/minihome/" +
+                        "FirebaseMiniHomeRepository.kt"
+                )
+                .readText()
+        val receipt =
+            root
+                .resolve(
+                    "app/src/debug/kotlin/com/planterior/helper/minihome/" +
+                        "Todo18MiniHomeLoadDiagnosticReceipt.kt"
+                )
+                .readText()
+
+        assertCode(
+            diagnostics,
+            "TRANSACTION_BODY_RETURNED(\"cache-transaction-body-returned\")",
+            "TRANSACTION_SCOPE_RETURNED(\"cache-transaction-scope-returned\")",
+        )
+        assertCode(receipt, "put(\"stage\", observation.receiptStage)")
+        assertOrdered(
+            repository,
+            "CoherentMiniHomeCacheApply.Current(",
+            "MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED",
+            "MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED",
+            "MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED",
+        )
+    }
+
+    private fun assertCode(code: String, vararg tokens: String) {
+        tokens.forEach { assertTrue("Missing code token: $it", code.contains(it)) }
+    }
+
+    private fun assertOrdered(code: String, vararg tokens: String) {
+        val positions = tokens.map(code::indexOf)
+        tokens.zip(positions).forEach { (token, position) ->
+            assertTrue("Missing ordered code token: $token", position >= 0)
+        }
+        assertEquals(positions.sorted(), positions)
+    }
+
+    private fun repositoryRoot(): Path {
+        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
+        while (!Files.exists(current.resolve("settings.gradle.kts"))) {
+            current = current.parent ?: error("Repository root unavailable")
+        }
+        return current
     }
 }
 

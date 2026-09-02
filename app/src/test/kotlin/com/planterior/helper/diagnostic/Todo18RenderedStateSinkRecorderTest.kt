@@ -1,16 +1,24 @@
 package com.planterior.helper.diagnostic
 
+import com.planterior.helper.Todo18MiniHomeShareStateEvent
 import com.planterior.helper.Todo18RenderedStateSink
 import com.planterior.helper.core.model.AccountId
+import com.planterior.helper.core.model.MiniHomeId
 import com.planterior.helper.core.model.PersonalPlantId
 import com.planterior.helper.core.model.PlantContentId
+import com.planterior.helper.core.model.Revision
+import com.planterior.helper.feature.minihome.MiniHomeLayout
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationContent
 import com.planterior.helper.feature.registration.RegistrationDraft
 import com.planterior.helper.feature.registration.RegistrationUiState
+import com.planterior.helper.feature.share.MiniHomeShareTarget
+import com.planterior.helper.feature.share.MiniHomeShareUiState
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,7 +32,41 @@ class Todo18RenderedStateSinkRecorderTest {
         assertNull(sink.currentRawMiniHomeState())
         assertNull(sink.currentDisplayedMiniHomeState())
         assertNull(sink.currentRegistrationState())
+        assertNull(sink.currentMiniHomeShareState())
         assertTrue(sink.isFresh())
+    }
+
+    @Test
+    fun `typed share states publish monotonically and settle on the current Ready state`() {
+        val sink = Todo18RenderedStateSink()
+        val events = mutableListOf<Todo18MiniHomeShareStateEvent>()
+        val subscription = sink.subscribeToMiniHomeShareStates(events::add)
+        val loading = MiniHomeShareUiState.Loading(AccountId("share-owner"))
+        val ready =
+            MiniHomeShareUiState.Ready(
+                MiniHomeShareTarget(
+                    owner = AccountId("share-owner"),
+                    committed =
+                        MiniHomeLayout(
+                            MiniHomeId("share-home"),
+                            "공유 미니홈",
+                            emptyList(),
+                            Revision(1),
+                            Instant.EPOCH,
+                        ),
+                    plants = emptyList(),
+                    decorations = emptyList(),
+                )
+            )
+
+        sink.onMiniHomeShareState(loading)
+        sink.onMiniHomeShareState(ready)
+
+        assertEquals(listOf(1L, 2L), events.map(Todo18MiniHomeShareStateEvent::sequence))
+        assertSame(ready, sink.currentMiniHomeShareState()?.state)
+        assertTrue(sink.currentMiniHomeShareState()?.state is MiniHomeShareUiState.Ready)
+        subscription.close()
+        assertEquals(0, sink.primaryListenerCount())
     }
 
     @Test

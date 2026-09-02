@@ -79,6 +79,20 @@ class Todo18MiniHomeLoadDiagnosticRecorderJobBindingTest {
                             operation,
                         )
                     )
+                    recorder.recordCurrentCacheTransaction(
+                        MiniHomeCacheTransactionDiagnosticObservation(
+                            MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED,
+                            account,
+                            operation,
+                        )
+                    )
+                    recorder.recordCurrentCacheTransaction(
+                        MiniHomeCacheTransactionDiagnosticObservation(
+                            MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED,
+                            account,
+                            operation,
+                        )
+                    )
                 }
                 load.record(
                     Todo18MiniHomeLoadDiagnostic.CacheTransaction(
@@ -112,6 +126,8 @@ class Todo18MiniHomeLoadDiagnosticRecorderJobBindingTest {
                     "cache-inventory-apply",
                     "cache-current-snapshot",
                     "cache-verified-inventory-decode",
+                    "cache-transaction-body-returned",
+                    "cache-transaction-scope-returned",
                     "cache-transaction-returned",
                     "cache-apply-returned",
                     "publication-read-entered",

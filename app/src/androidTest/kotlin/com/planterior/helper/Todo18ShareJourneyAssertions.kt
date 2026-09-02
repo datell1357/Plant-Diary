@@ -10,10 +10,12 @@ import com.planterior.helper.navigation.PlanteriorRoute
 internal fun Todo18MainActivityJourneyHarness.assertExpiredAndDeletedShareStates() {
     runtime.boundary.seedPlant()
     runtime.boundary.shareMode = Todo18ShareMode.EXPIRED
+    val floor = rendered.currentMiniHomeShareState()?.sequence ?: 0L
     events.navigateAndAwaitBoundary(
         route = PlanteriorRoute.MiniHomeShare,
         boundaryKind = "mini-home-loaded",
     )
+    rendered.awaitMiniHomeShareReady(floor)
     events.awaitBoundary("share-create") {
         compose.onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE).performClick()
     }

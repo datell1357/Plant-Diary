@@ -394,6 +394,84 @@ class Todo18MiniHomeLoadReceiptReducerTest {
     }
 
     @Test
+    fun `current transaction requires one ordered post-decode pair`() {
+        val fixture = transactionFixture()
+        val missing =
+            fixture.stages.filterNot {
+                it.kind == "cache-transaction-body-returned" ||
+                    it.kind == "cache-transaction-scope-returned"
+            }
+
+        val problems = Todo18MiniHomeLoadReceiptReducer.problems(ACCOUNT, fixture.progress, missing)
+
+        assertTrue("cache-transaction-post-decode-cardinality-mismatch" in problems)
+        assertTrue("cache-transaction-post-decode-order-mismatch" in problems)
+    }
+
+    @Test
+    fun `conflict transaction rejects post-decode success stages`() {
+        val recorder = Todo18MiniHomeLoadDiagnosticRecorder {}
+        recorder.expectCacheTransactionTrace()
+        val load = recorder.startLoad()
+        load.record(Todo18MiniHomeLoadDiagnostic.LoadEntered)
+        load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadEntered)
+        load.record(Todo18MiniHomeLoadDiagnostic.RemoteLoadReturned)
+        load.record(Todo18MiniHomeLoadDiagnostic.CacheApplyEntered(AccountId(ACCOUNT)))
+        val operation = OperationId("conflict-operation")
+        listOf(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_CALL_ENTERED,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_ENTERED,
+                MiniHomeCacheTransactionDiagnosticStage.TERMINAL_CONFLICT,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED,
+            )
+            .forEach { stage ->
+                recorder.record(
+                    load.id,
+                    Todo18MiniHomeLoadDiagnostic.CacheTransaction(
+                        MiniHomeCacheTransactionDiagnosticObservation(
+                            stage,
+                            AccountId(ACCOUNT),
+                            operation,
+                            result =
+                                if (
+                                    stage ==
+                                        MiniHomeCacheTransactionDiagnosticStage.TERMINAL_CONFLICT
+                                ) {
+                                    MiniHomeCacheTransactionResult.CONFLICT
+                                } else {
+                                    null
+                                },
+                        )
+                    ),
+                    null,
+                )
+            }
+        recorder.record(
+            load.id,
+            Todo18MiniHomeLoadDiagnostic.CacheTransaction(
+                MiniHomeCacheTransactionDiagnosticObservation(
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
+                    AccountId(ACCOUNT),
+                    operation,
+                    result = MiniHomeCacheTransactionResult.CONFLICT,
+                )
+            ),
+            null,
+        )
+        val progress = recorder.snapshot()
+
+        assertTrue(
+            "cache-transaction-post-decode-stage-forbidden" in
+                Todo18MiniHomeLoadReceiptReducer.problems(
+                    ACCOUNT,
+                    progress,
+                    progress.toStages(),
+                )
+        )
+    }
+
+    @Test
     fun `publication terminal must follow its entry and precede legacy return`() {
         val fixture = transactionFixture()
         val unmatched =
@@ -470,6 +548,8 @@ class Todo18MiniHomeLoadReceiptReducerTest {
                 MiniHomeCacheTransactionDiagnosticStage.INVENTORY_APPLY,
                 MiniHomeCacheTransactionDiagnosticStage.CURRENT_SNAPSHOT,
                 MiniHomeCacheTransactionDiagnosticStage.VERIFIED_INVENTORY_DECODE,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED,
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED,
             )
             .forEach { stage ->
                 recorder.record(

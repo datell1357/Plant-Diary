@@ -171,6 +171,8 @@ internal class Todo18MiniHomeInitialLoadDiagnosticCapture(
                 "cache-inventory-apply",
                 "cache-current-snapshot",
                 "cache-verified-inventory-decode",
+                "cache-transaction-body-returned",
+                "cache-transaction-scope-returned",
                 "cache-terminal-conflict",
                 "cache-transaction-returned",
                 "cache-transaction-threw",

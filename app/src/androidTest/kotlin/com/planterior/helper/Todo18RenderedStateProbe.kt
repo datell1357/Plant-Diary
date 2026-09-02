@@ -1,6 +1,8 @@
 package com.planterior.helper
 
 import com.planterior.helper.diagnostic.Todo18ExactEventObserver
+import com.planterior.helper.feature.share.MiniHomeShareLinkState
+import com.planterior.helper.feature.share.MiniHomeShareUiState
 import java.util.concurrent.TimeUnit
 
 /** Sequence-floored synchronization over the exact sink installed by the Todo18 runtime rule. */
@@ -44,6 +46,37 @@ internal class Todo18RenderedStateProbe(
                 }
         return observed
     }
+
+    fun awaitMiniHomeShareReady(floor: Long): Todo18MiniHomeShareStateEvent {
+        val sink = runtime.renderedStateSink
+        return ExactEventSubscription(
+                matches = { event ->
+                    event.sequence > floor &&
+                        event.state is MiniHomeShareUiState.Ready &&
+                        event.state.link is MiniHomeShareLinkState.Idle
+                },
+                subscribe = { receiver ->
+                    leasedRegistration(
+                        receiver,
+                        sink::subscribeToMiniHomeShareStates,
+                        sink::currentMiniHomeShareState,
+                    )
+                },
+                diagnosticSequence = Todo18MiniHomeShareStateEvent::sequence,
+                acceptRegistrationReplay = true,
+            )
+            .use { subscription ->
+                subscription.arm()
+                subscription.await(
+                    EVENT_TIMEOUT_MILLIS,
+                    TimeUnit.MILLISECONDS,
+                    "Todo18 MiniHome share Ready",
+                )
+            }
+    }
+
+    fun currentMiniHomeShareState(): Todo18MiniHomeShareStateEvent? =
+        runtime.renderedStateSink.currentMiniHomeShareState()
 
     fun awaitMiniHomeViewingAfterLoad(
         barrier: Todo18MiniHomeDisplayedStateBarrier

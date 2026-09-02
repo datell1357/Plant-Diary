@@ -22,6 +22,7 @@ import com.planterior.helper.feature.registration.RegistrationDiagnosticEvent
 import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticObservation
 import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticStage
 import com.planterior.helper.feature.registration.RegistrationUiState
+import com.planterior.helper.feature.share.MiniHomeShareUiState
 import com.planterior.helper.feature.shop.InventoryFeedback
 import com.planterior.helper.feature.shop.InventoryUiState
 import com.planterior.helper.inventory.Todo18InventoryCacheSettlement
@@ -42,6 +43,7 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     private val displayedMiniHomeStates = Todo18PrimaryEventStream<Todo18MiniHomeStateEvent>()
     private val registrationStates = Todo18PrimaryEventStream<Todo18RegistrationStateEvent>()
     private val inventoryFeedback = Todo18PrimaryEventStream<Todo18InventoryFeedbackEvent>()
+    private val shareStates = Todo18PrimaryEventStream<Todo18MiniHomeShareStateEvent>()
     private val armedInventorySettlement = AtomicReference<Todo18InventoryCacheSettlement?>()
     private val inventoryDiagnosticObserver =
         AtomicReference<(Todo18InventorySettlementObservation) -> Unit>({})
@@ -92,6 +94,10 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
 
     override fun onMiniHomeRouteDisplayedState(state: MiniHomeUiState) {
         routeMiniHomeStates.publish(Todo18MiniHomeStateEvent(sequence.incrementAndGet(), state))
+    }
+
+    override fun onMiniHomeShareState(state: MiniHomeShareUiState) {
+        shareStates.publish(Todo18MiniHomeShareStateEvent(sequence.incrementAndGet(), state))
     }
 
     override fun onRegistrationState(state: RegistrationUiState) {
@@ -259,6 +265,8 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
 
     fun currentInventoryFeedback(): Todo18InventoryFeedbackEvent? = inventoryFeedback.current()
 
+    fun currentMiniHomeShareState(): Todo18MiniHomeShareStateEvent? = shareStates.current()
+
     fun subscribeToRawMiniHomeStates(listener: (Todo18MiniHomeStateEvent) -> Unit): AutoCloseable =
         rawMiniHomeStates.subscribe(listener)
 
@@ -278,6 +286,10 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
         listener: (Todo18InventoryFeedbackEvent) -> Unit
     ): AutoCloseable = inventoryFeedback.subscribe(listener)
 
+    fun subscribeToMiniHomeShareStates(
+        listener: (Todo18MiniHomeShareStateEvent) -> Unit
+    ): AutoCloseable = shareStates.subscribe(listener)
+
     fun sequenceValue(): Long = sequence.get()
 
     fun primaryListenerCount(): Int =
@@ -285,7 +297,8 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
             routeMiniHomeStates.listenerCount() +
             displayedMiniHomeStates.listenerCount() +
             registrationStates.listenerCount() +
-            inventoryFeedback.listenerCount()
+            inventoryFeedback.listenerCount() +
+            shareStates.listenerCount()
 
     fun isFresh(): Boolean = captureFreshness().fresh
 

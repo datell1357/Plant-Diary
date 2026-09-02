@@ -132,10 +132,12 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
         },
     )
 
+    val floor = rendered.currentMiniHomeShareState()?.sequence ?: 0L
     events.navigateAndAwaitBoundary(
         route = PlanteriorRoute.MiniHomeShare,
         boundaryKind = "mini-home-loaded",
     )
+    rendered.awaitMiniHomeShareReady(floor)
     events.awaitBoundary("share-create") {
         compose.onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE).performScrollTo().performClick()
     }

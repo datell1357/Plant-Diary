@@ -1176,11 +1176,23 @@ class FirebaseMiniHomeRepository(
                     operationId,
                     cacheObservation = inventoryDecodeObservation,
                 )
-                CoherentMiniHomeCacheApply.Current(
-                    requireNotNull(coherent.layout),
-                    inventory,
+                val current =
+                    CoherentMiniHomeCacheApply.Current(
+                        requireNotNull(coherent.layout),
+                        inventory,
+                    )
+                notifyCacheTransactionDiagnostic(
+                    MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_BODY_RETURNED,
+                    account,
+                    operationId,
                 )
+                current
             }
+            notifyCacheTransactionDiagnostic(
+                MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_SCOPE_RETURNED,
+                account,
+                operationId,
+            )
             notifyCacheTransactionDiagnostic(
                 MiniHomeCacheTransactionDiagnosticStage.TRANSACTION_RETURNED,
                 account,
