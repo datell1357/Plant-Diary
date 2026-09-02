@@ -47,18 +47,18 @@ struct InventoryRoomFilterTests {
     }
 
     @Test
-    func unknownItemsFallBackToTheirBroadCategoryExactlyOnce() throws {
-        for (category, expectedFilter) in [
-            (ItemCategory.background, InventoryRoomFilter.wall),
-            (.furniture, .furniture),
-            (.decoration, .decoration)
+    func unknownItemsRemainOnlyInTheAllWarehouseFilter() throws {
+        for category in [
+            ItemCategory.background,
+            .furniture,
+            .decoration
         ] {
             let unknownItem = try item(
                 id: "item-future-\(category.rawValue.lowercased())",
                 category: category
             )
             let matches = InventoryRoomFilter.allCases.filter { $0.includes(unknownItem) }
-            #expect(matches == [expectedFilter])
+            #expect(matches.isEmpty)
         }
     }
 
