@@ -28,6 +28,31 @@ struct DomesticPlantCareCatalogTests {
         #expect(profile.metrics.map(\.id) == ["water", "light", "temperature", "humidity"])
     }
 
+    @Test
+    func exposesVerifiedAndUnavailableMonsteraProvenance() throws {
+        let profile = try #require(
+            DomesticPlantCareCatalog.profile(
+                scientificName: "Monstera deliciosa"
+            )
+        )
+
+        let provenance = profile.provenance
+        #expect(provenance.providerName == "농촌진흥청")
+        #expect(provenance.datasetName == "실내정원용 식물")
+        #expect(provenance.datasetID == "15059042")
+        #expect(
+            provenance.sourceURL
+                == URL(string: "https://www.data.go.kr/data/15059042/openapi.do")
+        )
+        #expect(provenance.retrievedDate == nil)
+        #expect(provenance.sourceModifiedDate == nil)
+        #expect(provenance.originalSourceFieldNames == nil)
+        #expect(
+            provenance.transformationNotice
+                == "앱이 공개 데이터를 식물 관리 지침으로 요약해 표시했습니다."
+        )
+    }
+
     @Test(arguments: [
         "Monstera deliciosa",
         "Monstera deliciosa Liebm.",

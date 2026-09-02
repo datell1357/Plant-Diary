@@ -60,16 +60,27 @@ extension PlantCareDetailView {
     var guideSourceLink: some View {
         Group {
             if let careProfile {
-                Link(destination: careProfile.sourceURL) {
-                    Label(
-                        "출처: \(careProfile.sourceName) · 공공데이터 \(careProfile.datasetID)",
-                        systemImage: "arrow.up.right.square"
-                    )
-                    .font(PlanteriorTypography.caption)
-                    .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                VStack(alignment: .leading, spacing: PlanteriorSpacing.extraSmall) {
+                    Link(destination: careProfile.sourceURL) {
+                        Label(
+                            "출처: \(careProfile.sourceName) · 공공데이터 \(careProfile.datasetID)",
+                            systemImage: "arrow.up.right.square"
+                        )
+                        .font(PlanteriorTypography.caption)
+                        .foregroundStyle(PlanteriorPalette.textSecondary.color)
+                    }
+                    .accessibilityIdentifier("plant.detail.guide-source")
+                    .accessibilityHint("공공데이터 상세 페이지 열기")
+                    .accessibilityValue(careProfile.sourceURL.absoluteString)
+
+                    Text(guideProvenanceAccessibilityValue)
+                        .font(PlanteriorTypography.microLabel)
+                        .foregroundStyle(PlanteriorPalette.textAccessibleCaption.color)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("관리 정보 출처 세부사항")
+                        .accessibilityValue(guideProvenanceAccessibilityValue)
+                        .accessibilityIdentifier("plant.detail.guide-provenance")
                 }
-                .accessibilityIdentifier("plant.detail.guide-source")
-                .accessibilityHint("공공데이터 상세 페이지 열기")
             }
         }
     }
@@ -81,6 +92,36 @@ extension PlantCareDetailView {
     private var guideSourceAccessibilityValue: String {
         guard let careProfile else { return "국내 공공데이터 미지원" }
         return "출처: \(careProfile.sourceName), 공공데이터 \(careProfile.datasetID)"
+    }
+
+    private var guideProvenanceAccessibilityValue: String {
+        guard let provenance = careProfile?.provenance else { return "" }
+        var fields = [
+            "제공기관: \(provenance.providerName)",
+            "데이터셋: \(provenance.datasetName) (\(provenance.datasetID))",
+            "원문: \(provenance.sourceURL.absoluteString)",
+            "변환 안내: \(provenance.transformationNotice)"
+        ]
+        if let retrievedDate = provenance.retrievedDate {
+            fields.insert(
+                "조회일: \(retrievedDate.formatted(date: .numeric, time: .omitted))",
+                at: 3
+            )
+        }
+        if let sourceModifiedDate = provenance.sourceModifiedDate {
+            fields.insert(
+                "원문 수정일: \(sourceModifiedDate.formatted(date: .numeric, time: .omitted))",
+                at: fields.count - 1
+            )
+        }
+        if let originalSourceFieldNames = provenance.originalSourceFieldNames,
+           !originalSourceFieldNames.isEmpty {
+            fields.insert(
+                "원본 필드명: \(originalSourceFieldNames.joined(separator: ", "))",
+                at: fields.count - 1
+            )
+        }
+        return fields.joined(separator: "\n")
     }
 
     private var guideColumns: [GridItem] {

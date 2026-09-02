@@ -1,11 +1,32 @@
 import Foundation
 
+struct DomesticPlantCareProvenance {
+    let providerName: String
+    let datasetName: String
+    let datasetID: String
+    let sourceURL: URL
+    let retrievedDate: Date?
+    let sourceModifiedDate: Date?
+    let originalSourceFieldNames: [String]?
+    let transformationNotice: String
+}
+
 struct DomesticPlantCareProfile {
     let scientificName: String
     let metrics: [PlantGuideMetric]
-    let sourceName: String
-    let sourceURL: URL
-    let datasetID: String
+    let provenance: DomesticPlantCareProvenance
+
+    var sourceName: String {
+        "\(provenance.providerName) \(provenance.datasetName)"
+    }
+
+    var sourceURL: URL {
+        provenance.sourceURL
+    }
+
+    var datasetID: String {
+        provenance.datasetID
+    }
 }
 
 enum DomesticPlantCareCatalog {
@@ -58,9 +79,18 @@ enum DomesticPlantCareCatalog {
                 hint: "더운 여름에는 잎을 닦고 분무"
             )
         ],
-        sourceName: "농촌진흥청 실내정원용 식물",
-        sourceURL: URL(string: "https://www.data.go.kr/data/15059042/openapi.do")!,
-        datasetID: "15059042"
+        provenance: DomesticPlantCareProvenance(
+            providerName: "농촌진흥청",
+            datasetName: "실내정원용 식물",
+            datasetID: "15059042",
+            sourceURL: URL(
+                string: "https://www.data.go.kr/data/15059042/openapi.do"
+            )!,
+            retrievedDate: nil,
+            sourceModifiedDate: nil,
+            originalSourceFieldNames: nil,
+            transformationNotice: "앱이 공개 데이터를 식물 관리 지침으로 요약해 표시했습니다."
+        )
     )
 
     private static let manualProfiles = [monstera]
