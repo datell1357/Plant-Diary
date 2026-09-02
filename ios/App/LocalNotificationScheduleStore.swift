@@ -6,7 +6,6 @@ import UserNotifications
 @MainActor
 final class LocalNotificationScheduleStore: @unchecked Sendable {
     static let shared = LocalNotificationScheduleStore()
-
     private struct StoredSchedule: Codable {
         let plantID: String
         let date: String
@@ -24,7 +23,6 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     private var schedules: [StoredSchedule] = []
     private var pendingOperation: Task<Void, Never>?
     private(set) var scheduledCount = 0
-
     init(
         defaults: UserDefaults = .standard,
         key: String = "notifications.signed-out.scheduled",
@@ -46,7 +44,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         guard self.accountID != mountedAccountID else {
             return
         }
-        let previousPrefix = ownedPrefix
+        let previousPrefix = Self.ownedPrefix(accountID: self.accountID)
         self.accountID = mountedAccountID
         key = "notifications.\(mountedAccountID).scheduled"
         restore()
@@ -55,15 +53,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     }
 
     func reconcile(_ request: NotificationScheduleRequest) throws {
-        let planningRequest = NotificationScheduleRequest(
-            authorization: .authorized,
-            endpoint: request.endpoint,
-            global: request.global,
-            perPlant: request.perPlant,
-            dueDates: request.dueDates,
-            completedPlantIDs: request.completedPlantIDs,
-            existingDeduplicationKeys: []
-        )
+        let planningRequest = LocalNotificationScheduleSupport.localPlanningRequest(request)
         authorization = request.authorization
         schedules = try NotificationCoordinator()
             .localSchedules(planningRequest)
@@ -87,7 +77,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     }
 
     func suspendDeliveryForCurrentAccount() {
-        enqueueRemoval(prefixes: [ownedPrefix])
+        enqueueRemoval(prefixes: [Self.ownedPrefix(accountID: accountID)])
     }
 
     func refreshDeliveryForCurrentAccount() {
@@ -104,56 +94,40 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
     }
 
     private func restore() {
-        guard let data = defaults.data(forKey: key) else {
-            schedules = []
-            return
-        }
-        schedules = (
-            try? JSONDecoder().decode([StoredSchedule].self, from: data)
-        ) ?? []
+        schedules = LocalNotificationScheduleSupport.restore(
+            defaults: defaults,
+            key: key,
+            decode: { try? JSONDecoder().decode([StoredSchedule].self, from: $0) }
+        )
     }
 
     private func persist() {
-        guard let data = try? JSONEncoder().encode(schedules) else {
-            return
+        LocalNotificationScheduleSupport.persist(schedules, defaults: defaults, key: key) {
+            try? JSONEncoder().encode($0)
         }
-        defaults.set(data, forKey: key)
-    }
-
-    private var ownedPrefix: String {
-        Self.ownedPrefix(accountID: accountID)
     }
 
     private var deliverySchedules: [StoredSchedule] {
-        guard authorization == .authorized else {
-            return []
-        }
-        let quietHours = quietHours()
-        return schedules.filter {
-            guard let time = try? LocalTime.parse($0.time),
-                  (try? CalendarDate.parse($0.date)) != nil
-            else {
-                return false
-            }
-            return !quietHours.contains(time)
-        }
+        LocalNotificationScheduleSupport.deliverySchedules(
+            schedules,
+            authorization: authorization,
+            quietHours: quietHours(),
+            time: \.time,
+            date: \.date
+        )
     }
 
     private func enqueueReconciliation() {
-        let prefix = ownedPrefix
+        let prefix = Self.ownedPrefix(accountID: accountID)
         let requests = deliverySchedules.map(notificationRequest)
         let center = notificationCenter
         let previous = pendingOperation
         pendingOperation = Task {
             await previous?.value
             let pending = await center.pendingRequests()
-            let desiredByID = Dictionary(
-                uniqueKeysWithValues: requests.map { ($0.identifier, $0) }
-            )
+            let desiredByID = Dictionary(uniqueKeysWithValues: requests.map { ($0.identifier, $0) })
             let owned = pending.filter { $0.identifier.hasPrefix(prefix) }
-            let stale = owned
-                .map(\.identifier)
-                .filter { desiredByID[$0] == nil }
+            let stale = owned.map(\.identifier).filter { desiredByID[$0] == nil }
             if !stale.isEmpty {
                 await center.removePendingRequests(withIdentifiers: stale)
             }
@@ -167,7 +141,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
                 try? await center.add(request)
             }
             let reconciled = await center.pendingRequests()
-            guard prefix == ownedPrefix else {
+            guard prefix == Self.ownedPrefix(accountID: accountID) else {
                 return
             }
             scheduledCount = reconciled.filter { pending in
@@ -195,7 +169,7 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
                     prefixes.contains { identifier.hasPrefix($0) }
                 }
             await center.removePendingRequests(withIdentifiers: owned)
-            if prefixes.contains(ownedPrefix) {
+            if prefixes.contains(Self.ownedPrefix(accountID: accountID)) {
                 scheduledCount = 0
                 NotificationCenter.default.post(
                     name: .localNotificationScheduleDidChange,
@@ -205,35 +179,12 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         }
     }
 
-    private func notificationRequest(
-        _ schedule: StoredSchedule
-    ) -> UNNotificationRequest {
-        let content = UNMutableNotificationContent()
-        content.title = "물 주기 알림"
-        content.body = "오늘 물 주기 일정이 있어요."
-        content.sound = .default
-        content.userInfo = [
-            "route": "plant-care",
-            "plantID": schedule.plantID
-        ]
-        let date = schedule.date.split(separator: "-").compactMap { Int($0) }
-        let time = schedule.time.split(separator: ":").compactMap { Int($0) }
-        let trigger = UNCalendarNotificationTrigger(
-            dateMatching: DateComponents(
-                calendar: .current,
-                timeZone: .current,
-                year: date[0],
-                month: date[1],
-                day: date[2],
-                hour: time[0],
-                minute: time[1]
-            ),
-            repeats: false
-        )
-        return UNNotificationRequest(
-            identifier: "\(ownedPrefix)\(schedule.deduplicationKey)",
-            content: content,
-            trigger: trigger
+    private func notificationRequest(_ schedule: StoredSchedule) -> UNNotificationRequest {
+        LocalNotificationScheduleSupport.notificationRequest(
+            plantID: schedule.plantID,
+            date: schedule.date,
+            time: schedule.time,
+            identifier: "\(Self.ownedPrefix(accountID: accountID))\(schedule.deduplicationKey)"
         )
     }
 
@@ -241,23 +192,6 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
         _ pending: UNNotificationRequest?,
         _ desired: UNNotificationRequest
     ) -> Bool {
-        guard let pending,
-              let pendingTrigger = pending.trigger as? UNCalendarNotificationTrigger,
-              let desiredTrigger = desired.trigger as? UNCalendarNotificationTrigger
-        else {
-            return false
-        }
-        return pending.content.title == desired.content.title
-            && pending.content.body == desired.content.body
-            && NSDictionary(dictionary: pending.content.userInfo).isEqual(
-                to: desired.content.userInfo
-            )
-            && pendingTrigger.dateComponents == desiredTrigger.dateComponents
+        LocalNotificationScheduleSupport.matches(pending, desired)
     }
-}
-
-extension Notification.Name {
-    static let localNotificationScheduleDidChange = Notification.Name(
-        "planterior.localNotificationScheduleDidChange"
-    )
 }

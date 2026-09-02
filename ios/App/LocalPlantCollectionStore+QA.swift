@@ -5,9 +5,7 @@ import PlanteriorDomain
 extension LocalPlantCollectionStore {
     func resetPersistenceForQA() {
         #if DEBUG
-            guard ProcessInfo.processInfo.environment[
-                "QA_RESET_COLLECTION"
-            ] == "1" else {
+            guard ProcessInfo.processInfo.environment["QA_RESET_COLLECTION"] == "1" else {
                 return
             }
             let accountPrefix = "collection.\(accountID)."
@@ -24,9 +22,7 @@ extension LocalPlantCollectionStore {
     func setSnapshotStateFromQA() {
         #if DEBUG
             snapshotState = CollectionViewState(
-                rawValue: ProcessInfo.processInfo.environment[
-                    "QA_COLLECTION_STATE"
-                ] ?? "content"
+                rawValue: ProcessInfo.processInfo.environment["QA_COLLECTION_STATE"] ?? "content"
             ) ?? .content
         #endif
     }
@@ -48,12 +44,12 @@ extension LocalPlantCollectionStore {
             }
             let monsteraScientificName = ProcessInfo.processInfo.environment[
                 "QA_COLLECTION_SCIENTIFIC_NAME"
-            ] ?? "Monstera deliciosa"
+            ]
             plants = [
                 qaDraft(
                     id: "local-0",
                     name: "몬스테라",
-                    scientificName: monsteraScientificName,
+                    scientificName: monsteraScientificName ?? "Monstera deliciosa",
                     lastWateredOn: standardFixtureLastWateredDate()
                 ),
                 qaDraft(id: "local-1", name: "스킨답서스", lastWateredOn: nil)
@@ -61,9 +57,7 @@ extension LocalPlantCollectionStore {
             if ProcessInfo.processInfo.environment[
                 "QA_COLLECTION_PRIVATE_FIXTURE"
             ] == "1" {
-                plants.append(qaDraft(
-                    id: "local-2", name: "비공개 식물", lastWateredOn: nil
-                ))
+                plants.append(qaDraft(id: "local-2", name: "비공개 식물", lastWateredOn: nil))
             }
             finishInstallingQAFixture()
         #endif
@@ -133,17 +127,12 @@ extension LocalPlantCollectionStore {
     private func finishInstallingQAFixture() {
         installQAFixtureIdentities()
         persist()
-        guard let token = ProcessInfo.processInfo.environment[
-            "QA_COLLECTION_FIXTURE_TOKEN"
-        ] else {
+        let environment = ProcessInfo.processInfo.environment
+        guard let token = environment["QA_COLLECTION_FIXTURE_TOKEN"] else {
             return
         }
-        let fixture = ProcessInfo.processInfo.environment[
-            "QA_COLLECTION_FIGMA_FIXTURE"
-        ] == "1" ? "figma" : "standard"
-        let presentation = ProcessInfo.processInfo.environment[
-            "QA_COLLECTION_EMPTY"
-        ] == "1" ? "empty" : "content"
+        let fixture = environment["QA_COLLECTION_FIGMA_FIXTURE"] == "1" ? "figma" : "standard"
+        let presentation = environment["QA_COLLECTION_EMPTY"] == "1" ? "empty" : "content"
         qaFixtureMountReceipt = [
             "account=\(accountID)",
             "token=\(token)",

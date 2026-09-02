@@ -114,13 +114,13 @@ extension PlantCareDetailView {
                 at: fields.count - 1
             )
         }
-        if let originalSourceFieldNames = provenance.originalSourceFieldNames,
-           !originalSourceFieldNames.isEmpty
-        {
-            fields.insert(
-                "원본 필드명: \(originalSourceFieldNames.joined(separator: ", "))",
-                at: fields.count - 1
-            )
+        if let originalSourceFieldNames = provenance.originalSourceFieldNames {
+            if !originalSourceFieldNames.isEmpty {
+                fields.insert(
+                    "원본 필드명: \(originalSourceFieldNames.joined(separator: ", "))",
+                    at: fields.count - 1
+                )
+            }
         }
         return fields.joined(separator: "\n")
     }

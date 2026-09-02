@@ -62,16 +62,21 @@ enum PlantSymptomEducationCatalog {
     private static func genericEducation(
         hasWateringBaseline: Bool
     ) -> PlantSymptomEducation {
-        PlantSymptomEducation(
+        let initialResponse = if hasWateringBaseline {
+            "최근 물 준 날짜가 기록되어 있으니, 그 날짜와 현재 흙 안쪽의 습기를 먼저 함께 확인하세요. "
+                + "이어서 빛과 통풍 변화를 관찰해 기록하세요."
+        } else {
+            "최근 물 준 날짜가 기록되어 있지 않으니, 먼저 현재 흙 안쪽의 습기와 배수 상태를 관찰해 기록하세요. "
+                + "이어서 빛과 통풍 변화를 확인하세요."
+        }
+        return PlantSymptomEducation(
             scientificName: "일반 관찰 안내",
             items: [
                 PlantSymptomGuidance(
                     icon: "🔎",
                     title: "종 정보를 알 수 없는 식물의 관찰 안내",
                     possibleCause: "관찰만으로 원인을 알 수 없으므로, 물·빛·통풍처럼 확인할 수 있는 환경 변화를 차례로 살펴보세요.",
-                    initialResponse: hasWateringBaseline
-                        ? "최근 물 준 날짜가 기록되어 있으니, 그 날짜와 현재 흙 안쪽의 습기를 먼저 함께 확인하세요. 이어서 빛과 통풍 변화를 관찰해 기록하세요."
-                        : "최근 물 준 날짜가 기록되어 있지 않으니, 먼저 현재 흙 안쪽의 습기와 배수 상태를 관찰해 기록하세요. 이어서 빛과 통풍 변화를 확인하세요."
+                    initialResponse: initialResponse
                 )
             ]
         )

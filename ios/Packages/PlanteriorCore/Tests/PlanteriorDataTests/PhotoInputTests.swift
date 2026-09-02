@@ -89,60 +89,7 @@ struct PhotoInputTests {
         }
     }
 
-    @Test
-    func cancellationAndDeclinedAcknowledgementPerformNoTransfer() async throws {
-        let transfer = PhotoTransferFake()
-        let coordinator = PhotoConsentCoordinator(transfer: transfer)
-        let photo = try PhotoImagePipeline().normalize(
-            fixture(width: 300, height: 300)
-        )
-
-        await coordinator.review(photo)
-        await coordinator.cancelSelection()
-        #expect(await coordinator.hasDraft() == false)
-        await coordinator.review(photo)
-        await coordinator.declineAcknowledgement()
-        #expect(await coordinator.hasDraft())
-
-        #expect(await transfer.requestCount == 0)
-    }
-
-    @Test
-    func acknowledgementTransfersReviewedPhotoExactlyOnce() async throws {
-        let transfer = PhotoTransferFake()
-        let coordinator = PhotoConsentCoordinator(transfer: transfer)
-        let photo = try PhotoImagePipeline().normalize(
-            fixture(width: 300, height: 300)
-        )
-
-        await coordinator.review(photo)
-        await coordinator.acknowledgeAndTransfer()
-
-        #expect(await transfer.requestCount == 1)
-    }
-
-    @Test
-    func repeatedAcknowledgementTransfersOneReviewedDraftAtMostOnce() async throws {
-        let transfer = PhotoTransferFake()
-        let coordinator = PhotoConsentCoordinator(transfer: transfer)
-        let firstPhoto = try PhotoImagePipeline().normalize(
-            fixture(width: 300, height: 300)
-        )
-        let secondPhoto = try PhotoImagePipeline().normalize(
-            fixture(width: 320, height: 320)
-        )
-
-        await coordinator.review(firstPhoto)
-        await coordinator.acknowledgeAndTransfer()
-        await coordinator.acknowledgeAndTransfer()
-        #expect(await transfer.requestCount == 1)
-
-        await coordinator.review(secondPhoto)
-        await coordinator.acknowledgeAndTransfer()
-        #expect(await transfer.requestCount == 2)
-    }
-
-    private func fixture(
+    func fixture(
         width: Int,
         height: Int,
         orientation: Int = 1,
@@ -183,10 +130,10 @@ struct PhotoInputTests {
             guard let bytes = buffer.bindMemory(to: UInt8.self).baseAddress else {
                 return
             }
-            for y in 0 ..< height {
-                for x in 0 ..< width {
-                    let offset = (y * width + x) * 4
-                    let value: UInt8 = (x + y).isMultiple(of: 2) ? 0 : 255
+            for rowIndex in 0 ..< height {
+                for columnIndex in 0 ..< width {
+                    let offset = (rowIndex * width + columnIndex) * 4
+                    let value: UInt8 = (columnIndex + rowIndex).isMultiple(of: 2) ? 0 : 255
                     bytes[offset] = value
                     bytes[offset + 1] = value
                     bytes[offset + 2] = value
@@ -224,13 +171,5 @@ struct PhotoInputTests {
         CGImageDestinationAddImage(destination, image, nil)
         #expect(CGImageDestinationFinalize(destination))
         return data as Data
-    }
-}
-
-private actor PhotoTransferFake: PhotoTransferRequesting {
-    private(set) var requestCount = 0
-
-    func transfer(_ photo: NormalizedPhoto) async {
-        requestCount += 1
     }
 }

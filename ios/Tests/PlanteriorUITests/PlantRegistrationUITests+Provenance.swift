@@ -49,67 +49,6 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
         )
     }
 
-    func testCuratedManualSelectionPersistsSourceLinkAfterRelaunch() {
-        let accountID = "manual-care-selected"
-        let registration = manualRegistrationApp(
-            accountID: accountID,
-            resetCollection: true
-        )
-        registration.launch()
-
-        let search = registration.textFields["registration.search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.tap()
-        search.typeText("몬스테라")
-        let option = registration.buttons[
-            "registration.care-option.monstera-deliciosa"
-        ]
-        XCTAssertTrue(option.waitForExistence(timeout: 5))
-        option.tap()
-        XCTAssertEqual(option.value as? String, "선택됨")
-        attachScreenshot(
-            registration,
-            named: "manual-curated-option-selected-normal"
-        )
-
-        let name = registration.textFields["registration.name"]
-        name.tap()
-        name.typeText("우리 집 잎이")
-        dismissKeyboard(in: registration)
-        registration.buttons["registration.submit"].tap()
-        XCTAssertTrue(
-            registration.staticTexts["registration.saved"].waitForExistence(
-                timeout: 5
-            )
-        )
-        registration.terminate()
-
-        let collection = collectionApp(accountID: accountID)
-        collection.launch()
-        XCTAssertTrue(collection.buttons["collection.row.0"].waitForExistence(timeout: 5))
-        collection.buttons["collection.row.0"].tap()
-        let source = guideSource(in: collection)
-        XCTAssertTrue(source.waitForExistence(timeout: 5))
-        XCTAssertTrue(source.isHittable)
-        XCTAssertEqual(
-            source.label,
-            "출처: 농촌진흥청 실내정원용 식물 · 공공데이터 15059042"
-        )
-        XCTAssertEqual(
-            source.value as? String,
-            "https://www.data.go.kr/data/15059042/openapi.do"
-        )
-        let provenance = guideProvenance(in: collection)
-        XCTAssertEqual(
-            provenance.value as? String,
-            "제공기관: 농촌진흥청\n데이터셋: 실내정원용 식물 (15059042)\n원문: https://www.data.go.kr/data/15059042/openapi.do\n변환 안내: 앱이 공개 데이터를 식물 관리 지침으로 요약해 표시했습니다."
-        )
-        attachScreenshot(
-            collection,
-            named: "manual-selected-source-detail-normal"
-        )
-    }
-
     func testKoreanAX5SourceLinkRemainsReadable() {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
@@ -134,7 +73,7 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
         attachScreenshot(app, named: "manual-source-detail-korean-ax5")
     }
 
-    private func manualRegistrationApp(
+    func manualRegistrationApp(
         accountID: String,
         resetCollection: Bool
     ) -> XCUIApplication {
@@ -149,7 +88,7 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
         return app
     }
 
-    private func collectionApp(accountID: String) -> XCUIApplication {
+    func collectionApp(accountID: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
@@ -158,21 +97,21 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
         return app
     }
 
-    private func dismissKeyboard(in app: XCUIApplication) {
+    func dismissKeyboard(in app: XCUIApplication) {
         let returnKey = app.keyboards.buttons["Return"]
         guard returnKey.exists else { return }
         returnKey.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     }
 
-    private func completeOnboardingIfPresented(in app: XCUIApplication) {
+    func completeOnboardingIfPresented(in app: XCUIApplication) {
         let onboarding = app.otherElements["onboarding.screen"]
         guard onboarding.waitForExistence(timeout: 1) else { return }
         app.buttons["onboarding.complete"].tap()
         XCTAssertTrue(onboarding.waitForNonExistence(timeout: 5))
     }
 
-    private func guideSource(in app: XCUIApplication) -> XCUIElement {
+    func guideSource(in app: XCUIApplication) -> XCUIElement {
         let source = app.descendants(matching: .any)["plant.detail.guide-source"]
         XCTAssertTrue(source.waitForExistence(timeout: 5))
         for _ in 0 ..< 3 {
@@ -183,7 +122,7 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
         return source
     }
 
-    private func guideProvenance(in app: XCUIApplication) -> XCUIElement {
+    func guideProvenance(in app: XCUIApplication) -> XCUIElement {
         let provenance = app.descendants(matching: .any)[
             "plant.detail.guide-provenance"
         ]
@@ -191,7 +130,7 @@ final class PlantRegistrationProvenanceUITests: XCTestCase {
         return provenance
     }
 
-    private func attachScreenshot(_ app: XCUIApplication, named name: String) {
+    func attachScreenshot(_ app: XCUIApplication, named name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways

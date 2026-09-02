@@ -39,7 +39,6 @@ struct AppShellView: View {
                     .allowsHitTesting(!showsLogin)
                     .accessibilityHidden(showsLogin)
             }
-
             if showsLogin {
                 LoginSheet(auth: auth) {
                     showsLogin = false
@@ -169,16 +168,14 @@ struct AppShellView: View {
     }
 
     func requestTab(_ tab: AppTab) {
-        guard navigation.requestTab(tab, authentication: authenticationState) == .proceed
-        else {
+        guard navigation.requestTab(tab, authentication: authenticationState) == .proceed else {
             showsLogin = true
             return
         }
     }
 
     func requestCamera() {
-        guard navigation.requestCamera(authentication: authenticationState) == .proceed
-        else {
+        guard navigation.requestCamera(authentication: authenticationState) == .proceed else {
             showsLogin = true
             return
         }
@@ -197,13 +194,6 @@ struct AppShellView: View {
     }
 
     private var effectiveReduceMotion: Bool {
-        reduceMotion
-            || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
+        reduceMotion || ProcessInfo.processInfo.environment["QA_REDUCE_MOTION"] == "1"
     }
-}
-
-extension Notification.Name {
-    static let localNotificationAuthorizationDidChange = Notification.Name(
-        "planterior.localNotificationAuthorizationDidChange"
-    )
 }
