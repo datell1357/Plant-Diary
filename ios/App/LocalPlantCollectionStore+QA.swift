@@ -54,7 +54,7 @@ extension LocalPlantCollectionStore {
                     id: "local-0",
                     name: "몬스테라",
                     scientificName: monsteraScientificName,
-                    lastWateredOn: try? CalendarDate.parse("2026-08-01")
+                    lastWateredOn: standardFixtureLastWateredDate()
                 ),
                 qaDraft(id: "local-1", name: "스킨답서스", lastWateredOn: nil)
             ]
@@ -187,5 +187,23 @@ extension LocalPlantCollectionStore {
             registrationMethod: .manual,
             privateMemo: privateMemo
         )
+    }
+
+    private func standardFixtureLastWateredDate() -> CalendarDate? {
+        let fallback = try? CalendarDate.parse("2026-08-01")
+        let calendar = PlantCareCalendar()
+        guard
+            let rawToday = ProcessInfo.processInfo.environment["QA_WATERING_TODAY"],
+            let today = try? CalendarDate.parse(rawToday),
+            let todayDate = calendar.date(from: today),
+            let lastWateredDate = Calendar.current.date(
+                byAdding: .day,
+                value: -10,
+                to: todayDate
+            )
+        else {
+            return fallback
+        }
+        return try? calendar.calendarDate(from: lastWateredDate)
     }
 }
