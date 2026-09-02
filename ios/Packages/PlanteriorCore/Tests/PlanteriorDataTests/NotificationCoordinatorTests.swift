@@ -147,9 +147,9 @@ struct NotificationCoordinatorTests {
         // Given
         let coordinator = NotificationCoordinator()
         let time = try LocalTime.parse("09:00")
-        var dueDates: [PersonalPlantID: CalendarDate] = [
-            try PersonalPlantID.parse("past"):
-                try CalendarDate.parse("2020-01-01")
+        var dueDates: [PersonalPlantID: CalendarDate] = try [
+            PersonalPlantID.parse("past"):
+                CalendarDate.parse("2020-01-01")
         ]
         for index in 0 ..< 61 {
             let plantID = try PersonalPlantID.parse(

@@ -115,7 +115,8 @@ extension PlantCareDetailView {
             )
         }
         if let originalSourceFieldNames = provenance.originalSourceFieldNames,
-           !originalSourceFieldNames.isEmpty {
+           !originalSourceFieldNames.isEmpty
+        {
             fields.insert(
                 "원본 필드명: \(originalSourceFieldNames.joined(separator: ", "))",
                 at: fields.count - 1

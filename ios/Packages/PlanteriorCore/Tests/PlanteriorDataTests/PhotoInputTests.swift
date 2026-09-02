@@ -56,7 +56,7 @@ struct PhotoInputTests {
 
     @Test
     func normalizedJPEGFitsProxyPayloadLimit() throws {
-        let input = try checkerboardFixture(width: 5_000, height: 5_000)
+        let input = try checkerboardFixture(width: 5000, height: 5000)
         #expect(input.count <= PhotoImagePipeline.maximumBytes)
 
         do {
