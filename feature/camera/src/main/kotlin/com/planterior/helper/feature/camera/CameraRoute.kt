@@ -133,6 +133,7 @@ fun CameraRoute(
             CameraCommand.RequestPermission -> permissionLauncher.launch(Manifest.permission.CAMERA)
             CameraCommand.LaunchPhotoPicker -> {
                 val debugUri = todo18DebugPhotoPickerUri()
+                val token = todo18DebugStartCameraTrace(debugUri)
                 if (debugUri == null) {
                     pickerLauncher.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -140,15 +141,40 @@ fun CameraRoute(
                 } else {
                     holder.controller?.let { controller ->
                         controller.captureStarted()
+                        todo18DebugTraceCameraStage(
+                            token,
+                            Todo18DebugCameraTraceStage.COROUTINE_SCHEDULED,
+                            debugUri,
+                        )
                         scope.launch {
-                            todo18DebugObservePhotoPreparation(debugUri) {
+                            todo18DebugTraceCameraStage(
+                                token,
+                                Todo18DebugCameraTraceStage.COROUTINE_ENTERED,
+                                debugUri,
+                            )
+                            todo18DebugObservePhotoPreparation(token, debugUri) {
+                                todo18DebugTraceCameraStage(
+                                    token,
+                                    Todo18DebugCameraTraceStage.PREPARE_ENTERED,
+                                    debugUri,
+                                )
                                 val result =
                                     withContext(Dispatchers.IO) {
                                         preparer.prepare(debugUri, PhotoSource.Picker)
                                     }
+                                todo18DebugTraceCameraStage(
+                                    token,
+                                    Todo18DebugCameraTraceStage.PREPARE_RETURNED,
+                                    debugUri,
+                                )
                                 result.fold(
                                     onSuccess = controller::photoPrepared,
                                     onFailure = { controller.photoRejected(it.photoError()) },
+                                )
+                                todo18DebugTraceCameraStage(
+                                    token,
+                                    Todo18DebugCameraTraceStage.FOLD_RETURNED,
+                                    debugUri,
                                 )
                                 result.isSuccess
                             }

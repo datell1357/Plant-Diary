@@ -3,6 +3,7 @@ package com.planterior.helper.feature.camera
 import java.io.Closeable
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
@@ -13,8 +14,237 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
 class Todo18DebugCameraBoundaryTest {
+    @Test
+    fun returnedFalseTraceUsesOneOperationAndOrderedPublication() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter(records::add)
+        val uri = "file:///cache/todo18/missing-photo.jpg"
+        val token = Todo18DebugCameraBoundary.startCameraTrace(uri, writer)
+        val listener: Closeable = Todo18DebugCameraBoundary.subscribe {}
+
+        listener.use {
+            val accepted =
+                Todo18DebugCameraBoundary.observePhotoPreparation(token, uri, writer) {
+                    Todo18DebugCameraBoundary.traceCameraStage(
+                        token,
+                        Todo18DebugCameraTraceStage.PREPARE_ENTERED,
+                        uri,
+                        Todo18DebugCameraTraceTerminal.NONE,
+                        writer,
+                    )
+                    Todo18DebugCameraBoundary.traceCameraStage(
+                        token,
+                        Todo18DebugCameraTraceStage.PREPARE_RETURNED,
+                        uri,
+                        Todo18DebugCameraTraceTerminal.NONE,
+                        writer,
+                    )
+                    Todo18DebugCameraBoundary.traceCameraStage(
+                        token,
+                        Todo18DebugCameraTraceStage.FOLD_RETURNED,
+                        uri,
+                        Todo18DebugCameraTraceTerminal.NONE,
+                        writer,
+                    )
+                    false
+                }
+
+            assertFalse(accepted)
+            assertTrue(records.isNotEmpty())
+            assertEquals(1, records.map { it.token }.distinct().size)
+            assertEquals(
+                listOf(
+                    Todo18DebugCameraTraceStage.COMMAND_RESOLVED,
+                    Todo18DebugCameraTraceStage.WRAPPER_ENTERED,
+                    Todo18DebugCameraTraceStage.PREPARE_ENTERED,
+                    Todo18DebugCameraTraceStage.PREPARE_RETURNED,
+                    Todo18DebugCameraTraceStage.FOLD_RETURNED,
+                    Todo18DebugCameraTraceStage.DELEGATE_RETURNED,
+                    Todo18DebugCameraTraceStage.TERMINAL_SELECTED,
+                    Todo18DebugCameraTraceStage.PUBLISH_BEGIN,
+                    Todo18DebugCameraTraceStage.LISTENER_DELIVERED,
+                    Todo18DebugCameraTraceStage.PUBLISH_COMPLETE,
+                ),
+                records.map { it.stage },
+            )
+            assertEquals(
+                Todo18DebugCameraTraceTerminal.RETURNED_FALSE,
+                records.last { it.stage == Todo18DebugCameraTraceStage.TERMINAL_SELECTED }.terminal,
+            )
+        }
+    }
+
+    @Test
+    fun thrownTracePreservesIdentityAndWriterFaultsAreIsolated() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter { record ->
+            if (record.stage == Todo18DebugCameraTraceStage.WRAPPER_ENTERED) {
+                throw RuntimeException("trace writer failure")
+            }
+            records += record
+        }
+        val failure = IllegalStateException("delegate failure")
+        val token = Todo18DebugCameraBoundary.startCameraTrace("file:///thrown.jpg", writer)
+
+        val thrown =
+            try {
+                Todo18DebugCameraBoundary.observePhotoPreparation(
+                    token,
+                    "file:///thrown.jpg",
+                    writer,
+                ) {
+                    throw failure
+                }
+                error("delegate returned")
+            } catch (caught: IllegalStateException) {
+                caught
+            }
+
+        assertSame(failure, thrown)
+        assertEquals(
+            Todo18DebugCameraTraceTerminal.THROWN,
+            records.last { it.stage == Todo18DebugCameraTraceStage.TERMINAL_SELECTED }.terminal,
+        )
+    }
+
+    @Test
+    fun cancelledTracePreservesIdentity() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter(records::add)
+        val cancellation = CancellationException("delegate cancellation")
+        val token = Todo18DebugCameraBoundary.startCameraTrace("file:///cancelled.jpg", writer)
+
+        val thrown =
+            try {
+                Todo18DebugCameraBoundary.observePhotoPreparation(
+                    token,
+                    "file:///cancelled.jpg",
+                    writer,
+                ) {
+                    throw cancellation
+                }
+                error("delegate returned")
+            } catch (caught: CancellationException) {
+                caught
+            }
+
+        assertSame(cancellation, thrown)
+        assertEquals(
+            Todo18DebugCameraTraceTerminal.CANCELLED,
+            records.last { it.stage == Todo18DebugCameraTraceStage.TERMINAL_SELECTED }.terminal,
+        )
+    }
+
+    @Test
+    fun heldDelegateHasNoPrematureTerminalTrace() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter(records::add)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Boolean>()
+        val uri = "file:///held.jpg"
+        val token = Todo18DebugCameraBoundary.startCameraTrace(uri, writer)
+
+        val operation = launch {
+            Todo18DebugCameraBoundary.observePhotoPreparation(token, uri, writer) {
+                Todo18DebugCameraBoundary.traceCameraStage(
+                    token,
+                    Todo18DebugCameraTraceStage.PREPARE_ENTERED,
+                    uri,
+                    Todo18DebugCameraTraceTerminal.NONE,
+                    writer,
+                )
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        assertTrue(records.any { it.stage == Todo18DebugCameraTraceStage.WRAPPER_ENTERED })
+        assertTrue(records.none { it.stage == Todo18DebugCameraTraceStage.TERMINAL_SELECTED })
+        assertTrue(records.none { it.stage == Todo18DebugCameraTraceStage.PUBLISH_BEGIN })
+
+        release.complete(true)
+        operation.join()
+    }
+
+    @Test
+    fun releasePassThroughReturnsWithoutTraceEvaluation() = runBlocking {
+        val writerCalls = AtomicInteger()
+        val writer = Todo18DebugCameraTraceWriter {
+            writerCalls.incrementAndGet()
+            throw RuntimeException("release trace writer")
+        }
+        val uri = "file:///release-returned.jpg"
+        val token = Todo18DebugCameraBoundary.startCameraTrace(uri, writer)
+
+        assertEquals(null, token)
+        assertFalse(Todo18DebugCameraBoundary.observePhotoPreparation(token, uri, writer) { false })
+        assertEquals(0, writerCalls.get())
+    }
+
+    @Test
+    fun releasePassThroughPreservesThrownIdentityWithoutTraceEvaluation() = runBlocking {
+        val writerCalls = AtomicInteger()
+        val writer = Todo18DebugCameraTraceWriter {
+            writerCalls.incrementAndGet()
+            throw RuntimeException("release trace writer")
+        }
+        val failure = IllegalStateException("release delegate failure")
+        val token = Todo18DebugCameraBoundary.startCameraTrace("file:///release-thrown.jpg", writer)
+
+        val thrown =
+            try {
+                Todo18DebugCameraBoundary.observePhotoPreparation(
+                    token,
+                    "file:///release-thrown.jpg",
+                    writer,
+                ) {
+                    throw failure
+                }
+                error("delegate returned")
+            } catch (caught: IllegalStateException) {
+                caught
+            }
+
+        assertSame(failure, thrown)
+        assertEquals(0, writerCalls.get())
+    }
+
+    @Test
+    fun releasePassThroughPreservesCancellationIdentityWithoutTraceEvaluation() = runBlocking {
+        val writerCalls = AtomicInteger()
+        val writer = Todo18DebugCameraTraceWriter {
+            writerCalls.incrementAndGet()
+            throw RuntimeException("release trace writer")
+        }
+        val cancellation = CancellationException("release cancellation")
+        val token =
+            Todo18DebugCameraBoundary.startCameraTrace("file:///release-cancelled.jpg", writer)
+
+        val thrown =
+            try {
+                Todo18DebugCameraBoundary.observePhotoPreparation(
+                    token,
+                    "file:///release-cancelled.jpg",
+                    writer,
+                ) {
+                    throw cancellation
+                }
+                error("delegate returned")
+            } catch (caught: CancellationException) {
+                caught
+            }
+
+        assertSame(cancellation, thrown)
+        assertEquals(0, writerCalls.get())
+    }
+
     @Test
     fun returnedTerminalIsEmittedOnceAfterDelegateCompletes() = runBlocking {
         val events = CopyOnWriteArrayList<Todo18DebugPhotoPreparationEvent>()

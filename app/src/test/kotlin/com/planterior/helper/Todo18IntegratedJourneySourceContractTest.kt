@@ -187,6 +187,162 @@ class Todo18IntegratedJourneySourceContractTest {
     }
 
     @Test
+    fun `malformedPhotoAppOwnedTraceIsStructuredAndPrivacySafe`() {
+        val cameraDebug = source(DEBUG_CAMERA_OVERRIDE)
+        val cameraTraceRuntime = source(DEBUG_TRACE_RUNTIME)
+        val cameraTraceSupport = source(DEBUG_TRACE_SUPPORT)
+        val combinedCameraDebug = cameraDebug + cameraTraceRuntime + cameraTraceSupport
+        val cameraRelease = source(RELEASE_CAMERA_OVERRIDE)
+        val route =
+            source(
+                "feature/camera/src/main/kotlin/com/planterior/helper/feature/camera/CameraRoute.kt"
+            )
+
+        assertCode(
+            combinedCameraDebug,
+            "internal enum class Todo18DebugCameraTraceStage",
+            "COMMAND_RESOLVED",
+            "COROUTINE_SCHEDULED",
+            "COROUTINE_ENTERED",
+            "WRAPPER_ENTERED",
+            "PREPARE_ENTERED",
+            "PREPARE_RETURNED",
+            "FOLD_RETURNED",
+            "DELEGATE_RETURNED",
+            "TERMINAL_SELECTED",
+            "PUBLISH_BEGIN",
+            "LISTENER_DELIVERED",
+            "LISTENER_FAULT",
+            "PUBLISH_COMPLETE",
+            "internal fun interface Todo18DebugCameraTraceWriter",
+            "todo18-camera-trace-v1",
+            "Todo18CameraTrace",
+            "safeTrace(traceWriter, record)",
+            "catch (_: AssertionError)",
+            "catch (_: Exception)",
+        )
+        assertCode(
+            cameraRelease,
+            "internal fun todo18DebugStartCameraTrace(uri: String?): Todo18DebugCameraTraceToken?",
+            "internal fun todo18DebugTraceCameraStage(",
+            "internal suspend fun todo18DebugObservePhotoPreparation(",
+            "return null",
+            "return prepareAndApply()",
+        )
+        assertFalse(cameraRelease.contains("SystemClock"))
+        assertFalse(cameraRelease.contains("android.util.Log"))
+
+        val debugBranch =
+            route
+                .substringAfter("CameraCommand.LaunchPhotoPicker")
+                .substringBefore("CameraCommand.OpenAppSettings")
+        val compactDebugBranch = debugBranch.filterNot { it.isWhitespace() }
+        val commandPosition = compactDebugBranch.indexOf("todo18DebugStartCameraTrace(debugUri)")
+        val schedulePosition =
+            compactDebugBranch.indexOf(
+                "todo18DebugTraceCameraStage(token,Todo18DebugCameraTraceStage.COROUTINE_SCHEDULED"
+            )
+        val launchPosition = compactDebugBranch.indexOf("scope.launch")
+        val enteredPosition =
+            compactDebugBranch.indexOf("Todo18DebugCameraTraceStage.COROUTINE_ENTERED")
+        val prepareEnteredPosition =
+            compactDebugBranch.indexOf("Todo18DebugCameraTraceStage.PREPARE_ENTERED")
+        val preparePosition =
+            compactDebugBranch.indexOf("preparer.prepare(debugUri,PhotoSource.Picker)")
+        val prepareReturnedPosition =
+            compactDebugBranch.indexOf("Todo18DebugCameraTraceStage.PREPARE_RETURNED")
+        val foldPosition = compactDebugBranch.indexOf("result.fold(")
+        val foldReturnedPosition =
+            compactDebugBranch.indexOf("Todo18DebugCameraTraceStage.FOLD_RETURNED")
+        assertTrue("Missing command trace", commandPosition >= 0)
+        assertTrue("Missing coroutine schedule trace", schedulePosition >= 0)
+        assertTrue("Missing real coroutine launch", launchPosition >= 0)
+        assertTrue("Missing coroutine entry trace", enteredPosition >= 0)
+        assertTrue("Missing prepare entry trace", prepareEnteredPosition >= 0)
+        assertTrue("Missing unchanged real prepare", preparePosition >= 0)
+        assertTrue("Missing prepare return trace", prepareReturnedPosition >= 0)
+        assertTrue("Missing unchanged result fold", foldPosition >= 0)
+        assertTrue("Missing fold return trace", foldReturnedPosition >= 0)
+        assertTrue(
+            "Trace must preserve command -> schedule -> launch -> entry -> prepare -> return -> fold order",
+            commandPosition < schedulePosition &&
+                schedulePosition < launchPosition &&
+                launchPosition < enteredPosition &&
+                enteredPosition < prepareEnteredPosition &&
+                prepareEnteredPosition < preparePosition &&
+                preparePosition < prepareReturnedPosition &&
+                prepareReturnedPosition < foldPosition &&
+                foldPosition < foldReturnedPosition,
+        )
+        assertCode(
+            debugBranch,
+            "todo18DebugObservePhotoPreparation(token, debugUri)",
+            "result.isSuccess",
+            "controller::photoPrepared",
+            "controller.photoRejected(it.photoError())",
+        )
+        val compactCameraDebug = combinedCameraDebug.filterNot { it.isWhitespace() }
+        val compactCameraTraceRuntime = cameraTraceRuntime.filterNot { it.isWhitespace() }
+        assertCode(
+            compactCameraDebug,
+            "internaldataclassTodo18DebugCameraTraceToken(valoperationId:Long,valprocessId:Int,valboundaryIdentity:Int,valstartedElapsedRealtimeNanos:Long",
+        )
+        val tracedWrapper =
+            compactCameraTraceRuntime
+                .substringAfter(
+                    "internalsuspendfuntodo18DebugObservePhotoPreparationRuntime(token:Todo18DebugCameraTraceToken?"
+                )
+                .substringBefore(
+                    "internalsuspendfuntodo18DebugObservePhotoPreparationRuntime(uri:String"
+                )
+        val delegateCallPosition = tracedWrapper.indexOf("valaccepted=prepareAndApply()")
+        val delegateReturnedPosition =
+            tracedWrapper.indexOf("Todo18DebugCameraTraceStage.DELEGATE_RETURNED")
+        val terminalSelectedPosition =
+            tracedWrapper.indexOf("Todo18DebugCameraTraceStage.TERMINAL_SELECTED")
+        assertTrue("Missing wrapper delegate call", delegateCallPosition >= 0)
+        assertTrue("Missing wrapper delegate-returned trace", delegateReturnedPosition >= 0)
+        assertTrue("Missing wrapper terminal-selected trace", terminalSelectedPosition >= 0)
+        assertTrue(
+            "Wrapper delegate trace order is invalid",
+            delegateCallPosition < delegateReturnedPosition &&
+                delegateReturnedPosition < terminalSelectedPosition,
+        )
+        val traceStart =
+            compactCameraTraceRuntime
+                .substringAfter("internalfuntodo18DebugStartCameraTraceRuntime(")
+                .substringBefore("internalfuntodo18DebugTraceCameraStageRuntime(")
+        val tokenConstructorPosition = traceStart.indexOf("Todo18DebugCameraTraceToken(")
+        val operationIdPosition = traceStart.indexOf("cameraTraceOperationIds.incrementAndGet()")
+        val processIdPosition = traceStart.indexOf("Process.myPid()")
+        val boundaryIdentityPosition =
+            traceStart.indexOf("System.identityHashCode(Todo18DebugCameraBoundary)")
+        val startedElapsedPosition = traceStart.indexOf("SystemClock.elapsedRealtimeNanos()")
+        val commandResolvedPosition =
+            traceStart.indexOf("Todo18DebugCameraTraceStage.COMMAND_RESOLVED")
+        val returnTokenPosition = traceStart.indexOf("returntoken")
+        assertTrue("Missing start token construction", tokenConstructorPosition >= 0)
+        assertTrue("Missing start operation identity", operationIdPosition >= 0)
+        assertTrue("Missing start process identity", processIdPosition >= 0)
+        assertTrue("Missing start boundary identity", boundaryIdentityPosition >= 0)
+        assertTrue("Missing start elapsed time", startedElapsedPosition >= 0)
+        assertTrue("Missing start command trace emission", commandResolvedPosition >= 0)
+        assertTrue("Missing start token return", returnTokenPosition >= 0)
+        assertTrue(
+            "Start trace must follow token construction and identity/time inputs",
+            tokenConstructorPosition < operationIdPosition &&
+                operationIdPosition < processIdPosition &&
+                processIdPosition < boundaryIdentityPosition &&
+                boundaryIdentityPosition < startedElapsedPosition &&
+                startedElapsedPosition < commandResolvedPosition &&
+                commandResolvedPosition < returnTokenPosition,
+        )
+        assertFalse(cameraDebug.contains("Log.i(\"Todo18CameraTrace\", record.uri"))
+        assertFalse(cameraDebug.contains("record.uri"))
+        assertFalse(cameraDebug.contains("exception.message"))
+    }
+
+    @Test
     fun `split harness preserves journey behavior and exact event synchronization`() {
         val sources = todo18AndroidTestSources()
         val allCode = sources.values.joinToString("\n")
@@ -643,6 +799,8 @@ class Todo18IntegratedJourneySourceContractTest {
                     root.resolve(DEBUG_RUNTIME_OVERRIDE),
                     root.resolve(RELEASE_RUNTIME_OVERRIDE),
                     root.resolve(DEBUG_CAMERA_OVERRIDE),
+                    root.resolve(DEBUG_TRACE_RUNTIME),
+                    root.resolve(DEBUG_TRACE_SUPPORT),
                     root.resolve(RELEASE_CAMERA_OVERRIDE),
                     root.resolve(DEBUG_REGISTRATION_STATE),
                     root.resolve(RELEASE_REGISTRATION_STATE),
@@ -743,6 +901,10 @@ class Todo18IntegratedJourneySourceContractTest {
             "app/src/release/kotlin/com/planterior/helper/auth/Todo18DebugRuntimeDependencies.kt"
         const val DEBUG_CAMERA_OVERRIDE =
             "feature/camera/src/debug/kotlin/com/planterior/helper/feature/camera/Todo18DebugCameraBoundary.kt"
+        const val DEBUG_TRACE_RUNTIME =
+            "feature/camera/src/debug/kotlin/com/planterior/helper/feature/camera/Todo18DebugCameraTraceRuntime.kt"
+        const val DEBUG_TRACE_SUPPORT =
+            "feature/camera/src/debug/kotlin/com/planterior/helper/feature/camera/Todo18DebugCameraTraceSupport.kt"
         const val RELEASE_CAMERA_OVERRIDE =
             "feature/camera/src/release/kotlin/com/planterior/helper/feature/camera/Todo18DebugCameraBoundary.kt"
         const val DEBUG_REGISTRATION_STATE =

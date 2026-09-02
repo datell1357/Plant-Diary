@@ -1,7 +1,6 @@
 package com.planterior.helper.feature.camera
 
 import java.io.Closeable
-import java.util.concurrent.CancellationException
 import java.util.concurrent.CopyOnWriteArraySet
 
 /** Debug-only overrides for the two Android boundaries owned by [CameraRoute]. */
@@ -34,45 +33,42 @@ object Todo18DebugCameraBoundary {
 
     internal fun pickerUriOrNull(): String? = pickerUri
 
+    internal fun startCameraTrace(
+        uri: String?,
+        traceWriter: Todo18DebugCameraTraceWriter,
+    ): Todo18DebugCameraTraceToken? = todo18DebugStartCameraTraceRuntime(uri, traceWriter)
+
+    internal fun traceCameraStage(
+        token: Todo18DebugCameraTraceToken?,
+        stage: Todo18DebugCameraTraceStage,
+        uri: String?,
+        terminal: Todo18DebugCameraTraceTerminal,
+        traceWriter: Todo18DebugCameraTraceWriter,
+    ) = todo18DebugTraceCameraStageRuntime(token, stage, uri, terminal, traceWriter)
+
+    internal suspend fun observePhotoPreparation(
+        token: Todo18DebugCameraTraceToken?,
+        uri: String,
+        traceWriter: Todo18DebugCameraTraceWriter,
+        prepareAndApply: suspend () -> Boolean,
+    ): Boolean =
+        todo18DebugObservePhotoPreparationRuntime(
+            token,
+            uri,
+            traceWriter,
+            { listeners.toList() },
+            prepareAndApply,
+        )
+
     internal suspend fun observePhotoPreparation(
         uri: String,
         prepareAndApply: suspend () -> Boolean,
-    ): Boolean {
-        try {
-            val accepted = prepareAndApply()
-            publish(
-                Todo18DebugPhotoPreparationEvent(
-                    uri,
-                    Todo18DebugPhotoPreparationTerminal.Returned(accepted),
-                )
-            )
-            return accepted
-        } catch (cancellation: CancellationException) {
-            publish(
-                Todo18DebugPhotoPreparationEvent(
-                    uri,
-                    Todo18DebugPhotoPreparationTerminal.Cancelled(cancellation),
-                )
-            )
-            throw cancellation
-        } catch (failure: Throwable) {
-            publish(
-                Todo18DebugPhotoPreparationEvent(
-                    uri,
-                    Todo18DebugPhotoPreparationTerminal.Thrown(failure),
-                )
-            )
-            throw failure
-        }
-    }
-
-    private fun publish(event: Todo18DebugPhotoPreparationEvent) {
-        listeners.forEach { listener ->
-            try {
-                listener(event)
-            } catch (_: AssertionError) {} catch (_: Exception) {}
-        }
-    }
+    ): Boolean =
+        todo18DebugObservePhotoPreparationRuntime(
+            uri,
+            { listeners.toList() },
+            prepareAndApply,
+        )
 }
 
 sealed interface Todo18DebugPhotoPreparationTerminal {
@@ -98,3 +94,32 @@ internal suspend fun todo18DebugObservePhotoPreparation(
     uri: String,
     prepareAndApply: suspend () -> Boolean,
 ): Boolean = Todo18DebugCameraBoundary.observePhotoPreparation(uri, prepareAndApply)
+
+internal fun todo18DebugStartCameraTrace(uri: String?): Todo18DebugCameraTraceToken? =
+    Todo18DebugCameraBoundary.startCameraTrace(uri, DEFAULT_TRACE_WRITER)
+
+internal fun todo18DebugTraceCameraStage(
+    token: Todo18DebugCameraTraceToken?,
+    stage: Todo18DebugCameraTraceStage,
+    uri: String?,
+    terminal: Todo18DebugCameraTraceTerminal = Todo18DebugCameraTraceTerminal.NONE,
+) =
+    Todo18DebugCameraBoundary.traceCameraStage(
+        token,
+        stage,
+        uri,
+        terminal,
+        DEFAULT_TRACE_WRITER,
+    )
+
+internal suspend fun todo18DebugObservePhotoPreparation(
+    token: Todo18DebugCameraTraceToken?,
+    uri: String,
+    prepareAndApply: suspend () -> Boolean,
+): Boolean =
+    Todo18DebugCameraBoundary.observePhotoPreparation(
+        token,
+        uri,
+        DEFAULT_TRACE_WRITER,
+        prepareAndApply,
+    )

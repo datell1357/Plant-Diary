@@ -8,6 +8,29 @@ android {
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variantBuilder ->
+        (variantBuilder as com.android.build.api.variant.HasUnitTestBuilder).enableUnitTest = true
+    }
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (name == "testDebugUnitTest") {
+        filter {
+            excludeTestsMatching(
+                "com.planterior.helper.feature.camera.Todo18DebugCameraBoundaryTest.release*"
+            )
+        }
+    }
+    if (name == "testReleaseUnitTest") {
+        filter {
+            includeTestsMatching(
+                "com.planterior.helper.feature.camera.Todo18DebugCameraBoundaryTest.release*"
+            )
+        }
+    }
+}
+
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:model"))
