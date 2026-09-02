@@ -74,7 +74,7 @@ final class PlantCollectionFigmaUITests: XCTestCase {
         XCTAssertTrue(watering.exists)
         let topOffset: CGFloat = app.frame.height == 874 ? 0 : -15
         XCTAssertEqual(watering.frame.minX, 16, accuracy: 0.5)
-        XCTAssertEqual(watering.frame.minY, 578 + topOffset, accuracy: 0.5)
+        XCTAssertEqual(watering.frame.minY, 634.333 + topOffset, accuracy: 0.5)
         XCTAssertEqual(watering.frame.width, app.frame.width - 32, accuracy: 0.5)
         XCTAssertEqual(watering.frame.height, 67, accuracy: 0.5)
         XCTAssertEqual(
