@@ -13,6 +13,7 @@ final class HomeDashboardUITests: XCTestCase {
         app.launchEnvironment["QA_NOTIFICATION_AUTHORIZATION"] = "authorized"
         app.launchEnvironment["QA_NOTIFICATION_ENDPOINT"] = "registered"
         app.launchEnvironment["QA_WATERING_TODAY"] = "2026-08-11"
+        app.launchEnvironment["QA_MINIHOME_RESET_TOKEN"] = UUID().uuidString
         app.launch()
 
         XCTAssertTrue(app.staticTexts["home.greeting"].waitForExistence(timeout: 5))
