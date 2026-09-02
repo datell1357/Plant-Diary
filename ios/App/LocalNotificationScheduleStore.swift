@@ -138,7 +138,9 @@ final class LocalNotificationScheduleStore: @unchecked Sendable {
                 pendingByID[request.identifier],
                 request
             ) {
-                try? await center.add(request)
+                do { try await center.add(request) } catch {
+                    await center.removePendingRequests(withIdentifiers: [request.identifier])
+                }
             }
             let reconciled = await center.pendingRequests()
             guard prefix == Self.ownedPrefix(accountID: accountID) else {

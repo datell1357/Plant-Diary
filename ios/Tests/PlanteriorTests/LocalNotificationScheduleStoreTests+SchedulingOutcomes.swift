@@ -1,5 +1,6 @@
 @testable import Planterior
 import PlanteriorData
+import UserNotifications
 import XCTest
 
 @MainActor
@@ -39,24 +40,41 @@ extension LocalNotificationScheduleStoreTests {
     }
 
     func testFailedReplacementDoesNotCountExistingSameIdentifierWithStalePayload() async throws {
+        // Given
         let prefix = LocalNotificationScheduleStore.ownedPrefix(accountID: "account-a")
         let identifier = "\(prefix)plant-a|2099-08-11|due"
+        let content = UNMutableNotificationContent()
+        content.title = "Earlier reminder"
+        let staleRequest = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: UNCalendarNotificationTrigger(
+                dateMatching: DateComponents(hour: 8, minute: 30),
+                repeats: false
+            )
+        )
         let center = LocalNotificationCenterFake(
+            requests: [Self.request(identifier: "unrelated.weather")],
             failingIdentifiers: [identifier]
         )
         let store = try makeStore(key: "failed-replacement", center: center)
         store.mount(accountID: "account-a")
         try await store.waitForPendingOperations()
-        center.seed(Self.request(identifier: identifier))
+        center.seed(staleRequest)
 
+        // When
         try store.reconcile(request(time: "09:00"))
         try await store.waitForPendingOperations()
 
-        XCTAssertEqual(center.requests.count, 2)
-        XCTAssertEqual(store.scheduledCount, 1)
+        // Then
+        XCTAssertFalse(center.requests.contains { $0.identifier == identifier })
         XCTAssertEqual(
-            center.requests.first { $0.identifier == identifier }?.content.title,
-            ""
+            Set(center.requests.map(\.identifier)),
+            [
+                "unrelated.weather",
+                "\(prefix)plant-a|2099-08-12|next"
+            ]
         )
+        XCTAssertEqual(store.scheduledCount, 1)
     }
 }
