@@ -32,6 +32,7 @@ public enum PhotoInputError: Error, Equatable, Sendable {
 
 public struct PhotoImagePipeline: Sendable {
     public static let maximumBytes = 20 * 1024 * 1024
+    public static let maximumOutputBytes = 10 * 1024 * 1024
     public static let pixelRange = 256 ... 8192
 
     public init() {}
@@ -108,7 +109,7 @@ public struct PhotoImagePipeline: Sendable {
         guard CGImageDestinationFinalize(destination) else {
             throw PhotoInputError.normalizationFailed
         }
-        guard output.length <= Self.maximumBytes else {
+        guard output.length <= Self.maximumOutputBytes else {
             throw PhotoInputError.assetTooLarge
         }
         return NormalizedPhoto(
@@ -148,6 +149,7 @@ public actor PhotoConsentCoordinator {
         guard let draft else {
             return
         }
+        self.draft = nil
         await transfer.transfer(draft)
     }
 

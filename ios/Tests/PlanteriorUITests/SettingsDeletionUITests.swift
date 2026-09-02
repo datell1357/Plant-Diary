@@ -2,6 +2,31 @@ import XCTest
 
 @MainActor
 final class SettingsDeletionUITests: XCTestCase, MiniHomeUITestSupport {
+    func testPrivacyScreenDisclosesPhotoHandlingBoundaries() {
+        let app = settingsApp()
+        app.launch()
+        openSettings(in: app)
+        app.buttons["settings.privacy"].tap()
+        let disclosures = [
+            "privacy.disclosure.photo":
+                "사진은 식물 식별을 확인한 뒤에만 전송됩니다.",
+            "privacy.disclosure.photo-access":
+                "사진 보관함은 사용자가 PhotosPicker에서 선택한 항목에만 접근합니다.",
+            "privacy.disclosure.metadata":
+                "선택한 사진은 방향을 보정해 JPEG로 다시 만들며 위치·EXIF 등 원본 메타데이터를 제거합니다.",
+            "privacy.disclosure.draft-cache":
+                "확인한 사진 초안은 기기 내부의 파일 보호가 적용된 캐시에 보관합니다.",
+            "privacy.disclosure.retention":
+                "대표 사진으로 저장하지 않은 초안은 생성 후 24시간이 지나면 삭제 대상이 됩니다."
+        ]
+
+        for (identifier, label) in disclosures {
+            let disclosure = app.staticTexts[identifier]
+            XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+            XCTAssertEqual(disclosure.label, label)
+        }
+    }
+
     func testSettingsPolicyAndPartialDeletionPreserveAccount() {
         let app = settingsApp()
         app.launch()

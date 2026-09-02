@@ -116,6 +116,7 @@ public actor PlantIdentificationCoordinator {
     }
 
     public func replacePhoto() {
+        image = nil
         selectedCandidate = nil
         draft = nil
         state = .awaitingPhoto

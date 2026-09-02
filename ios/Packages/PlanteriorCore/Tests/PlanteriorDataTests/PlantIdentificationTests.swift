@@ -111,6 +111,19 @@ struct PlantIdentificationTests {
     }
 
     @Test
+    func replacementClearsPhotoBeforeManualFallback() async {
+        let coordinator = PlantIdentificationCoordinator(
+            service: IdentificationServiceFake(states: [.noCandidates])
+        )
+        await coordinator.submit(Data("stale-image".utf8))
+
+        await coordinator.replacePhoto()
+        await coordinator.beginManualEntry(name: "몬스테라")
+
+        #expect(await coordinator.draft?.representativePhoto == nil)
+    }
+
+    @Test
     func validatesNameDateAndPreservesDraftAfterSaveFailure() async throws {
         let failing = RegistrationStoreFake(shouldFail: true)
         let coordinator = PlantRegistrationCoordinator(
