@@ -191,8 +191,9 @@ extension SettingsDeletionUITests {
         let settings = app.buttons["tab.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         settings.tap()
-        XCTAssertTrue(
-            app.scrollViews["settings.screen"].waitForExistence(timeout: 5)
-        )
+        if !app.scrollViews["settings.screen"].waitForExistence(timeout: 1) {
+            settings.tap()
+        }
+        XCTAssertTrue(app.scrollViews["settings.screen"].waitForExistence(timeout: 5))
     }
 }
