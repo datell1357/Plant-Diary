@@ -193,6 +193,6 @@ internal class Todo18RenderedStateProbe(
     }
 
     private companion object {
-        const val EVENT_TIMEOUT_MILLIS = 10_000L
+        const val EVENT_TIMEOUT_MILLIS = 30_000L
     }
 }

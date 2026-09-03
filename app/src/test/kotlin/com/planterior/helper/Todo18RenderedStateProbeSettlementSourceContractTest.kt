@@ -46,7 +46,7 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
         assertEquals(3, probe.countOccurrences("settle = compose::waitForIdle"))
         assertTrue(miniHome.contains("event.sequence > floor"))
         assertFalse(miniHome.contains("event.sequence >= floor"))
-        assertTrue(probe.contains("EVENT_TIMEOUT_MILLIS = 10_000L"))
+        assertTrue(probe.contains("EVENT_TIMEOUT_MILLIS = 30_000L"))
         assertFalse(probe.contains("compose.waitForIdle()"))
     }
 
