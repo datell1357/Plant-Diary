@@ -359,10 +359,42 @@ class FirebaseMiniHomeRepository(
         outcome: MiniHomePublicationReadTerminalOutcome,
     ) = observeInjectedDiagnostic { onPublicationReadTerminal(account, readIdentity, outcome) }
 
-    override suspend fun save(request: MiniHomeSaveRequest): MiniHomeSaveResult =
-        withOwnerOperation(request.accountId) { saveLocked(request) }
+    override suspend fun save(request: MiniHomeSaveRequest): MiniHomeSaveResult {
+        var delegateCancellation: CancellationException? = null
+        MiniHomeSaveBoundaryDiagnostics.observe(
+            MiniHomeSaveBoundaryStage.SAVE_SCOPE_ENTERED,
+            request.accountId,
+            request.operationId,
+            MiniHomeSaveBoundaryOutcome.ENTERED,
+        )
+        return try {
+            withOwnerOperation(request.accountId) {
+                    saveLocked(request) { cancellation ->
+                        delegateCancellation = cancellation
+                    }
+                }
+                .also { result ->
+                    MiniHomeSaveBoundaryDiagnostics.observe(
+                        MiniHomeSaveBoundaryStage.SAVE_SCOPE_RETURNED,
+                        request.accountId,
+                        request.operationId,
+                        result.saveBoundaryOutcome(),
+                    )
+                }
+        } catch (error: CancellationException) {
+            observeSaveBoundaryCancellation(
+                request.accountId,
+                request.operationId,
+                MiniHomeSaveBoundaryStage.SAVE_SCOPE_CANCELLED,
+                delegateCancellation ?: error,
+            )
+        }
+    }
 
-    private suspend fun saveLocked(request: MiniHomeSaveRequest): MiniHomeSaveResult {
+    private suspend fun saveLocked(
+        request: MiniHomeSaveRequest,
+        onDelegateCancellation: (CancellationException) -> Unit,
+    ): MiniHomeSaveResult {
         if (remote.activeAccount() != request.accountId) return MiniHomeSaveResult.Forbidden
         MiniHomeRequestContract.validate(request)?.let { violation ->
             return MiniHomeSaveResult.RequiresCorrection(
@@ -459,9 +491,14 @@ class FirebaseMiniHomeRepository(
                 return MiniHomeSaveResult.Failed(MiniHomeSaveFailure.DATABASE)
             }
         return withContext(NonCancellable) {
-            completeSaveAcrossRemoteBoundary(request, operation, payloadHash).also { result ->
-                recentSaveOutcomes[request.accountId.value] =
-                    RegisteredSaveOutcome(request.operationId, result)
+            try {
+                completeSaveAcrossRemoteBoundary(request, operation, payloadHash).also { result ->
+                    recentSaveOutcomes[request.accountId.value] =
+                        RegisteredSaveOutcome(request.operationId, result)
+                }
+            } catch (error: CancellationException) {
+                onDelegateCancellation(error)
+                throw error
             }
         }
     }
@@ -473,16 +510,33 @@ class FirebaseMiniHomeRepository(
     ): MiniHomeSaveResult {
         var operation = initialOperation
         if (remote.activeAccount() != request.accountId) return MiniHomeSaveResult.Forbidden
+        MiniHomeSaveBoundaryDiagnostics.observe(
+            MiniHomeSaveBoundaryStage.REMOTE_SAVE_ENTERED,
+            request.accountId,
+            request.operationId,
+            MiniHomeSaveBoundaryOutcome.ENTERED,
+        )
         val result =
             try {
                 remote.save(request)
             } catch (error: CancellationException) {
-                throw error
+                observeSaveBoundaryCancellation(
+                    request.accountId,
+                    request.operationId,
+                    MiniHomeSaveBoundaryStage.REMOTE_SAVE_CANCELLED,
+                    error,
+                )
             } catch (_: IOException) {
                 RemoteMiniHomeSaveResult.Failed(MiniHomeSaveFailure.NETWORK)
             } catch (_: Exception) {
                 RemoteMiniHomeSaveResult.Failed(MiniHomeSaveFailure.MALFORMED_RESPONSE)
             }
+        MiniHomeSaveBoundaryDiagnostics.observe(
+            MiniHomeSaveBoundaryStage.REMOTE_SAVE_RETURNED,
+            request.accountId,
+            request.operationId,
+            result.saveBoundaryOutcome(),
+        )
         if (remote.activeAccount() != request.accountId) return MiniHomeSaveResult.Forbidden
         return try {
             when (result) {
@@ -494,15 +548,45 @@ class FirebaseMiniHomeRepository(
                         } else {
                             (result as RemoteMiniHomeSaveResult.Duplicate).revision
                         }
-                    operation =
+                    MiniHomeSaveBoundaryDiagnostics.observe(
+                        MiniHomeSaveBoundaryStage.RECEIPT_RECORD_ENTERED,
+                        request.accountId,
+                        request.operationId,
+                        MiniHomeSaveBoundaryOutcome.ENTERED,
+                    )
+                    val recorded =
                         recordReceipt(
                             operation,
                             request.operationId,
                             request.expectedRevision,
                             revision,
                             payloadHash,
-                        ) ?: return pendingChanged(request.accountId)
-                    reconcileApplied(request, operation, revision)
+                        )
+                    MiniHomeSaveBoundaryDiagnostics.observe(
+                        MiniHomeSaveBoundaryStage.RECEIPT_RECORD_RETURNED,
+                        request.accountId,
+                        request.operationId,
+                        if (recorded == null) {
+                            MiniHomeSaveBoundaryOutcome.PENDING_CHANGED
+                        } else {
+                            MiniHomeSaveBoundaryOutcome.RECORDED
+                        },
+                    )
+                    operation = recorded ?: return pendingChanged(request.accountId)
+                    MiniHomeSaveBoundaryDiagnostics.observe(
+                        MiniHomeSaveBoundaryStage.RECONCILE_APPLIED_ENTERED,
+                        request.accountId,
+                        request.operationId,
+                        MiniHomeSaveBoundaryOutcome.ENTERED,
+                    )
+                    reconcileApplied(request, operation, revision).also { reconciled ->
+                        MiniHomeSaveBoundaryDiagnostics.observe(
+                            MiniHomeSaveBoundaryStage.RECONCILE_APPLIED_RETURNED,
+                            request.accountId,
+                            request.operationId,
+                            reconciled.saveBoundaryOutcome(),
+                        )
+                    }
                 }
                 is RemoteMiniHomeSaveResult.Conflict ->
                     reconcileConflict(request, operation, result.actualRevision)
@@ -850,11 +934,29 @@ class FirebaseMiniHomeRepository(
         operation: OperationOutboxEntity,
         receiptRevision: Revision,
     ): MiniHomeSaveResult {
+        MiniHomeSaveBoundaryDiagnostics.observe(
+            MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_ENTERED,
+            request.accountId,
+            request.operationId,
+            MiniHomeSaveBoundaryOutcome.ENTERED,
+        )
         val snapshot =
             try {
-                remote.load(request.accountId).recoverLegacyName()
+                remote.load(request.accountId).recoverLegacyName().also {
+                    MiniHomeSaveBoundaryDiagnostics.observe(
+                        MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_RETURNED,
+                        request.accountId,
+                        request.operationId,
+                        MiniHomeSaveBoundaryOutcome.CURRENT,
+                    )
+                }
             } catch (error: CancellationException) {
-                throw error
+                observeSaveBoundaryCancellation(
+                    request.accountId,
+                    request.operationId,
+                    MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_CANCELLED,
+                    error,
+                )
             } catch (_: Exception) {
                 val marked =
                     compareAndSet(operation) {
@@ -878,7 +980,33 @@ class FirebaseMiniHomeRepository(
         ) {
             return MiniHomeSaveResult.Forbidden
         }
-        val applied = cache(request.accountId, snapshot, OperationId(operation.operationId))
+        MiniHomeSaveBoundaryDiagnostics.observe(
+            MiniHomeSaveBoundaryStage.CACHE_ENTERED,
+            request.accountId,
+            request.operationId,
+            MiniHomeSaveBoundaryOutcome.ENTERED,
+        )
+        val applied =
+            try {
+                cache(request.accountId, snapshot, OperationId(operation.operationId))
+            } catch (error: CancellationException) {
+                observeSaveBoundaryCancellation(
+                    request.accountId,
+                    request.operationId,
+                    MiniHomeSaveBoundaryStage.CACHE_CANCELLED,
+                    error,
+                )
+            }
+        MiniHomeSaveBoundaryDiagnostics.observe(
+            MiniHomeSaveBoundaryStage.CACHE_RETURNED,
+            request.accountId,
+            request.operationId,
+            if (applied is CoherentMiniHomeCacheApply.Current) {
+                MiniHomeSaveBoundaryOutcome.CURRENT
+            } else {
+                MiniHomeSaveBoundaryOutcome.CONFLICT
+            },
+        )
         if (applied is CoherentMiniHomeCacheApply.Conflict) {
             return MiniHomeSaveResult.Failed(
                 MiniHomeSaveFailure.INCONSISTENT_RECEIPT,
@@ -907,7 +1035,37 @@ class FirebaseMiniHomeRepository(
             )
         }
         return try {
-            when (val consumed = consume(operation)) {
+            MiniHomeSaveBoundaryDiagnostics.observe(
+                MiniHomeSaveBoundaryStage.CONSUME_ENTERED,
+                request.accountId,
+                request.operationId,
+                MiniHomeSaveBoundaryOutcome.ENTERED,
+            )
+            val consumed =
+                try {
+                    consume(operation)
+                } catch (error: CancellationException) {
+                    observeSaveBoundaryCancellation(
+                        request.accountId,
+                        request.operationId,
+                        MiniHomeSaveBoundaryStage.CONSUME_CANCELLED,
+                        error,
+                    )
+                }
+            MiniHomeSaveBoundaryDiagnostics.observe(
+                MiniHomeSaveBoundaryStage.CONSUME_RETURNED,
+                request.accountId,
+                request.operationId,
+                if (
+                    consumed == MiniHomeDiscardResult.Consumed ||
+                        consumed is MiniHomeDiscardResult.Committed
+                ) {
+                    MiniHomeSaveBoundaryOutcome.CONSUMED
+                } else {
+                    MiniHomeSaveBoundaryOutcome.PENDING_CHANGED
+                },
+            )
+            when (consumed) {
                 MiniHomeDiscardResult.Consumed -> MiniHomeSaveResult.Saved(authoritative)
                 is MiniHomeDiscardResult.Committed ->
                     MiniHomeSaveResult.Saved(consumed.authoritative)
@@ -3084,6 +3242,27 @@ internal fun recoverLegacyMiniHomeName(legacyName: String): String? {
             ?: return null
     return canonicalName.takeIf { MiniHomeRequestContract.validateName(it) == null }
 }
+
+private fun RemoteMiniHomeSaveResult.saveBoundaryOutcome(): MiniHomeSaveBoundaryOutcome =
+    when (this) {
+        is RemoteMiniHomeSaveResult.Applied -> MiniHomeSaveBoundaryOutcome.APPLIED
+        is RemoteMiniHomeSaveResult.Duplicate -> MiniHomeSaveBoundaryOutcome.DUPLICATE
+        is RemoteMiniHomeSaveResult.Conflict -> MiniHomeSaveBoundaryOutcome.CONFLICT
+        is RemoteMiniHomeSaveResult.Failed -> MiniHomeSaveBoundaryOutcome.FAILED
+    }
+
+private fun MiniHomeSaveResult.saveBoundaryOutcome(): MiniHomeSaveBoundaryOutcome =
+    when (this) {
+        is MiniHomeSaveResult.Saved -> MiniHomeSaveBoundaryOutcome.SAVED
+        is MiniHomeSaveResult.Conflict -> MiniHomeSaveBoundaryOutcome.CONFLICT
+        is MiniHomeSaveResult.Failed -> MiniHomeSaveBoundaryOutcome.FAILED
+        is MiniHomeSaveResult.RequiresCorrection -> MiniHomeSaveBoundaryOutcome.REQUIRES_CORRECTION
+        is MiniHomeSaveResult.RequiresReconciliation ->
+            MiniHomeSaveBoundaryOutcome.REQUIRES_RECONCILIATION
+        is MiniHomeSaveResult.Reconciled -> MiniHomeSaveBoundaryOutcome.RECONCILED
+        is MiniHomeSaveResult.PendingChanged -> MiniHomeSaveBoundaryOutcome.PENDING_CHANGED
+        MiniHomeSaveResult.Forbidden -> MiniHomeSaveBoundaryOutcome.FORBIDDEN
+    }
 
 internal fun mapMiniHomeCallableFailure(
     code: FirebaseFunctionsException.Code,

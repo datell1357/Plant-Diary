@@ -66,6 +66,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -3919,6 +3920,190 @@ class FirebaseMiniHomeRepositoryTest {
             }
             return RemoteMiniHomeSaveResult.Duplicate(layout.revision)
         }
+    }
+
+    @Test
+    fun `save boundary success emits the complete repository path`() = runTest {
+        val observed = mutableListOf<MiniHomeSaveBoundaryObservation>()
+        val repository = FirebaseMiniHomeRepository(database, FakeRemote(layout(3)))
+        val registration = MiniHomeSaveBoundaryDiagnostics.install(observed::add)
+        val result =
+            try {
+                repository.save(request("save-boundary-success", layout(3)))
+            } finally {
+                registration.close()
+            }
+
+        assertTrue("unexpected save result: $result", result is MiniHomeSaveResult.Saved)
+        assertEquals(
+            listOf(
+                MiniHomeSaveBoundaryStage.SAVE_SCOPE_ENTERED,
+                MiniHomeSaveBoundaryStage.REMOTE_SAVE_ENTERED,
+                MiniHomeSaveBoundaryStage.REMOTE_SAVE_RETURNED,
+                MiniHomeSaveBoundaryStage.RECEIPT_RECORD_ENTERED,
+                MiniHomeSaveBoundaryStage.RECEIPT_RECORD_RETURNED,
+                MiniHomeSaveBoundaryStage.RECONCILE_APPLIED_ENTERED,
+                MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_ENTERED,
+                MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_RETURNED,
+                MiniHomeSaveBoundaryStage.CACHE_ENTERED,
+                MiniHomeSaveBoundaryStage.CACHE_RETURNED,
+                MiniHomeSaveBoundaryStage.CONSUME_ENTERED,
+                MiniHomeSaveBoundaryStage.CONSUME_RETURNED,
+                MiniHomeSaveBoundaryStage.RECONCILE_APPLIED_RETURNED,
+                MiniHomeSaveBoundaryStage.SAVE_SCOPE_RETURNED,
+            ),
+            observed.map { it.stage },
+        )
+    }
+
+    @Test
+    fun `save boundary conflict correlates the exact operation`() = runTest {
+        val observed = mutableListOf<MiniHomeSaveBoundaryObservation>()
+        val operation = OperationId("save-boundary-conflict")
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(3), RemoteMiniHomeSaveResult.Conflict(Revision(4))),
+            )
+        val registration = MiniHomeSaveBoundaryDiagnostics.install(observed::add)
+        try {
+            repository.save(request(operation.value, layout(3)))
+        } finally {
+            registration.close()
+        }
+
+        assertTrue(observed.isNotEmpty())
+        assertTrue(observed.all { it.accountId == AccountId("account-a") })
+        assertTrue(observed.all { it.operationId == operation })
+    }
+
+    @Test
+    fun `save boundary returned failure retains the typed result category`() = runTest {
+        val observed = mutableListOf<MiniHomeSaveBoundaryObservation>()
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(
+                    layout(3),
+                    RemoteMiniHomeSaveResult.Failed(MiniHomeSaveFailure.NETWORK, "network"),
+                ),
+            )
+        val registration = MiniHomeSaveBoundaryDiagnostics.install(observed::add)
+        val result =
+            try {
+                repository.save(request("save-boundary-failure", layout(3)))
+            } finally {
+                registration.close()
+            }
+
+        assertTrue("unexpected save result: $result", result is MiniHomeSaveResult.Failed)
+        assertTrue(observed.any { it.outcome == MiniHomeSaveBoundaryOutcome.FAILED })
+    }
+
+    @Test
+    fun `save boundary cancellation keeps the exact exception identity`() = runTest {
+        val expected = CancellationException("save-boundary-cancelled")
+        val observed = mutableListOf<MiniHomeSaveBoundaryObservation>()
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(3)).apply {
+                    onSave = { throw expected }
+                },
+            )
+        val registration = MiniHomeSaveBoundaryDiagnostics.install(observed::add)
+        val actual =
+            try {
+                repository.save(request("save-boundary-cancel", layout(3)))
+                fail("Expected cancellation")
+            } catch (error: CancellationException) {
+                error
+            } finally {
+                registration.close()
+            }
+
+        assertSame(expected, actual)
+        assertTrue(observed.any { it.failure === expected })
+    }
+
+    @Test
+    fun `save boundary keeps the exact surrounding cancellation before a delegate terminal`() =
+        runTest {
+            val remoteEntered = CompletableDeferred<Unit>()
+            val releaseRemote = CompletableDeferred<Unit>()
+            val remote =
+                FakeRemote(layout(3)).apply {
+                    onSave = {
+                        remoteEntered.complete(Unit)
+                        releaseRemote.await()
+                    }
+                }
+            val repository = FirebaseMiniHomeRepository(database, remote)
+            val waitingOperation = OperationId("save-boundary-surrounding-cancel")
+            val observed = mutableListOf<MiniHomeSaveBoundaryObservation>()
+            val callerFailure = CompletableDeferred<CancellationException>()
+            val registration = MiniHomeSaveBoundaryDiagnostics.install(observed::add)
+            val firstSave = async {
+                repository.save(request("save-boundary-mutex-holder", layout(3)))
+            }
+            var waitingSave: kotlinx.coroutines.Job? = null
+
+            try {
+                remoteEntered.await()
+                waitingSave = launch {
+                    try {
+                        repository.save(request(waitingOperation.value, layout(3)))
+                        callerFailure.completeExceptionally(
+                            AssertionError("Expected waiting save cancellation")
+                        )
+                    } catch (error: CancellationException) {
+                        callerFailure.complete(error)
+                    }
+                }
+                runCurrent()
+
+                assertEquals(
+                    listOf(MiniHomeSaveBoundaryStage.SAVE_SCOPE_ENTERED),
+                    observed.filter { it.operationId == waitingOperation }.map { it.stage },
+                )
+                waitingSave.cancel(CancellationException("surrounding cancellation"))
+                runCurrent()
+
+                val actual = callerFailure.await()
+                val waitingObservations = observed.filter { it.operationId == waitingOperation }
+                assertEquals(
+                    listOf(
+                        MiniHomeSaveBoundaryStage.SAVE_SCOPE_ENTERED,
+                        MiniHomeSaveBoundaryStage.SAVE_SCOPE_CANCELLED,
+                    ),
+                    waitingObservations.map { it.stage },
+                )
+                assertSame(actual, waitingObservations.single { it.failure != null }.failure)
+            } finally {
+                releaseRemote.complete(Unit)
+                waitingSave?.join()
+                firstSave.await()
+                registration.close()
+            }
+        }
+
+    @Test
+    fun `save boundary observer faults do not alter the returned result`() = runTest {
+        var callbackCount = 0
+        val repository = FirebaseMiniHomeRepository(database, FakeRemote(layout(3)))
+        val registration = MiniHomeSaveBoundaryDiagnostics.install {
+            callbackCount += 1
+            error("diagnostic observer fault")
+        }
+        val result =
+            try {
+                repository.save(request("save-boundary-observer-fault", layout(3)))
+            } finally {
+                registration.close()
+            }
+
+        assertTrue("unexpected save result: $result", result is MiniHomeSaveResult.Saved)
+        assertTrue("save-boundary observer was not invoked", callbackCount > 0)
     }
 
     @Test

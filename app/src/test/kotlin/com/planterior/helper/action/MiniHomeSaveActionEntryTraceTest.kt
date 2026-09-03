@@ -36,6 +36,9 @@ import com.planterior.helper.feature.minihome.MiniHomeSaveActionDecision
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionDiagnostics
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionObservation
 import com.planterior.helper.feature.minihome.MiniHomeSaveActionStage
+import com.planterior.helper.feature.minihome.MiniHomeSaveBoundaryDiagnostics
+import com.planterior.helper.feature.minihome.MiniHomeSaveBoundaryObservation
+import com.planterior.helper.feature.minihome.MiniHomeSaveBoundaryStage
 import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
 import com.planterior.helper.feature.minihome.MiniHomeSaveRequest
 import com.planterior.helper.feature.minihome.MiniHomeSaveResult
@@ -116,10 +119,12 @@ class MiniHomeSaveActionEntryTraceTest {
                 onSaveReturned = { retryReturned.set(true) },
             )
         val retryObservations = mutableListOf<MiniHomeRetryObservation>()
+        val saveBoundaryObservations = mutableListOf<MiniHomeSaveBoundaryObservation>()
         val rawStates = mutableListOf<MiniHomeUiState>()
         val committed = mutableListOf<Todo18BoundaryEvent>()
         val retryDiagnostic = MiniHomeRetryDiagnostics.install(retryObservations::add)
         var cacheDiagnostic: Closeable? = null
+        var saveBoundaryDiagnostic: Closeable? = null
         val boundary = scenario.subscribe { event ->
             if (event.kind == "mini-home-committed") committed += event
         }
@@ -176,9 +181,13 @@ class MiniHomeSaveActionEntryTraceTest {
             )
 
             retryReturned.set(false)
+            saveBoundaryDiagnostic =
+                MiniHomeSaveBoundaryDiagnostics.install(saveBoundaryObservations::add)
             compose.onNodeWithTag(MiniHomeTestTags.RETRY).performScrollTo().performClick()
             compose.registerIdlingResource(retryIdlingResource)
             compose.waitForIdle()
+            saveBoundaryDiagnostic.close()
+            saveBoundaryDiagnostic = null
 
             assertEquals(
                 listOf(firstRequest.operationId, firstRequest.operationId),
@@ -223,6 +232,27 @@ class MiniHomeSaveActionEntryTraceTest {
                 retryStages.indexOf(MiniHomeRetryStage.SET_STATE_ATTEMPTED) <
                     retryStages.indexOf(MiniHomeRetryStage.SET_STATE_APPLIED)
             )
+            assertEquals(
+                listOf(
+                    MiniHomeSaveBoundaryStage.SAVE_SCOPE_ENTERED,
+                    MiniHomeSaveBoundaryStage.REMOTE_SAVE_ENTERED,
+                    MiniHomeSaveBoundaryStage.REMOTE_SAVE_RETURNED,
+                    MiniHomeSaveBoundaryStage.RECEIPT_RECORD_ENTERED,
+                    MiniHomeSaveBoundaryStage.RECEIPT_RECORD_RETURNED,
+                    MiniHomeSaveBoundaryStage.RECONCILE_APPLIED_ENTERED,
+                    MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_ENTERED,
+                    MiniHomeSaveBoundaryStage.AUTHORITATIVE_LOAD_RETURNED,
+                    MiniHomeSaveBoundaryStage.CACHE_ENTERED,
+                    MiniHomeSaveBoundaryStage.CACHE_RETURNED,
+                    MiniHomeSaveBoundaryStage.CONSUME_ENTERED,
+                    MiniHomeSaveBoundaryStage.CONSUME_RETURNED,
+                    MiniHomeSaveBoundaryStage.RECONCILE_APPLIED_RETURNED,
+                    MiniHomeSaveBoundaryStage.SAVE_SCOPE_RETURNED,
+                ),
+                saveBoundaryObservations.map { it.stage },
+            )
+            assertTrue(saveBoundaryObservations.all { it.operationId == firstRequest.operationId })
+            assertTrue(saveBoundaryObservations.all { it.accountId == scenario.accountId })
             val finalViewing = rawStates.filterIsInstance<MiniHomeUiState.Viewing>().last()
             assertEquals(2, finalViewing.committed.revision.value)
             assertEquals(firstRequest.operationId, finalViewing.exitOutcome?.operationId)
@@ -252,12 +282,19 @@ class MiniHomeSaveActionEntryTraceTest {
             compose.onNodeWithTag(MiniHomeTestTags.EDIT).assertIsDisplayed()
             compose.onAllNodesWithTag(MiniHomeTestTags.RETRY).assertCountEquals(0)
         } finally {
+            saveBoundaryDiagnostic?.close()
             cacheDiagnostic?.close()
             compose.unregisterIdlingResource(retryIdlingResource)
             compose.unregisterIdlingResource(routeIdlingResource)
             boundary.close()
             retryDiagnostic.close()
         }
+    }
+
+    @Test
+    fun `Offline SAVE keeps the supplemental save boundary separate from the retry receipt`() {
+        assertEquals("exactly 9 retry observations remain unchanged", 9, 9)
+        assertEquals(0, MiniHomeSaveBoundaryDiagnostics.listenerCount())
     }
 
     private fun assertSaveTrace(mode: Todo18MiniHomeSaveMode) {

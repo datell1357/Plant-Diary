@@ -11,6 +11,7 @@ import com.planterior.helper.feature.minihome.MiniHomeSaveFailure
 import com.planterior.helper.feature.minihome.MiniHomeSaveState
 import com.planterior.helper.feature.minihome.MiniHomeTestTags
 import com.planterior.helper.feature.minihome.MiniHomeUiState
+import com.planterior.helper.minihome.Todo18MiniHomeSaveBoundaryDiagnosticRecorder
 import com.planterior.helper.navigation.PlanteriorRoute
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -108,22 +109,32 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
     )
 
     lateinit var committed: Todo18BoundaryEvent
-    Todo18OfflineRetryTransitionDiagnosticCapture(runtime, compose, frozen.value).capture {
-        val diagnostic = this
-        rendered.awaitMiniHome(
-            matches = {
-                ((it.state as? MiniHomeUiState.Viewing)?.committed?.revision?.value ?: 0L) > 1L
-            },
-            trigger = {
-                committed =
-                    events.awaitBoundary("mini-home-committed") {
-                        compose.onNodeWithTag(MiniHomeTestTags.RETRY).performClick()
-                        diagnostic.recordTriggerReturned()
-                    }
-            },
+    val saveBoundaryRecorder = Todo18MiniHomeSaveBoundaryDiagnosticRecorder()
+    Todo18MiniHomeSaveBoundaryDiagnosticCapture(
+            compose,
+            saveBoundaryRecorder,
+            runtime.boundary.accountId,
+            frozen,
         )
-        diagnostic.requireComplete(frozen, committed)
-    }
+        .captureRetry {
+            Todo18OfflineRetryTransitionDiagnosticCapture(runtime, compose, frozen.value).capture {
+                val diagnostic = this
+                rendered.awaitMiniHome(
+                    matches = {
+                        ((it.state as? MiniHomeUiState.Viewing)?.committed?.revision?.value ?: 0L) >
+                            1L
+                    },
+                    trigger = {
+                        committed =
+                            events.awaitBoundary("mini-home-committed") {
+                                compose.onNodeWithTag(MiniHomeTestTags.RETRY).performClick()
+                                diagnostic.recordTriggerReturned()
+                            }
+                    },
+                )
+                diagnostic.requireComplete(frozen, committed)
+            }
+        }
     assertEquals(frozen.value, committed.identity)
     assertEquals(
         listOf(frozen, frozen),
