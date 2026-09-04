@@ -1,7 +1,7 @@
 package com.planterior.helper.feature.camera
 
-import android.net.Uri
 import android.os.SystemClock
+import androidx.core.net.toUri
 
 internal data class Todo18DebugCameraTraceToken(
     val operationId: Long,
@@ -71,7 +71,7 @@ internal fun safeTrace(
 
 internal fun classifyUri(uri: String?): Todo18DebugCameraTraceUriKind {
     if (uri == null) return Todo18DebugCameraTraceUriKind.ABSENT
-    val parsed = Uri.parse(uri)
+    val parsed = uri.toUri()
     return if (
         parsed.scheme == "file" &&
             parsed.authority.isNullOrEmpty() &&

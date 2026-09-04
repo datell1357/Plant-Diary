@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTouchHeightIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -32,6 +33,7 @@ class CameraScreenTest {
     fun `permission denial shows settings picker and direct alternatives`() {
         show(CameraFlowState.PermissionBlocked(permanentlyDenied = true))
 
+        composeRule.onNodeWithText("기기 설정에서 권한을 허용하거나 다른 방법을 선택해 주세요.").assertIsDisplayed()
         listOf(CameraTestTags.SETTINGS, CameraTestTags.PICKER, CameraTestTags.DIRECT).forEach {
             composeRule.onNodeWithTag(it).assertIsDisplayed()
         }

@@ -163,7 +163,7 @@ private fun PermissionContent(
         Text("카메라 권한이 필요해요", style = MaterialTheme.typography.titleMedium)
         Text(
             if (state.permanentlyDenied) {
-                "기기 설정에서 카메라 권한을 허용하거나 다른 방법을 선택해 주세요."
+                "기기 설정에서 권한을 허용하거나 다른 방법을 선택해 주세요."
             } else {
                 "권한 요청을 반복하지 않습니다. 설정 또는 다른 방법으로 계속할 수 있어요."
             },
