@@ -73,7 +73,9 @@ subprojects {
     }
 }
 
-val qualityModules = subprojects.filter { it.buildFile.isFile }.map { it.path }
+// Baselineprofile exposes benchmark release variants, not these debug quality tasks.
+val qualityModules =
+    subprojects.filter { it.buildFile.isFile && it.path != ":baselineprofile" }.map { it.path }
 
 tasks.register("lintDebug") {
     group = "verification"
@@ -87,8 +89,14 @@ tasks.register("testDebugUnitTest") {
     dependsOn(qualityModules.map { "$it:testDebugUnitTest" })
 }
 
+tasks.register("testReleaseUnitTest") {
+    group = "verification"
+    description = "Runs enabled release unit tests for the application and camera modules."
+    dependsOn(":app:testReleaseUnitTest", ":feature:camera:testReleaseUnitTest")
+}
+
 tasks.register("assembleDebug") {
     group = "build"
-    description = "Assembles every module's debug variant."
+    description = "Assembles every application/library module's debug variant."
     dependsOn(qualityModules.map { "$it:assembleDebug" })
 }
