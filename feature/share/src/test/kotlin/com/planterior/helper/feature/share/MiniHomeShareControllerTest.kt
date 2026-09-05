@@ -19,6 +19,31 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class MiniHomeShareControllerTest {
     @Test
+    fun `diagnostic observes raw load and published state with owner generation`() = runTest {
+        val observations = mutableListOf<MiniHomeShareDiagnosticObservation>()
+        val controller =
+            MiniHomeShareController(
+                FakeShareRepository(),
+                onDiagnostic = { observations += it },
+            )
+
+        controller.start(MiniHomeAuthOwnership.Authenticated(MiniHomeShareFixtures.owner))
+
+        assertEquals(
+            listOf(
+                MiniHomeShareDiagnosticStage.LOAD_ENTERED,
+                MiniHomeShareDiagnosticStage.STATE_PUBLISHED,
+                MiniHomeShareDiagnosticStage.LOAD_RETURNED,
+                MiniHomeShareDiagnosticStage.STATE_PUBLISHED,
+            ),
+            observations.map { it.stage },
+        )
+        assertTrue(observations.all { it.owner == MiniHomeShareFixtures.owner })
+        assertEquals(1L, observations.first().generation)
+        assertEquals(1L, observations.last().generation)
+    }
+
+    @Test
     fun `loading reads the authoritative committed layout and never a draft`() = runTest {
         val repository = FakeShareRepository()
         val controller = controller(repository)

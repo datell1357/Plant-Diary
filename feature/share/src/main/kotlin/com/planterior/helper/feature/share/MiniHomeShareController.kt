@@ -9,6 +9,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class MiniHomeShareDiagnosticStage {
+    LOAD_ENTERED,
+    LOAD_RETURNED,
+    STATE_PUBLISHED,
+    DISPLAYED_STATE_OBSERVED,
+}
+
+data class MiniHomeShareDiagnosticObservation(
+    val stage: MiniHomeShareDiagnosticStage,
+    val owner: AccountId?,
+    val generation: Long?,
+    val stateKind: String,
+    val resultKind: String? = null,
+)
+
 /** 확정 구성 캡처 진행 상태이다. */
 enum class MiniHomeShareRenderState {
     Rendering,
@@ -102,6 +117,7 @@ sealed interface MiniHomeShareUiState {
 class MiniHomeShareController(
     private val repository: MiniHomeShareRepository,
     private val operationIdFactory: () -> OperationId = OperationId::random,
+    private val onDiagnostic: (MiniHomeShareDiagnosticObservation) -> Unit = {},
 ) {
     private val _state = MutableStateFlow<MiniHomeShareUiState>(MiniHomeShareUiState.Loading(null))
     val state: StateFlow<MiniHomeShareUiState> = _state.asStateFlow()
@@ -130,14 +146,14 @@ class MiniHomeShareController(
             MiniHomeAuthOwnership.Restoring,
             MiniHomeAuthOwnership.Unknown -> {
                 generation += 1
-                _state.value = MiniHomeShareUiState.Loading(null)
+                publish(MiniHomeShareUiState.Loading(null))
             }
             MiniHomeAuthOwnership.SignedOut -> {
                 val token = beginGeneration(null)
                 pendingOperation = null
                 repository.clearOwnerArtifacts()
                 if (!isCurrent(token)) return
-                _state.value = MiniHomeShareUiState.Forbidden
+                publish(MiniHomeShareUiState.Forbidden)
             }
             MiniHomeAuthOwnership.Unmanaged -> load(null)
             is MiniHomeAuthOwnership.Authenticated -> load(authOwnership.accountId)
@@ -148,13 +164,21 @@ class MiniHomeShareController(
         val previousOwner = owner
         val ownerChanged = previousOwner != null && previousOwner != expectedOwner
         val token = beginGeneration(expectedOwner)
+        observeDiagnostic(
+            MiniHomeShareDiagnosticObservation(
+                MiniHomeShareDiagnosticStage.LOAD_ENTERED,
+                expectedOwner,
+                token,
+                "loading",
+            )
+        )
         if (ownerChanged) {
             // 계정이 바뀌면 이전 소유자의 얼어붙은 요청과 로컬 산출물을 모두 버린다.
             pendingOperation = null
             repository.clearOwnerArtifacts()
             if (!isCurrent(token)) return
         }
-        _state.value = MiniHomeShareUiState.Loading(expectedOwner)
+        publish(MiniHomeShareUiState.Loading(expectedOwner))
         val loaded =
             try {
                 repository.loadCommitted()
@@ -163,8 +187,17 @@ class MiniHomeShareController(
             } catch (_: Exception) {
                 MiniHomeShareLoadResult.Failed
             }
+        observeDiagnostic(
+            MiniHomeShareDiagnosticObservation(
+                MiniHomeShareDiagnosticStage.LOAD_RETURNED,
+                expectedOwner,
+                token,
+                _state.value::class.simpleName ?: "unknown",
+                loaded::class.simpleName,
+            )
+        )
         if (!isCurrent(token)) return
-        _state.value =
+        publish(
             when (loaded) {
                 is MiniHomeShareLoadResult.Ready ->
                     when {
@@ -180,6 +213,7 @@ class MiniHomeShareController(
                 MiniHomeShareLoadResult.Forbidden -> MiniHomeShareUiState.Forbidden
                 MiniHomeShareLoadResult.Failed -> MiniHomeShareUiState.Error
             }
+        )
         // 확정 구성이 달라졌으면 이전 revision으로 얼린 요청은 더 이상 유효하지 않다.
         val ready = _state.value as? MiniHomeShareUiState.Ready
         if (
@@ -330,6 +364,25 @@ class MiniHomeShareController(
         owner = nextOwner
         creating = false
         return generation
+    }
+
+    private fun publish(next: MiniHomeShareUiState) {
+        val publishedGeneration = generation
+        _state.value = next
+        observeDiagnostic(
+            MiniHomeShareDiagnosticObservation(
+                MiniHomeShareDiagnosticStage.STATE_PUBLISHED,
+                next.owner,
+                publishedGeneration,
+                next::class.simpleName ?: "unknown",
+            )
+        )
+    }
+
+    private fun observeDiagnostic(observation: MiniHomeShareDiagnosticObservation) {
+        try {
+            onDiagnostic(observation)
+        } catch (_: AssertionError) {} catch (_: Exception) {}
     }
 
     private fun isCurrent(token: Long): Boolean = token == generation

@@ -91,11 +91,6 @@ internal class Todo18RenderedStateProbe(
     fun currentMiniHomeShareState(): Todo18MiniHomeShareStateEvent? =
         runtime.renderedStateSink.currentMiniHomeShareState()
 
-    fun awaitMiniHomeViewingAfterLoad(
-        barrier: Todo18MiniHomeDisplayedStateBarrier
-    ): Todo18MiniHomeStateEvent =
-        Todo18InitialMiniHomeViewingProbe(runtime, compose).awaitAfterLoad(barrier)
-
     fun awaitRegistration(
         matches: (Todo18RegistrationStateEvent) -> Boolean,
         trigger: () -> Unit,

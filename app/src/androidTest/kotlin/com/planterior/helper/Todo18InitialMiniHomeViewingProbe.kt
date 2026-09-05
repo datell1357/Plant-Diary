@@ -81,67 +81,11 @@ internal class Todo18InitialMiniHomeViewingProbe(
         }
     }
 
-    fun awaitAfterLoad(barrier: Todo18MiniHomeDisplayedStateBarrier): Todo18MiniHomeStateEvent {
-        val sink = runtime.renderedStateSink
-        val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(EVENT_TIMEOUT_MILLIS)
-        val matches = { event: Todo18MiniHomeStateEvent ->
-            barrier.accepts(event, runtime.miniHomeLoadDiagnostics.snapshot())
-        }
-        val displayed =
-            subscription(
-                matches = matches,
-                subscribe = sink::subscribeToDisplayedMiniHomeStates,
-                current = sink::currentDisplayedMiniHomeState,
-                acceptRegistrationReplay = true,
-            )
-        return displayed.use { displayedSubscription ->
-            val raw =
-                subscription(
-                    matches = matches,
-                    subscribe = sink::subscribeToRawMiniHomeStates,
-                    current = sink::currentRawMiniHomeState,
-                    acceptRegistrationReplay = true,
-                )
-            raw.use { rawSubscription ->
-                rawSubscription.arm()
-                displayedSubscription.arm()
-                val (rawEvent, displayedEvent) =
-                    triggerAwaitSettleAndAwait(
-                        trigger = {
-                            rawSubscription.trigger {
-                                displayedSubscription.trigger {}
-                            }
-                        },
-                        awaitUpstream = {
-                            rawSubscription.await(
-                                remainingNanos(deadlineNanos),
-                                TimeUnit.NANOSECONDS,
-                                "Todo18 MiniHome raw state after load",
-                            )
-                        },
-                        settle = compose::waitForIdle,
-                        awaitRendered = {
-                            displayedSubscription.await(
-                                remainingNanos(deadlineNanos),
-                                TimeUnit.NANOSECONDS,
-                                "Todo18 MiniHome displayed state after load",
-                            )
-                        },
-                    )
-                require(displayedEvent.loadIdentity == rawEvent.loadIdentity) {
-                    "MiniHome displayed Viewing did not match the loaded raw state"
-                }
-                return displayedEvent
-            }
-        }
-    }
-
     private fun subscription(
         matches: (Todo18MiniHomeStateEvent) -> Boolean,
         subscribe: ((Todo18MiniHomeStateEvent) -> Unit) -> AutoCloseable,
         current: () -> Todo18MiniHomeStateEvent?,
         observer: Todo18ExactEventObserver? = null,
-        acceptRegistrationReplay: Boolean = false,
     ) =
         ExactEventSubscription(
             matches = matches,
@@ -158,7 +102,6 @@ internal class Todo18InitialMiniHomeViewingProbe(
             },
             diagnosticObserver = observer,
             diagnosticSequence = Todo18MiniHomeStateEvent::sequence,
-            acceptRegistrationReplay = acceptRegistrationReplay,
         )
 
     private fun validateRaw(

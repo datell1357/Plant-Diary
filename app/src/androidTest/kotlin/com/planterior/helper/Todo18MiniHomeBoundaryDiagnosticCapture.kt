@@ -5,6 +5,7 @@ import com.planterior.helper.diagnostic.Todo18DiagnosticProvenance
 import com.planterior.helper.minihome.Todo18MiniHomeOwnerOperationDiagnosticRecorder
 import com.planterior.helper.minihome.putTodo18MiniHomeBoundaryDiagnosticEvents
 import java.io.File
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.runners.model.Statement
@@ -43,6 +44,7 @@ internal fun writeTodo18MiniHomeBoundarySnapshot(
     capturedProvenance: Todo18DiagnosticProvenance?,
     methodName: String,
     primaryFailure: Throwable?,
+    shareDiagnosticJson: String? = null,
 ): IllegalStateException? {
     return try {
         val directory = requireNotNull(application.getExternalFilesDir("todo18-e2e-journeys"))
@@ -66,6 +68,7 @@ internal fun writeTodo18MiniHomeBoundarySnapshot(
                     put("expectedAndroidTestApkSha256", provenance.expectedAndroidTestApkSha256)
                     put("observedAndroidTestApkSha256", provenance.observedAndroidTestApkSha256)
                     putTodo18MiniHomeBoundaryDiagnosticEvents(recorder)
+                    shareDiagnosticJson?.let { put("shareDiagnostic", Json.parseToJsonElement(it)) }
                 }
                     .toString()
             )

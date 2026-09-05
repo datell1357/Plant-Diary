@@ -105,8 +105,14 @@ internal fun Todo18MainActivityJourneyHarness.assertMajorProductJourneyPersistsI
     Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureInitialLoad(
         "registration-mini-home-initial-load"
     ) {
-        val miniHomeBarrier = events.navigateAndAwaitMiniHomeLoaded()
-        rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)
+        lateinit var miniHomeBarrier: Todo18MiniHomeDisplayedStateBarrier
+        val displayed =
+            rendered.awaitInitialMiniHomeViewing(
+                trigger = { miniHomeBarrier = events.navigateAndAwaitMiniHomeLoaded() }
+            )
+        require(miniHomeBarrier.accepts(displayed, runtime.miniHomeLoadDiagnostics.snapshot())) {
+            "MiniHome displayed Viewing did not satisfy the loaded boundary identity"
+        }
     }
     compose.onNodeWithTag(MiniHomeTestTags.EDIT).performScrollTo().performClick()
     compose

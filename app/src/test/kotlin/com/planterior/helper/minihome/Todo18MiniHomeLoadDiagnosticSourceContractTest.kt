@@ -169,8 +169,9 @@ class Todo18MiniHomeLoadDiagnosticSourceContractTest {
             majorJourney,
             "captureInitialLoad(",
             "\"registration-mini-home-initial-load\"",
-            "events.navigateAndAwaitMiniHomeLoaded()",
-            "rendered.awaitMiniHomeViewingAfterLoad(miniHomeBarrier)",
+            "rendered.awaitInitialMiniHomeViewing(",
+            "miniHomeBarrier = events.navigateAndAwaitMiniHomeLoaded()",
+            "miniHomeBarrier.accepts(displayed, runtime.miniHomeLoadDiagnostics.snapshot())",
             "onNodeWithTag(MiniHomeTestTags.EDIT)",
         )
         assertCode(

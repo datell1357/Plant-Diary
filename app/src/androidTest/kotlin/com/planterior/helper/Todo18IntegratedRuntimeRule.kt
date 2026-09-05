@@ -218,6 +218,7 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             boundaryProvenance,
             methodName,
             primaryFailure,
+            renderedStateSink.miniHomeShareDiagnostics.toJson(),
         )
     }
 

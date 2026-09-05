@@ -121,6 +121,45 @@ class ExactEventSubscriptionHostTest {
         assertEquals(0, source.listenerCount)
     }
 
+    @Test
+    fun prearmedRawAndDisplayedSubscriptionsAcceptInlineTriggerEventsAndDetach() {
+        // Given
+        val rawEvent = Event("mini-home-raw", 18)
+        val displayedEvent = Event("mini-home-displayed", 19)
+        val rawSource = EventSource<Event>()
+        val displayedSource = EventSource<Event>()
+        val raw = subscription(rawSource, rawEvent.route)
+        val displayed = subscription(displayedSource, displayedEvent.route)
+        raw.arm()
+        displayed.arm()
+
+        // When
+        raw.trigger {
+            displayed.trigger {
+                rawSource.emit(rawEvent)
+                displayedSource.emit(displayedEvent)
+            }
+        }
+        val observedRaw = raw.await(BOUND, TimeUnit.SECONDS, "raw initial Viewing")
+        val observedDisplayed =
+            displayed.await(BOUND, TimeUnit.SECONDS, "displayed initial Viewing")
+
+        // Then
+        assertEquals(rawEvent, observedRaw)
+        assertEquals(displayedEvent, observedDisplayed)
+        assertEquals(0, rawSource.listenerCount)
+        assertEquals(0, displayedSource.listenerCount)
+    }
+
+    private fun subscription(source: EventSource<Event>, route: String) =
+        ExactEventSubscription<Event>(
+            matches = { it.route == route },
+            subscribe = { receiver ->
+                source.register(receiver)
+                source.registration(receiver)
+            },
+        )
+
     private data class Event(val route: String, val ordinal: Int)
 
     private class EventSource<T> {

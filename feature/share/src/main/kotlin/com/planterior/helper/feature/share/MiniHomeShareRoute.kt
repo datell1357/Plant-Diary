@@ -41,18 +41,29 @@ fun MiniHomeShareRoute(
     authOwnership: MiniHomeAuthOwnership = MiniHomeAuthOwnership.Unmanaged,
     productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
     onStateObserved: (MiniHomeShareUiState) -> Unit = {},
+    onDiagnostic: (MiniHomeShareDiagnosticObservation) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val currentDiagnostic by rememberUpdatedState(onDiagnostic)
     val model =
         viewModel<MiniHomeShareViewModel>(
             factory =
                 viewModelFactory {
-                    initializer { MiniHomeShareViewModel(MiniHomeShareController(repository)) }
+                    initializer {
+                        MiniHomeShareViewModel(
+                            MiniHomeShareController(
+                                repository,
+                                onDiagnostic = { observation -> currentDiagnostic(observation) },
+                            )
+                        )
+                    }
                 }
         )
     val controller = model.controller
     val state by controller.state.collectAsState()
-    SideEffect { onStateObserved(state) }
+    SideEffect {
+        onStateObserved(state)
+    }
     val scope = rememberCoroutineScope()
     val imageStore = remember(context) { MiniHomeShareImageStore(context) }
     val clipboard = remember(context) { MiniHomeShareClipboard(context) }

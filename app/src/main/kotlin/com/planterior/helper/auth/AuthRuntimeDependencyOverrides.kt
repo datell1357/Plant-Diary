@@ -12,6 +12,7 @@ import com.planterior.helper.feature.registration.RegistrationDiagnosticEvent
 import com.planterior.helper.feature.registration.RegistrationRepository
 import com.planterior.helper.feature.registration.RegistrationUiState
 import com.planterior.helper.feature.settings.AccountDeletionDependencies
+import com.planterior.helper.feature.share.MiniHomeShareDiagnosticObservation
 import com.planterior.helper.feature.share.MiniHomeShareRepository
 import com.planterior.helper.feature.share.MiniHomeShareUiState
 import com.planterior.helper.feature.shop.CatalogMediaLoader
@@ -31,6 +32,8 @@ interface RenderedStateSink {
     fun onMiniHomeRouteDisplayedState(state: MiniHomeUiState) = Unit
 
     fun onMiniHomeShareState(state: MiniHomeShareUiState) = Unit
+
+    fun onMiniHomeShareDiagnostic(observation: MiniHomeShareDiagnosticObservation) = Unit
 
     fun onRegistrationState(state: RegistrationUiState)
 

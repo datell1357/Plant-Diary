@@ -22,6 +22,7 @@ import com.planterior.helper.feature.registration.RegistrationDiagnosticEvent
 import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticObservation
 import com.planterior.helper.feature.registration.RegistrationPersistenceDiagnosticStage
 import com.planterior.helper.feature.registration.RegistrationUiState
+import com.planterior.helper.feature.share.MiniHomeShareDiagnosticObservation
 import com.planterior.helper.feature.share.MiniHomeShareUiState
 import com.planterior.helper.feature.shop.InventoryFeedback
 import com.planterior.helper.feature.shop.InventoryUiState
@@ -44,6 +45,7 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     private val registrationStates = Todo18PrimaryEventStream<Todo18RegistrationStateEvent>()
     private val inventoryFeedback = Todo18PrimaryEventStream<Todo18InventoryFeedbackEvent>()
     private val shareStates = Todo18PrimaryEventStream<Todo18MiniHomeShareStateEvent>()
+    internal val miniHomeShareDiagnostics = Todo18MiniHomeShareDiagnosticRecorder()
     private val armedInventorySettlement = AtomicReference<Todo18InventoryCacheSettlement?>()
     private val inventoryDiagnosticObserver =
         AtomicReference<(Todo18InventorySettlementObservation) -> Unit>({})
@@ -98,6 +100,11 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
 
     override fun onMiniHomeShareState(state: MiniHomeShareUiState) {
         shareStates.publish(Todo18MiniHomeShareStateEvent(sequence.incrementAndGet(), state))
+        miniHomeShareDiagnostics.recordDisplayed(state)
+    }
+
+    override fun onMiniHomeShareDiagnostic(observation: MiniHomeShareDiagnosticObservation) {
+        miniHomeShareDiagnostics.record(observation)
     }
 
     override fun onRegistrationState(state: RegistrationUiState) {
