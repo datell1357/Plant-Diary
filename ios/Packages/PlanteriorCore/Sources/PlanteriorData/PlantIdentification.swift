@@ -31,7 +31,7 @@ public protocol PlantIdentificationService: Sendable {
     func identify(
         requestID: IdentificationRequestID,
         idempotencyKey: OperationID,
-        image: Data
+        images: [Data]
     ) -> AsyncStream<IdentificationState>
 }
 
@@ -75,7 +75,7 @@ public actor PlantIdentificationCoordinator {
     public private(set) var personalPlant: PlantRegistrationDraft?
     public private(set) var candidateCount = 0
     private let service: any PlantIdentificationService
-    private var image: Data?
+    private var images: [Data]?
     private var selectedCandidate: IdentificationCandidate?
     private var requestID: IdentificationRequestID?
     private var idempotencyKey: OperationID?
@@ -92,8 +92,15 @@ public actor PlantIdentificationCoordinator {
         draft != nil
     }
 
-    public func submit(_ image: Data) async {
-        self.image = image
+    public func submit(_ images: [Data]) async {
+        guard (1 ... 5).contains(images.count),
+              images.allSatisfy({ !$0.isEmpty })
+        else {
+            self.images = nil
+            state = .failed(.invalidResponse)
+            return
+        }
+        self.images = images
         guard let identity = requestIdentity()
         else {
             state = .failed(.invalidResponse)
@@ -103,20 +110,22 @@ public actor PlantIdentificationCoordinator {
             service.identify(
                 requestID: identity.requestID,
                 idempotencyKey: identity.idempotencyKey,
-                image: image
+                images: images
             )
         )
     }
 
     public func retry() async {
-        guard let image else {
+        guard let images else {
             return
         }
-        await submit(image)
+        requestID = nil
+        idempotencyKey = nil
+        await submit(images)
     }
 
     public func replacePhoto() {
-        image = nil
+        images = nil
         selectedCandidate = nil
         draft = nil
         state = .awaitingPhoto
@@ -163,7 +172,7 @@ public actor PlantIdentificationCoordinator {
             plantID: selectedCandidate.plantID,
             scientificName: selectedCandidate.scientificName,
             displayName: "",
-            representativePhoto: image,
+            representativePhoto: images?.first,
             lastWateredOn: nil,
             registrationMethod: .identified
         )
@@ -173,7 +182,7 @@ public actor PlantIdentificationCoordinator {
         draft = PlantRegistrationDraft(
             plantID: nil,
             displayName: name,
-            representativePhoto: image,
+            representativePhoto: images?.first,
             lastWateredOn: nil,
             registrationMethod: .manual
         )

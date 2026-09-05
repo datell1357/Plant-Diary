@@ -7,7 +7,7 @@
         func identify(
             requestID: IdentificationRequestID,
             idempotencyKey: OperationID,
-            image: Data
+            images: [Data]
         ) -> AsyncStream<IdentificationState> {
             AsyncStream(IdentificationState.self) { continuation in
                 continuation.yield(.pending)

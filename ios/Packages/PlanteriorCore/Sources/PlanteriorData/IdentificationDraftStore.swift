@@ -7,7 +7,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
     private struct StoredDraft: Codable {
         let ownerID: String
         let createdAt: Date
-        let photo: NormalizedPhoto
+        let photos: [NormalizedPhoto]
     }
 
     private let defaults: UserDefaults
@@ -67,24 +67,24 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
         restore(now: Date())
     }
 
-    public func transfer(_ photo: NormalizedPhoto) {
-        transfer(photo, createdAt: Date())
+    public func transfer(_ photos: [NormalizedPhoto]) {
+        transfer(photos, createdAt: Date())
     }
 
-    public func transfer(_ photo: NormalizedPhoto, createdAt: Date) {
+    public func transfer(_ photos: [NormalizedPhoto], createdAt: Date) {
         guard let mountedAccountID else {
             return
         }
         let stored = StoredDraft(
             ownerID: mountedAccountID,
             createdAt: createdAt,
-            photo: photo
+            photos: photos
         )
         draft = stored
         persist(stored)
     }
 
-    public func load(now: Date = Date()) -> NormalizedPhoto? {
+    public func load(now: Date = Date()) -> [NormalizedPhoto]? {
         guard let draft,
               draft.ownerID == mountedAccountID,
               now.timeIntervalSince(draft.createdAt) < Self.retentionInterval
@@ -92,7 +92,7 @@ public actor IdentificationDraftStore: PhotoTransferRequesting {
             try? clear()
             return nil
         }
-        return draft.photo
+        return draft.photos
     }
 
     public func clear() throws {

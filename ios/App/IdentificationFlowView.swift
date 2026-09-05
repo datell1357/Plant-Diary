@@ -121,7 +121,7 @@ struct IdentificationFlowView: View {
                 PlanteriorSecondaryButton("다시 시도") {
                     state = .pending
                     failureRetryCount += 1
-                    Task { await identifyDraft() }
+                    Task { await identifyDraft(isRetry: true) }
                 }
                 .accessibilityIdentifier("identification.retry")
             }
@@ -155,12 +155,12 @@ struct IdentificationFlowView: View {
     }
 
     @MainActor
-    private func identifyDraft() async {
+    private func identifyDraft(isRetry: Bool = false) async {
         guard let draft = await IdentificationDraftStore.shared.load() else {
             state = .awaitingPhoto
             return
         }
-        submittedPhoto = draft.data
+        submittedPhoto = draft.first?.data
         #if DEBUG
             switch ProcessInfo.processInfo.environment["QA_IDENTIFICATION_STATE"] {
             case "empty":
@@ -188,7 +188,11 @@ struct IdentificationFlowView: View {
                 try? await Task.sleep(for: .milliseconds(delayMilliseconds))
             }
         #endif
-        await coordinator.submit(draft.data)
+        if isRetry {
+            await coordinator.retry()
+        } else {
+            await coordinator.submit(draft.map(\.data))
+        }
         state = await coordinator.state
     }
 }

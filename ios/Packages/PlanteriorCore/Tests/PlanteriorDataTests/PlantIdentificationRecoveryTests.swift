@@ -15,7 +15,7 @@ struct PlantIdentificationRecoveryTests {
         let coordinator = PlantIdentificationCoordinator(
             service: RecoveryServiceFake(failure: failure)
         )
-        await coordinator.submit(Data("image".utf8))
+        await coordinator.submit([Data("image".utf8)])
         #expect(await coordinator.state == .failed(failure))
     }
 
@@ -56,14 +56,14 @@ struct PlantIdentificationRecoveryTests {
             rootDirectory: root
         )
         await firstStore.mount(accountID: "account-a")
-        await firstStore.transfer(photo)
+        await firstStore.transfer([photo, photo])
         let restoredStore = IdentificationDraftStore(
             suiteName: suite,
             rootDirectory: root
         )
         await restoredStore.mount(accountID: "account-a")
         let restored = await restoredStore.load()
-        #expect(restored == photo)
+        #expect(restored == [photo, photo])
     }
 }
 
@@ -73,7 +73,7 @@ private struct RecoveryServiceFake: PlantIdentificationService {
     func identify(
         requestID: IdentificationRequestID,
         idempotencyKey: OperationID,
-        image: Data
+        images: [Data]
     ) -> AsyncStream<IdentificationState> {
         AsyncStream(IdentificationState.self) { continuation in
             continuation.yield(.pending)

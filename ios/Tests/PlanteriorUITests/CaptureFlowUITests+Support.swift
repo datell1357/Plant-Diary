@@ -7,6 +7,7 @@ extension CaptureFlowUITests {
     ) {
         app.launchEnvironment["QA_SKIP_ONBOARDING"] = "1"
         app.launchEnvironment["QA_AUTHENTICATED"] = "1"
+        app.launchEnvironment["QA_IDENTIFICATION_PROVIDER"] = "local"
         for (key, value) in environment {
             app.launchEnvironment[key] = value
         }

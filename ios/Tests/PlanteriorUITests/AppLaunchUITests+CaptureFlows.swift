@@ -89,7 +89,7 @@ extension AppLaunchUITests {
         XCTAssertTrue(app.otherElements["capture.photo-review"].exists)
         XCTAssertTrue(app.images["photo.review"].exists)
         XCTAssertTrue(app.buttons["photo.acknowledge"].exists)
-        XCTAssertTrue(app.buttons["photo.retake"].exists)
+        XCTAssertTrue(app.buttons["photo.more"].exists)
         XCTAssertFalse(app.buttons["photo.replace"].exists)
         XCTAssertFalse(app.buttons["photo.manual"].exists)
     }

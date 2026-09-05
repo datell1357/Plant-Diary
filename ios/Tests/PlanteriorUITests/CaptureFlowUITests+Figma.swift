@@ -15,7 +15,7 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertFalse(app.otherElements["capture.fake-camera"].exists)
     }
 
-    func testPhotoReviewRendersChosenPhotoWithIdentifyAndRetakeActions() {
+    func testPhotoReviewRendersTemporaryBatchGuidanceAndDecisions() {
         let app = XCUIApplication()
         launchCapture(app, environment: ["QA_PHOTO_FIXTURE": "valid"])
         openCamera(app)
@@ -33,22 +33,50 @@ final class CaptureFlowUITests: XCTestCase {
         XCTAssertEqual(photo.frame.height, 444, accuracy: 2)
         XCTAssertFalse(app.otherElements["capture.review.content"].exists)
         XCTAssertTrue(app.staticTexts["capture.review.caption"].exists)
+        XCTAssertTrue(app.staticTexts["capture.review.guidance.title"].exists)
+        XCTAssertTrue(app.staticTexts["capture.review.guidance.detail"].exists)
+        XCTAssertTrue(app.staticTexts["capture.review.count"].exists)
+        XCTAssertTrue(app.images["capture.review.thumbnail.0"].exists)
         let identify = app.buttons["photo.acknowledge"]
-        let retake = app.buttons["photo.retake"]
+        let more = app.buttons["photo.more"]
         XCTAssertTrue(identify.exists)
-        XCTAssertEqual(identify.label, "이 사진으로 식별하기")
-        XCTAssertTrue(retake.exists)
-        XCTAssertEqual(retake.label, "다시 촬영")
-        XCTAssertEqual(identify.frame.minY, 721, accuracy: 2)
-        XCTAssertEqual(retake.frame.minY, 779, accuracy: 2)
-        XCTAssertLessThan(identify.frame.minY, retake.frame.minY)
+        XCTAssertTrue(more.exists)
+        XCTAssertLessThan(identify.frame.minY, more.frame.minY)
         XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
         XCTAssertFalse(app.buttons["photo.replace"].exists)
         XCTAssertFalse(app.buttons["photo.manual"].exists)
         assertMinimumTargets(
             app,
-            identifiers: ["photo.acknowledge", "photo.retake"]
+            identifiers: ["photo.acknowledge", "photo.more"]
         )
+    }
+
+    func testUserCanKeepFiveTemporaryPhotosAndSubmitThemAsOneRequest() {
+        let app = XCUIApplication()
+        launchCapture(
+            app,
+            environment: [
+                "QA_PHOTO_FIXTURE": "valid",
+                "QA_IDENTIFICATION_STATE": "pending"
+            ]
+        )
+        openCamera(app)
+
+        for expectedCount in 2 ... 5 {
+            app.buttons["photo.more"].tap()
+            XCTAssertTrue(app.otherElements["capture.camera"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["capture.buffer.count"].exists)
+            app.buttons["capture.shutter"].tap()
+            XCTAssertTrue(
+                app.images["capture.review.thumbnail.\(expectedCount - 1)"]
+                    .waitForExistence(timeout: 5)
+            )
+        }
+
+        XCTAssertFalse(app.buttons["photo.more"].exists)
+        app.buttons["photo.acknowledge"].tap()
+        app.alerts["사진 처리 안내"].buttons["동의하고 계속"].tap()
+        XCTAssertTrue(app.otherElements["capture.identifying"].waitForExistence(timeout: 10))
     }
 
     func testPhotoReviewPreservesConsentAcknowledgementAndDenial() {

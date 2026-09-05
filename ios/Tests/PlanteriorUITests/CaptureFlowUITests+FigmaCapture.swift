@@ -119,10 +119,10 @@ extension CaptureFlowUITests {
         let photo = app.images["photo.review"]
         XCTAssertTrue(photo.waitForExistence(timeout: 10))
         let identify = app.buttons["photo.acknowledge"]
-        let retake = app.buttons["photo.retake"]
+        let more = app.buttons["photo.more"]
         XCTAssertGreaterThanOrEqual(identify.frame.height.rounded(), 44)
-        XCTAssertGreaterThanOrEqual(retake.frame.height.rounded(), 44)
-        XCTAssertGreaterThanOrEqual(retake.frame.minY, identify.frame.maxY)
+        XCTAssertGreaterThanOrEqual(more.frame.height.rounded(), 44)
+        XCTAssertGreaterThanOrEqual(more.frame.minY, identify.frame.maxY)
         XCTAssertFalse(app.buttons["photo.replace"].exists)
         XCTAssertFalse(app.buttons["photo.manual"].exists)
 

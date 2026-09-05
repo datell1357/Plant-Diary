@@ -17,7 +17,7 @@ struct PlantIdentificationProxyStrictTests {
                 from: makeService(host: host).identify(
                     requestID: IdentificationRequestID.parse("request-strict"),
                     idempotencyKey: OperationID.parse("operation-strict"),
-                    image: Data("image".utf8)
+                    images: [Data("image".utf8)]
                 )
             )
             #expect(states.last == .failed(.invalidResponse))
@@ -43,7 +43,7 @@ struct PlantIdentificationProxyStrictTests {
                 from: makeService(host: host).identify(
                     requestID: IdentificationRequestID.parse("request-origin"),
                     idempotencyKey: OperationID.parse("operation-origin"),
-                    image: Data("image".utf8)
+                    images: [Data("image".utf8)]
                 )
             )
             #expect(states.last == .failed(.invalidResponse))
@@ -51,14 +51,12 @@ struct PlantIdentificationProxyStrictTests {
     }
 
     private func makeService(host: String) throws -> PlantIdentificationProxyService {
-        let configuration = try PlantIdentificationProxyConfiguration(
-            baseURLString: "https://\(host)/identify"
-        )
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [TestWeatherURLProtocol.self]
-        return PlantIdentificationProxyService(
-            configuration: configuration,
-            session: URLSession(configuration: sessionConfiguration)
+        return try PlantIdentificationProxyService(
+            testEndpoint: #require(URL(string: "https://\(host)/identify")),
+            session: URLSession(configuration: sessionConfiguration),
+            credentialProvider: StrictTestCredentialProvider()
         )
     }
 
@@ -70,6 +68,15 @@ struct PlantIdentificationProxyStrictTests {
             result.append(state)
         }
         return result
+    }
+
+    private struct StrictTestCredentialProvider: PlantIdentificationCredentialProvider {
+        func headers() async throws -> PlantIdentificationCredentialHeaders {
+            PlantIdentificationCredentialHeaders(
+                authorization: "Bearer strict-test-id-token",
+                appCheck: "strict-test-app-check-token"
+            )
+        }
     }
 
     private static let invalidPayloads = [

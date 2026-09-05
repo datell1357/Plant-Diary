@@ -61,7 +61,8 @@ struct PhotoInputTests {
 
         do {
             let output = try PhotoImagePipeline().normalize(input)
-            #expect(output.data.count <= 10 * 1024 * 1024)
+            #expect(output.data.count <= 4 * 1024 * 1024)
+            #expect(max(output.pixelWidth, output.pixelHeight) <= 1600)
         } catch {
             #expect(error as? PhotoInputError == .assetTooLarge)
         }

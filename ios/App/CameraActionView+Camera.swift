@@ -9,6 +9,12 @@ extension CameraActionView {
             )
             VStack(spacing: 0) {
                 cameraTopBar
+                if !photos.isEmpty {
+                    Text("\(photos.count)/\(Self.maximumPhotoCount)장 임시 보관 중")
+                        .font(PlanteriorTypography.caption.weight(.semibold))
+                        .foregroundStyle(PlanteriorPalette.textOnAccent.color)
+                        .accessibilityIdentifier("capture.buffer.count")
+                }
                 Spacer()
                     .frame(
                         height: sizeCategory.isAccessibilityCategory

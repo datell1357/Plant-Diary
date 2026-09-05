@@ -3,5 +3,5 @@ APP_ATTEST_ENVIRONMENT = development
 PLAN_FIREBASE_PLIST_PATH = $(SRCROOT)/../../docs/firebase/GoogleService-Info.plist
 GOOGLE_CLIENT_ID = 399546775599-t5gq1b6r2jhr2lnipmaakndg06784n8g.apps.googleusercontent.com
 GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.399546775599-t5gq1b6r2jhr2lnipmaakndg06784n8g
-PLAN_PLANT_ID_PROXY_BASE_URL =
+PLAN_PLANT_ID_PROXY_BASE_URL = http:/$()/127.0.0.1:5201/planterior-helper-ios/us-central1/identifyPlant
 PLAN_OPEN_WEATHER_PROXY_BASE_URL =

@@ -32,7 +32,8 @@ public enum PhotoInputError: Error, Equatable, Sendable {
 
 public struct PhotoImagePipeline: Sendable {
     public static let maximumBytes = 20 * 1024 * 1024
-    public static let maximumOutputBytes = 10 * 1024 * 1024
+    public static let maximumOutputBytes = 4 * 1024 * 1024
+    public static let maximumOutputPixelDimension = 1600
     public static let pixelRange = 256 ... 8192
 
     public init() {}
@@ -79,7 +80,7 @@ public struct PhotoImagePipeline: Sendable {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: Self.pixelRange.upperBound
+            kCGImageSourceThumbnailMaxPixelSize: Self.maximumOutputPixelDimension
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(
             source,
@@ -122,19 +123,19 @@ public struct PhotoImagePipeline: Sendable {
 }
 
 public protocol PhotoTransferRequesting: Sendable {
-    func transfer(_ photo: NormalizedPhoto) async
+    func transfer(_ photos: [NormalizedPhoto]) async
 }
 
 public actor PhotoConsentCoordinator {
     private let transfer: any PhotoTransferRequesting
-    private var draft: NormalizedPhoto?
+    private var draft: [NormalizedPhoto]?
 
     public init(transfer: any PhotoTransferRequesting) {
         self.transfer = transfer
     }
 
-    public func review(_ photo: NormalizedPhoto) {
-        draft = photo
+    public func review(_ photos: [NormalizedPhoto]) {
+        draft = photos
     }
 
     public func cancelSelection() {

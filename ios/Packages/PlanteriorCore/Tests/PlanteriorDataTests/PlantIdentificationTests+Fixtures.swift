@@ -6,6 +6,7 @@ final class IdentificationServiceFake: PlantIdentificationService, @unchecked Se
     private let lock = NSLock()
     private var states: [IdentificationState]
     private var receivedIdentities: [String] = []
+    private var receivedImageBatches: [[Data]] = []
 
     init(states: [IdentificationState]) {
         self.states = states
@@ -14,12 +15,13 @@ final class IdentificationServiceFake: PlantIdentificationService, @unchecked Se
     func identify(
         requestID: IdentificationRequestID,
         idempotencyKey: OperationID,
-        image: Data
+        images: [Data]
     ) -> AsyncStream<IdentificationState> {
         lock.lock()
         receivedIdentities.append(
             "\(requestID.rawValue):\(idempotencyKey.rawValue)"
         )
+        receivedImageBatches.append(images)
         let current = states
         lock.unlock()
         return AsyncStream(IdentificationState.self) { continuation in
@@ -34,6 +36,12 @@ final class IdentificationServiceFake: PlantIdentificationService, @unchecked Se
         lock.lock()
         defer { lock.unlock() }
         return receivedIdentities
+    }
+
+    func imageBatches() -> [[Data]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return receivedImageBatches
     }
 
     func replaceStates(_ states: [IdentificationState]) {

@@ -31,7 +31,11 @@ struct PlantIdentificationTests {
             )
         )
 
-        await coordinator.submit(Data("acknowledged-image".utf8))
+        await coordinator.submit([
+            Data("front-image".utf8),
+            Data("leaf-image".utf8),
+            Data("stem-image".utf8)
+        ])
         #expect(await coordinator.candidateCount == 3)
         #expect(await coordinator.hasPersonalPlant == false)
         try await coordinator.selectCandidate(
@@ -53,7 +57,7 @@ struct PlantIdentificationTests {
             states: [.pending, .noCandidates]
         )
         let coordinator = PlantIdentificationCoordinator(service: service)
-        await coordinator.submit(Data("image".utf8))
+        await coordinator.submit([Data("image".utf8)])
         let noCandidates = await coordinator.state
         #expect(noCandidates == .noCandidates)
         await coordinator.beginManualEntry(name: "몬스테라")
@@ -95,17 +99,19 @@ struct PlantIdentificationTests {
     }
 
     @Test
-    func retryReusesRequestIdentityUntilPhotoReplacement() async {
+    func retryUsesFreshRequestIdentityUntilPhotoReplacement() async {
         let service = IdentificationServiceFake(states: [.failed(.providerUnavailable)])
         let coordinator = PlantIdentificationCoordinator(service: service)
-        await coordinator.submit(Data("image".utf8))
+        let images = [Data("front".utf8), Data("leaf".utf8)]
+        await coordinator.submit(images)
         await coordinator.retry()
         let firstTwo = service.identities()
         #expect(firstTwo.count == 2)
-        #expect(firstTwo[0] == firstTwo[1])
+        #expect(firstTwo[0] != firstTwo[1])
+        #expect(service.imageBatches() == [images, images])
 
         await coordinator.replacePhoto()
-        await coordinator.submit(Data("replacement".utf8))
+        await coordinator.submit([Data("replacement".utf8)])
         let all = service.identities()
         #expect(all[2] != all[1])
     }
@@ -115,7 +121,7 @@ struct PlantIdentificationTests {
         let coordinator = PlantIdentificationCoordinator(
             service: IdentificationServiceFake(states: [.noCandidates])
         )
-        await coordinator.submit(Data("stale-image".utf8))
+        await coordinator.submit([Data("stale-image".utf8)])
 
         await coordinator.replacePhoto()
         await coordinator.beginManualEntry(name: "몬스테라")

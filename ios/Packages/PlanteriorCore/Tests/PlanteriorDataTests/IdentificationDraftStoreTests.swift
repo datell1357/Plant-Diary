@@ -38,8 +38,9 @@ struct IdentificationDraftStoreTests {
         )
 
         await store.mount(accountID: "account-a")
-        await store.transfer(privatePhoto)
-        #expect(await store.load() == privatePhoto)
+        let batch = [privatePhoto, privatePhoto]
+        await store.transfer(batch)
+        #expect(await store.load() == batch)
 
         let relaunchedStore = IdentificationDraftStore(
             suiteName: suite,
@@ -63,7 +64,7 @@ struct IdentificationDraftStoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let writer = IdentificationDraftStore(suiteName: suite, rootDirectory: root)
         await writer.mount(accountID: "account-a")
-        await writer.transfer(privatePhoto)
+        await writer.transfer([privatePhoto])
         let relaunched = IdentificationDraftStore(
             suiteName: suite,
             rootDirectory: root,
@@ -90,14 +91,14 @@ struct IdentificationDraftStoreTests {
         let createdAt = Date(timeIntervalSince1970: 1000)
 
         await store.mount(accountID: "account-a")
-        await store.transfer(privatePhoto, createdAt: createdAt)
+        await store.transfer([privatePhoto], createdAt: createdAt)
 
         #expect(
             await store.load(
                 now: createdAt.addingTimeInterval(
                     IdentificationDraftStore.retentionInterval - 1
                 )
-            ) == privatePhoto
+            ) == [privatePhoto]
         )
         #expect(
             await store.load(

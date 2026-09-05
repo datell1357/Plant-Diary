@@ -16,6 +16,7 @@ struct CameraActionView: View {
     let restoresReviewedPhoto: Bool
     @State var pickerItem: PhotosPickerItem?
     @State var draft: NormalizedPhoto?
+    @State var photos: [NormalizedPhoto] = []
     @State var errorMessage: String?
     @State var showsLibrary = false
     @State var showsAcknowledgement = false
@@ -76,7 +77,7 @@ struct CameraActionView: View {
                 }
             }
         } message: {
-            Text("선택한 사진은 식물 식별을 위해 처리되며 동의 전에는 전송되지 않습니다.")
+            Text("선택한 사진 \(photos.count)장은 식물 식별을 위해 처리되며 동의 전에는 전송되지 않습니다.")
         }
     }
 
@@ -113,9 +114,16 @@ struct CameraActionView: View {
     /// consent state.
     func discardDraft() {
         draft = nil
+        photos = []
         pickerItem = nil
         errorMessage = nil
         Task { await consent.cancelSelection() }
+    }
+
+    func captureMore() {
+        draft = nil
+        pickerItem = nil
+        errorMessage = nil
     }
 
     private func load(_ item: PhotosPickerItem) async {
@@ -132,10 +140,15 @@ struct CameraActionView: View {
     func review(_ data: Data) {
         liveCamera.stop()
         do {
-            draft = try PhotoImagePipeline().normalize(data)
-            if let draft {
+            guard photos.count < Self.maximumPhotoCount else {
+                return
+            }
+            let normalized = try PhotoImagePipeline().normalize(data)
+            photos.append(normalized)
+            draft = normalized
+            if !photos.isEmpty {
                 Task {
-                    await consent.review(draft)
+                    await consent.review(photos)
                 }
             }
             errorMessage = nil
@@ -158,11 +171,15 @@ struct CameraActionView: View {
         #endif
         guard draft == nil,
               restoresReviewedPhoto,
-              let retained = await IdentificationDraftStore.shared.load()
+              let retained = await IdentificationDraftStore.shared.load(),
+              let latest = retained.last
         else {
             return
         }
-        draft = retained
+        photos = retained
+        draft = latest
         await consent.review(retained)
     }
+
+    static let maximumPhotoCount = 5
 }

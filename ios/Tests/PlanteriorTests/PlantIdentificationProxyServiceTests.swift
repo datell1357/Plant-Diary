@@ -20,7 +20,11 @@ struct PlantIdentificationProxyServiceTests {
             from: service.identify(
                 requestID: IdentificationRequestID.parse("request-123"),
                 idempotencyKey: OperationID.parse("operation-123"),
-                image: Data("private-image".utf8)
+                images: [
+                    Data("private-front".utf8),
+                    Data("private-leaf".utf8),
+                    Data("private-stem".utf8)
+                ]
             )
         )
 
@@ -50,12 +54,21 @@ struct PlantIdentificationProxyServiceTests {
         #expect(request.httpMethod == "POST")
         #expect(request.timeoutInterval == 15)
         #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        #expect(
+            request.value(forHTTPHeaderField: "Authorization")
+                == "Bearer test-id-token"
+        )
+        #expect(
+            request.value(forHTTPHeaderField: "X-Firebase-AppCheck")
+                == "test-app-check-token"
+        )
         #expect(object["requestID"] as? String == "request-123")
         #expect(object["idempotencyKey"] as? String == "operation-123")
-        #expect(
-            object["imageBase64"] as? String
-                == Data("private-image".utf8).base64EncodedString()
-        )
+        #expect(object["imagesBase64"] as? [String] == [
+            Data("private-front".utf8).base64EncodedString(),
+            Data("private-leaf".utf8).base64EncodedString(),
+            Data("private-stem".utf8).base64EncodedString()
+        ])
     }
 
     @Test
@@ -70,7 +83,7 @@ struct PlantIdentificationProxyServiceTests {
             from: service(host: host).identify(
                 requestID: IdentificationRequestID.parse("request-authority"),
                 idempotencyKey: OperationID.parse("operation-authority"),
-                image: Data("image".utf8)
+                images: [Data("image".utf8)]
             )
         )
 
@@ -97,7 +110,7 @@ struct PlantIdentificationProxyServiceTests {
             from: service(host: rateHost).identify(
                 requestID: IdentificationRequestID.parse("request-rate"),
                 idempotencyKey: OperationID.parse("operation-rate"),
-                image: Data("image".utf8)
+                images: [Data("image".utf8)]
             )
         )
         #expect(rateStates.last == .failed(.rateLimited))
@@ -111,7 +124,7 @@ struct PlantIdentificationProxyServiceTests {
             from: service(host: transportHost).identify(
                 requestID: IdentificationRequestID.parse("request-network"),
                 idempotencyKey: OperationID.parse("operation-network"),
-                image: Data("image".utf8)
+                images: [Data("image".utf8)]
             )
         )
         #expect(transportStates.last == .failed(.providerUnavailable))
@@ -126,21 +139,107 @@ struct PlantIdentificationProxyServiceTests {
             from: service(host: malformedHost).identify(
                 requestID: IdentificationRequestID.parse("request-malformed"),
                 idempotencyKey: OperationID.parse("operation-malformed"),
-                image: Data("image".utf8)
+                images: [Data("image".utf8)]
             )
         )
         #expect(malformedStates.last == .failed(.invalidResponse))
     }
 
-    private func service(host: String) throws -> PlantIdentificationProxyService {
-        let configuration = try PlantIdentificationProxyConfiguration(
-            baseURLString: "https://\(host)/identify"
+    @Test
+    func doesNotSendRequestWhenCredentialProviderFails() async throws {
+        let host = "plant-id-credentials-\(UUID().uuidString).example.invalid"
+        let recorder = IdentificationRequestRecorder()
+        TestWeatherURLProtocol.install(host: host) { request in
+            recorder.record(request)
+            return (200, Self.candidateResponse)
+        }
+        defer { TestWeatherURLProtocol.remove(host: host) }
+        let service = try service(
+            host: host,
+            credentialProvider: FailingCredentialProvider()
         )
+
+        let states = try await states(
+            from: service.identify(
+                requestID: IdentificationRequestID.parse("request-credential"),
+                idempotencyKey: OperationID.parse("operation-credential"),
+                images: [Data("image".utf8)]
+            )
+        )
+
+        #expect(states.last == .failed(.providerUnavailable))
+        #expect(recorder.request == nil)
+    }
+
+    @Test
+    func validatesImageBeforeFetchingCredentials() async throws {
+        let host = "plant-id-image-\(UUID().uuidString).example.invalid"
+        let recorder = IdentificationRequestRecorder()
+        let credentialProvider = CountingCredentialProvider()
+        TestWeatherURLProtocol.install(host: host) { request in
+            recorder.record(request)
+            return (200, Self.candidateResponse)
+        }
+        defer { TestWeatherURLProtocol.remove(host: host) }
+        let service = try service(
+            host: host,
+            credentialProvider: credentialProvider
+        )
+
+        let emptyStates = try await states(
+            from: service.identify(
+                requestID: IdentificationRequestID.parse("request-image"),
+                idempotencyKey: OperationID.parse("operation-image"),
+                images: []
+            )
+        )
+
+        let tooManyStates = try await states(
+            from: service.identify(
+                requestID: IdentificationRequestID.parse("request-images"),
+                idempotencyKey: OperationID.parse("operation-images"),
+                images: Array(repeating: Data("image".utf8), count: 6)
+            )
+        )
+
+        #expect(emptyStates.last == .failed(.invalidResponse))
+        #expect(tooManyStates.last == .failed(.invalidResponse))
+        #expect(await credentialProvider.callCount == 0)
+        #expect(recorder.request == nil)
+    }
+
+    @Test
+    func mapsUnauthorizedProxyResponsesToProviderUnavailable() async throws {
+        for statusCode in [401, 403] {
+            let host = "plant-id-auth-\(statusCode)-\(UUID().uuidString).example.invalid"
+            TestWeatherURLProtocol.install(host: host) { _ in
+                (statusCode, Data())
+            }
+            defer { TestWeatherURLProtocol.remove(host: host) }
+
+            let states = try await states(
+                from: service(host: host).identify(
+                    requestID: IdentificationRequestID.parse("request-auth-\(statusCode)"),
+                    idempotencyKey: OperationID.parse("operation-auth-\(statusCode)"),
+                    images: [Data("image".utf8)]
+                )
+            )
+
+            #expect(states.last == .failed(.providerUnavailable))
+        }
+    }
+
+    private func service(
+        host: String,
+        credentialProvider: any PlantIdentificationCredentialProvider =
+            TestCredentialProvider()
+    ) throws -> PlantIdentificationProxyService {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [TestWeatherURLProtocol.self]
-        return PlantIdentificationProxyService(
-            configuration: configuration,
-            session: URLSession(configuration: sessionConfiguration)
+        return try PlantIdentificationProxyService(
+            testEndpoint: #require(URL(string: "https://\(host)/identify")),
+            session: URLSession(configuration: sessionConfiguration),
+            credentialProvider: credentialProvider
         )
     }
 
@@ -179,4 +278,31 @@ struct PlantIdentificationProxyServiceTests {
         }
         """.utf8
     )
+
+    private struct TestCredentialProvider: PlantIdentificationCredentialProvider {
+        func headers() async throws -> PlantIdentificationCredentialHeaders {
+            PlantIdentificationCredentialHeaders(
+                authorization: "Bearer test-id-token",
+                appCheck: "test-app-check-token"
+            )
+        }
+    }
+
+    private struct FailingCredentialProvider: PlantIdentificationCredentialProvider {
+        func headers() async throws -> PlantIdentificationCredentialHeaders {
+            throw PlantIdentificationCredentialError.unavailable
+        }
+    }
+
+    private actor CountingCredentialProvider: PlantIdentificationCredentialProvider {
+        private(set) var callCount = 0
+
+        func headers() async throws -> PlantIdentificationCredentialHeaders {
+            callCount += 1
+            return PlantIdentificationCredentialHeaders(
+                authorization: "Bearer test-id-token",
+                appCheck: "test-app-check-token"
+            )
+        }
+    }
 }

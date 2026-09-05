@@ -67,7 +67,7 @@ struct PlantRegistrationView: View {
             ) {
                 Task {
                     representativePhoto =
-                        await IdentificationDraftStore.shared.load()?.data
+                        await IdentificationDraftStore.shared.load()?.first?.data
                 }
             }
             .accessibilityIdentifier("registration.photo.optional")
