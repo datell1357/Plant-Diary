@@ -6,11 +6,13 @@ import com.planterior.helper.feature.minihome.MiniHomeRepository
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnostic
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRepository
+import com.planterior.helper.minihome.Todo18MiniHomeOwnerOperationDiagnosticRecorder
 
 internal fun todo18MiniHomeRuntimeRepository(
     database: PlanteriorDatabase,
     boundary: Todo18Scenario,
     diagnostics: Todo18MiniHomeLoadDiagnosticRecorder,
+    ownerDiagnostics: Todo18MiniHomeOwnerOperationDiagnosticRecorder,
 ): MiniHomeRepository {
     diagnostics.expectCacheTransactionTrace()
     diagnostics.expectPublicationReadTerminal()
@@ -53,6 +55,8 @@ internal fun todo18MiniHomeRuntimeRepository(
                     )
                 },
                 onDiagnosticFailure = { failure -> diagnostics.recordDiagnosticFailure(failure) },
+                onOwnerOperationDiagnostic = ownerDiagnostics::recordOwnerOperation,
+                onPublicationTransactionDiagnostic = ownerDiagnostics::recordPublicationTransaction,
                 beforePendingRead = { accountId, pendingIdentity ->
                     diagnostics.recordCurrent(
                         Todo18MiniHomeLoadDiagnostic.PendingReadEntered(accountId, pendingIdentity)

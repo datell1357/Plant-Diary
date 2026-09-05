@@ -7,6 +7,36 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
+internal fun JsonObjectBuilder.putTodo18MiniHomeBoundaryDiagnosticEvents(
+    recorder: Todo18MiniHomeOwnerOperationDiagnosticRecorder
+) {
+    val snapshot = recorder.snapshot()
+    put("boundaryDiagnosticDroppedCount", snapshot.droppedEvents)
+    putJsonArray("boundaryDiagnosticEvents") {
+        snapshot.events.forEach { event ->
+            add(
+                buildJsonObject {
+                    put("order", event.order)
+                    put("thread", event.thread)
+                    event.ownerOperation?.let { operation ->
+                        put("kind", operation.kind.name.lowercase())
+                        put("stage", operation.stage.name.lowercase())
+                        put("accountId", operation.accountId.value)
+                        put("token", operation.token)
+                        put("failureClass", operation.failure?.javaClass?.name)
+                    }
+                    event.publicationTransaction?.let { transaction ->
+                        put("stage", transaction.stage.name.lowercase())
+                        put("accountId", transaction.accountId.value)
+                        put("readIdentity", transaction.readIdentity.value)
+                        put("failureClass", transaction.failure?.javaClass?.name)
+                    }
+                }
+            )
+        }
+    }
+}
+
 internal fun JsonObjectBuilder.putTodo18MiniHomeLoadProgress(progress: Todo18MiniHomeLoadProgress) {
     put("valid", progress.valid)
     put("activeStage", progress.activeStage)

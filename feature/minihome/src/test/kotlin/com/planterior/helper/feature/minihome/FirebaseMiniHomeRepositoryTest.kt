@@ -4150,6 +4150,184 @@ class FirebaseMiniHomeRepositoryTest {
         tokens.forEach { assertTrue("Missing code token: $it", code.contains(it)) }
     }
 
+    @Test
+    fun `publication transaction reports body readiness before transaction return`() = runTest {
+        val observations = mutableListOf<MiniHomePublicationTransactionObservation>()
+        FirebaseMiniHomeRepository(
+                database,
+                FakeRemote(layout(3)),
+                onPublicationTransactionDiagnostic = observations::add,
+            )
+            .load()
+        assertTrue(observations.isNotEmpty())
+        observations
+            .groupBy { it.readIdentity }
+            .values
+            .forEach { read ->
+                assertEquals(
+                    listOf(
+                        MiniHomePublicationTransactionStage.CALL_ENTERED,
+                        MiniHomePublicationTransactionStage.BODY_ENTERED,
+                        MiniHomePublicationTransactionStage.BODY_RETURNED,
+                        MiniHomePublicationTransactionStage.RETURNED,
+                    ),
+                    read.map { it.stage },
+                )
+            }
+    }
+
+    @Test
+    fun `observer cancellation faults do not alter successful repository load`() = runTest {
+        val baseline = FirebaseMiniHomeRepository(database, FakeRemote(layout(3))).load()
+        val observed =
+            FirebaseMiniHomeRepository(
+                    database,
+                    FakeRemote(layout(3)),
+                    onOwnerOperationDiagnostic = { throw CancellationException("observer fault") },
+                    onPublicationTransactionDiagnostic = {
+                        throw CancellationException("observer fault")
+                    },
+                )
+                .load()
+        assertEquals(baseline, observed)
+    }
+
+    @Test
+    fun `owner diagnostic correlates waiting account operation and release`() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val observations = mutableListOf<MiniHomeOwnerOperationObservation>()
+        val remote =
+            FakeRemote(layout(3)).apply {
+                onSave = {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                remote,
+                onOwnerOperationDiagnostic = observations::add,
+            )
+        val first = async { repository.save(request("owner-first", layout(3))) }
+        entered.await()
+        val second = async { repository.save(request("owner-second", layout(3))) }
+        runCurrent()
+
+        val waiting = observations.filter { it.token != observations.first().token }
+        assertTrue(waiting.any { it.stage == MiniHomeOwnerOperationStage.ENTERED })
+        assertTrue(waiting.none { it.stage == MiniHomeOwnerOperationStage.ACQUIRED })
+
+        release.complete(Unit)
+        first.await()
+        second.await()
+        assertEquals(
+            listOf(
+                MiniHomeOwnerOperationStage.ENTERED,
+                MiniHomeOwnerOperationStage.ACQUIRED,
+                MiniHomeOwnerOperationStage.RETURNED,
+                MiniHomeOwnerOperationStage.RELEASED,
+            ),
+            observations.filter { it.token == observations.first().token }.map { it.stage },
+        )
+        val secondToken = waiting.first().token
+        assertEquals(
+            listOf(
+                MiniHomeOwnerOperationStage.ENTERED,
+                MiniHomeOwnerOperationStage.ACQUIRED,
+                MiniHomeOwnerOperationStage.RETURNED,
+                MiniHomeOwnerOperationStage.RELEASED,
+            ),
+            observations.filter { it.token == secondToken }.map { it.stage },
+        )
+    }
+
+    @Test
+    fun `owner diagnostic records cancellation terminal`() = runTest {
+        val expected = CancellationException("owner cancellation")
+        val observations = mutableListOf<MiniHomeOwnerOperationObservation>()
+        val remote = FakeRemote(layout(3)).apply { onSave = { throw expected } }
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                remote,
+                onOwnerOperationDiagnostic = observations::add,
+            )
+
+        val actual =
+            try {
+                repository.save(request("owner-cancel", layout(3)))
+                fail("Expected cancellation")
+            } catch (failure: CancellationException) {
+                failure
+            }
+
+        org.junit.Assert.assertSame(expected, actual)
+        val token = observations.first().token
+        val cancellation = observations.first { it.token == token && it.failure != null }
+        // Coroutine stack-trace recovery can wrap cancellation inside withContext;
+        // save's public boundary still returns the exact original instance above.
+        org.junit.Assert.assertSame(expected, cancellation.failure?.cause ?: cancellation.failure)
+        assertEquals(MiniHomeOwnerOperationStage.CANCELLED, cancellation.stage)
+        assertEquals(
+            MiniHomeOwnerOperationStage.RELEASED,
+            observations.last { it.token == token }.stage,
+        )
+    }
+
+    @Test
+    fun `owner diagnostic records cancellation while waiting without release`() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val observations = mutableListOf<MiniHomeOwnerOperationObservation>()
+        val remote =
+            FakeRemote(layout(3)).apply {
+                onSave = {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+        val repository =
+            FirebaseMiniHomeRepository(
+                database,
+                remote,
+                onOwnerOperationDiagnostic = { observation ->
+                    observations += observation
+                    if (
+                        observation.stage == MiniHomeOwnerOperationStage.ENTERED &&
+                            observations.any { it.stage == MiniHomeOwnerOperationStage.ACQUIRED }
+                    ) {
+                        secondEntered.complete(Unit)
+                    }
+                },
+            )
+        val first = async { repository.save(request("owner-wait-first", layout(3))) }
+        entered.await()
+        val second = async { repository.save(request("owner-wait-second", layout(3))) }
+        secondEntered.await()
+        second.cancel()
+        try {
+            second.await()
+            fail("Expected waiting cancellation")
+        } catch (_: CancellationException) {
+            // Expected.
+        }
+
+        val secondToken =
+            observations.filter { it.stage == MiniHomeOwnerOperationStage.ENTERED }.last().token
+        assertEquals(
+            listOf(
+                MiniHomeOwnerOperationStage.ENTERED,
+                MiniHomeOwnerOperationStage.CANCELLED,
+            ),
+            observations.filter { it.token == secondToken }.map { it.stage },
+        )
+        release.complete(Unit)
+        first.await()
+    }
+
     private fun assertOrdered(code: String, vararg tokens: String) {
         val positions = tokens.map(code::indexOf)
         tokens.zip(positions).forEach { (token, position) ->

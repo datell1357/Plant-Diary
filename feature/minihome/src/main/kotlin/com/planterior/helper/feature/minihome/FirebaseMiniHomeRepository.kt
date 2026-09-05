@@ -238,6 +238,10 @@ class FirebaseMiniHomeRepository(
         { _, _, _ ->
         },
     private val onDiagnosticFailure: suspend (Throwable) -> Unit = {},
+    private val onOwnerOperationDiagnostic: (MiniHomeOwnerOperationObservation) -> Unit = {},
+    private val onPublicationTransactionDiagnostic:
+        (MiniHomePublicationTransactionObservation) -> Unit =
+        {},
 ) : MiniHomeRepository {
     private val ownerOperations = ConcurrentHashMap<String, Mutex>()
     private val recentSaveOutcomes = ConcurrentHashMap<String, RegisteredSaveOutcome>()
@@ -250,11 +254,12 @@ class FirebaseMiniHomeRepository(
     private val publicationReadSequence = AtomicLong()
     private val loadSequence = AtomicLong()
     private val pendingReadSequence = AtomicLong()
+    private val ownerOperationSequence = AtomicLong()
 
     override suspend fun load(): MiniHomeLoadResult {
         val account = remote.activeAccount() ?: return MiniHomeLoadResult.Forbidden
         val loadId = MiniHomeLoadIdentity(loadSequence.incrementAndGet())
-        return withOwnerOperation(account) {
+        return withOwnerOperation(account, MiniHomeOwnerOperationKind.LOAD) {
             val token =
                 beginPublication(account) ?: return@withOwnerOperation MiniHomeLoadResult.Forbidden
             loadLocked(account, token, loadId)
@@ -368,7 +373,7 @@ class FirebaseMiniHomeRepository(
             MiniHomeSaveBoundaryOutcome.ENTERED,
         )
         return try {
-            withOwnerOperation(request.accountId) {
+            withOwnerOperation(request.accountId, MiniHomeOwnerOperationKind.SAVE) {
                     saveLocked(request) { cancellation ->
                         delegateCancellation = cancellation
                     }
@@ -656,7 +661,7 @@ class FirebaseMiniHomeRepository(
         failure: MiniHomeSaveFailure,
         discardHandle: MiniHomeDiscardHandle?,
     ): MiniHomeSaveResult =
-        withOwnerOperation(request.accountId) {
+        withOwnerOperation(request.accountId, MiniHomeOwnerOperationKind.RECONCILE) {
             reconcileLocked(request, failure, discardHandle)
         }
 
@@ -787,7 +792,9 @@ class FirebaseMiniHomeRepository(
         accountId: AccountId,
         operationId: OperationId?,
     ): MiniHomeDiscardResult =
-        withOwnerOperation(accountId) { abandonPendingLocked(accountId, operationId) }
+        withOwnerOperation(accountId, MiniHomeOwnerOperationKind.DISCARD) {
+            abandonPendingLocked(accountId, operationId)
+        }
 
     private suspend fun abandonPendingLocked(
         accountId: AccountId,
@@ -840,7 +847,7 @@ class FirebaseMiniHomeRepository(
     ): MiniHomeDiscardResult = MiniHomeDiscardResult.Rejected
 
     override suspend fun abandon(handle: MiniHomeDiscardHandle): MiniHomeDiscardResult =
-        withOwnerOperation(handle.accountId) {
+        withOwnerOperation(handle.accountId, MiniHomeOwnerOperationKind.DISCARD) {
             if (remote.activeAccount() != handle.accountId) {
                 return@withOwnerOperation MiniHomeDiscardResult.OwnerMismatch
             }
@@ -2299,12 +2306,38 @@ class FirebaseMiniHomeRepository(
         val readIdentity =
             MiniHomePublicationReadIdentity(publicationReadSequence.incrementAndGet())
         observePublicationRead { beforePublicationRead(account, readIdentity) }
+        observeMiniHomePublicationTransaction(
+            onPublicationTransactionDiagnostic,
+            MiniHomePublicationTransactionObservation(
+                MiniHomePublicationTransactionStage.CALL_ENTERED,
+                account,
+                readIdentity,
+            ),
+        )
         val raw =
             try {
                 database
                     .withTransaction {
-                        database.cacheDao().currentMiniHomeSnapshotCache(account.value) to
-                            database.cacheDao().plants(account.value)
+                        observeMiniHomePublicationTransaction(
+                            onPublicationTransactionDiagnostic,
+                            MiniHomePublicationTransactionObservation(
+                                MiniHomePublicationTransactionStage.BODY_ENTERED,
+                                account,
+                                readIdentity,
+                            ),
+                        )
+                        val result =
+                            database.cacheDao().currentMiniHomeSnapshotCache(account.value) to
+                                database.cacheDao().plants(account.value)
+                        observeMiniHomePublicationTransaction(
+                            onPublicationTransactionDiagnostic,
+                            MiniHomePublicationTransactionObservation(
+                                MiniHomePublicationTransactionStage.BODY_RETURNED,
+                                account,
+                                readIdentity,
+                            ),
+                        )
+                        result
                     }
                     .also {
                         notifyPublicationReadTerminal(
@@ -2315,6 +2348,15 @@ class FirebaseMiniHomeRepository(
                     }
             } catch (failure: Exception) {
                 if (failure is CancellationException) {
+                    observeMiniHomePublicationTransaction(
+                        onPublicationTransactionDiagnostic,
+                        MiniHomePublicationTransactionObservation(
+                            MiniHomePublicationTransactionStage.CANCELLED,
+                            account,
+                            readIdentity,
+                            failure,
+                        ),
+                    )
                     val terminalFailure = failure.cause as? CancellationException ?: failure
                     withContext(NonCancellable) {
                         notifyPublicationReadTerminal(
@@ -2325,6 +2367,15 @@ class FirebaseMiniHomeRepository(
                     }
                     throw failure
                 }
+                observeMiniHomePublicationTransaction(
+                    onPublicationTransactionDiagnostic,
+                    MiniHomePublicationTransactionObservation(
+                        MiniHomePublicationTransactionStage.THREW,
+                        account,
+                        readIdentity,
+                        failure,
+                    ),
+                )
                 notifyPublicationReadTerminal(
                     account,
                     readIdentity,
@@ -2332,6 +2383,14 @@ class FirebaseMiniHomeRepository(
                 )
                 throw failure
             }
+        observeMiniHomePublicationTransaction(
+            onPublicationTransactionDiagnostic,
+            MiniHomePublicationTransactionObservation(
+                MiniHomePublicationTransactionStage.RETURNED,
+                account,
+                readIdentity,
+            ),
+        )
         notifyPublicationReadReturned(account, readIdentity)
         val snapshotState = raw.first
         val incoherentSnapshot = snapshotState?.coherent == false
@@ -3037,8 +3096,114 @@ class FirebaseMiniHomeRepository(
 
     private suspend fun <T> withOwnerOperation(
         accountId: AccountId,
+        kind: MiniHomeOwnerOperationKind,
         block: suspend () -> T,
-    ): T = ownerOperations.computeIfAbsent(accountId.value) { Mutex() }.withLock { block() }
+    ): T {
+        val token = ownerOperationSequence.incrementAndGet()
+        observeMiniHomeOwnerOperation(
+            onOwnerOperationDiagnostic,
+            MiniHomeOwnerOperationObservation(
+                kind,
+                MiniHomeOwnerOperationStage.ENTERED,
+                accountId,
+                token,
+            ),
+        )
+        var acquired = false
+        return try {
+            ownerOperations
+                .computeIfAbsent(accountId.value) { Mutex() }
+                .withLock {
+                    acquired = true
+                    observeMiniHomeOwnerOperation(
+                        onOwnerOperationDiagnostic,
+                        MiniHomeOwnerOperationObservation(
+                            kind,
+                            MiniHomeOwnerOperationStage.ACQUIRED,
+                            accountId,
+                            token,
+                        ),
+                    )
+                    try {
+                        block().also {
+                            observeMiniHomeOwnerOperation(
+                                onOwnerOperationDiagnostic,
+                                MiniHomeOwnerOperationObservation(
+                                    kind,
+                                    MiniHomeOwnerOperationStage.RETURNED,
+                                    accountId,
+                                    token,
+                                ),
+                            )
+                        }
+                    } catch (failure: CancellationException) {
+                        observeMiniHomeOwnerOperation(
+                            onOwnerOperationDiagnostic,
+                            MiniHomeOwnerOperationObservation(
+                                kind,
+                                MiniHomeOwnerOperationStage.CANCELLED,
+                                accountId,
+                                token,
+                                failure,
+                            ),
+                        )
+                        throw failure
+                    } catch (failure: Throwable) {
+                        observeMiniHomeOwnerOperation(
+                            onOwnerOperationDiagnostic,
+                            MiniHomeOwnerOperationObservation(
+                                kind,
+                                MiniHomeOwnerOperationStage.THREW,
+                                accountId,
+                                token,
+                                failure,
+                            ),
+                        )
+                        throw failure
+                    }
+                }
+        } catch (failure: CancellationException) {
+            if (!acquired) {
+                observeMiniHomeOwnerOperation(
+                    onOwnerOperationDiagnostic,
+                    MiniHomeOwnerOperationObservation(
+                        kind,
+                        MiniHomeOwnerOperationStage.CANCELLED,
+                        accountId,
+                        token,
+                        failure,
+                    ),
+                )
+            }
+            throw failure
+        } catch (failure: Throwable) {
+            if (!acquired) {
+                observeMiniHomeOwnerOperation(
+                    onOwnerOperationDiagnostic,
+                    MiniHomeOwnerOperationObservation(
+                        kind,
+                        MiniHomeOwnerOperationStage.THREW,
+                        accountId,
+                        token,
+                        failure,
+                    ),
+                )
+            }
+            throw failure
+        } finally {
+            if (acquired) {
+                observeMiniHomeOwnerOperation(
+                    onOwnerOperationDiagnostic,
+                    MiniHomeOwnerOperationObservation(
+                        kind,
+                        MiniHomeOwnerOperationStage.RELEASED,
+                        accountId,
+                        token,
+                    ),
+                )
+            }
+        }
+    }
 
     private companion object {
         const val OUTBOX_TYPE = "miniHomeLayouts"

@@ -8,6 +8,7 @@ import com.planterior.helper.auth.todo18DebugRuntimeDependencyOverrides
 import com.planterior.helper.core.database.PlanteriorDatabase
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.diagnostic.Todo18CaptureFreshness
+import com.planterior.helper.diagnostic.Todo18DiagnosticProvenance
 import com.planterior.helper.diagnostic.Todo18RoomTransactionOwnerRecorder
 import com.planterior.helper.diagnostic.attachTodo18RoomTransactionOwnerListener
 import com.planterior.helper.feature.camera.CameraPermission
@@ -24,13 +25,43 @@ import com.planterior.helper.inventory.Todo18InventorySettlementDiagnosticRecord
 import com.planterior.helper.inventory.Todo18InventorySettlementObservation
 import com.planterior.helper.inventory.Todo18InventorySettlementStage
 import com.planterior.helper.minihome.Todo18MiniHomeLoadDiagnosticRecorder
+import com.planterior.helper.minihome.Todo18MiniHomeOwnerOperationDiagnosticRecorder
+import com.planterior.helper.minihome.putTodo18MiniHomeBoundaryDiagnosticEvents
 import com.planterior.helper.registration.Todo18RegistrationCommitDiagnosticRepository
 import java.io.File
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.rules.ExternalResource
+import org.junit.runner.Description
+import org.junit.runners.model.Statement
 
 /** Installs production Room repositories with deterministic fakes only at remote/OS boundaries. */
 class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) :
     ExternalResource() {
+    override fun apply(base: Statement, description: Description): Statement {
+        return object : Statement() {
+            override fun evaluate() {
+                preserveTodo18PrimaryFailure(
+                    block = {
+                        before()
+                        preserveTodo18PrimaryFailure(
+                            block = { base.evaluate() },
+                            finish = {
+                                try {
+                                    after()
+                                    null
+                                } catch (failure: Exception) {
+                                    IllegalStateException("Todo18 runtime cleanup failed", failure)
+                                }
+                            },
+                        )
+                    },
+                    finish = { writeMiniHomeBoundarySnapshot(description.methodName, it) },
+                )
+            }
+        }
+    }
+
     lateinit var boundary: Todo18Scenario
         private set
 
@@ -45,9 +76,13 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
     internal lateinit var miniHomeLoadDiagnostics: Todo18MiniHomeLoadDiagnosticRecorder
         private set
 
+    internal lateinit var miniHomeOwnerDiagnostics: Todo18MiniHomeOwnerOperationDiagnosticRecorder
+        private set
+
     internal val inventorySettlementDiagnostics = Todo18InventorySettlementDiagnosticRecorder()
     internal val roomTransactionOwners = Todo18RoomTransactionOwnerRecorder()
     private var roomTransactionOwnerListener: AutoCloseable? = null
+    private var boundaryProvenance: Todo18DiagnosticProvenance? = null
 
     internal val initialSinkFreshness =
         Todo18CaptureFreshness(
@@ -99,6 +134,7 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             boundary = Todo18Scenario(AccountId(accountUid))
             miniHomeLoadDiagnostics =
                 Todo18MiniHomeLoadDiagnosticRecorder(boundary::emitMiniHomeLoadDiagnostic)
+            miniHomeOwnerDiagnostics = Todo18MiniHomeOwnerOperationDiagnosticRecorder()
             renderedStateSink.observeInventoryDiagnostics(inventorySettlementDiagnostics::record)
 
             val plants = Todo18PlantRepositoryFixture(boundary)
@@ -116,7 +152,12 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
                 )
             val collection = FirebaseCollectionRepository(database, plants, plants, boundary::now)
             val miniHome =
-                todo18MiniHomeRuntimeRepository(database, boundary, miniHomeLoadDiagnostics)
+                todo18MiniHomeRuntimeRepository(
+                    database,
+                    boundary,
+                    miniHomeLoadDiagnostics,
+                    miniHomeOwnerDiagnostics,
+                )
             val inventoryRemote = Todo18InventoryRepositoryFixture(boundary)
             val inventory =
                 Todo18InventoryCacheSettlementRepository(
@@ -170,6 +211,7 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
 
     override fun after() {
         try {
+            boundaryProvenance = captureTodo18DiagnosticProvenance()
             if (::application.isInitialized) {
                 application.unregisterActivityLifecycleCallbacks(activityTracker.activityCallbacks)
             }
@@ -180,6 +222,42 @@ class Todo18IntegratedRuntimeRule(private val accountUid: String = ACCOUNT_UID) 
             roomTransactionOwnerListener?.close()
             roomTransactionOwnerListener = null
             actionDiagnostics.close()
+        }
+    }
+
+    private fun writeMiniHomeBoundarySnapshot(
+        methodName: String,
+        primaryFailure: Throwable?,
+    ): IllegalStateException? {
+        if (!::application.isInitialized || !::miniHomeOwnerDiagnostics.isInitialized) return null
+        return try {
+            val directory = requireNotNull(application.getExternalFilesDir("todo18-e2e-journeys"))
+            check(directory.exists() || directory.mkdirs())
+            val provenance = requireNotNull(boundaryProvenance)
+            val safeName = methodName.replace(Regex("[^A-Za-z0-9_-]"), "_")
+            File(directory, "$safeName-minihome-boundaries-runtime.json")
+                .writeText(
+                    buildJsonObject {
+                        put("schema", "todo18-minihome-boundaries-v1")
+                        put("testMethod", methodName)
+                        put("purpose", "forensic-only-not-acceptance")
+                        put("testFailed", primaryFailure != null)
+                        put("testFailureClass", primaryFailure?.javaClass?.name)
+                        put("capturedAtEpochMillis", System.currentTimeMillis())
+                        put("bindingValidated", provenance.bindingValidated)
+                        put("expectedSourceSha256", provenance.expectedSourceSha256)
+                        put("embeddedSourceSha256", provenance.embeddedSourceSha256)
+                        put("expectedAppApkSha256", provenance.expectedAppApkSha256)
+                        put("observedAppApkSha256", provenance.observedAppApkSha256)
+                        put("expectedAndroidTestApkSha256", provenance.expectedAndroidTestApkSha256)
+                        put("observedAndroidTestApkSha256", provenance.observedAndroidTestApkSha256)
+                        putTodo18MiniHomeBoundaryDiagnosticEvents(miniHomeOwnerDiagnostics)
+                    }
+                        .toString()
+                )
+            null
+        } catch (failure: Exception) {
+            IllegalStateException("MiniHome boundary receipt could not be written", failure)
         }
     }
 
