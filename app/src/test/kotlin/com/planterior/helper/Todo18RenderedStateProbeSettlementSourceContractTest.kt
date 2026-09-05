@@ -51,6 +51,42 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
     }
 
     @Test
+    fun `post-save MiniHome waits bridge exact raw state to its displayed frame`() {
+        val probe =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MiniHomeRawToDisplayedProbe.kt"
+                )
+                .readText()
+        val journey =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18MiniHomeJourneyAssertions.kt"
+                )
+                .readText()
+
+        assertOrdered(
+            probe,
+            "rawSubscription.arm()",
+            "displayedSubscription.arm()",
+            "triggerAwaitSettleAndAwait(",
+            "rawSubscription.await(",
+            "settle = compose::waitForIdle",
+            "displayedSubscription.await(",
+            "displayedEvent",
+        )
+        assertEquals(2, probe.countOccurrences("remainingNanos(deadlineNanos)"))
+        assertEquals(2, probe.countOccurrences("matches(event)"))
+        assertTrue(probe.contains("event.state.owner == expectedAccount"))
+        assertTrue(probe.contains("observer = observer"))
+        assertFalse(probe.contains("waitUntil("))
+        assertEquals(2, journey.countOccurrences("rendered.awaitMiniHomeAfterRaw("))
+        assertTrue(journey.contains("viewing?.exitOutcome?.operationId == frozen"))
+    }
+
+    @Test
     fun `share Ready wait uses a pre-navigation floor and exact event predicate`() {
         val probe =
             root

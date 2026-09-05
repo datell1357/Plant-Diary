@@ -7,6 +7,14 @@ import org.junit.Test
 
 class Todo18ProbeOrchestrationTest {
     @Test
+    fun `rendered correlation rejects unrelated accepted state`() {
+        requireMatchingRenderedState("target", "target")
+        assertThrows(IllegalArgumentException::class.java) {
+            requireMatchingRenderedState("target", "other target")
+        }
+    }
+
+    @Test
     fun `initial viewing waits upstream before settling and awaiting rendered event`() {
         val trace = mutableListOf<String>()
 

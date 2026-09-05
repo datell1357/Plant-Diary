@@ -118,10 +118,11 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
         .captureRetry {
             Todo18OfflineRetryTransitionDiagnosticCapture(runtime, compose, frozen.value).capture {
                 val diagnostic = this
-                rendered.awaitMiniHome(
+                rendered.awaitMiniHomeAfterRaw(
                     matches = {
-                        ((it.state as? MiniHomeUiState.Viewing)?.committed?.revision?.value ?: 0L) >
-                            1L
+                        val viewing = it.state as? MiniHomeUiState.Viewing
+                        (viewing?.committed?.revision?.value ?: 0L) > 1L &&
+                            viewing?.exitOutcome?.operationId == frozen
                     },
                     trigger = {
                         committed =
@@ -200,7 +201,7 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDra
             Todo18IntegratedActionKind.MINI_HOME_SAVE,
         )
         .run { action ->
-            rendered.awaitMiniHome(
+            rendered.awaitMiniHomeAfterRaw(
                 matches = { event ->
                     val editing = event.state as? MiniHomeUiState.Editing
                     editing?.saveState ==

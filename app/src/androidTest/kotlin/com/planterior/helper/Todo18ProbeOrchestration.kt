@@ -23,3 +23,8 @@ internal fun <U, R> triggerAwaitSettleAndAwait(
     settle.invoke()
     return upstream to awaitRendered.invoke()
 }
+
+/** Checks correlation only after both exact subscriptions have accepted their events. */
+internal fun <T> requireMatchingRenderedState(upstream: T, rendered: T) {
+    require(upstream == rendered) { "Rendered state did not match the exact upstream state" }
+}

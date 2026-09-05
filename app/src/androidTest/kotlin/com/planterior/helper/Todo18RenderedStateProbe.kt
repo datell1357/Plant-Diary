@@ -53,6 +53,13 @@ internal class Todo18RenderedStateProbe(
         return observed
     }
 
+    fun awaitMiniHomeAfterRaw(
+        matches: (Todo18MiniHomeStateEvent) -> Boolean,
+        trigger: () -> Unit,
+        observer: Todo18ExactEventObserver? = null,
+    ): Todo18MiniHomeStateEvent =
+        Todo18MiniHomeRawToDisplayedProbe(runtime, compose).await(matches, trigger, observer)
+
     fun awaitMiniHomeShareReady(floor: Long): Todo18MiniHomeShareStateEvent {
         val sink = runtime.renderedStateSink
         return ExactEventSubscription(
