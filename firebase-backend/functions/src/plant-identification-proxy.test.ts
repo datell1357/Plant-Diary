@@ -6,17 +6,24 @@ import {
   PlantIdTransportTimeoutError,
 } from "./plant-id-client.js"
 import {
+  canonicalPlantIdentificationRequest,
   createPlantIdentificationHTTPHandler,
   executePlantIdentification,
+  type PlantIdentificationOperation,
   type PlantIdentificationProvider,
   type PlantIdentificationResponse,
   type PlantIdentificationResultStore,
+  plantIdentificationRequestHash,
 } from "./plant-identification-proxy.js"
 
 const request = {
   requestID: "request_12345678",
   idempotencyKey: "operation_12345678",
-  imageBase64: Buffer.from("photo").toString("base64"),
+  imagesBase64: [
+    Buffer.from("photo-front").toString("base64"),
+    Buffer.from("photo-leaf").toString("base64"),
+    Buffer.from("photo-stem").toString("base64"),
+  ],
 }
 
 class MemoryResultStore implements PlantIdentificationResultStore {
@@ -24,16 +31,15 @@ class MemoryResultStore implements PlantIdentificationResultStore {
   private readonly results = new Map<string, Promise<PlantIdentificationResponse>>()
 
   runOnce(
-    subjectID: string,
-    requestID: string,
-    idempotencyKey: string,
-    operation: () => Promise<PlantIdentificationResponse>,
+    operation: PlantIdentificationOperation,
+    execute: () => Promise<PlantIdentificationResponse>,
   ): Promise<PlantIdentificationResponse> {
-    this.calls.push(`${subjectID}:${requestID}:${idempotencyKey}`)
-    const existing = this.results.get(idempotencyKey)
+    this.calls.push(`${operation.ownerID}:${operation.requestID}:${operation.idempotencyKey}`)
+    const operationKey = `${operation.ownerID}:${operation.idempotencyKey}`
+    const existing = this.results.get(operationKey)
     if (existing !== undefined) return existing
-    const created = operation()
-    this.results.set(idempotencyKey, created)
+    const created = execute()
+    this.results.set(operationKey, created)
     return created
   }
 }
@@ -116,6 +122,30 @@ test("normalizes Korean Plant.id candidates for the strict iOS proxy contract", 
   })
 })
 
+test("hashes the contract version, owner, request ID, and ordered image texts", () => {
+  const operation = { ownerID: "user-a", requestID: request.requestID }
+  assert.equal(
+    canonicalPlantIdentificationRequest(operation, request.imagesBase64),
+    JSON.stringify({
+      contractVersion: 2,
+      owner: "user-a",
+      requestID: request.requestID,
+      imagesBase64: request.imagesBase64,
+    }),
+  )
+  const hash = plantIdentificationRequestHash(operation, request.imagesBase64)
+
+  assert.match(hash, /^[a-f0-9]{64}$/)
+  assert.notEqual(
+    hash,
+    plantIdentificationRequestHash({ ...operation, ownerID: "user-b" }, request.imagesBase64),
+  )
+  assert.notEqual(
+    hash,
+    plantIdentificationRequestHash(operation, [...request.imagesBase64].reverse()),
+  )
+})
+
 test("rejects invalid callers and payloads before sending a private image", async () => {
   let providerCalls = 0
   const countingProvider: PlantIdentificationProvider = {
@@ -132,13 +162,47 @@ test("rejects invalid callers and payloads before sending a private image", asyn
   await assert.rejects(
     executePlantIdentification(
       "user-a",
-      { ...request, imageBase64: "not base64" },
+      { ...request, imagesBase64: [] },
+      new MemoryResultStore(),
+      countingProvider,
+    ),
+    { code: "invalid-argument" },
+  )
+  await assert.rejects(
+    executePlantIdentification(
+      "user-a",
+      { ...request, imagesBase64: Array(6).fill(request.imagesBase64[0]) },
+      new MemoryResultStore(),
+      countingProvider,
+    ),
+    { code: "invalid-argument" },
+  )
+  await assert.rejects(
+    executePlantIdentification(
+      "user-a",
+      { ...request, imagesBase64: ["not base64"] },
       new MemoryResultStore(),
       countingProvider,
     ),
     { code: "invalid-argument" },
   )
   assert.equal(providerCalls, 0)
+})
+
+test("forwards every validated image to Plant.id once and in order", async () => {
+  let receivedImages: readonly Buffer[] = []
+  const result = await executePlantIdentification("user-a", request, new MemoryResultStore(), {
+    identify: async (images) => {
+      receivedImages = images
+      return { result: { classification: { suggestions: [] } } }
+    },
+  })
+
+  assert.deepEqual(result, { kind: "no_candidates" })
+  assert.deepEqual(
+    receivedImages.map((image) => image.toString()),
+    ["photo-front", "photo-leaf", "photo-stem"],
+  )
 })
 
 test("deduplicates a repeated idempotency key and maps malformed provider data", async () => {
@@ -161,7 +225,7 @@ test("deduplicates a repeated idempotency key and maps malformed provider data",
   assert.equal(providerCalls, 1)
 })
 
-test("Plant.id transport receives classification-only Korean request without exposing the key", async () => {
+test("Plant.id transport receives one ordered multi-image classification request", async () => {
   let captured: Parameters<PlantIdTransport["post"]>[0] | undefined
   const transport: PlantIdTransport = {
     post: async (value) => {
@@ -171,12 +235,15 @@ test("Plant.id transport receives classification-only Korean request without exp
   }
   const client = new PlantIdHttpClient("private-key", transport)
 
-  const result = await client.identify(Buffer.from([0xff, 0xd8, 0xff, 0x00]))
+  const result = await client.identify([
+    Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  ])
 
   assert.deepEqual(result, { result: { classification: { suggestions: [] } } })
   assert.deepEqual(captured, {
     apiKey: "private-key",
-    image: "data:image/jpeg;base64,/9j/AA==",
+    images: ["data:image/jpeg;base64,/9j/AA==", "data:image/png;base64,iVBORw0KGgo="],
     language: "ko",
     details: ["common_names"],
     similarImages: true,
@@ -193,9 +260,9 @@ for (const [status, code] of [
       post: async () => ({ status, body: { providerDiagnostic: "hidden" } }),
     }
     await assert.rejects(
-      new PlantIdHttpClient("private-key", transport).identify(
+      new PlantIdHttpClient("private-key", transport).identify([
         Buffer.from([0xff, 0xd8, 0xff, 0x00]),
-      ),
+      ]),
       { code },
     )
   })
@@ -208,7 +275,9 @@ test("maps a Plant.id timeout without leaking transport details", async () => {
     },
   }
   await assert.rejects(
-    new PlantIdHttpClient("private-key", transport).identify(Buffer.from([0xff, 0xd8, 0xff, 0x00])),
+    new PlantIdHttpClient("private-key", transport).identify([
+      Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+    ]),
     { code: "timeout" },
   )
 })
@@ -245,7 +314,7 @@ test("platform-neutral HTTP handler requires host authentication and matches the
     new Request("https://proxy.example/identify", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
+      body: "not-json",
     }),
   )
   assert.equal(rejected.status, 401)

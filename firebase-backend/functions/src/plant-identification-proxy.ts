@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto"
 import { z } from "zod"
 
-const maximumImageBytes = 10 * 1024 * 1024
+export const PLANT_IDENTIFICATION_CONTRACT_VERSION = 2 as const
+
+const maximumImageBytes = 4 * 1024 * 1024
 const maximumEncodedImageLength = Math.ceil(maximumImageBytes / 3) * 4
 const opaqueID = /^[A-Za-z0-9_-]{8,128}$/
 const publicContentID = /^[A-Za-z0-9_-]{1,128}$/
@@ -17,7 +20,7 @@ export const PlantIdentificationProxyRequestSchema = z
   .object({
     requestID: z.string().regex(opaqueID),
     idempotencyKey: z.string().regex(opaqueID),
-    imageBase64: ImageBase64Schema,
+    imagesBase64: z.array(ImageBase64Schema).min(1).max(5).readonly(),
   })
   .strict()
   .readonly()
@@ -61,6 +64,18 @@ const PlantIdResponseSchema = z
   })
   .passthrough()
 
+const PlantIdentificationCandidateSchema = z
+  .object({
+    publicContentId: z.string().regex(publicContentID),
+    koreanName: z.string().trim().min(1).max(200),
+    commonName: z.string().trim().min(1).max(200),
+    scientificName: z.string().trim().min(1).max(200),
+    confidence: z.number().finite().min(0).max(1),
+    thumbnailUrl: z.string().url().max(2048),
+  })
+  .strict()
+  .readonly()
+
 export type PlantIdentificationCandidate = Readonly<{
   publicContentId: string
   koreanName: string
@@ -81,10 +96,34 @@ export type PlantIdentificationResponse =
   | Readonly<{ kind: "no_candidates" }>
   | Readonly<{ kind: "failed"; reason: PlantIdentificationFailureReason }>
 
+export const PlantIdentificationResponseSchema = z
+  .discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("candidates"),
+        candidates: z.array(PlantIdentificationCandidateSchema).min(1).max(3).readonly(),
+      })
+      .strict()
+      .readonly(),
+    z
+      .object({ kind: z.literal("no_candidates") })
+      .strict()
+      .readonly(),
+    z
+      .object({
+        kind: z.literal("failed"),
+        reason: z.enum(["timeout", "rate_limited", "provider_unavailable", "malformed_response"]),
+      })
+      .strict()
+      .readonly(),
+  ])
+  .readonly()
+
 export type PlantIdentificationErrorCode =
   | "unauthenticated"
   | "invalid-argument"
   | "permission-denied"
+  | "conflict"
   | "timeout"
   | "rate-limited"
   | "provider-unavailable"
@@ -92,21 +131,29 @@ export type PlantIdentificationErrorCode =
 export class PlantIdentificationProxyError extends Error {
   override readonly name = "PlantIdentificationProxyError"
 
-  constructor(readonly code: PlantIdentificationErrorCode) {
-    super(code)
+  constructor(
+    readonly code: PlantIdentificationErrorCode,
+    message: string = code,
+  ) {
+    super(message)
   }
 }
 
 export interface PlantIdentificationProvider {
-  identify(image: Buffer): Promise<unknown>
+  identify(images: readonly Buffer[]): Promise<unknown>
 }
+
+export type PlantIdentificationOperation = Readonly<{
+  ownerID: string
+  requestID: string
+  idempotencyKey: string
+  requestHash: string
+}>
 
 export interface PlantIdentificationResultStore {
   runOnce(
-    subjectID: string,
-    requestID: string,
-    idempotencyKey: string,
-    operation: () => Promise<PlantIdentificationResponse>,
+    operation: PlantIdentificationOperation,
+    execute: () => Promise<PlantIdentificationResponse>,
   ): Promise<PlantIdentificationResponse>
 }
 
@@ -127,6 +174,27 @@ function parseRequest(input: unknown): PlantIdentificationProxyRequest {
     }
     throw error
   }
+}
+
+export function canonicalPlantIdentificationRequest(
+  operation: Pick<PlantIdentificationOperation, "ownerID" | "requestID">,
+  imagesBase64: readonly string[],
+): string {
+  return JSON.stringify({
+    contractVersion: PLANT_IDENTIFICATION_CONTRACT_VERSION,
+    owner: operation.ownerID,
+    requestID: operation.requestID,
+    imagesBase64,
+  })
+}
+
+export function plantIdentificationRequestHash(
+  operation: Pick<PlantIdentificationOperation, "ownerID" | "requestID">,
+  imagesBase64: readonly string[],
+): string {
+  return createHash("sha256")
+    .update(canonicalPlantIdentificationRequest(operation, imagesBase64), "utf8")
+    .digest("hex")
 }
 
 function httpsURL(value: string): string {
@@ -158,7 +226,9 @@ function normalizeProviderResponse(input: unknown): PlantIdentificationResponse 
       })
       .sort((left, right) => right.confidence - left.confidence)
       .slice(0, 3)
-    return candidates.length === 0 ? { kind: "no_candidates" } : { kind: "candidates", candidates }
+    return PlantIdentificationResponseSchema.parse(
+      candidates.length === 0 ? { kind: "no_candidates" } : { kind: "candidates", candidates },
+    )
   } catch (error: unknown) {
     if (error instanceof z.ZodError || error instanceof PlantIdentificationProxyError) {
       return { kind: "failed", reason: "malformed_response" }
@@ -178,6 +248,7 @@ function providerFailure(error: PlantIdentificationProxyError): PlantIdentificat
     case "unauthenticated":
     case "invalid-argument":
     case "permission-denied":
+    case "conflict":
       throw error
   }
 }
@@ -192,10 +263,19 @@ export async function executePlantIdentification(
     throw new PlantIdentificationProxyError("unauthenticated")
   }
   const request = parseRequest(input)
-  const image = Buffer.from(request.imageBase64, "base64")
-  return store.runOnce(subjectID, request.requestID, request.idempotencyKey, async () => {
+  const images = request.imagesBase64.map((image) => Buffer.from(image, "base64"))
+  const operation = {
+    ownerID: subjectID,
+    requestID: request.requestID,
+    idempotencyKey: request.idempotencyKey,
+    requestHash: plantIdentificationRequestHash(
+      { ownerID: subjectID, requestID: request.requestID },
+      request.imagesBase64,
+    ),
+  } satisfies PlantIdentificationOperation
+  return store.runOnce(operation, async () => {
     try {
-      return normalizeProviderResponse(await provider.identify(image))
+      return normalizeProviderResponse(await provider.identify(images))
     } catch (error: unknown) {
       if (error instanceof PlantIdentificationProxyError) return providerFailure(error)
       throw error
@@ -211,6 +291,8 @@ function errorStatus(error: PlantIdentificationProxyError): number {
       return 403
     case "invalid-argument":
       return 400
+    case "conflict":
+      return 409
     case "rate-limited":
       return 429
     case "timeout":
@@ -239,6 +321,7 @@ export function createPlantIdentificationHTTPHandler(
     }
     try {
       const subjectID = await dependencies.authenticate(request)
+      if (subjectID === null) throw new PlantIdentificationProxyError("unauthenticated")
       const input: unknown = await request.json()
       return jsonResponse(
         await executePlantIdentification(

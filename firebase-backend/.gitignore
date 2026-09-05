@@ -5,3 +5,5 @@ ui-debug.log
 functions/lib/
 functions/node_modules/
 functions/*.tsbuildinfo
+functions/.env*
+functions/.secret.local

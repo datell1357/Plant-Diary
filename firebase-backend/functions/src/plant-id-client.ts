@@ -6,7 +6,7 @@ import {
 
 export type PlantIdTransportRequest = Readonly<{
   apiKey: string
-  image: string
+  images: readonly string[]
   language: "ko"
   details: readonly ["common_names"]
   similarImages: true
@@ -50,13 +50,13 @@ export class PlantIdHttpClient implements PlantIdentificationProvider {
     private readonly transport: PlantIdTransport,
   ) {}
 
-  async identify(image: Buffer): Promise<unknown> {
+  async identify(images: readonly Buffer[]): Promise<unknown> {
     if (this.apiKey.trim() === "") {
       throw new PlantIdentificationProxyError("provider-unavailable")
     }
     const request: PlantIdTransportRequest = {
       apiKey: this.apiKey,
-      image: `data:${mediaType(image)};base64,${image.toString("base64")}`,
+      images: images.map((image) => `data:${mediaType(image)};base64,${image.toString("base64")}`),
       language: "ko",
       details: ["common_names"],
       similarImages: true,
@@ -100,7 +100,7 @@ export class KyPlantIdTransport implements PlantIdTransport {
           language: request.language,
         },
         json: {
-          images: [request.image],
+          images: request.images,
           similar_images: request.similarImages,
           classification_level: request.classificationLevel,
         },
