@@ -103,6 +103,12 @@ class ReleasePackagingSourceContractTest {
                     "drawable"
                 ),
             )
+            assertEquals(
+                "@drawable/ic_launcher_monochrome",
+                (adaptive.getElementsByTagName("monochrome").item(0) as Element).androidAttribute(
+                    "drawable"
+                ),
+            )
         }
         assertTrue(
             Files.isRegularFile(root.resolve("app/src/main/res/mipmap-anydpi/ic_launcher.xml"))
@@ -116,6 +122,19 @@ class ReleasePackagingSourceContractTest {
             root.resolve("app/src/main/res/drawable/ic_launcher_foreground.xml").readText()
         assertTrue(foreground.contains("#2E7D32"))
         assertTrue(foreground.contains("#FFFFFF"))
+
+        val monochrome = xml(root.resolve("app/src/main/res/drawable/ic_launcher_monochrome.xml"))
+        val monochromeVector = monochrome.documentElement
+        assertEquals("vector", monochromeVector.tagName)
+        assertEquals("48", monochromeVector.androidAttribute("viewportWidth"))
+        assertEquals("48", monochromeVector.androidAttribute("viewportHeight"))
+        assertEquals(1, monochrome.getElementsByTagName("path").length)
+        val monochromePath = monochrome.getElementsByTagName("path").item(0) as Element
+        assertEquals("#FFFFFFFF", monochromePath.androidAttribute("fillColor"))
+        assertEquals(
+            "M14,28C14,18 22,12 34,12C34,24 28,32 18,32L18,38L14,38Z",
+            monochromePath.androidAttribute("pathData"),
+        )
     }
 
     @Test
