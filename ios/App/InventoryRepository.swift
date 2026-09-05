@@ -18,6 +18,11 @@ final class InventoryRepository: ObservableObject {
     var provenance: InventorySnapshotProvenance?
     var accountID: String?
     var inventoryRequestGeneration = 0
+    private var lastAuthoritativeRefreshAt: Date?
+    private var authoritativeRefreshTask: Task<Bool, Never>?
+    private var authoritativeRefreshTaskGeneration: Int?
+    private var authoritativeRefreshTaskToken: UInt64 = 0
+    private let automaticRefreshInterval: TimeInterval = 30
 
     init(
         defaults: UserDefaults = .standard,
@@ -35,6 +40,11 @@ final class InventoryRepository: ObservableObject {
     }
 
     func mount(accountID: String?) {
+        authoritativeRefreshTask?.cancel()
+        authoritativeRefreshTask = nil
+        authoritativeRefreshTaskGeneration = nil
+        authoritativeRefreshTaskToken &+= 1
+        lastAuthoritativeRefreshAt = nil
         inventoryRequestGeneration &+= 1
         self.accountID = accountID
         catalog = InventoryCatalog.items()
@@ -76,13 +86,58 @@ final class InventoryRepository: ObservableObject {
     }
 
     @discardableResult
-    func refreshAuthoritative() async -> Bool {
+    func refreshAuthoritative(force: Bool = false) async -> Bool {
         guard !allowsLocalAcquisition,
               let mountedAccountID = accountID
         else {
             return allowsLocalAcquisition && accountID != nil
         }
+        if !force,
+           let lastAuthoritativeRefreshAt,
+           Date().timeIntervalSince(lastAuthoritativeRefreshAt)
+           < automaticRefreshInterval
+        {
+            return isAuthoritativeForCurrentMount
+        }
+        if let authoritativeRefreshTask {
+            let joinedGeneration = inventoryRequestGeneration
+            let existingResult = await authoritativeRefreshTask.value
+            // A forced refresh is used after a mutation. It must not reuse the
+            // pre-mutation snapshot that happened to be in flight.
+            guard accountID == mountedAccountID,
+                  inventoryRequestGeneration == joinedGeneration
+            else { return false }
+            guard force else { return existingResult }
+        }
         let requestGeneration = inventoryRequestGeneration
+        authoritativeRefreshTaskToken &+= 1
+        let taskToken = authoritativeRefreshTaskToken
+        let task = Task { [weak self] in
+            guard let self else { return false }
+            return await performAuthoritativeRefresh(
+                accountID: mountedAccountID,
+                requestGeneration: requestGeneration
+            )
+        }
+        authoritativeRefreshTask = task
+        authoritativeRefreshTaskGeneration = requestGeneration
+        let result = await task.value
+        if authoritativeRefreshTaskGeneration == requestGeneration,
+           authoritativeRefreshTaskToken == taskToken
+        {
+            authoritativeRefreshTask = nil
+            authoritativeRefreshTaskGeneration = nil
+        }
+        return result
+    }
+
+    private func performAuthoritativeRefresh(
+        accountID mountedAccountID: String,
+        requestGeneration: Int
+    ) async -> Bool {
+        guard accountID == mountedAccountID,
+              inventoryRequestGeneration == requestGeneration
+        else { return false }
         do {
             let snapshot = try await authoritativeService.load(
                 accountID: mountedAccountID
@@ -90,15 +145,20 @@ final class InventoryRepository: ObservableObject {
             guard accountID == mountedAccountID,
                   inventoryRequestGeneration == requestGeneration
             else { return false }
-            return applyAuthoritative(
+            let applied = applyAuthoritative(
                 snapshot,
                 accountID: mountedAccountID
             )
+            if applied {
+                lastAuthoritativeRefreshAt = Date()
+            }
+            return applied
         } catch {
             guard accountID == mountedAccountID,
                   inventoryRequestGeneration == requestGeneration
             else { return false }
             isAuthoritativeForCurrentMount = false
+            lastAuthoritativeRefreshAt = nil
             return false
         }
     }

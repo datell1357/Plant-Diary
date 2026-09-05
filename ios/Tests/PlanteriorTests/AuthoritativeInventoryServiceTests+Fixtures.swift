@@ -79,6 +79,7 @@ final class InventoryServiceFake: AuthoritativeInventoryService {
     private let loads: [AuthoritativeInventorySnapshot]
     private let receipt: InventoryOwnershipReceipt
     private var loadIndex = 0
+    var loadCount: Int { loadIndex }
 
     init(
         loads: [AuthoritativeInventorySnapshot],

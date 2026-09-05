@@ -56,7 +56,7 @@ extension InventoryRepository {
             else {
                 return .failed(.invalidProviderResponse)
             }
-            guard await refreshAuthoritative() else {
+            guard await refreshAuthoritative(force: true) else {
                 return .failed(.providerUnavailable)
             }
             guard ownedItems.contains(where: {

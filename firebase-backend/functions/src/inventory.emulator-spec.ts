@@ -88,6 +88,19 @@ test("Given a public catalog and empty owner, when loading inventory, then it re
     )
     assert.equal(loaded.inventoryGeneration, 1)
     assert.equal(loaded.snapshotHash, inventorySnapshotHash(loaded))
+
+    const stateBefore = await firestore.doc(`users/${owner}/inventoryState/current`).get()
+    const loadedAgain = await loadInventory(
+      inventoryAuth({ uid: owner }),
+      { expectedOwnerUid: owner },
+      store,
+    )
+    const stateAfter = await firestore.doc(`users/${owner}/inventoryState/current`).get()
+    assert.equal(loadedAgain.inventoryGeneration, loaded.inventoryGeneration)
+    assert.equal(loadedAgain.snapshotHash, loaded.snapshotHash)
+    assert.ok(stateBefore.updateTime !== undefined)
+    assert.ok(stateAfter.updateTime !== undefined)
+    assert.ok(stateBefore.updateTime.isEqual(stateAfter.updateTime))
   } finally {
     await deleteApp(app)
   }

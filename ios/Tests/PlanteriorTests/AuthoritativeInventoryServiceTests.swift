@@ -6,6 +6,66 @@ import Testing
 @MainActor
 struct AuthoritativeInventoryServiceTests {
     @Test
+    func automaticRefreshUsesFreshSnapshotWithoutASecondServerRead() async throws {
+        let fixture = try InventoryRepositoryFixture()
+        let item = try Self.serverItem()
+        let service = try InventoryServiceFake(
+            loads: [Self.snapshot(item: item, owned: [], generation: 6, hash: "b")],
+            receipt: InventoryOwnershipReceipt(
+                kind: .alreadyOwned,
+                ownerID: fixture.accountA,
+                itemID: item.id,
+                catalogRevision: item.revision,
+                ownershipRevision: Revision.parse(1),
+                acquiredAt: fixture.now
+            )
+        )
+        let repository = InventoryRepository(
+            defaults: fixture.defaults,
+            now: fixture.now,
+            allowsLocalAcquisition: false,
+            authoritativeService: service
+        )
+        repository.mount(accountID: fixture.accountA)
+
+        #expect(await repository.refreshAuthoritative())
+        #expect(await repository.refreshAuthoritative())
+        #expect(service.loadCount == 1)
+    }
+
+    @Test
+    func forcedRefreshReadsAgainAfterAutomaticRefresh() async throws {
+        let fixture = try InventoryRepositoryFixture()
+        let item = try Self.serverItem()
+        let service = try InventoryServiceFake(
+            loads: [
+                Self.snapshot(item: item, owned: [], generation: 6, hash: "b"),
+                Self.snapshot(item: item, owned: [], generation: 7, hash: "c")
+            ],
+            receipt: InventoryOwnershipReceipt(
+                kind: .alreadyOwned,
+                ownerID: fixture.accountA,
+                itemID: item.id,
+                catalogRevision: item.revision,
+                ownershipRevision: Revision.parse(1),
+                acquiredAt: fixture.now
+            )
+        )
+        let repository = InventoryRepository(
+            defaults: fixture.defaults,
+            now: fixture.now,
+            allowsLocalAcquisition: false,
+            authoritativeService: service
+        )
+        repository.mount(accountID: fixture.accountA)
+
+        #expect(await repository.refreshAuthoritative())
+        #expect(await repository.refreshAuthoritative(force: true))
+        #expect(service.loadCount == 2)
+        #expect(repository.provenance?.inventoryGeneration == 7)
+    }
+
+    @Test
     func decodesContractV3SnapshotAndRejectsTampering() throws {
         let snapshot = try AuthoritativeInventoryResponseDecoder.snapshot(
             data: Self.validSnapshotData(),

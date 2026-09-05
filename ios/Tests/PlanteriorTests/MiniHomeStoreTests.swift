@@ -6,6 +6,25 @@ import Testing
 @MainActor
 struct MiniHomeStoreTests {
     @Test
+    func unchangedSaveDoesNotCallServerOrAdvanceRevision() async throws {
+        let fixture = try MiniHomeStoreFixture()
+        let initial = try fixture.snapshot(name: "기준 저장본", revision: 1)
+        let service = MiniHomeStoreServiceFake(snapshots: [fixture.accountA: initial])
+        let store = fixture.store(service: service, operationIDs: ["operation-edit"])
+        await store.mount(accountID: fixture.accountA, defaultDraft: nil)
+
+        await store.save()
+        #expect(service.requests.isEmpty)
+        #expect(store.committed?.revision.rawValue == 1)
+
+        store.renameDraft("변경된 저장본")
+        await store.save()
+        await store.save()
+        #expect(service.requests.count == 1)
+        #expect(store.committed?.revision.rawValue == 2)
+    }
+
+    @Test
     func twoClientsConflictAndExplicitReapplyCommitsRevisionThree() async throws {
         // Given
         let fixture = try MiniHomeStoreFixture()

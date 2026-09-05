@@ -38,14 +38,15 @@ export class FirestoreInventoryStore implements InventoryStore {
           transaction.get(this.firestore.doc(`users/${ownerUid}/inventoryState/current`)),
           transaction.get(this.firestore.collection(`users/${ownerUid}/personalPlants`)),
         ])
+        const state = inventoryState(stateDocument, ownerUid)
         const snapshot = this.snapshot(
           ownerUid,
           inventoryCatalog(catalogDocuments.docs),
           inventoryOwned(ownedDocuments.docs, ownerUid),
           plants.size,
-          inventoryState(stateDocument, ownerUid),
+          state,
         )
-        this.writeState(transaction, ownerUid, snapshot)
+        this.writeState(transaction, ownerUid, snapshot, state)
         return snapshot
       },
       { maxAttempts: 5 },
@@ -82,17 +83,18 @@ export class FirestoreInventoryStore implements InventoryStore {
           plants.size,
         )
         const acquired = receipt.kind === "acquired" ? this.newOwned(receipt, selected) : null
+        const state = inventoryState(stateDocument, command.ownerUid)
         const snapshot = this.snapshot(
           command.ownerUid,
           catalog,
           acquired === null ? owned : [...owned, wireOwned(acquired)],
           plants.size,
-          inventoryState(stateDocument, command.ownerUid),
+          state,
         )
         if (acquired !== null) {
           transaction.create(this.firestore.doc(`${root}/ownedItems/${command.itemId}`), acquired)
         }
-        this.writeState(transaction, command.ownerUid, snapshot)
+        this.writeState(transaction, command.ownerUid, snapshot, state)
         transaction.create(
           this.firestore.doc(`${root}/inventoryOperations/${command.operationId}`),
           {
@@ -201,7 +203,16 @@ export class FirestoreInventoryStore implements InventoryStore {
     transaction: FirebaseFirestore.Transaction,
     ownerUid: InventoryOwnerId,
     snapshot: InventorySnapshot,
+    state: InventoryState | null,
   ): void {
+    if (
+      state !== null &&
+      state.ownerUid === ownerUid &&
+      state.generation === snapshot.inventoryGeneration &&
+      state.snapshotHash === snapshot.snapshotHash
+    ) {
+      return
+    }
     transaction.set(this.firestore.doc(`users/${ownerUid}/inventoryState/current`), {
       ownerUid,
       generation: snapshot.inventoryGeneration,

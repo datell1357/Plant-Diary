@@ -89,6 +89,10 @@ final class MiniHomeStore: ObservableObject {
             state = .failed
             return
         }
+        // Preserve retries and explicit conflict resolution, but skip unchanged saves.
+        if draft == committed, pendingSave == nil, conflictSnapshot == nil, !forceNew {
+            return
+        }
         let expectedRevision = override ?? committed?.revision ?? draft.revision
         let fingerprint = MiniHomeCanonicalEncoding.request(
             accountID: accountID,
