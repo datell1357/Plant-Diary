@@ -9,6 +9,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -21,6 +22,74 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class Todo18DebugCameraBoundaryTest {
+    @Test
+    fun ioTraceRecordsReturnAndRunsOnIoThread() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter(records::add)
+        val uri = "file:///io-return.jpg"
+        val token = Todo18DebugCameraBoundary.startCameraTrace(uri, writer)
+        val callerThread = Thread.currentThread().name
+
+        val value =
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                Todo18DebugCameraBoundary.traceCameraIo(token, uri, writer) {
+                    assertTrue(Thread.currentThread().name != callerThread)
+                    "prepared"
+                }
+            }
+
+        assertEquals("prepared", value)
+        assertEquals(
+            listOf(Todo18DebugCameraTraceStage.IO_BEGIN, Todo18DebugCameraTraceStage.IO_RETURN),
+            records.filter { it.stage.name.startsWith("IO_") }.map { it.stage },
+        )
+        assertEquals(1, records.map { it.token }.distinct().size)
+    }
+
+    @Test
+    fun ioTracePreservesThrownIdentity() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter(records::add)
+        val failure = IllegalStateException("io failure")
+        val uri = "file:///io-throw.jpg"
+        val token = Todo18DebugCameraBoundary.startCameraTrace(uri, writer)
+
+        val thrown =
+            try {
+                Todo18DebugCameraBoundary.traceCameraIo(token, uri, writer) { throw failure }
+                error("operation returned")
+            } catch (caught: IllegalStateException) {
+                caught
+            }
+
+        assertSame(failure, thrown)
+        assertEquals(Todo18DebugCameraTraceStage.IO_BEGIN, records[1].stage)
+        assertEquals(Todo18DebugCameraTraceStage.IO_THROW, records[2].stage)
+        assertEquals(Todo18DebugCameraTraceTerminal.THROWN, records[2].terminal)
+    }
+
+    @Test
+    fun ioTracePreservesCancellationIdentity() = runBlocking {
+        val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()
+        val writer = Todo18DebugCameraTraceWriter(records::add)
+        val cancellation = CancellationException("io cancellation")
+        val uri = "file:///io-cancel.jpg"
+        val token = Todo18DebugCameraBoundary.startCameraTrace(uri, writer)
+
+        val thrown =
+            try {
+                Todo18DebugCameraBoundary.traceCameraIo(token, uri, writer) { throw cancellation }
+                error("operation returned")
+            } catch (caught: CancellationException) {
+                caught
+            }
+
+        assertSame(cancellation, thrown)
+        assertEquals(Todo18DebugCameraTraceStage.IO_BEGIN, records[1].stage)
+        assertEquals(Todo18DebugCameraTraceStage.IO_CANCEL, records[2].stage)
+        assertEquals(Todo18DebugCameraTraceTerminal.CANCELLED, records[2].terminal)
+    }
+
     @Test
     fun returnedFalseTraceUsesOneOperationAndOrderedPublication() = runBlocking {
         val records = CopyOnWriteArrayList<Todo18DebugCameraTraceRecord>()

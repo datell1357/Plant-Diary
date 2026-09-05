@@ -23,6 +23,13 @@ object Todo18DebugCameraBoundary {
         traceWriter: Todo18DebugCameraTraceWriter,
     ) = Unit
 
+    internal fun <T> traceCameraIo(
+        token: Todo18DebugCameraTraceToken?,
+        uri: String,
+        traceWriter: Todo18DebugCameraTraceWriter,
+        operation: () -> T,
+    ): T = operation()
+
     internal suspend fun observePhotoPreparation(
         token: Todo18DebugCameraTraceToken?,
         uri: String,
@@ -76,6 +83,12 @@ internal fun todo18DebugTraceCameraStage(
     terminal: Todo18DebugCameraTraceTerminal = Todo18DebugCameraTraceTerminal.NONE,
 ) = Unit
 
+internal fun <T> todo18DebugTraceCameraIo(
+    token: Todo18DebugCameraTraceToken?,
+    uri: String,
+    operation: () -> T,
+): T = operation()
+
 internal suspend fun todo18DebugObservePhotoPreparation(
     token: Todo18DebugCameraTraceToken?,
     uri: String,
@@ -97,6 +110,10 @@ internal enum class Todo18DebugCameraTraceStage {
     COROUTINE_ENTERED,
     WRAPPER_ENTERED,
     PREPARE_ENTERED,
+    IO_BEGIN,
+    IO_RETURN,
+    IO_THROW,
+    IO_CANCEL,
     PREPARE_RETURNED,
     FOLD_RETURNED,
     DELEGATE_RETURNED,

@@ -2,6 +2,7 @@ package com.planterior.helper.feature.camera
 
 import android.os.SystemClock
 import androidx.core.net.toUri
+import java.util.concurrent.CancellationException
 
 internal data class Todo18DebugCameraTraceToken(
     val operationId: Long,
@@ -16,6 +17,10 @@ internal enum class Todo18DebugCameraTraceStage {
     COROUTINE_ENTERED,
     WRAPPER_ENTERED,
     PREPARE_ENTERED,
+    IO_BEGIN,
+    IO_RETURN,
+    IO_THROW,
+    IO_CANCEL,
     PREPARE_RETURNED,
     FOLD_RETURNED,
     DELEGATE_RETURNED,
@@ -67,6 +72,62 @@ internal fun safeTrace(
     try {
         traceWriter.write(record)
     } catch (_: AssertionError) {} catch (_: Exception) {}
+}
+
+internal fun <T> todo18DebugTraceCameraIoRuntime(
+    token: Todo18DebugCameraTraceToken?,
+    uri: String,
+    traceWriter: Todo18DebugCameraTraceWriter,
+    operation: () -> T,
+): T {
+    writeCameraTrace(
+        token,
+        Todo18DebugCameraTraceStage.IO_BEGIN,
+        uri,
+        Todo18DebugCameraTraceTerminal.NONE,
+        null,
+        null,
+        0,
+        traceWriter,
+    )
+    return try {
+        val result = operation()
+        writeCameraTrace(
+            token,
+            Todo18DebugCameraTraceStage.IO_RETURN,
+            uri,
+            Todo18DebugCameraTraceTerminal.NONE,
+            null,
+            null,
+            0,
+            traceWriter,
+        )
+        result
+    } catch (cancellation: CancellationException) {
+        writeCameraTrace(
+            token,
+            Todo18DebugCameraTraceStage.IO_CANCEL,
+            uri,
+            Todo18DebugCameraTraceTerminal.CANCELLED,
+            null,
+            null,
+            0,
+            traceWriter,
+        )
+        throw cancellation
+    } catch (failure: Throwable) {
+        writeCameraTrace(
+            token,
+            Todo18DebugCameraTraceStage.IO_THROW,
+            uri,
+            Todo18DebugCameraTraceTerminal.THROWN,
+            null,
+            null,
+            0,
+            traceWriter,
+        )
+        throw failure
+    }
 }
 
 internal fun classifyUri(uri: String?): Todo18DebugCameraTraceUriKind {

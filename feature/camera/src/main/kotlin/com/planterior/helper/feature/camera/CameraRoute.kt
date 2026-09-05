@@ -160,7 +160,9 @@ fun CameraRoute(
                                 )
                                 val result =
                                     withContext(Dispatchers.IO) {
-                                        preparer.prepare(debugUri, PhotoSource.Picker)
+                                        todo18DebugTraceCameraIo(token, debugUri) {
+                                            preparer.prepare(debugUri, PhotoSource.Picker)
+                                        }
                                     }
                                 todo18DebugTraceCameraStage(
                                     token,
