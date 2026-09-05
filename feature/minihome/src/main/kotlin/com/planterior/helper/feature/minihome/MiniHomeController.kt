@@ -715,6 +715,13 @@ class MiniHomeController(
             return
         }
         if (
+            editing.draft == editing.committed &&
+                editing.saveState is MiniHomeSaveState.Idle &&
+                editing.discardHandle == null
+        ) {
+            return
+        }
+        if (
             editing.saveState is MiniHomeSaveState.Conflict ||
                 editing.saveState is MiniHomeSaveState.ValidationFailed ||
                 editing.saveState is MiniHomeSaveState.ReconciliationRequired ||

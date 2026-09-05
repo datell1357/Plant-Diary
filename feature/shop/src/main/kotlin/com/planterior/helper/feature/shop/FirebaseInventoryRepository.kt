@@ -1,5 +1,6 @@
 package com.planterior.helper.feature.shop
 
+import android.os.SystemClock
 import androidx.room.withTransaction
 import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
@@ -32,6 +33,14 @@ import java.time.Instant
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 data class RemoteInventoryAcquireRequest(
@@ -82,57 +91,151 @@ interface InventoryRemoteDataSource {
 class FirebaseInventoryRepository(
     private val database: PlanteriorDatabase,
     private val remote: InventoryRemoteDataSource,
+    loadScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
+    private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
     private val now: () -> Instant = Instant::now,
-) : InventoryRepository {
-    override suspend fun load(): InventoryLoadResult {
+) : InventoryRepository, AutoCloseable {
+    constructor(
+        database: PlanteriorDatabase,
+        remote: InventoryRemoteDataSource,
+        now: () -> Instant,
+    ) : this(database, remote, CoroutineScope(Dispatchers.IO), SystemClock::elapsedRealtime, now)
+
+    private val loadScope =
+        CoroutineScope(loadScope.coroutineContext + SupervisorJob(loadScope.coroutineContext[Job]))
+    private val loadFlights = mutableMapOf<AccountId, Deferred<InventoryLoadResult>>()
+    private val loadFlightsLock = Any()
+    private val freshUntil = mutableMapOf<AccountId, Long>()
+    private var observedAccount: AccountId? = null
+    private var accountEpoch = 0L
+
+    /** Called by the process-owned auth runtime for every Firebase account transition. */
+    fun onAccountChanged(accountId: AccountId?) {
+        synchronized(loadFlightsLock) { observeAccount(accountId) }
+    }
+
+    override fun close() {
+        loadScope.cancel()
+    }
+
+    override suspend fun load(): InventoryLoadResult = load(false)
+
+    override suspend fun load(forceRefresh: Boolean): InventoryLoadResult {
         val accountId = remote.activeAccount() ?: return InventoryLoadResult.Forbidden
+        val epoch = observeAccount(accountId)
+        if (!forceRefresh) {
+            val cached = cached(accountId)
+            if (cached != null) {
+                val fresh =
+                    synchronized(loadFlightsLock) {
+                        cached.loadedAt.toEpochMilli() <= now().toEpochMilli() &&
+                            freshUntil[accountId]?.let { elapsedRealtime() < it } == true
+                    }
+                val candidates = runCatching { receiptCandidates(accountId) }
+                if (!isCurrentLoadOwner(accountId, epoch)) return InventoryLoadResult.Forbidden
+                return cached.loadResult(
+                    stale = !fresh,
+                    receiptCandidates = candidates.getOrDefault(emptyList()),
+                    receiptCandidatesAuthoritative = candidates.isSuccess,
+                    refreshRequired = !fresh,
+                )
+            }
+        }
+        val flight =
+            synchronized(loadFlightsLock) {
+                if (!isCurrentLoadOwner(accountId, epoch)) return InventoryLoadResult.Forbidden
+                loadFlights[accountId]?.takeIf { it.isActive }
+                    ?: loadScope
+                        .async(start = CoroutineStart.LAZY) { loadRemote(accountId, epoch) }
+                        .also { created ->
+                            loadFlights[accountId] = created
+                            created.invokeOnCompletion {
+                                synchronized(loadFlightsLock) {
+                                    loadFlights.remove(accountId, created)
+                                }
+                            }
+                            created.start()
+                        }
+            }
+        return flight.await()
+    }
+
+    private fun observeAccount(accountId: AccountId?): Long =
+        synchronized(loadFlightsLock) {
+            if (observedAccount != accountId) {
+                val previous = observedAccount
+                observedAccount = accountId
+                accountEpoch += 1
+                freshUntil.remove(previous)
+                freshUntil.remove(accountId)
+                loadFlights.remove(previous)?.cancel()
+            }
+            accountEpoch
+        }
+
+    private suspend fun loadRemote(accountId: AccountId, epoch: Long): InventoryLoadResult {
         var receiptCandidates = emptyList<InventoryReceiptId>()
         return try {
+            ensureLoadOwner(accountId, epoch)
             reconcilePending(accountId)
-            ensureOwner(accountId)
+            ensureLoadOwner(accountId, epoch)
             val snapshot = remote.load(accountId)
             require(snapshot.accountId == accountId)
-            ensureOwner(accountId)
-            val current = database.withTransaction {
-                val applied =
-                    database.cacheDao().applyAuthoritativeInventory(snapshot.authoritativeWrite())
-                if (applied is InventoryCacheApplyResult.Conflict) {
-                    throw InventoryRemoteException(InventoryFailure.MALFORMED_RESPONSE)
-                }
-                val current =
-                    requireNotNull(
-                            applied.current.verifiedAuthoritativeInventoryOrNull(accountId)
-                        ) {
-                            "Authoritative inventory cache result is unverified"
-                        }
-                        .inventorySnapshot()
-                database
-                    .syncDao()
-                    .upsertLastSync(
-                        LastSyncEntity(
-                            accountId.value,
-                            INVENTORY_DOMAIN,
-                            current.loadedAt.toEpochMilli(),
-                            if (current.partial) "PARTIAL" else "SUCCESS",
-                            null,
+            ensureLoadOwner(accountId, epoch)
+            val current =
+                database.withTransaction {
+                    if (!isCurrentLoadOwner(accountId, epoch)) return@withTransaction null
+                    val applied =
+                        database
+                            .cacheDao()
+                            .applyAuthoritativeInventory(snapshot.authoritativeWrite())
+                    if (applied is InventoryCacheApplyResult.Conflict) {
+                        throw InventoryRemoteException(InventoryFailure.MALFORMED_RESPONSE)
+                    }
+                    val current =
+                        requireNotNull(
+                                applied.current.verifiedAuthoritativeInventoryOrNull(accountId)
+                            ) {
+                                "Authoritative inventory cache result is unverified"
+                            }
+                            .inventorySnapshot()
+                    database
+                        .syncDao()
+                        .upsertLastSync(
+                            LastSyncEntity(
+                                accountId.value,
+                                INVENTORY_DOMAIN,
+                                current.loadedAt.toEpochMilli(),
+                                if (current.partial) "PARTIAL" else "SUCCESS",
+                                null,
+                            )
                         )
-                    )
-                current
-            }
-            ensureOwner(accountId)
+                    ensureLoadOwner(accountId, epoch)
+                    current
+                } ?: return InventoryLoadResult.Forbidden
+            ensureLoadOwner(accountId, epoch)
             receiptCandidates = receiptCandidates(accountId)
             compactAcknowledgedReceipts(accountId)
-            current.loadResult(stale = false, receiptCandidates)
+            synchronized(loadFlightsLock) {
+                ensureLoadOwner(accountId, epoch)
+                val elapsed = elapsedRealtime()
+                freshUntil[accountId] =
+                    if (elapsed > Long.MAX_VALUE - FRESHNESS_MILLIS) Long.MAX_VALUE
+                    else elapsed + FRESHNESS_MILLIS
+            }
+            current.loadResult(stale = false, receiptCandidates, refreshRequired = false)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            if (remote.activeAccount() != accountId) return InventoryLoadResult.Forbidden
+            if (!isCurrentLoadOwner(accountId, epoch)) return InventoryLoadResult.Forbidden
             val snapshot = cached(accountId) ?: return InventoryLoadResult.Failed
             val candidateRead = runCatching { receiptCandidates(accountId) }
+            if (!isCurrentLoadOwner(accountId, epoch)) return InventoryLoadResult.Forbidden
             snapshot.loadResult(
                 stale = true,
                 receiptCandidates = candidateRead.getOrDefault(emptyList()),
                 receiptCandidatesAuthoritative = candidateRead.isSuccess,
+                refreshRequired = false,
             )
         }
     }
@@ -154,7 +257,10 @@ class FirebaseInventoryRepository(
             if (inserted == -1L) {
                 when (val persisted = persistedOperation(remoteRequest, operation)) {
                     PersistedAcquisition.Pending -> Unit
-                    is PersistedAcquisition.Terminal -> return persisted.result
+                    is PersistedAcquisition.Terminal -> {
+                        invalidateAfterAcquisition(request.accountId, persisted.result)
+                        return persisted.result
+                    }
                     is PersistedAcquisition.Failed -> return persisted.result
                     PersistedAcquisition.Mismatch ->
                         return InventoryAcquireResult.Failure(
@@ -169,11 +275,26 @@ class FirebaseInventoryRepository(
                         )
                 }
             }
-            complete(remoteRequest)
+            complete(remoteRequest).also { result ->
+                invalidateAfterAcquisition(request.accountId, result)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
             InventoryAcquireResult.Failure(InventoryFailure.DATABASE, request.operationId)
+        }
+    }
+
+    private fun invalidateAfterAcquisition(accountId: AccountId, result: InventoryAcquireResult) {
+        if (
+            result !is InventoryAcquireResult.Success &&
+                result !is InventoryAcquireResult.AlreadyOwned
+        )
+            return
+        synchronized(loadFlightsLock) {
+            freshUntil.remove(accountId)
+            if (observedAccount == accountId) accountEpoch += 1
+            loadFlights.remove(accountId)?.cancel()
         }
     }
 
@@ -697,10 +818,24 @@ class FirebaseInventoryRepository(
         if (remote.activeAccount() != accountId) throw SecurityException("Inventory owner changed")
     }
 
+    private fun ensureLoadOwner(accountId: AccountId, epoch: Long) {
+        ensureOwner(accountId)
+        synchronized(loadFlightsLock) {
+            check(observedAccount == accountId && accountEpoch == epoch)
+        }
+    }
+
+    private fun isCurrentLoadOwner(accountId: AccountId, epoch: Long): Boolean =
+        remote.activeAccount() == accountId &&
+            synchronized(loadFlightsLock) {
+                observedAccount == accountId && accountEpoch == epoch
+            }
+
     private companion object {
         const val INVENTORY_DOMAIN = "INVENTORY"
         val ACKNOWLEDGED_RECEIPT_RETENTION = java.time.Duration.ofDays(7)
         val RECEIPT_CLAIM_LEASE = java.time.Duration.ofMinutes(5)
+        const val FRESHNESS_MILLIS = 30_000L
     }
 }
 
@@ -1240,6 +1375,7 @@ private fun InventorySnapshot.loadResult(
     stale: Boolean,
     receiptCandidates: List<InventoryReceiptId> = emptyList(),
     receiptCandidatesAuthoritative: Boolean = true,
+    refreshRequired: Boolean = false,
 ): InventoryLoadResult =
     if (partial) {
         InventoryLoadResult.Partial(
@@ -1247,6 +1383,7 @@ private fun InventorySnapshot.loadResult(
             stale,
             receiptCandidates,
             receiptCandidatesAuthoritative,
+            refreshRequired,
         )
     } else {
         InventoryLoadResult.Ready(
@@ -1254,6 +1391,7 @@ private fun InventorySnapshot.loadResult(
             stale,
             receiptCandidates,
             receiptCandidatesAuthoritative,
+            refreshRequired,
         )
     }
 

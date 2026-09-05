@@ -481,6 +481,7 @@ sealed interface InventoryLoadResult {
         val stale: Boolean,
         val receiptCandidates: List<InventoryReceiptId> = emptyList(),
         val receiptCandidatesAuthoritative: Boolean = true,
+        val refreshRequired: Boolean = false,
     ) : InventoryLoadResult
 
     data class Partial(
@@ -488,6 +489,7 @@ sealed interface InventoryLoadResult {
         val stale: Boolean,
         val receiptCandidates: List<InventoryReceiptId> = emptyList(),
         val receiptCandidatesAuthoritative: Boolean = true,
+        val refreshRequired: Boolean = false,
     ) : InventoryLoadResult
 
     data object Forbidden : InventoryLoadResult
@@ -497,6 +499,9 @@ sealed interface InventoryLoadResult {
 
 interface InventoryRepository {
     suspend fun load(): InventoryLoadResult
+
+    /** Optional policy overload; legacy repositories retain their existing load implementation. */
+    suspend fun load(forceRefresh: Boolean): InventoryLoadResult = load()
 
     suspend fun acquire(request: InventoryAcquireRequest): InventoryAcquireResult
 

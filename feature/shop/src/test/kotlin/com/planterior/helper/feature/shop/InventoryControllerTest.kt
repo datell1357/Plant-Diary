@@ -27,6 +27,62 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class InventoryControllerTest {
     @Test
+    fun `explicit retry forces remote refresh even after fresh content`() = runTest {
+        val repository = ControlledRepository()
+        val account = AccountId("account-a")
+        repeat(2) {
+            repository.loads +=
+                ControlledCall(
+                    completed(InventoryLoadResult.Ready(snapshot(account, "same"), false))
+                )
+        }
+        val controller = InventoryController(repository, SavedStateHandle())
+        controller.start(InventoryAuthOwnership.Authenticated(account))
+        assertEquals(0, repository.forceRefreshCalls)
+        controller.retry()
+        assertEquals(1, repository.forceRefreshCalls)
+    }
+
+    @Test
+    fun `stale cached content publishes first then forced refresh publishes current content`() =
+        runTest {
+            val repository = ControlledRepository()
+            val account = AccountId("account-a")
+            repository.loads +=
+                ControlledCall(
+                    completed(
+                        InventoryLoadResult.Ready(
+                            snapshot(account, "cached"),
+                            true,
+                            refreshRequired = true,
+                        )
+                    )
+                )
+            val refresh = ControlledCall<InventoryLoadResult>()
+            repository.loads += refresh
+            val controller = InventoryController(repository, SavedStateHandle())
+            val start = async { controller.start(InventoryAuthOwnership.Authenticated(account)) }
+            refresh.started.await()
+            val content = controller.state.value as InventoryUiState.Content
+            assertEquals("cached", content.snapshot.catalog.single().id.value)
+            assertTrue(content.stale)
+            assertTrue(repository.forceRefreshCalls > 0)
+            refresh.result.complete(
+                InventoryLoadResult.Ready(snapshot(account, "fresh").copy(generation = 2), false)
+            )
+            start.await()
+            assertEquals(
+                "fresh",
+                (controller.state.value as InventoryUiState.Content)
+                    .snapshot
+                    .catalog
+                    .single()
+                    .id
+                    .value,
+            )
+        }
+
+    @Test
     fun `A post-acquire forbidden cannot invalidate B load after exact owner switch race`() =
         runTest {
             val accountA = AccountId("account-a")
@@ -1332,7 +1388,15 @@ class InventoryControllerTest {
         var claimAttempts = 0
             private set
 
+        var forceRefreshCalls = 0
+            private set
+
         override suspend fun load(): InventoryLoadResult = loads.removeFirst().await()
+
+        override suspend fun load(forceRefresh: Boolean): InventoryLoadResult {
+            if (forceRefresh) forceRefreshCalls += 1
+            return loads.removeFirst().await()
+        }
 
         override suspend fun acquire(request: InventoryAcquireRequest): InventoryAcquireResult =
             acquisitions.removeFirst().await()

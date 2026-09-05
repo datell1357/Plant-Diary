@@ -70,7 +70,7 @@ class Todo18RegistrationMiniHomeFixtureCoherenceTest {
                 )
             ) is InventoryAcquireResult.Success
         )
-        val reloaded = (inventory.load() as InventoryLoadResult.Ready).snapshot
+        val reloaded = (inventory.load(forceRefresh = true) as InventoryLoadResult.Ready).snapshot
         assertEquals(2L, reloaded.generation)
         assertEquals(listOf(catalog.id), reloaded.owned.map { it.itemId })
 

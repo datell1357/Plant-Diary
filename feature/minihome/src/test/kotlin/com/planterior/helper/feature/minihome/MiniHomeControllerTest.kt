@@ -27,6 +27,41 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class MiniHomeControllerTest {
     @Test
+    fun `unchanged draft does not transmit a save`() = runTest {
+        val repository = FakeRepository()
+        val controller = MiniHomeController(repository, SavedStateHandle())
+
+        controller.start()
+        controller.beginEditing()
+        controller.save()
+
+        assertTrue(controller.state.value is MiniHomeUiState.Editing)
+        assertTrue(repository.saved.isEmpty())
+    }
+
+    @Test
+    fun `unchanged draft with durable pending row is not skipped`() = runTest {
+        val handle = conflictHandle("equal-layout-pending")
+        val repository =
+            FakeRepository(
+                pending =
+                    MiniHomePendingSave(
+                        OperationId(handle.rowOperationId),
+                        Revision(1),
+                        authoritative(1),
+                        MiniHomePendingState.PENDING,
+                        discardHandle = handle,
+                    )
+            )
+        val controller = MiniHomeController(repository, SavedStateHandle())
+
+        controller.start()
+        controller.save()
+
+        assertTrue(repository.saved.isNotEmpty())
+    }
+
+    @Test
     fun `background application is limited to one and unavailable items cannot be newly applied`() =
         runTest {
             val repository =
@@ -111,6 +146,7 @@ class MiniHomeControllerTest {
                 )
             controller.start()
             controller.beginEditing()
+            controller.rename("검증할 미니 식물원")
 
             controller.save()
             controller.save()
@@ -462,6 +498,7 @@ class MiniHomeControllerTest {
                 )
             controller.start()
             controller.beginEditing()
+            controller.rename("첫 번째")
             controller.save()
             val first = controller.state.value as MiniHomeUiState.Editing
             controller.rename("두 번째")
@@ -1259,6 +1296,7 @@ class MiniHomeControllerTest {
         val controller = MiniHomeController(repository, savedState)
         controller.start()
         controller.beginEditing()
+        controller.rename("조정할 미니 식물원")
         controller.save()
         val reconciling = async { controller.reconcileSaveFailure() }
         repository.reconcileEntered.await()

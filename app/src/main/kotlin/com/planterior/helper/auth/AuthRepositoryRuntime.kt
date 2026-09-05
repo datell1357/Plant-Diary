@@ -58,6 +58,10 @@ import com.planterior.helper.weather.SharedPreferencesWeatherPermissionCapabilit
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 /** Process-owned Room and repository graph. It holds only the application context. */
 internal class AuthRepositoryRuntime
@@ -81,6 +85,8 @@ private constructor(
     val catalogMediaLoader: FirebaseCatalogMediaLoader,
     val analyticsRuntime: AnalyticsRuntime,
     val transactionOwnerDiagnostics: RoomTransactionOwnerDiagnostics,
+    private val inventoryAuthListener: FirebaseAuth.AuthStateListener,
+    private val inventoryLoadScope: CoroutineScope,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
 
@@ -90,6 +96,9 @@ private constructor(
     override fun close() {
         if (closed.compareAndSet(false, true)) {
             analyticsRuntime.close()
+            auth.removeAuthStateListener(inventoryAuthListener)
+            inventoryRepository.close()
+            inventoryLoadScope.cancel()
             catalogMediaLoader.close()
             database.close()
         }
@@ -140,6 +149,9 @@ private constructor(
                         MIGRATION_20_21,
                     )
                     .build()
+            var inventoryLoadScope: CoroutineScope? = null
+            var inventoryRepository: FirebaseInventoryRepository? = null
+            var inventoryAuthListener: FirebaseAuth.AuthStateListener? = null
             return try {
                 val transactionOwnerDiagnostics = roomTransactionOwnerDiagnostics()
                 val mutationGateway = FirebaseRemoteMutationGateway(functions)
@@ -183,6 +195,22 @@ private constructor(
                         database,
                         FirebaseMiniHomeRemoteDataSource(auth, functions),
                     )
+                inventoryLoadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                inventoryRepository =
+                    FirebaseInventoryRepository(
+                        database,
+                        FirebaseInventoryRemoteDataSource(auth, functions),
+                        loadScope = requireNotNull(inventoryLoadScope),
+                    )
+                inventoryAuthListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+                    requireNotNull(inventoryRepository)
+                        .onAccountChanged(
+                            firebaseAuth.currentUser?.uid?.let {
+                                com.planterior.helper.core.model.AccountId(it)
+                            }
+                        )
+                }
+                auth.addAuthStateListener(requireNotNull(inventoryAuthListener))
                 AuthRepositoryRuntime(
                     auth,
                     firestore,
@@ -199,10 +227,7 @@ private constructor(
                         miniHomeRepository,
                         MiniHomeShareImageStore(applicationContext),
                     ),
-                    FirebaseInventoryRepository(
-                        database,
-                        FirebaseInventoryRemoteDataSource(auth, functions),
-                    ),
+                    requireNotNull(inventoryRepository),
                     wateringRepository,
                     FirebaseWateringNotificationSettingsRepository(auth, firestore, functions),
                     weatherRepository,
@@ -218,8 +243,13 @@ private constructor(
                         auth.currentUser?.uid
                     },
                     transactionOwnerDiagnostics,
+                    requireNotNull(inventoryAuthListener),
+                    requireNotNull(inventoryLoadScope),
                 )
             } catch (error: Throwable) {
+                inventoryAuthListener?.let(auth::removeAuthStateListener)
+                inventoryRepository?.close()
+                inventoryLoadScope?.cancel()
                 database.close()
                 throw error
             }

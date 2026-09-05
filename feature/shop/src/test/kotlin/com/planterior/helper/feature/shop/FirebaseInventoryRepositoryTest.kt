@@ -3,6 +3,7 @@ package com.planterior.helper.feature.shop
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.planterior.helper.core.data.verifiedAuthoritativeInventory
 import com.planterior.helper.core.database.CachedShopItemEntity
 import com.planterior.helper.core.database.InventorySnapshotWatermarkEntity
 import com.planterior.helper.core.database.PlanteriorDatabase
@@ -14,11 +15,13 @@ import com.planterior.helper.core.model.Revision
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -33,9 +36,11 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FirebaseInventoryRepositoryTest {
     private lateinit var database: PlanteriorDatabase
     private lateinit var remote: FakeInventoryRemote
+    private var queryObserver: ((String) -> Unit)? = null
 
     @Before
     fun setUp() {
@@ -43,6 +48,14 @@ class FirebaseInventoryRepositoryTest {
         database =
             Room.inMemoryDatabaseBuilder(context, PlanteriorDatabase::class.java)
                 .allowMainThreadQueries()
+                .setQueryCallback(
+                    object : androidx.room.RoomDatabase.QueryCallback {
+                        override fun onQuery(sqlQuery: String, bindArgs: List<Any?>) {
+                            queryObserver?.invoke(sqlQuery)
+                        }
+                    },
+                    java.util.concurrent.Executor { it.run() },
+                )
                 .build()
         remote = FakeInventoryRemote()
     }
@@ -50,6 +63,164 @@ class FirebaseInventoryRepositoryTest {
     @After
     fun tearDown() {
         database.close()
+    }
+
+    @Test
+    fun `auth transition during authoritative transaction rolls back inventory writes`() = runTest {
+        val repository = FirebaseInventoryRepository(database, remote)
+        val transition = CompletableDeferred<Unit>()
+        queryObserver = { sql ->
+            if (sql.startsWith("INSERT") && sql.contains("last_sync")) {
+                queryObserver = null
+                repository.onAccountChanged(AccountId("account-b"))
+                repository.onAccountChanged(AccountId("account-a"))
+                transition.complete(Unit)
+            }
+        }
+        val result = runCatching { repository.load(forceRefresh = true) }
+        assertTrue(transition.isCompleted)
+        assertTrue(
+            result.exceptionOrNull() is CancellationException ||
+                result.getOrNull() == InventoryLoadResult.Forbidden
+        )
+        assertEquals(null, database.cacheDao().inventorySnapshotWatermark("account-a"))
+        assertTrue(database.cacheDao().shopItems("account-a").isEmpty())
+        repository.close()
+    }
+
+    @Test
+    fun `acquisition supersedes an active pre-acquisition read`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        remote.loadGates[0] = gate
+        remote.nonCancellableLoads += 0
+        val repository = FirebaseInventoryRepository(database, remote)
+        val old = async { repository.load() }
+        assertEquals(0, remote.loadInvocations.receive())
+        remote.acquireOutcome = acquiredOutcome()
+        assertTrue(
+            repository.acquire(acquisitionRequest("inflight-acquire"))
+                is InventoryAcquireResult.Success
+        )
+        val refreshed = repository.load(forceRefresh = true) as InventoryLoadResult.Ready
+        assertEquals(1, remote.loadInvocations.receive())
+        assertEquals(listOf("free-item"), refreshed.snapshot.owned.map { it.itemId.value })
+        gate.complete(Unit)
+        assertTrue(runCatching { old.await() }.exceptionOrNull() is CancellationException)
+        val cached = repository.load() as InventoryLoadResult.Ready
+        assertEquals(refreshed.snapshot, cached.snapshot)
+        repository.close()
+    }
+
+    @Test
+    fun `verified cache is immediate and force refresh bypasses freshness`() = runTest {
+        val repository = FirebaseInventoryRepository(database, remote)
+        val first = repository.load() as InventoryLoadResult.Ready
+        assertFalse(first.stale)
+
+        val cached = repository.load() as InventoryLoadResult.Ready
+        assertFalse(cached.stale)
+        assertEquals(0, remote.loadInvocations.tryReceive().getOrNull())
+        assertTrue(remote.loadInvocations.tryReceive().isFailure)
+
+        repository.load(forceRefresh = true)
+        assertEquals(1, remote.loadInvocations.tryReceive().getOrNull())
+    }
+
+    @Test
+    fun `cached read preserves durable receipt candidates`() = runTest {
+        val request = acquisitionRequest("cache-receipt")
+        remote.acquireOutcome =
+            RemoteInventoryAcquireResult.Acquired(
+                request.accountId,
+                request.itemId,
+                request.expectedCatalogRevision,
+                Revision(1),
+                Instant.parse("2026-08-12T00:00:00Z"),
+                testCatalogMediaIdentity(request.itemId.value, "cache-receipt"),
+            )
+        val repository = FirebaseInventoryRepository(database, remote)
+        repository.acquire(request)
+
+        val loaded = repository.load() as InventoryLoadResult.Ready
+        assertEquals(
+            listOf(InventoryReceiptId("account-a/cache-receipt")),
+            loaded.receiptCandidates,
+        )
+        val cached = repository.load() as InventoryLoadResult.Ready
+        assertEquals(loaded.receiptCandidates, cached.receiptCandidates)
+    }
+
+    @Test
+    fun `ordinary and forced concurrent loads share one remote flight`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        remote.loadGates[0] = gate
+        val repository = FirebaseInventoryRepository(database, remote)
+        val ordinary = async { repository.load() }
+        val forced = async { repository.load(forceRefresh = true) }
+        val invocation = remote.loadInvocations.receive()
+        assertEquals(0, invocation)
+        assertTrue(remote.loadInvocations.tryReceive().isFailure)
+        gate.complete(Unit)
+        assertTrue(ordinary.await() is InventoryLoadResult.Ready)
+        assertTrue(forced.await() is InventoryLoadResult.Ready)
+        assertTrue(remote.loadInvocations.tryReceive().isFailure)
+    }
+
+    @Test
+    fun `freshness expiry returns stale cache and auth A-B-A invalidates freshness`() = runTest {
+        var elapsed = 0L
+        val repository =
+            FirebaseInventoryRepository(database, remote, elapsedRealtime = { elapsed })
+        repository.load()
+        elapsed = 30_001L
+        val stale = repository.load() as InventoryLoadResult.Ready
+        assertTrue(stale.stale)
+        assertTrue(stale.refreshRequired)
+        remote.loadSnapshots[1] = snapshot(AccountId("account-a"), "after-expiry")
+        repository.onAccountChanged(AccountId("account-b"))
+        repository.onAccountChanged(AccountId("account-a"))
+        val refreshed = repository.load(forceRefresh = true) as InventoryLoadResult.Ready
+        assertEquals("after-expiry", refreshed.snapshot.catalog.single().id.value)
+    }
+
+    @Test
+    fun `cancelling one waiter does not cancel shared remote flight`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        remote.loadGates[0] = gate
+        val repository = FirebaseInventoryRepository(database, remote)
+        val first = async { repository.load() }
+        remote.loadInvocations.receive()
+        val second = async { repository.load(forceRefresh = true) }
+        runCurrent()
+        second.cancel()
+        gate.complete(Unit)
+        assertTrue(first.await() is InventoryLoadResult.Ready)
+        assertTrue(remote.loadInvocations.tryReceive().isFailure)
+    }
+
+    @Test
+    fun `auth epoch replacement prevents late A response from applying after A-B-A`() = runTest {
+        val oldGate = CompletableDeferred<Unit>()
+        val newGate = CompletableDeferred<Unit>()
+        remote.loadGates[0] = oldGate
+        remote.nonCancellableLoads += 0
+        remote.loadGates[1] = newGate
+        remote.loadSnapshots[1] = snapshot(AccountId("account-a"), "new-a")
+        val repository = FirebaseInventoryRepository(database, remote)
+        val old = async { repository.load(forceRefresh = true) }
+        remote.loadInvocations.receive()
+        repository.onAccountChanged(AccountId("account-b"))
+        repository.onAccountChanged(AccountId("account-a"))
+        val replacement = async { repository.load(forceRefresh = true) }
+        assertEquals(1, remote.loadInvocations.receive())
+        newGate.complete(Unit)
+        val result = replacement.await() as InventoryLoadResult.Ready
+        assertEquals("new-a", result.snapshot.catalog.single().id.value)
+        oldGate.complete(Unit)
+        assertTrue(runCatching { old.await() }.exceptionOrNull() is CancellationException)
+        val durable = database.cacheDao().verifiedAuthoritativeInventory(AccountId("account-a"))
+        assertEquals("new-a", requireNotNull(durable).catalog.single().itemId.value)
+        repository.close()
     }
 
     @Test
@@ -131,7 +302,7 @@ class FirebaseInventoryRepositoryTest {
             )
 
             remote.loadFailure = IOException("offline")
-            val stale = repository.load() as InventoryLoadResult.Ready
+            val stale = repository.load(forceRefresh = true) as InventoryLoadResult.Ready
             assertEquals(true, stale.stale)
             assertEquals(AccountId("account-a"), stale.snapshot.accountId)
 
@@ -176,7 +347,7 @@ class FirebaseInventoryRepositoryTest {
                     partial = true,
                     generation = 2,
                 )
-            val partial = repository.load() as InventoryLoadResult.Partial
+            val partial = repository.load(forceRefresh = true) as InventoryLoadResult.Partial
             assertTrue(partial.snapshot.verified)
             assertEquals(listOf("public-item"), partial.snapshot.catalog.map { it.id.value })
 
@@ -189,7 +360,7 @@ class FirebaseInventoryRepositoryTest {
                     Instant.ofEpochMilli(3),
                     generation = 3,
                 )
-            val unpublished = repository.load() as InventoryLoadResult.Ready
+            val unpublished = repository.load(forceRefresh = true) as InventoryLoadResult.Ready
             assertTrue(unpublished.snapshot.verified)
             assertTrue(unpublished.snapshot.catalog.isEmpty())
             assertTrue(database.cacheDao().shopItems(account.value).isEmpty())
@@ -211,7 +382,7 @@ class FirebaseInventoryRepositoryTest {
                     generation = initial.snapshot.generation,
                 )
 
-            val result = repository.load() as InventoryLoadResult.Ready
+            val result = repository.load(forceRefresh = true) as InventoryLoadResult.Ready
 
             assertTrue(result.stale)
             assertTrue(result.snapshot.verified)
@@ -239,9 +410,10 @@ class FirebaseInventoryRepositoryTest {
             remote.loadSnapshots[2] = newer
             remote.loadGates[1] = olderGate
 
-            val delayed = async { repository.load() }
+            val delayed = async { repository.load(forceRefresh = true) }
             assertEquals(1, remote.loadInvocations.receive())
-            val latest = async { repository.load() }
+            val otherWriter = FirebaseInventoryRepository(database, remote)
+            val latest = async { otherWriter.load(forceRefresh = true) }
             assertEquals(2, remote.loadInvocations.receive())
             assertEquals(3L, (latest.await() as InventoryLoadResult.Ready).snapshot.generation)
 
@@ -879,7 +1051,7 @@ class FirebaseInventoryRepositoryTest {
             assertEquals(clock.toEpochMilli(), acknowledged.feedbackAcknowledgedAtEpochMillis)
 
             clock = clock.plus(java.time.Duration.ofDays(8))
-            repository.load()
+            repository.load(forceRefresh = true)
             assertEquals(
                 null,
                 database
@@ -1235,6 +1407,7 @@ class FirebaseInventoryRepositoryTest {
         var accountId = AccountId("account-a")
         var loadFailure: Exception? = null
         val loadGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
+        val nonCancellableLoads = mutableSetOf<Int>()
         val loadSnapshots = mutableMapOf<Int, InventorySnapshot>()
         val loadInvocations = Channel<Int>(Channel.UNLIMITED)
         private var loadInvocation = 0
@@ -1264,7 +1437,10 @@ class FirebaseInventoryRepositoryTest {
             val invocation = loadInvocation++
             loadInvocations.send(invocation)
             val response = loadSnapshots[invocation] ?: loadedSnapshot ?: snapshot(accountId)
-            loadGates[invocation]?.await()
+            loadGates[invocation]?.let { gate ->
+                if (invocation in nonCancellableLoads) withContext(NonCancellable) { gate.await() }
+                else gate.await()
+            }
             return response
         }
 
@@ -1324,6 +1500,16 @@ class FirebaseInventoryRepositoryTest {
                 Instant.EPOCH,
             )
     }
+
+    private fun snapshot(accountId: AccountId, itemId: String) =
+        InventorySnapshot(
+            accountId,
+            listOf(inventoryItem(itemId)),
+            emptyList(),
+            0,
+            Instant.parse("2026-08-12T01:00:00Z"),
+            generation = 2,
+        )
 
     private fun inventoryItem(id: String) =
         InventoryItem(

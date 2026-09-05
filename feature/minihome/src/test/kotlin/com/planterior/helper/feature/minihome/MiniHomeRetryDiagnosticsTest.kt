@@ -52,6 +52,7 @@ class MiniHomeRetryDiagnosticsTest {
             val observations = capture {
                 controller.start()
                 controller.beginEditing()
+                controller.rename("진단할 미니 식물원")
                 try {
                     controller.save()
                 } catch (error: AssertionError) {
@@ -95,6 +96,7 @@ class MiniHomeRetryDiagnosticsTest {
         val observations = capture {
             controller.start()
             controller.beginEditing()
+            controller.rename("진단할 미니 식물원")
             controller.save()
         }
 
@@ -251,6 +253,7 @@ class MiniHomeRetryDiagnosticsTest {
         val thrownObservations = capture {
             thrownController.start()
             thrownController.beginEditing()
+            thrownController.rename("진단할 미니 식물원")
             thrownController.save()
         }
         val thrownTerminal = thrownObservations.single {
@@ -267,6 +270,7 @@ class MiniHomeRetryDiagnosticsTest {
         try {
             cancelledController.start()
             cancelledController.beginEditing()
+            cancelledController.rename("진단할 미니 식물원")
             try {
                 cancelledController.save()
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -294,6 +298,7 @@ class MiniHomeRetryDiagnosticsTest {
         try {
             controller.start()
             controller.beginEditing()
+            controller.rename("진단할 미니 식물원")
             try {
                 controller.save()
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -314,6 +319,7 @@ class MiniHomeRetryDiagnosticsTest {
         try {
             controller.start()
             controller.beginEditing()
+            controller.rename("진단할 미니 식물원")
             val saveJob = async { controller.save() }
             runCurrent()
             assertTrue(repository.saveEntered.isCompleted)

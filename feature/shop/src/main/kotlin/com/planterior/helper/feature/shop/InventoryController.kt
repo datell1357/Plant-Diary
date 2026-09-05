@@ -331,7 +331,7 @@ class InventoryController(
                 reload = attemptPendingAcknowledgementLocked(action.token)
                 true
             }
-            if (!retriedAcknowledgement || reload) load(action.token)
+            if (!retriedAcknowledgement || reload) load(action.token, forceRefresh = true)
         } finally {
             unregister(action.token)
         }
@@ -578,7 +578,7 @@ class InventoryController(
 
     private suspend fun reloadAfterAcquisition(token: ActionToken) {
         if (!isCurrent(token) || token.owner == null) return
-        val loaded = loadRepository()
+        val loaded = loadRepository(forceRefresh = true)
         if (!isCurrent(token)) return
         when (loaded) {
             is InventoryLoadResult.Ready ->
@@ -602,14 +602,14 @@ class InventoryController(
         }
     }
 
-    private suspend fun load(token: ActionToken) {
+    private suspend fun load(token: ActionToken, forceRefresh: Boolean = false) {
         if (!isCurrent(token)) return
         mutate(token) {
             if (_state.value !is InventoryUiState.Content) {
                 _state.value = InventoryUiState.Loading(token.owner)
             }
         }
-        val loaded = loadRepository()
+        val loaded = loadRepository(forceRefresh)
         if (!isCurrent(token)) return
         when (loaded) {
             is InventoryLoadResult.Ready ->
@@ -635,6 +635,38 @@ class InventoryController(
                         _state.value = InventoryUiState.Error(token.owner)
                     }
                 }
+        }
+        val refreshRequired =
+            when (loaded) {
+                is InventoryLoadResult.Ready -> loaded.refreshRequired
+                is InventoryLoadResult.Partial -> loaded.refreshRequired
+                InventoryLoadResult.Forbidden,
+                InventoryLoadResult.Failed -> false
+            }
+        if (refreshRequired && isCurrent(token)) {
+            val refresh = loadRepository(forceRefresh = true)
+            if (isCurrent(token)) {
+                when (refresh) {
+                    is InventoryLoadResult.Ready ->
+                        publishLoaded(
+                            token,
+                            refresh.snapshot,
+                            refresh.stale,
+                            refresh.receiptCandidates,
+                            refresh.receiptCandidatesAuthoritative,
+                        )
+                    is InventoryLoadResult.Partial ->
+                        publishLoaded(
+                            token,
+                            refresh.snapshot,
+                            refresh.stale,
+                            refresh.receiptCandidates,
+                            refresh.receiptCandidatesAuthoritative,
+                        )
+                    InventoryLoadResult.Forbidden,
+                    InventoryLoadResult.Failed -> Unit
+                }
+            }
         }
     }
 
@@ -1213,9 +1245,9 @@ class InventoryController(
             receiptId == other.receiptId &&
             retryAtEpochMillis == other.retryAtEpochMillis
 
-    private suspend fun loadRepository(): InventoryLoadResult =
+    private suspend fun loadRepository(forceRefresh: Boolean = false): InventoryLoadResult =
         try {
-            repository.load()
+            repository.load(forceRefresh)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
