@@ -1,6 +1,6 @@
 package com.planterior.helper
 
-import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.planterior.helper.home.SESSION_SIGNED_IN
 import org.junit.Rule
