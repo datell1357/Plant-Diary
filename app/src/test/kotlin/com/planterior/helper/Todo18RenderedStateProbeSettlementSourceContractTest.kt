@@ -41,7 +41,7 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                 "subscription.await(",
             )
         }
-        assertEquals(5, probe.countOccurrences("subscription.arm()"))
+        assertEquals(4, probe.countOccurrences("subscription.arm()"))
         assertEquals(3, probe.countOccurrences("triggerSettleAndAwait("))
         assertEquals(3, probe.countOccurrences("settle = compose::waitForIdle"))
         assertTrue(miniHome.contains("event.sequence > floor"))
@@ -146,6 +146,13 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                     "app/src/androidTest/kotlin/com/planterior/helper/Todo18RenderedStateProbe.kt"
                 )
                 .readText()
+        val initialProbe =
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/" +
+                        "Todo18InitialMiniHomeViewingProbe.kt"
+                )
+                .readText()
         val journey =
             root
                 .resolve(
@@ -194,12 +201,28 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
         )
         assertTrue(eventStream.contains("val loadIdentity: MiniHomeLoadIdentity?"))
         assertTrue(eventStream.contains("(state as? MiniHomeUiState.Viewing)?.loadIdentity"))
-        assertTrue(renderedProbe.contains("acceptRegistrationReplay = true"))
+        assertTrue(renderedProbe.contains(".awaitAfterLoad(barrier)"))
         assertTrue(
-            renderedProbe
-                .substringAfter("fun awaitMiniHomeViewingAfterLoad(")
-                .substringBefore("fun awaitRegistration(")
+            initialProbe
+                .substringAfter("fun awaitAfterLoad(")
+                .substringBefore("private fun subscription(")
                 .contains("acceptRegistrationReplay = true")
+        )
+        assertOrdered(
+            initialProbe.substringAfter("fun awaitAfterLoad("),
+            "rawSubscription.arm()",
+            "displayedSubscription.arm()",
+            "rawSubscription.await(",
+            "settle = compose::waitForIdle",
+            "displayedSubscription.await(",
+            "displayedEvent.loadIdentity == rawEvent.loadIdentity",
+        )
+        assertEquals(
+            2,
+            initialProbe
+                .substringAfter("fun awaitAfterLoad(")
+                .substringBefore("private fun subscription(")
+                .countOccurrences("remainingNanos(deadlineNanos)"),
         )
         assertTrue(
             root
