@@ -114,9 +114,13 @@ internal class Todo18InventoryCacheSettlementRepository(
     }
 
     override suspend fun load(): InventoryLoadResult {
+        return load(forceRefresh = false)
+    }
+
+    override suspend fun load(forceRefresh: Boolean): InventoryLoadResult {
         val candidates = synchronized(lock) { armed.values.toList() }
         candidates.forEach { record(Todo18InventorySettlementStage.LOAD_ENTERED, it) }
-        val result = delegate.load()
+        val result = delegate.load(forceRefresh)
         candidates.forEach { settlement ->
             record(
                 Todo18InventorySettlementStage.LOAD_RETURNED,

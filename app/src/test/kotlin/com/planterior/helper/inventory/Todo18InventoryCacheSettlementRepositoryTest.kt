@@ -27,6 +27,57 @@ import org.junit.Test
 
 class Todo18InventoryCacheSettlementRepositoryTest {
     @Test
+    fun `load force refresh is forwarded while settlement still occurs once`() = runTest {
+        val initial = ready(snapshot(OWNER, OTHER_ITEM), stale = false)
+        val authoritative = ready(snapshot(OWNER, ITEM), stale = false)
+        val delegate =
+            Delegate(loadResults = ArrayDeque(listOf(initial, authoritative, authoritative)))
+        val events = mutableListOf<Todo18InventoryCacheSettlement>()
+        val diagnostics = Todo18InventorySettlementDiagnosticRecorder()
+        val repository =
+            Todo18InventoryCacheSettlementRepository(
+                delegate,
+                events::add,
+                diagnostics = diagnostics,
+            )
+
+        repository.load()
+        repository.acquire(request())
+        assertSame(authoritative, repository.load(forceRefresh = true))
+        assertSame(authoritative, repository.load(forceRefresh = true))
+        assertEquals(listOf(false, true, true), delegate.loadForceRefreshes)
+        assertEquals(listOf(settlement()), events)
+        assertEquals(
+            listOf(
+                Todo18InventorySettlementStage.ACQUIRE_RESULT,
+                Todo18InventorySettlementStage.ACQUISITION_ARMED,
+                Todo18InventorySettlementStage.LOAD_ENTERED,
+                Todo18InventorySettlementStage.LOAD_RETURNED,
+                Todo18InventorySettlementStage.SETTLEMENT_ELIGIBILITY,
+                Todo18InventorySettlementStage.SETTLEMENT_ATTEMPT,
+                Todo18InventorySettlementStage.SETTLEMENT_EMISSION,
+            ),
+            diagnostics.snapshot().map { it.stage },
+        )
+    }
+
+    @Test
+    fun `forced stale load keeps settlement armed until forced authoritative load`() = runTest {
+        val stale = ready(snapshot(OWNER, ITEM), stale = true)
+        val authoritative = ready(snapshot(OWNER, ITEM), stale = false)
+        val delegate = Delegate(loadResults = ArrayDeque(listOf(stale, authoritative)))
+        val events = mutableListOf<Todo18InventoryCacheSettlement>()
+        val repository = Todo18InventoryCacheSettlementRepository(delegate, events::add)
+
+        repository.acquire(request())
+        assertSame(stale, repository.load(forceRefresh = true))
+        assertEquals(emptyList<Todo18InventoryCacheSettlement>(), events)
+        assertSame(authoritative, repository.load(forceRefresh = true))
+        assertEquals(listOf(settlement()), events)
+        assertEquals(listOf(true, true), delegate.loadForceRefreshes)
+    }
+
+    @Test
     fun `initial cache and successful acquire do not settle until subsequent authoritative ready`() =
         runTest {
             val initial = ready(snapshot(OWNER, ITEM), stale = false)
@@ -281,9 +332,15 @@ class Todo18InventoryCacheSettlementRepositoryTest {
         private val acquireAction: (suspend () -> InventoryAcquireResult)? = null,
     ) : InventoryRepository {
         var acquireResult: InventoryAcquireResult = success()
+        val loadForceRefreshes = mutableListOf<Boolean>()
 
         override suspend fun load(): InventoryLoadResult =
             loadAction?.invoke() ?: loadResults.removeFirst()
+
+        override suspend fun load(forceRefresh: Boolean): InventoryLoadResult {
+            loadForceRefreshes += forceRefresh
+            return loadAction?.invoke() ?: loadResults.removeFirst()
+        }
 
         override suspend fun acquire(request: InventoryAcquireRequest): InventoryAcquireResult =
             acquireAction?.invoke() ?: acquireResult
