@@ -44,7 +44,10 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     private val displayedMiniHomeStates = Todo18PrimaryEventStream<Todo18MiniHomeStateEvent>()
     private val registrationStates = Todo18PrimaryEventStream<Todo18RegistrationStateEvent>()
     private val inventoryFeedback = Todo18PrimaryEventStream<Todo18InventoryFeedbackEvent>()
+    private val rawInventoryStates = Todo18PrimaryEventStream<Todo18InventoryStateEvent>()
+    private val displayedInventoryStates = Todo18PrimaryEventStream<Todo18InventoryStateEvent>()
     private val shareStates = Todo18PrimaryEventStream<Todo18MiniHomeShareStateEvent>()
+    private val rawShareStates = Todo18PrimaryEventStream<Todo18MiniHomeShareStateEvent>()
     internal val miniHomeShareDiagnostics = Todo18MiniHomeShareDiagnosticRecorder()
     private val armedInventorySettlement = AtomicReference<Todo18InventoryCacheSettlement?>()
     private val inventoryDiagnosticObserver =
@@ -103,6 +106,10 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
         miniHomeShareDiagnostics.recordDisplayed(state)
     }
 
+    override fun onMiniHomeShareRawState(state: MiniHomeShareUiState) {
+        rawShareStates.publish(Todo18MiniHomeShareStateEvent(sequence.incrementAndGet(), state))
+    }
+
     override fun onMiniHomeShareDiagnostic(observation: MiniHomeShareDiagnosticObservation) {
         miniHomeShareDiagnostics.record(observation)
     }
@@ -156,6 +163,9 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
     }
 
     override fun onInventoryState(state: InventoryUiState) {
+        displayedInventoryStates.publish(
+            Todo18InventoryStateEvent(sequence.incrementAndGet(), state)
+        )
         val content = state as? InventoryUiState.Content ?: return
         if (content.stale) return
         if (content.feedback != InventoryFeedback.ACQUIRED) return
@@ -274,6 +284,8 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
 
     fun currentMiniHomeShareState(): Todo18MiniHomeShareStateEvent? = shareStates.current()
 
+    fun currentRawMiniHomeShareState(): Todo18MiniHomeShareStateEvent? = rawShareStates.current()
+
     fun subscribeToRawMiniHomeStates(listener: (Todo18MiniHomeStateEvent) -> Unit): AutoCloseable =
         rawMiniHomeStates.subscribe(listener)
 
@@ -297,15 +309,39 @@ internal class Todo18RenderedStateSink : RenderedStateSink {
         listener: (Todo18MiniHomeShareStateEvent) -> Unit
     ): AutoCloseable = shareStates.subscribe(listener)
 
+    fun subscribeToRawMiniHomeShareStates(
+        listener: (Todo18MiniHomeShareStateEvent) -> Unit
+    ): AutoCloseable = rawShareStates.subscribe(listener)
+
     fun sequenceValue(): Long = sequence.get()
 
+    override fun onInventoryRawState(state: InventoryUiState) {
+        rawInventoryStates.publish(Todo18InventoryStateEvent(sequence.incrementAndGet(), state))
+    }
+
+    fun currentRawInventoryState(): Todo18InventoryStateEvent? = rawInventoryStates.current()
+
+    fun currentDisplayedInventoryState(): Todo18InventoryStateEvent? =
+        displayedInventoryStates.current()
+
+    fun subscribeToRawInventoryStates(
+        listener: (Todo18InventoryStateEvent) -> Unit
+    ): AutoCloseable = rawInventoryStates.subscribe(listener)
+
+    fun subscribeToDisplayedInventoryStates(
+        listener: (Todo18InventoryStateEvent) -> Unit
+    ): AutoCloseable = displayedInventoryStates.subscribe(listener)
+
     fun primaryListenerCount(): Int =
-        rawMiniHomeStates.listenerCount() +
+        rawInventoryStates.listenerCount() +
+            displayedInventoryStates.listenerCount() +
+            rawMiniHomeStates.listenerCount() +
             routeMiniHomeStates.listenerCount() +
             displayedMiniHomeStates.listenerCount() +
             registrationStates.listenerCount() +
             inventoryFeedback.listenerCount() +
-            shareStates.listenerCount()
+            shareStates.listenerCount() +
+            rawShareStates.listenerCount()
 
     fun isFresh(): Boolean = captureFreshness().fresh
 

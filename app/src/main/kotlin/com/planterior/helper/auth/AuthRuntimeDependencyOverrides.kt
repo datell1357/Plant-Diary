@@ -33,11 +33,15 @@ interface RenderedStateSink {
 
     fun onMiniHomeShareState(state: MiniHomeShareUiState) = Unit
 
+    fun onMiniHomeShareRawState(state: MiniHomeShareUiState) = Unit
+
     fun onMiniHomeShareDiagnostic(observation: MiniHomeShareDiagnosticObservation) = Unit
 
     fun onRegistrationState(state: RegistrationUiState)
 
     fun onInventoryState(state: InventoryUiState) = Unit
+
+    fun onInventoryRawState(state: InventoryUiState) = Unit
 
     fun onMiniHomeDiagnosticEvent(event: MiniHomeDiagnosticEvent) = Unit
 

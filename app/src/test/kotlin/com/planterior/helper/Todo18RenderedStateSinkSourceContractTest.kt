@@ -148,9 +148,9 @@ class Todo18RenderedStateSinkSourceContractTest {
                 "feature/share/src/main/kotlin/com/planterior/helper/feature/share/MiniHomeShareScreen.kt"
             )
         val readyWait =
-            probe
-                .substringAfter("fun awaitMiniHomeShareReady(")
-                .substringBefore("fun awaitRegistration(")
+            root.source(
+                "app/src/androidTest/kotlin/com/planterior/helper/Todo18ShareViewingProbe.kt"
+            )
 
         assertTrue(
             "Missing default no-op share rendered-state callback",
@@ -187,26 +187,27 @@ class Todo18RenderedStateSinkSourceContractTest {
             "ExactEventSubscription",
             "sink::subscribeToMiniHomeShareStates",
             "sink::currentMiniHomeShareState",
-            "acceptRegistrationReplay = true",
+            "triggerAwaitSettleAndAwait(",
+            "settle = compose::waitForIdle",
         )
         assertTrue(
             "Share wait must require a strictly newer Ready plus Idle event",
             Regex(
-                    """event\.sequence\s*>\s*floor[\s\S]*""" +
-                        """event\.state\s+is\s+MiniHomeShareUiState\.Ready[\s\S]*""" +
-                        """event\.state\.link\s+is\s+MiniHomeShareLinkState\.Idle"""
+                    """val\s+state\s*=\s*event\.state[\s\S]*event\.sequence\s*>\s*floor[\s\S]*""" +
+                        """state\s+is\s+MiniHomeShareUiState\.Ready[\s\S]*""" +
+                        """state\.link\s+is\s+MiniHomeShareLinkState\.Idle"""
                 )
                 .containsMatchIn(readyWait),
         )
         assertCode(controller, "data class Ready(", "MiniHomeShareLinkState.Idle")
         assertOrdered(screen, "MiniHomeShareLinkState.Idle", "MiniHomeShareTestTags.LINK_CREATE")
         listOf(shareJourney, majorJourney).forEach { journey ->
-            val shareBlock = journey.substringAfter("currentMiniHomeShareState()?.sequence")
+            val shareWait = "rendered.awaitMiniHomeShareReady {"
+            assertCode(journey, shareWait)
             assertOrdered(
-                shareBlock,
-                " ?: 0L",
+                journey.substring(journey.indexOf(shareWait)),
+                shareWait,
                 "events.navigateAndAwaitBoundary(",
-                "awaitMiniHomeShareReady(floor)",
                 "onNodeWithTag(MiniHomeShareTestTags.LINK_CREATE)",
             )
         }

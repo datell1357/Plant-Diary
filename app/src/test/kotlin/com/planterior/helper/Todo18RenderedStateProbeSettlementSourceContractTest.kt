@@ -41,7 +41,7 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                 "subscription.await(",
             )
         }
-        assertEquals(4, probe.countOccurrences("subscription.arm()"))
+        assertEquals(3, probe.countOccurrences("subscription.arm()"))
         assertEquals(3, probe.countOccurrences("triggerSettleAndAwait("))
         assertEquals(3, probe.countOccurrences("settle = compose::waitForIdle"))
         assertTrue(miniHome.contains("event.sequence > floor"))
@@ -96,19 +96,23 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
                 )
                 .readText()
         assertTrue(probe.contains("fun awaitMiniHomeShareReady("))
+        assertTrue(probe.contains("Todo18ShareViewingProbe(runtime, compose).awaitReady(trigger)"))
         val share =
-            probe
-                .substringAfter("fun awaitMiniHomeShareReady(")
-                .substringBefore("fun awaitRegistration(")
+            root
+                .resolve(
+                    "app/src/androidTest/kotlin/com/planterior/helper/Todo18ShareViewingProbe.kt"
+                )
+                .readText()
 
         assertTrue(share.contains("sink::subscribeToMiniHomeShareStates"))
         assertTrue(share.contains("sink::currentMiniHomeShareState"))
-        assertTrue(share.contains("acceptRegistrationReplay = true"))
+        assertFalse(share.contains("acceptRegistrationReplay = true"))
         assertTrue(share.contains("event.sequence > floor"))
         assertFalse(share.contains("event.sequence >= floor"))
         assertTrue(share.contains("MiniHomeShareUiState.Ready"))
         assertTrue(share.contains("MiniHomeShareLinkState.Idle"))
-        assertOrdered(share, "subscription.arm()", "subscription.await(")
+        assertTrue(share.contains("triggerAwaitSettleAndAwait("))
+        assertTrue(share.contains("settle = compose::waitForIdle"))
     }
 
     @Test

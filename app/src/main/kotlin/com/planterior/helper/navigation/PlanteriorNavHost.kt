@@ -367,6 +367,7 @@ fun PlanteriorNavHost(
                     bottomBar = bottomBar,
                     mediaLoader = catalogMediaLoader,
                     onStateObserved = { renderedStateSink?.onInventoryState(it) },
+                    onRawStateObserved = { renderedStateSink?.onInventoryRawState(it) },
                 )
             }
         }
@@ -721,6 +722,8 @@ fun PlanteriorNavHost(
                         miniHomePhotoLoader(collectionThumbnailLoader, catalogMediaLoader),
                     authOwnership = miniHomeAuthOwnership,
                     onStateObserved = renderedStateSink?.let { it::onMiniHomeShareState } ?: {},
+                    onRawStateObserved =
+                        renderedStateSink?.let { it::onMiniHomeShareRawState } ?: {},
                     onDiagnostic = renderedStateSink?.let { it::onMiniHomeShareDiagnostic } ?: {},
                     productEventRecorder = productEventRecorder,
                 )

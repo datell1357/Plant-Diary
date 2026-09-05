@@ -42,6 +42,7 @@ fun MiniHomeShareRoute(
     productEventRecorder: ProductEventRecorder = ProductEventRecorder {},
     onStateObserved: (MiniHomeShareUiState) -> Unit = {},
     onDiagnostic: (MiniHomeShareDiagnosticObservation) -> Unit = {},
+    onRawStateObserved: (MiniHomeShareUiState) -> Unit = {},
 ) {
     val context = LocalContext.current
     val currentDiagnostic by rememberUpdatedState(onDiagnostic)
@@ -61,6 +62,10 @@ fun MiniHomeShareRoute(
         )
     val controller = model.controller
     val state by controller.state.collectAsState()
+    val currentRawStateObserved by rememberUpdatedState(onRawStateObserved)
+    LaunchedEffect(controller) {
+        controller.state.collect { currentRawStateObserved(it) }
+    }
     SideEffect {
         onStateObserved(state)
     }

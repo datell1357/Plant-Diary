@@ -8,6 +8,12 @@ import com.planterior.helper.diagnostic.Todo18StateSnapshot
 import com.planterior.helper.feature.minihome.MiniHomeUiState
 import com.planterior.helper.feature.registration.RegistrationUiState
 import com.planterior.helper.feature.share.MiniHomeShareUiState
+import com.planterior.helper.feature.shop.InventoryUiState
+
+internal data class Todo18InventoryStateEvent(
+    val sequence: Long,
+    val state: InventoryUiState,
+)
 
 internal data class Todo18MiniHomeShareStateEvent(
     val sequence: Long,
@@ -23,7 +29,10 @@ internal fun Todo18RenderedStateSink.captureFreshness() =
                 currentDisplayedMiniHomeState() == null &&
                 currentRegistrationState() == null &&
                 currentInventoryFeedback() == null &&
-                currentMiniHomeShareState() == null,
+                currentRawInventoryState() == null &&
+                currentDisplayedInventoryState() == null &&
+                currentMiniHomeShareState() == null &&
+                currentRawMiniHomeShareState() == null,
         initialListenerCount = primaryListenerCount(),
         isolatedInstance = true,
     )

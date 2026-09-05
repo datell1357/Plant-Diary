@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -120,6 +121,7 @@ fun InventoryRoute(
     onOpenItem: (ItemId) -> Unit,
     bottomBar: @Composable () -> Unit = {},
     onStateObserved: (InventoryUiState) -> Unit = {},
+    onRawStateObserved: (InventoryUiState) -> Unit = {},
     mediaLoader: CatalogMediaLoader = PlaceholderCatalogMediaLoader,
 ) {
     val model =
@@ -137,6 +139,10 @@ fun InventoryRoute(
     val state by controller.state.collectAsState()
     val displayed = state.displayedFor(authOwnership)
     val scope = rememberCoroutineScope()
+    val currentRawStateObserved by rememberUpdatedState(onRawStateObserved)
+    LaunchedEffect(controller) {
+        controller.state.collect { observed -> currentRawStateObserved(observed) }
+    }
     SideEffect { onStateObserved(displayed) }
     LifecycleResumeEffect(controller, authOwnership) {
         val load = scope.launch { controller.start(authOwnership) }
