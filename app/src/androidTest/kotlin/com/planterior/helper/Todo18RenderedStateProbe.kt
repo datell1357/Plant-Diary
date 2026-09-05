@@ -10,6 +10,12 @@ internal class Todo18RenderedStateProbe(
     private val runtime: Todo18IntegratedRuntimeRule,
     private val compose: Todo18ComposeRule,
 ) {
+    fun awaitInitialMiniHomeViewing(
+        trigger: () -> Unit,
+        observer: Todo18ExactEventObserver? = null,
+    ): Todo18MiniHomeStateEvent =
+        Todo18InitialMiniHomeViewingProbe(runtime, compose).await(trigger, observer)
+
     fun awaitMiniHome(
         matches: (Todo18MiniHomeStateEvent) -> Boolean,
         trigger: () -> Unit,

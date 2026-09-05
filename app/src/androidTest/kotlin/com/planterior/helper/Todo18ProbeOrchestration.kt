@@ -10,3 +10,16 @@ internal fun <T> triggerSettleAndAwait(
     settle()
     return await()
 }
+
+/** Upstream completion must precede the frame that publishes its rendered result. */
+internal fun <U, R> triggerAwaitSettleAndAwait(
+    trigger: () -> Unit,
+    awaitUpstream: () -> U,
+    settle: () -> Unit,
+    awaitRendered: () -> R,
+): Pair<U, R> {
+    trigger.invoke()
+    val upstream = awaitUpstream.invoke()
+    settle.invoke()
+    return upstream to awaitRendered.invoke()
+}

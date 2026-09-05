@@ -313,7 +313,7 @@ internal data class Todo18OfflineRetryTransitionReceipt(
         requireBefore(MiniHomeRetryStage.SAVED_APPLY_ENTRY, MiniHomeRetryStage.SET_STATE_ATTEMPTED)
         requireBefore(MiniHomeRetryStage.SET_STATE_ATTEMPTED, MiniHomeRetryStage.SET_STATE_APPLIED)
         requireBefore(
-            MiniHomeRetryStage.SET_STATE_APPLIED,
+            MiniHomeRetryStage.SET_STATE_ATTEMPTED,
             MiniHomeRetryStage.RAW_STATE_PUBLICATION,
         )
         requireBefore(

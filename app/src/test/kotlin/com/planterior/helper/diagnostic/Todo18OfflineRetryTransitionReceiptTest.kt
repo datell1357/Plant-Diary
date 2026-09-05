@@ -290,6 +290,50 @@ class Todo18OfflineRetryTransitionReceiptTest {
     }
 
     @Test
+    fun `retry boundary accepts either state applied and raw publication order`() {
+        val valid = retryObservations()
+        val rawBeforeApplied =
+            valid.toMutableList().apply {
+                val applied = this[6]
+                this[6] = this[7]
+                this[7] = applied
+            }
+
+        receipt(valid).requireComplete(OPERATION, OPERATION, REVISION)
+        receipt(rawBeforeApplied).requireComplete(OPERATION, OPERATION, REVISION)
+    }
+
+    @Test
+    fun `retry boundary rejects raw publication before state attempt`() {
+        val valid = retryObservations()
+        val rawBeforeAttempted =
+            valid.toMutableList().apply {
+                val raw = removeAt(7)
+                add(5, raw)
+            }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            receipt(rawBeforeAttempted).requireComplete(OPERATION, OPERATION, REVISION)
+        }
+    }
+
+    @Test
+    fun `retry boundary rejects raw publication controller identity`() {
+        val invalid =
+            retryObservations().map { observation ->
+                if (observation.stage == MiniHomeRetryStage.RAW_STATE_PUBLICATION) {
+                    observation.copy(controllerEpoch = 3L)
+                } else {
+                    observation
+                }
+            }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            receipt(invalid).requireComplete(OPERATION, OPERATION, REVISION)
+        }
+    }
+
+    @Test
     fun `retry boundary malformed outcome revision token generation and semantic details are rejected`() {
         val valid = retryObservations()
         val malformed =

@@ -31,8 +31,7 @@ internal fun Todo18MainActivityJourneyHarness.assertOfflineMiniHomeReplayUsesPer
             )
             .run(
                 wait = { observer ->
-                    rendered.awaitMiniHome(
-                        matches = { it.state is MiniHomeUiState.Viewing },
+                    rendered.awaitInitialMiniHomeViewing(
                         trigger = { navigateDirectly(PlanteriorRoute.MiniHome) },
                         observer = observer,
                     )
@@ -158,9 +157,8 @@ internal fun Todo18MainActivityJourneyHarness.assertMiniHomeConflictPreservesDra
     Todo18MiniHomeInitialLoadDiagnosticCapture(runtime, compose).captureInitialLoad(
         "mini-home-conflict-initial-load"
     ) {
-        rendered.awaitMiniHome(
-            matches = { it.state is MiniHomeUiState.Viewing },
-            trigger = { navigateDirectly(PlanteriorRoute.MiniHome) },
+        rendered.awaitInitialMiniHomeViewing(
+            trigger = { navigateDirectly(PlanteriorRoute.MiniHome) }
         )
     }
     Todo18TransitionDiagnosticCapture(

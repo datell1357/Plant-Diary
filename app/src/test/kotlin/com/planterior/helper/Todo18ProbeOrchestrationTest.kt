@@ -7,6 +7,31 @@ import org.junit.Test
 
 class Todo18ProbeOrchestrationTest {
     @Test
+    fun `initial viewing waits upstream before settling and awaiting rendered event`() {
+        val trace = mutableListOf<String>()
+
+        val observed =
+            triggerAwaitSettleAndAwait(
+                trigger = { trace += "trigger" },
+                awaitUpstream = {
+                    trace += "await-upstream"
+                    "raw"
+                },
+                settle = { trace += "settle" },
+                awaitRendered = {
+                    trace += "await-rendered"
+                    "displayed"
+                },
+            )
+
+        assertEquals("raw" to "displayed", observed)
+        assertEquals(
+            listOf("trigger", "await-upstream", "settle", "await-rendered"),
+            trace,
+        )
+    }
+
+    @Test
     fun `conflict editing signal completes after settlement`() {
         // Given
         val signal = QueuedSignal()
