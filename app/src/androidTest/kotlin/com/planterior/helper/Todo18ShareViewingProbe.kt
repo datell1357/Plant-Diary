@@ -2,6 +2,7 @@ package com.planterior.helper
 
 import com.planterior.helper.core.model.AccountId
 import com.planterior.helper.feature.share.MiniHomeShareLinkState
+import com.planterior.helper.feature.share.MiniHomeShareRenderState
 import com.planterior.helper.feature.share.MiniHomeShareUiState
 import java.util.concurrent.TimeUnit
 
@@ -20,6 +21,7 @@ internal class Todo18ShareViewingProbe(
             subscription(
                 floor = rawFloor,
                 account = account,
+                render = MiniHomeShareRenderState.Rendering,
                 subscribe = sink::subscribeToRawMiniHomeShareStates,
                 current = sink::currentRawMiniHomeShareState,
             )
@@ -28,6 +30,7 @@ internal class Todo18ShareViewingProbe(
                 subscription(
                     floor = displayedFloor,
                     account = account,
+                    render = MiniHomeShareRenderState.Ready,
                     subscribe = sink::subscribeToMiniHomeShareStates,
                     current = sink::currentMiniHomeShareState,
                 )
@@ -57,7 +60,9 @@ internal class Todo18ShareViewingProbe(
                             )
                         },
                     )
-                require(rawEvent.state == displayedEvent.state) {
+                val rawReady = rawEvent.state as MiniHomeShareUiState.Ready
+                val displayedReady = displayedEvent.state as MiniHomeShareUiState.Ready
+                require(rawReady.copy(render = MiniHomeShareRenderState.Ready) == displayedReady) {
                     "MiniHome share displayed state did not equal raw state"
                 }
                 return displayedEvent
@@ -68,6 +73,7 @@ internal class Todo18ShareViewingProbe(
     private fun subscription(
         floor: Long,
         account: AccountId,
+        render: MiniHomeShareRenderState,
         subscribe: ((Todo18MiniHomeShareStateEvent) -> Unit) -> AutoCloseable,
         current: () -> Todo18MiniHomeShareStateEvent?,
     ): ExactEventSubscription<Todo18MiniHomeShareStateEvent> {
@@ -77,6 +83,7 @@ internal class Todo18ShareViewingProbe(
                 event.sequence > floor &&
                     state.owner == account &&
                     state is MiniHomeShareUiState.Ready &&
+                    state.render == render &&
                     state.link is MiniHomeShareLinkState.Idle
             },
             subscribe = { receiver ->

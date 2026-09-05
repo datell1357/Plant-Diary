@@ -11,8 +11,10 @@ class Todo18ShareViewingProbeTest {
     fun `prearmed share raw event settles before displayed peer and detaches`() {
         val raw = TestEventSource<ShareEvent>()
         val displayed = TestEventSource<ShareEvent>()
-        val rawSubscription = subscription(raw) { it.owner == OWNER && it.ready }
-        val displayedSubscription = subscription(displayed) { it.owner == OWNER && it.ready }
+        val rawSubscription =
+            subscription(raw) { it.owner == OWNER && it.render == Render.RENDERING }
+        val displayedSubscription =
+            subscription(displayed) { it.owner == OWNER && it.render == Render.READY }
         val trace = mutableListOf<String>()
 
         rawSubscription.use { upstream ->
@@ -23,8 +25,8 @@ class Todo18ShareViewingProbeTest {
                     triggerAwaitSettleAndAwait(
                         trigger = {
                             trace += "trigger"
-                            raw.publish(ShareEvent(OWNER, ready = false))
-                            raw.publish(ShareEvent(OWNER, ready = true))
+                            raw.publish(ShareEvent(OWNER, Render.RENDERING))
+                            raw.publish(ShareEvent(OWNER, Render.READY))
                         },
                         awaitUpstream = {
                             trace += "raw"
@@ -32,15 +34,16 @@ class Todo18ShareViewingProbeTest {
                         },
                         settle = {
                             trace += "settle"
-                            displayed.publish(ShareEvent("other", ready = true))
-                            displayed.publish(ShareEvent(OWNER, ready = true))
+                            displayed.publish(ShareEvent("other", Render.READY))
+                            displayed.publish(ShareEvent(OWNER, Render.RENDERING))
+                            displayed.publish(ShareEvent(OWNER, Render.READY))
                         },
                         awaitRendered = {
                             trace += "displayed"
                             rendered.await(1, TimeUnit.SECONDS, "share displayed")
                         },
                     )
-                assertEquals(observed.first, observed.second)
+                assertEquals(observed.first.copy(render = Render.READY), observed.second)
                 assertEquals(listOf("trigger", "raw", "settle", "displayed"), trace)
             }
         }
@@ -52,25 +55,29 @@ class Todo18ShareViewingProbeTest {
     fun `mismatched displayed state fails after both exact events`() {
         val raw = TestEventSource<ShareEvent>()
         val displayed = TestEventSource<ShareEvent>()
-        val upstream = subscription(raw) { it.owner == OWNER && it.ready }
-        val rendered = subscription(displayed) { it.owner == OWNER && it.ready }
+        val upstream = subscription(raw) { it.owner == OWNER && it.render == Render.RENDERING }
+        val rendered = subscription(displayed) { it.owner == OWNER && it.render == Render.READY }
         upstream.use { upstreamSubscription ->
             rendered.use { renderedSubscription ->
                 upstreamSubscription.arm()
                 renderedSubscription.arm()
                 val actual =
                     triggerAwaitSettleAndAwait(
-                        trigger = { raw.publish(ShareEvent(OWNER, true)) },
+                        trigger = { raw.publish(ShareEvent(OWNER, Render.RENDERING)) },
                         awaitUpstream = {
                             upstreamSubscription.await(1, TimeUnit.SECONDS, "share raw")
                         },
-                        settle = { displayed.publish(ShareEvent(OWNER, true, revision = 2)) },
+                        settle = {
+                            displayed.publish(ShareEvent(OWNER, Render.READY, revision = 2))
+                        },
                         awaitRendered = {
                             renderedSubscription.await(1, TimeUnit.SECONDS, "share displayed")
                         },
                     )
                 assertThrows(IllegalArgumentException::class.java) {
-                    require(actual.first == actual.second) { "share state mismatch" }
+                    require(actual.first.copy(render = Render.READY) == actual.second) {
+                        "share state mismatch"
+                    }
                 }
             }
         }
@@ -82,7 +89,12 @@ class Todo18ShareViewingProbeTest {
         matches: (ShareEvent) -> Boolean,
     ) = ExactEventSubscription(matches = matches, subscribe = { source.registration(it) })
 
-    private data class ShareEvent(val owner: String, val ready: Boolean, val revision: Int = 1)
+    private data class ShareEvent(val owner: String, val render: Render, val revision: Int = 1)
+
+    private enum class Render {
+        RENDERING,
+        READY,
+    }
 
     private class TestEventSource<T> {
         private val listeners = linkedSetOf<(T) -> Unit>()

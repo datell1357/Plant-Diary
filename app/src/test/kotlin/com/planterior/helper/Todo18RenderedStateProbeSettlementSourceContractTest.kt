@@ -111,6 +111,9 @@ class Todo18RenderedStateProbeSettlementSourceContractTest {
         assertFalse(share.contains("event.sequence >= floor"))
         assertTrue(share.contains("MiniHomeShareUiState.Ready"))
         assertTrue(share.contains("MiniHomeShareLinkState.Idle"))
+        assertTrue(share.contains("render = MiniHomeShareRenderState.Rendering"))
+        assertTrue(share.contains("render = MiniHomeShareRenderState.Ready"))
+        assertTrue(share.contains("state.render == render"))
         assertTrue(share.contains("triggerAwaitSettleAndAwait("))
         assertTrue(share.contains("settle = compose::waitForIdle"))
     }
